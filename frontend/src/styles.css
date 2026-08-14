@@ -6323,7 +6323,8 @@ textarea:focus-visible {
 .workflow-publication-lease-list li,
 .workflow-event-envelope-list li,
 .workflow-transport-admission-list li,
-.workflow-byte-artifact-list li {
+.workflow-byte-artifact-list li,
+.workflow-logical-channel-binding-list li {
   align-items: flex-start;
   min-width: 0;
 }
@@ -6331,12 +6332,14 @@ textarea:focus-visible {
 .workflow-publication-lease-list li > div,
 .workflow-event-envelope-list li > div,
 .workflow-transport-admission-list li > div,
-.workflow-byte-artifact-list li > div { min-width: 0; }
+.workflow-byte-artifact-list li > div,
+.workflow-logical-channel-binding-list li > div { min-width: 0; }
 
 .workflow-publication-lease-list strong,
 .workflow-event-envelope-list strong,
 .workflow-transport-admission-list strong,
-.workflow-byte-artifact-list strong {
+.workflow-byte-artifact-list strong,
+.workflow-logical-channel-binding-list strong {
   display: flex;
   min-width: 0;
   align-items: center;
@@ -6351,13 +6354,16 @@ textarea:focus-visible {
 .workflow-transport-admission-list code,
 .workflow-transport-admission-list small,
 .workflow-byte-artifact-list code,
-.workflow-byte-artifact-list small {
+.workflow-byte-artifact-list small,
+.workflow-logical-channel-binding-list code,
+.workflow-logical-channel-binding-list small {
   overflow-wrap: anywhere;
 }
 
 .workflow-event-envelope-list small,
 .workflow-transport-admission-list small,
-.workflow-byte-artifact-list small {
+.workflow-byte-artifact-list small,
+.workflow-logical-channel-binding-list small {
   line-height: 1.45;
 }
 

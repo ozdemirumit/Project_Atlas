@@ -21,6 +21,7 @@ from atlas.api.workflow_schemas import (
     AcquireWorkflowOrchestrationLeaseInput,
     AcquireWorkflowOutboxPublicationLeaseInput,
     AdmitWorkflowEventTransportInput,
+    BindWorkflowEventLogicalChannelInput,
     CancelWorkflowPlanInput,
     CreateWorkflowPlanInput,
     HeartbeatWorkflowOrchestrationLeaseInput,
@@ -52,6 +53,10 @@ from atlas.api.workflow_schemas import (
     WorkflowEventByteArtifactInventoryData,
     WorkflowEventByteArtifactInventoryResponse,
     WorkflowEventByteArtifactResponse,
+    WorkflowEventLogicalChannelBindingData,
+    WorkflowEventLogicalChannelBindingInventoryData,
+    WorkflowEventLogicalChannelBindingInventoryResponse,
+    WorkflowEventLogicalChannelBindingResponse,
     WorkflowEventTransportAdmissionData,
     WorkflowEventTransportAdmissionInventoryData,
     WorkflowEventTransportAdmissionInventoryResponse,
@@ -94,6 +99,8 @@ from atlas.modules.workflows.application import (
     WorkflowDispatchIntentStagingService,
     WorkflowEventByteArtifactError,
     WorkflowEventByteArtifactService,
+    WorkflowEventLogicalChannelBindingError,
+    WorkflowEventLogicalChannelBindingService,
     WorkflowOrchestrationLeaseError,
     WorkflowOrchestrationLeaseRepository,
     WorkflowOrchestrationLeaseService,
@@ -129,6 +136,9 @@ from atlas.modules.workflows.domain import (
     WorkflowDispatchOutboxState,
     WorkflowEventByteArtifact,
     WorkflowEventByteArtifactState,
+    WorkflowEventLogicalChannelBinding,
+    WorkflowEventLogicalChannelBindingState,
+    WorkflowEventLogicalChannelPolicy,
     WorkflowEventTransportAdmission,
     WorkflowEventTransportAdmissionPolicy,
     WorkflowEventTransportAdmissionState,
@@ -523,6 +533,46 @@ def _raise_event_byte_artifact(error: WorkflowEventByteArtifactError) -> NoRetur
             "The byte artifact request did not satisfy the bounded contract."
             if status == 422
             else "Workflow event byte artifact evidence is unavailable."
+        ),
+        retryable=status == 503,
+    ) from error
+
+
+def _raise_event_logical_channel_binding(
+    error: WorkflowEventLogicalChannelBindingError,
+) -> NoReturn:
+    if error.code.endswith("_invalid") or error.code.endswith("_required"):
+        status = 422
+    elif "repository" in error.code:
+        status = 503
+    elif error.code.endswith("_not_found"):
+        status = 404
+    else:
+        status = 409
+    raise AtlasError(
+        status=status,
+        code=(
+            "workflow_event_logical_channel_binding_request_invalid"
+            if status == 422
+            else "workflow_event_logical_channel_binding_service_unavailable"
+            if status == 503
+            else "workflow_resource_unavailable"
+            if status == 404
+            else "workflow_event_logical_channel_binding_conflict"
+        ),
+        title=(
+            "Workflow event logical channel binding request invalid"
+            if status == 422
+            else "Workflow event logical channel binding service unavailable"
+            if status == 503
+            else "Workflow resource unavailable"
+            if status == 404
+            else "Workflow event logical channel binding conflict"
+        ),
+        detail=(
+            "The logical channel binding request did not satisfy the bounded contract."
+            if status == 422
+            else "Workflow event logical channel binding evidence is unavailable."
         ),
         retryable=status == 503,
     ) from error
@@ -1064,6 +1114,90 @@ def _event_byte_artifact_matches_admission(
         and not artifact.grants_delivery_authority
         and not artifact.grants_dispatch_authority
         and not artifact.grants_execution_authority
+    )
+
+
+def _event_logical_channel_binding_response(
+    binding: WorkflowEventLogicalChannelBinding,
+    request: Request,
+    response: Response,
+) -> WorkflowEventLogicalChannelBindingResponse:
+    _no_store(response)
+    return WorkflowEventLogicalChannelBindingResponse(
+        data=WorkflowEventLogicalChannelBindingData.from_domain(binding),
+        meta=_meta(request),
+    )
+
+
+def _event_logical_channel_binding_matches_artifact(
+    binding: WorkflowEventLogicalChannelBinding,
+    artifact: WorkflowEventByteArtifact,
+    policy: WorkflowEventLogicalChannelPolicy,
+) -> bool:
+    return bool(
+        binding.artifact_id == artifact.artifact_id
+        and binding.artifact_digest == artifact.canonical_digest
+        and binding.content_sha256 == artifact.content_sha256
+        and binding.canonical_byte_count == artifact.canonical_byte_count
+        and binding.admission_id == artifact.admission_id
+        and binding.admission_digest == artifact.admission_digest
+        and binding.event_id == artifact.event_id
+        and binding.event_digest == artifact.event_digest
+        and binding.event_type == artifact.event_type
+        and binding.event_version == artifact.event_version
+        and binding.schema_uri == artifact.schema_uri
+        and binding.outbox_entry_id == artifact.outbox_entry_id
+        and binding.outbox_entry_digest == artifact.outbox_entry_digest
+        and binding.dispatch_intent_id == artifact.dispatch_intent_id
+        and binding.dispatch_intent_digest == artifact.dispatch_intent_digest
+        and binding.plan_id == artifact.plan_id
+        and binding.plan_digest == artifact.plan_digest
+        and binding.run_id == artifact.run_id
+        and binding.run_digest == artifact.run_digest
+        and binding.step_run_id == artifact.step_run_id
+        and binding.step_run_digest == artifact.step_run_digest
+        and binding.step_id == artifact.step_id
+        and binding.attempt_id == artifact.attempt_id
+        and binding.attempt_digest == artifact.attempt_digest
+        and binding.attempt_number == artifact.attempt_number
+        and binding.scope == artifact.scope
+        and binding.target_id == artifact.target_id
+        and binding.target_type == artifact.target_type
+        and binding.policy_id == policy.policy_id
+        and binding.policy_version == policy.policy_version
+        and binding.policy_digest == policy.canonical_digest
+        and binding.logical_channel_id == policy.logical_channel_id
+        and binding.logical_channel_version == policy.logical_channel_version
+        and binding.event_type in policy.allowed_event_types
+        and binding.event_version in policy.allowed_event_versions
+        and binding.schema_uri in policy.allowed_schema_uris
+        and binding.data_classification in policy.allowed_data_classifications
+        and binding.data_classification == artifact.data_classification
+        and binding.representation_name == policy.representation_name
+        and binding.representation_name == artifact.representation_name
+        and binding.encoding == policy.encoding
+        and binding.encoding == artifact.encoding
+        and binding.delivery_semantics == policy.delivery_semantics
+        and binding.durability_required == policy.durability_required
+        and binding.ordering_key_kind == policy.ordering_key_kind
+        and binding.ordering_key_value == artifact.run_id
+        and binding.retention_class == policy.retention_class
+        and binding.maximum_canonical_byte_count == policy.maximum_canonical_byte_count
+        and binding.canonical_byte_count <= binding.maximum_canonical_byte_count
+        and binding.orchestration_lease_id == artifact.orchestration_lease_id
+        and binding.orchestration_lease_digest == artifact.orchestration_lease_digest
+        and binding.orchestration_fencing_token == artifact.orchestration_fencing_token
+        and binding.publication_lease_id == artifact.publication_lease_id
+        and binding.publication_lease_digest == artifact.publication_lease_digest
+        and binding.publication_fencing_token == artifact.publication_fencing_token
+        and binding.publisher_subject_id == artifact.publisher_subject_id
+        and binding.bound_at >= artifact.materialized_at
+        and binding.state is WorkflowEventLogicalChannelBindingState.BOUND
+        and not any(binding.authority.canonical_value().values())
+        and not binding.grants_publication_authority
+        and not binding.grants_delivery_authority
+        and not binding.grants_dispatch_authority
+        and not binding.grants_execution_authority
     )
 
 
@@ -2430,6 +2564,266 @@ async def materialize_workflow_event_byte_artifact(
     except WorkflowEventByteArtifactError as error:
         _raise_event_byte_artifact(error)
     return _event_byte_artifact_response(artifact, request, response)
+
+
+@router.get(
+    (
+        "/plans/{plan_id}/runs/{run_id}/attempts/{attempt_id}/dispatch-intents/"
+        "{dispatch_intent_id}/outbox/{outbox_entry_id}/event-envelope/{event_id}/"
+        "transport-admission/{transport_admission_id}/byte-artifact/{byte_artifact_id}/"
+        "logical-channel-binding"
+    ),
+    response_model=WorkflowEventLogicalChannelBindingInventoryResponse,
+)
+async def get_workflow_event_logical_channel_binding(
+    plan_id: Annotated[str, SAFE_ID],
+    run_id: Annotated[str, SAFE_ID],
+    attempt_id: Annotated[str, SAFE_ID],
+    dispatch_intent_id: Annotated[str, SAFE_ID],
+    outbox_entry_id: Annotated[str, SAFE_ID],
+    event_id: Annotated[str, SAFE_ID],
+    transport_admission_id: Annotated[str, SAFE_ID],
+    byte_artifact_id: Annotated[str, SAFE_ID],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[AuthorizationDecision, Depends(authorize_workflow_plan_read)],
+) -> WorkflowEventLogicalChannelBindingInventoryResponse:
+    planning_service: WorkflowPlanningService = request.app.state.workflow_planning_service
+    try:
+        plan = await planning_service.get_plan(
+            plan_id=plan_id,
+            context=await _context(request, subject, decision),
+        )
+    except WorkflowPlanningError as error:
+        _raise(error)
+    service: WorkflowEventLogicalChannelBindingService = (
+        request.app.state.workflow_event_logical_channel_binding_service
+    )
+    repository = service.repository
+    byte_artifact_repository = request.app.state.workflow_event_byte_artifact_service.repository
+    try:
+        entry = await repository.get_outbox_entry_by_id(outbox_entry_id=outbox_entry_id)
+        envelope = await byte_artifact_repository.get_dispatch_event_envelope_by_outbox_entry_id(
+            outbox_entry_id=outbox_entry_id
+        )
+        publication_lease = await repository.get_publication_lease_by_outbox_entry_id(
+            outbox_entry_id=outbox_entry_id
+        )
+        admission = await repository.get_event_transport_admission_by_event_id(event_id=event_id)
+        artifact = await repository.get_event_byte_artifact_by_id(artifact_id=byte_artifact_id)
+        binding = await repository.get_event_logical_channel_binding_by_artifact_id(
+            artifact_id=byte_artifact_id
+        )
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_event_logical_channel_binding_service_unavailable",
+            title="Workflow event logical channel binding service unavailable",
+            detail="Workflow event logical channel binding metadata is unavailable.",
+            retryable=True,
+        ) from error
+    if (
+        entry is None
+        or envelope is None
+        or admission is None
+        or artifact is None
+        or envelope.event_id != event_id
+        or admission.admission_id != transport_admission_id
+        or artifact.artifact_id != byte_artifact_id
+        or not _outbox_entry_matches_route(
+            entry,
+            plan_id=plan_id,
+            run_id=run_id,
+            attempt_id=attempt_id,
+            dispatch_intent_id=dispatch_intent_id,
+            outbox_entry_id=outbox_entry_id,
+        )
+        or entry.plan_digest != plan.canonical_digest
+        or entry.scope != plan.scope
+        or entry.target_id != plan.target_id
+        or entry.target_type != plan.target_type
+    ):
+        raise AtlasError(
+            status=404,
+            code="workflow_resource_unavailable",
+            title="Workflow resource unavailable",
+            detail="The requested workflow resource is unavailable.",
+        )
+    if (
+        publication_lease is None
+        or not _dispatch_event_envelope_matches_outbox(envelope, entry)
+        or not _event_transport_admission_matches_envelope(
+            admission,
+            envelope,
+            entry,
+            publication_lease,
+            request.app.state.workflow_event_transport_admission_service.policy,
+        )
+        or not _event_byte_artifact_matches_admission(
+            artifact,
+            admission,
+            envelope,
+            entry,
+            publication_lease,
+        )
+        or (
+            binding is not None
+            and not _event_logical_channel_binding_matches_artifact(
+                binding,
+                artifact,
+                service.policy,
+            )
+        )
+    ):
+        raise AtlasError(
+            status=503,
+            code="workflow_event_logical_channel_binding_service_unavailable",
+            title="Workflow event logical channel binding service unavailable",
+            detail="Workflow event logical channel binding metadata is unavailable.",
+            retryable=True,
+        )
+    _no_store(response)
+    return WorkflowEventLogicalChannelBindingInventoryResponse(
+        data=WorkflowEventLogicalChannelBindingInventoryData(
+            byte_artifact_id=artifact.artifact_id,
+            logical_channel_bindings=(
+                []
+                if binding is None
+                else [WorkflowEventLogicalChannelBindingData.from_domain(binding)]
+            ),
+            durable=service.durable,
+        ),
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    (
+        "/plans/{plan_id}/runs/{run_id}/attempts/{attempt_id}/dispatch-intents/"
+        "{dispatch_intent_id}/outbox/{outbox_entry_id}/publication-lease/"
+        "{publication_lease_id}/event-envelope/{event_id}/transport-admission/"
+        "{transport_admission_id}/byte-artifact/{byte_artifact_id}/"
+        "logical-channel-binding"
+    ),
+    response_model=WorkflowEventLogicalChannelBindingResponse,
+    status_code=201,
+)
+async def bind_workflow_event_logical_channel(
+    plan_id: Annotated[str, SAFE_ID],
+    run_id: Annotated[str, SAFE_ID],
+    attempt_id: Annotated[str, SAFE_ID],
+    dispatch_intent_id: Annotated[str, SAFE_ID],
+    outbox_entry_id: Annotated[str, SAFE_ID],
+    publication_lease_id: Annotated[str, SAFE_ID],
+    event_id: Annotated[str, SAFE_ID],
+    transport_admission_id: Annotated[str, SAFE_ID],
+    byte_artifact_id: Annotated[str, SAFE_ID],
+    payload: BindWorkflowEventLogicalChannelInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(workflow_outbox_publisher_subject)],
+    idempotency_key: Annotated[str, IDEMPOTENCY],
+) -> WorkflowEventLogicalChannelBindingResponse:
+    service: WorkflowEventLogicalChannelBindingService = (
+        request.app.state.workflow_event_logical_channel_binding_service
+    )
+    entry = await _require_bound_publication_outbox(
+        repository=cast(WorkflowOutboxPublicationLeaseRepository, service.repository),
+        plan_id=plan_id,
+        run_id=run_id,
+        attempt_id=attempt_id,
+        dispatch_intent_id=dispatch_intent_id,
+        outbox_entry_id=outbox_entry_id,
+    )
+    byte_artifact_repository = request.app.state.workflow_event_byte_artifact_service.repository
+    try:
+        envelope = await byte_artifact_repository.get_dispatch_event_envelope_by_outbox_entry_id(
+            outbox_entry_id=outbox_entry_id
+        )
+        admission = await service.repository.get_event_transport_admission_by_event_id(
+            event_id=event_id
+        )
+        artifact = await service.repository.get_event_byte_artifact_by_id(
+            artifact_id=byte_artifact_id
+        )
+        publication_lease = await service.repository.get_publication_lease_by_outbox_entry_id(
+            outbox_entry_id=outbox_entry_id
+        )
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_event_logical_channel_binding_service_unavailable",
+            title="Workflow event logical channel binding service unavailable",
+            detail="Workflow event logical channel binding evidence is unavailable.",
+            retryable=True,
+        ) from error
+    if (
+        envelope is None
+        or admission is None
+        or artifact is None
+        or envelope.event_id != event_id
+        or admission.admission_id != transport_admission_id
+        or artifact.artifact_id != byte_artifact_id
+    ):
+        raise AtlasError(
+            status=404,
+            code="workflow_resource_unavailable",
+            title="Workflow resource unavailable",
+            detail="The requested workflow resource is unavailable.",
+        )
+    if (
+        publication_lease is None
+        or publication_lease.publication_lease_id != publication_lease_id
+        or not _dispatch_event_envelope_matches_outbox(envelope, entry)
+        or not _event_transport_admission_matches_envelope(
+            admission,
+            envelope,
+            entry,
+            publication_lease,
+            request.app.state.workflow_event_transport_admission_service.policy,
+        )
+        or not _event_byte_artifact_matches_admission(
+            artifact,
+            admission,
+            envelope,
+            entry,
+            publication_lease,
+        )
+    ):
+        raise AtlasError(
+            status=503,
+            code="workflow_event_logical_channel_binding_service_unavailable",
+            title="Workflow event logical channel binding service unavailable",
+            detail="Workflow event logical channel binding evidence is unavailable.",
+            retryable=True,
+        )
+    try:
+        binding = await service.bind(
+            artifact_id=byte_artifact_id,
+            artifact_digest=payload.byte_artifact_digest,
+            content_sha256=payload.content_sha256,
+            canonical_byte_count=artifact.canonical_byte_count,
+            admission_id=transport_admission_id,
+            admission_digest=artifact.admission_digest,
+            event_id=event_id,
+            event_digest=artifact.event_digest,
+            outbox_entry_id=outbox_entry_id,
+            outbox_entry_digest=artifact.outbox_entry_digest,
+            policy_id=payload.policy_id,
+            policy_version=payload.policy_version,
+            policy_digest=payload.policy_digest,
+            logical_channel_id=service.policy.logical_channel_id,
+            logical_channel_version=service.policy.logical_channel_version,
+            publication_lease_id=publication_lease_id,
+            publication_lease_digest=payload.publication_lease_digest,
+            publication_fencing_token=payload.publication_fencing_token,
+            idempotency_key=idempotency_key,
+            context=await _publisher_context(request, subject, target_id=entry.target_id),
+        )
+    except WorkflowEventLogicalChannelBindingError as error:
+        _raise_event_logical_channel_binding(error)
+    return _event_logical_channel_binding_response(binding, request, response)
 
 
 @router.post(

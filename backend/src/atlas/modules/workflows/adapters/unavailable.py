@@ -37,6 +37,12 @@ from atlas.modules.workflows.application.byte_artifact_ports import (
     WorkflowEventByteArtifactRequest,
     WorkflowEventByteArtifactResult,
 )
+from atlas.modules.workflows.application.logical_channel_binding_ports import (
+    WorkflowEventLogicalChannelBindingError,
+    WorkflowEventLogicalChannelBindingIdempotencyRecord,
+    WorkflowEventLogicalChannelBindingRequest,
+    WorkflowEventLogicalChannelBindingResult,
+)
 from atlas.modules.workflows.application.publication_lease_ports import (
     WorkflowOutboxPublicationLeaseAcquireIdempotencyRecord,
     WorkflowOutboxPublicationLeaseAcquireRequest,
@@ -56,6 +62,7 @@ from atlas.modules.workflows.domain import (
     WorkflowDispatchIntent,
     WorkflowDispatchOutboxEntry,
     WorkflowEventByteArtifact,
+    WorkflowEventLogicalChannelBinding,
     WorkflowEventTransportAdmission,
     WorkflowExecutionAttempt,
     WorkflowExecutionRun,
@@ -252,6 +259,30 @@ class UnavailableWorkflowPlanRepository:
     ) -> WorkflowEventByteArtifactResult:
         self._raise_event_byte_artifact()
 
+    async def get_event_byte_artifact_by_id(
+        self, *, artifact_id: str
+    ) -> WorkflowEventByteArtifact | None:
+        self._raise_event_logical_channel_binding()
+
+    async def get_event_logical_channel_binding_by_artifact_id(
+        self, *, artifact_id: str
+    ) -> WorkflowEventLogicalChannelBinding | None:
+        self._raise_event_logical_channel_binding()
+
+    async def get_event_logical_channel_binding_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        publisher_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowEventLogicalChannelBindingIdempotencyRecord | None:
+        self._raise_event_logical_channel_binding()
+
+    async def bind_event_logical_channel(
+        self, request: WorkflowEventLogicalChannelBindingRequest
+    ) -> WorkflowEventLogicalChannelBindingResult:
+        self._raise_event_logical_channel_binding()
+
     async def acquire_publication_lease(
         self, request: WorkflowOutboxPublicationLeaseAcquireRequest
     ) -> WorkflowOutboxPublicationLeaseAcquireResult:
@@ -355,4 +386,11 @@ class UnavailableWorkflowPlanRepository:
         raise WorkflowEventByteArtifactError(
             "workflow_event_byte_artifact_repository_unavailable",
             "Durable workflow event byte artifact storage is not configured.",
+        )
+
+    @staticmethod
+    def _raise_event_logical_channel_binding() -> NoReturn:
+        raise WorkflowEventLogicalChannelBindingError(
+            "workflow_event_logical_channel_binding_repository_unavailable",
+            "Durable workflow event logical channel binding storage is not configured.",
         )

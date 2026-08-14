@@ -15,6 +15,7 @@ import {
   type WorkflowDispatchOutboxEntry,
   type WorkflowDispatchOutboxPublicationLease,
   type WorkflowEventByteArtifact,
+  type WorkflowEventLogicalChannelBinding,
   type WorkflowEventTransportAdmission,
   type WorkflowExecutionAttempt,
   type WorkflowExecutionRun,
@@ -453,6 +454,60 @@ const materializedByteArtifact: WorkflowEventByteArtifact = {
   canonical_digest: "e".repeat(64),
 };
 
+const logicalChannelBinding: WorkflowEventLogicalChannelBinding = {
+  logical_channel_binding_id: "workflow-event-logical-channel-binding.1234567890abcdef",
+  byte_artifact_id: materializedByteArtifact.byte_artifact_id,
+  byte_artifact_digest: materializedByteArtifact.canonical_digest,
+  content_sha256: materializedByteArtifact.content_sha256,
+  byte_count: materializedByteArtifact.byte_count,
+  transport_admission_id: materializedByteArtifact.transport_admission_id,
+  transport_admission_digest: materializedByteArtifact.transport_admission_digest,
+  event_id: materializedByteArtifact.event_id,
+  event_digest: materializedByteArtifact.event_digest,
+  outbox_entry_id: materializedByteArtifact.outbox_entry_id,
+  outbox_entry_digest: materializedByteArtifact.outbox_entry_digest,
+  dispatch_intent_id: materializedByteArtifact.dispatch_intent_id,
+  dispatch_intent_digest: materializedByteArtifact.dispatch_intent_digest,
+  plan_id: materializedByteArtifact.plan_id,
+  plan_digest: materializedByteArtifact.plan_digest,
+  run_id: materializedByteArtifact.run_id,
+  run_digest: materializedByteArtifact.run_digest,
+  step_run_id: materializedByteArtifact.step_run_id,
+  step_run_digest: materializedByteArtifact.step_run_digest,
+  step_id: materializedByteArtifact.step_id,
+  attempt_id: materializedByteArtifact.attempt_id,
+  attempt_digest: materializedByteArtifact.attempt_digest,
+  attempt_number: materializedByteArtifact.attempt_number,
+  scope: materializedByteArtifact.scope,
+  target_id: materializedByteArtifact.target_id,
+  target_type: materializedByteArtifact.target_type,
+  policy_id: "policy.workflow-event-logical-channel",
+  policy_version: "1.0",
+  policy_digest: "f".repeat(64),
+  logical_channel_id: "channel.workflow-dispatch.internal",
+  logical_channel_version: "1.0",
+  delivery_semantics: "at-least-once",
+  durability_required: true,
+  ordering_key_kind: "workflow-run",
+  ordering_key_value: materializedByteArtifact.run_id,
+  retention_class: "workflow-operational",
+  publisher_subject_id: materializedByteArtifact.publisher_subject_id,
+  orchestration_lease_id: materializedByteArtifact.orchestration_lease_id,
+  orchestration_lease_digest: materializedByteArtifact.orchestration_lease_digest,
+  orchestration_fencing_token: materializedByteArtifact.orchestration_fencing_token,
+  publication_lease_id: materializedByteArtifact.publication_lease_id,
+  publication_lease_digest: materializedByteArtifact.publication_lease_digest,
+  publication_fencing_token: materializedByteArtifact.publication_fencing_token,
+  bound_at: "2026-08-13T10:20:00Z",
+  state: "bound",
+  authority: { ...materializedByteArtifact.authority },
+  grants_publication_authority: false,
+  grants_delivery_authority: false,
+  grants_dispatch_authority: false,
+  grants_execution_authority: false,
+  canonical_digest: "1".repeat(64),
+};
+
 function leaseResponse(lease: WorkflowOrchestrationLease | null, status = 200): Response {
   return new Response(
     JSON.stringify({
@@ -628,6 +683,28 @@ function byteArtifactResponse(byteArtifacts: unknown[], status = 200): Response 
   );
 }
 
+function logicalChannelBindingResponse(
+  logicalChannelBindings: unknown[],
+  status = 200,
+): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: {
+            byte_artifact_id: materializedByteArtifact.byte_artifact_id,
+            logical_channel_bindings: logicalChannelBindings,
+            durable: false,
+          },
+          meta: {
+            correlation_id: "correlation.workflow.logical-channel-binding",
+            generated_at: "2026-08-13T10:21:00Z",
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function mockReadResponses(input: {
   lease?: WorkflowOrchestrationLease | null;
   run?: WorkflowExecutionRun | null;
@@ -638,8 +715,10 @@ function mockReadResponses(input: {
   eventEnvelopes?: unknown[];
   transportAdmissions?: unknown[];
   byteArtifacts?: unknown[];
+  logicalChannelBindings?: unknown[];
   pendingTransportAdmissionResponse?: Promise<Response>;
   pendingByteArtifactResponse?: Promise<Response>;
+  pendingLogicalChannelBindingResponse?: Promise<Response>;
   leaseStatus?: number;
   runStatus?: number;
   attemptStatus?: number;
@@ -651,11 +730,29 @@ function mockReadResponses(input: {
   transportAdmissionStatuses?: number[];
   byteArtifactStatus?: number;
   byteArtifactStatuses?: number[];
+  logicalChannelBindingStatus?: number;
+  logicalChannelBindingStatuses?: number[];
 }) {
   let transportAdmissionReadCount = 0;
   let byteArtifactReadCount = 0;
+  let logicalChannelBindingReadCount = 0;
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (url.endsWith("/logical-channel-binding")) {
+      if (input.pendingLogicalChannelBindingResponse) {
+        return input.pendingLogicalChannelBindingResponse;
+      }
+      const status =
+        input.logicalChannelBindingStatuses?.[
+          Math.min(
+            logicalChannelBindingReadCount++,
+            input.logicalChannelBindingStatuses.length - 1,
+          )
+        ] ?? input.logicalChannelBindingStatus ?? 200;
+      return Promise.resolve(
+        logicalChannelBindingResponse(input.logicalChannelBindings ?? [], status),
+      );
+    }
     if (url.endsWith("/byte-artifact")) {
       if (input.pendingByteArtifactResponse) {
         return input.pendingByteArtifactResponse;
@@ -2353,5 +2450,306 @@ describe("WorkflowPlanningWorkspace", () => {
     );
     expect(within(section).queryByRole("list", { name: "Byte-artifact metadata" })).toBeNull();
     expect(section).not.toHaveTextContent(/raw-byte-secret|payload-secret|cGF5bG9hZC1zZWNyZXQ=|provider-secret|route-secret|credential-secret/);
+  });
+
+  it("loads one exact logical channel binding after byte-artifact metadata with zero authority", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [activePublicationLease],
+      eventEnvelopes: [preparedEventEnvelope],
+      transportAdmissions: [admittedTransport],
+      byteArtifacts: [materializedByteArtifact],
+      logicalChannelBindings: [logicalChannelBinding],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const byteArtifactHeading = await screen.findByRole("heading", {
+      name: "Byte-artifact metadata",
+    });
+    const bindingHeading = await screen.findByRole("heading", {
+      name: "Logical channel binding",
+    });
+    expect(
+      byteArtifactHeading.compareDocumentPosition(bindingHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    const section = bindingHeading.closest("div[aria-labelledby]") as HTMLElement;
+    const records = await within(section).findByRole("list", {
+      name: "Logical channel binding",
+    });
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) =>
+        (request instanceof Request ? request.url : request.toString()).endsWith(
+          `/byte-artifact/${materializedByteArtifact.byte_artifact_id}/logical-channel-binding`,
+        ),
+      ),
+    ).toBe(true);
+    expect(within(section).getByTitle(logicalChannelBinding.logical_channel_binding_id)).toBeVisible();
+    expect(within(section).getByTitle(logicalChannelBinding.logical_channel_id)).toBeVisible();
+    expect(within(section).getByTitle(logicalChannelBinding.policy_id)).toBeVisible();
+    expect(within(section).getByTitle(logicalChannelBinding.byte_artifact_id)).toBeVisible();
+    expect(within(section).getByTitle(logicalChannelBinding.content_sha256)).toBeVisible();
+    expect(within(section).getByTitle(logicalChannelBinding.transport_admission_id)).toBeVisible();
+    expect(within(section).getByTitle(logicalChannelBinding.event_id)).toBeVisible();
+    expect(within(section).getByTitle(logicalChannelBinding.outbox_entry_id)).toBeVisible();
+    expect(within(section).getByTitle(logicalChannelBinding.dispatch_intent_id)).toBeVisible();
+    expect(within(section).getByTitle(logicalChannelBinding.attempt_id)).toBeVisible();
+    expect(within(section).getAllByTitle(logicalChannelBinding.run_id)).toHaveLength(2);
+    expect(within(section).getByTitle(logicalChannelBinding.step_run_id)).toBeVisible();
+    expect(within(section).getByTitle(logicalChannelBinding.plan_id)).toBeVisible();
+    expect(records).toHaveTextContent("bound");
+    expect(records).toHaveTextContent("at-least-once");
+    expect(records).toHaveTextContent("durable required");
+    expect(records).toHaveTextContent("workflow-run ordering");
+    expect(records).toHaveTextContent("workflow-operational");
+    expect(records).toHaveTextContent("2,048 bytes");
+    expect(records).toHaveTextContent("publication false");
+    expect(records).toHaveTextContent("delivery false");
+    expect(records).toHaveTextContent("dispatch false");
+    expect(records).toHaveTextContent("execution false");
+    expect(section).toHaveTextContent("No physical provider, broker, endpoint, topic, stream, queue, partition, routing key");
+    expect(section).toHaveTextContent("credential, message, or network publication attempt exists");
+    expect(section).toHaveTextContent("authority remain zero");
+    expect(
+      within(section).queryByRole("button", {
+        name: /bind|select|publish|deliver|dispatch|execute|materialize|serialize|download|acquire|heartbeat|release/i,
+      }),
+    ).toBeNull();
+    expect(within(section).queryByText(/authorized browser session|MFA|second login/i)).toBeNull();
+  });
+
+  it("renders zero logical channel bindings as a healthy read-only state", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [activePublicationLease],
+      eventEnvelopes: [preparedEventEnvelope],
+      transportAdmissions: [admittedTransport],
+      byteArtifacts: [materializedByteArtifact],
+      logicalChannelBindings: [],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Logical channel binding",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    expect(await within(section).findByText("No logical channel binding has been recorded.")).toBeVisible();
+    expect(within(section).queryByRole("alert")).toBeNull();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("shows a loading state while the logical channel binding read is pending", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [activePublicationLease],
+      eventEnvelopes: [preparedEventEnvelope],
+      transportAdmissions: [admittedTransport],
+      byteArtifacts: [materializedByteArtifact],
+      pendingLogicalChannelBindingResponse: new Promise<Response>(() => undefined),
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Logical channel binding",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    expect(
+      await within(section).findByText("Loading authoritative logical channel binding..."),
+    ).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("retries a failed logical channel binding read without exposing a bind action", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [activePublicationLease],
+      eventEnvelopes: [preparedEventEnvelope],
+      transportAdmissions: [admittedTransport],
+      byteArtifacts: [materializedByteArtifact],
+      logicalChannelBindings: [logicalChannelBinding],
+      logicalChannelBindingStatuses: [500, 200],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Logical channel binding",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    expect(await within(section).findByText("Logical channel binding is unavailable")).toBeVisible();
+    expect(section).toHaveTextContent(
+      "No binding, publication, delivery, dispatch, or execution state is inferred",
+    );
+    fireEvent.click(within(section).getByRole("button", { name: "Retry logical channel binding read" }));
+    expect(await within(section).findByTitle(logicalChannelBinding.logical_channel_binding_id)).toBeVisible();
+    expect(within(section).queryByRole("button", { name: /bind|select|publish|deliver|dispatch|execute/i })).toBeNull();
+  });
+
+  it.each([
+    [401, "Your session has expired", "Sign in again to continue.", true],
+    [403, "Logical channel binding permission is missing", "current role or scope cannot inspect", false],
+  ])(
+    "handles logical channel binding status %s at the normal session boundary",
+    async (status, title, detail, shouldSuggestSignIn) => {
+      vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+      mockReadResponses({
+        run: materializedRun,
+        attempts: [materializedAttempt],
+        dispatchIntents: [stagedDispatchIntent],
+        outboxEntries: [pendingOutboxEntry],
+        publicationLeases: [activePublicationLease],
+        eventEnvelopes: [preparedEventEnvelope],
+        transportAdmissions: [admittedTransport],
+        byteArtifacts: [materializedByteArtifact],
+        logicalChannelBindingStatus: status,
+      });
+      renderWorkspace();
+
+      fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+      const section = (await screen.findByRole("heading", {
+        name: "Logical channel binding",
+      })).closest("div[aria-labelledby]") as HTMLElement;
+      expect(await within(section).findByText(title)).toBeVisible();
+      expect(within(section).getByText(new RegExp(detail, "i"))).toBeVisible();
+      if (shouldSuggestSignIn) {
+        expect(within(section).getByText("Sign in again to continue.")).toBeVisible();
+      } else {
+        expect(within(section).queryByText(/sign in again/i)).toBeNull();
+      }
+      expect(within(section).queryByText(/authorized browser session|MFA|second login/i)).toBeNull();
+    },
+  );
+
+  it("fails closed when duplicate logical channel bindings are returned", async () => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [activePublicationLease],
+      eventEnvelopes: [preparedEventEnvelope],
+      transportAdmissions: [admittedTransport],
+      byteArtifacts: [materializedByteArtifact],
+      logicalChannelBindings: [
+        logicalChannelBinding,
+        {
+          ...logicalChannelBinding,
+          logical_channel_binding_id: "workflow-event-logical-channel-binding.other",
+        },
+      ],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Logical channel binding",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    expect(await within(section).findByText("Logical channel binding is unavailable")).toBeVisible();
+    expect(within(section).queryByRole("list", { name: "Logical channel binding" })).toBeNull();
+  });
+
+  it.each([
+    ["raw bytes", { ...logicalChannelBinding, raw_bytes: "raw-binding-secret" }],
+    ["payload", { ...logicalChannelBinding, payload: { value: "payload-binding-secret" } }],
+    ["base64", { ...logicalChannelBinding, base64: "cGF5bG9hZC1iaW5kaW5nLXNlY3JldA==" }],
+    ["provider", { ...logicalChannelBinding, provider: "provider-binding-secret" }],
+    ["route", { ...logicalChannelBinding, route: "route-binding-secret" }],
+    ["broker", { ...logicalChannelBinding, broker: "broker-binding-secret" }],
+    ["endpoint", { ...logicalChannelBinding, endpoint: "endpoint-binding-secret" }],
+    ["topic", { ...logicalChannelBinding, topic: "topic-binding-secret" }],
+    ["stream", { ...logicalChannelBinding, stream: "stream-binding-secret" }],
+    ["queue", { ...logicalChannelBinding, queue: "queue-binding-secret" }],
+    ["partition", { ...logicalChannelBinding, partition: "partition-binding-secret" }],
+    ["routing key", { ...logicalChannelBinding, routing_key: "routing-binding-secret" }],
+    ["credentials", { ...logicalChannelBinding, credentials: "credential-binding-secret" }],
+    ["provider message", { ...logicalChannelBinding, provider_message: "message-binding-secret" }],
+    [
+      "network publication attempt",
+      { ...logicalChannelBinding, network_publication_attempt: "attempt-binding-secret" },
+    ],
+    ["a different artifact", { ...logicalChannelBinding, byte_artifact_id: "workflow-event-byte-artifact.other" }],
+    ["a different artifact digest", { ...logicalChannelBinding, byte_artifact_digest: "0".repeat(64) }],
+    ["a different content digest", { ...logicalChannelBinding, content_sha256: "0".repeat(64) }],
+    ["a different byte count", { ...logicalChannelBinding, byte_count: 2_049 }],
+    ["a different admission digest", { ...logicalChannelBinding, transport_admission_digest: "0".repeat(64) }],
+    ["a different event digest", { ...logicalChannelBinding, event_digest: "0".repeat(64) }],
+    ["a different outbox digest", { ...logicalChannelBinding, outbox_entry_digest: "0".repeat(64) }],
+    ["a different intent digest", { ...logicalChannelBinding, dispatch_intent_digest: "0".repeat(64) }],
+    ["a different attempt digest", { ...logicalChannelBinding, attempt_digest: "0".repeat(64) }],
+    ["a different run digest", { ...logicalChannelBinding, run_digest: "0".repeat(64) }],
+    ["a different step digest", { ...logicalChannelBinding, step_run_digest: "0".repeat(64) }],
+    ["a different plan digest", { ...logicalChannelBinding, plan_digest: "0".repeat(64) }],
+    ["a changed scope", { ...logicalChannelBinding, scope: { ...logicalChannelBinding.scope, site_id: "site.other" } }],
+    ["a changed target", { ...logicalChannelBinding, target_id: "asset.storage.other" }],
+    ["an invalid policy digest", { ...logicalChannelBinding, policy_digest: "not-a-digest" }],
+    ["a changed policy", { ...logicalChannelBinding, policy_id: "policy.workflow-event.other" }],
+    ["a changed policy version", { ...logicalChannelBinding, policy_version: "2.0" }],
+    ["a physical channel", { ...logicalChannelBinding, logical_channel_id: "topic.workflow-dispatch" }],
+    ["a changed channel version", { ...logicalChannelBinding, logical_channel_version: "2.0" }],
+    ["different delivery semantics", { ...logicalChannelBinding, delivery_semantics: "at-most-once" }],
+    ["non-durable delivery", { ...logicalChannelBinding, durability_required: false }],
+    ["a different ordering kind", { ...logicalChannelBinding, ordering_key_kind: "event" }],
+    ["a different ordering value", { ...logicalChannelBinding, ordering_key_value: "workflow-run.other" }],
+    ["a different retention class", { ...logicalChannelBinding, retention_class: "ephemeral" }],
+    ["a stale source fence", { ...logicalChannelBinding, orchestration_fencing_token: 8 }],
+    ["a stale publication fence", { ...logicalChannelBinding, publication_fencing_token: 2 }],
+    ["publication authority", { ...logicalChannelBinding, grants_publication_authority: true }],
+    [
+      "nested publication authority",
+      {
+        ...logicalChannelBinding,
+        authority: { ...logicalChannelBinding.authority, publication_authorized: true },
+      },
+    ],
+  ])("fails closed when logical channel binding contains %s", async (_case, unsafeBinding) => {
+    vi.mocked(listWorkflowPlans).mockResolvedValue({ plans: [plan], durable: false, truncated: false });
+    mockReadResponses({
+      run: materializedRun,
+      attempts: [materializedAttempt],
+      dispatchIntents: [stagedDispatchIntent],
+      outboxEntries: [pendingOutboxEntry],
+      publicationLeases: [activePublicationLease],
+      eventEnvelopes: [preparedEventEnvelope],
+      transportAdmissions: [admittedTransport],
+      byteArtifacts: [materializedByteArtifact],
+      logicalChannelBindings: [unsafeBinding],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: /asset.storage.test/i }));
+
+    const section = (await screen.findByRole("heading", {
+      name: "Logical channel binding",
+    })).closest("div[aria-labelledby]") as HTMLElement;
+    expect(await within(section).findByText("Logical channel binding is unavailable")).toBeVisible();
+    expect(section).toHaveTextContent(
+      "No binding, publication, delivery, dispatch, or execution state is inferred",
+    );
+    expect(within(section).queryByRole("list", { name: "Logical channel binding" })).toBeNull();
+    expect(section).not.toHaveTextContent(
+      /raw-binding-secret|payload-binding-secret|cGF5bG9hZC1iaW5kaW5nLXNlY3JldA==|provider-binding-secret|route-binding-secret|broker-binding-secret|endpoint-binding-secret|topic-binding-secret|stream-binding-secret|queue-binding-secret|partition-binding-secret|routing-binding-secret|credential-binding-secret|message-binding-secret|attempt-binding-secret/,
+    );
   });
 });

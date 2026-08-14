@@ -9,6 +9,7 @@ import {
   FileClock,
   FileJson2,
   History,
+  Link2,
   LockKeyhole,
   Plus,
   RefreshCw,
@@ -29,6 +30,7 @@ import {
   listWorkflowDispatchEventEnvelopes,
   listWorkflowDispatchOutboxPublicationLeases,
   listWorkflowEventByteArtifacts,
+  listWorkflowEventLogicalChannelBindings,
   listWorkflowEventTransportAdmissions,
   listWorkflowPlans,
   listWorkflowRunAttempts,
@@ -345,6 +347,32 @@ export default function WorkflowPlanningWorkspace({
       byteArtifactSources.length === transportAdmissionsForArtifacts.length,
     retry: false,
   });
+  const byteArtifactsForBindings =
+    byteArtifactQuery.data?.flatMap((inventory) => inventory.byte_artifacts) ?? [];
+  const logicalChannelBindingQuery = useQuery({
+    queryKey: [
+      "workflow-event-logical-channel-bindings",
+      byteArtifactsForBindings.map((artifact) => [
+        artifact.byte_artifact_id,
+        artifact.canonical_digest,
+      ]),
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: () =>
+      Promise.all(
+        byteArtifactsForBindings.map((byteArtifact) =>
+          listWorkflowEventLogicalChannelBindings({
+            byteArtifact,
+            scope,
+            authorizedTargetIds,
+          }),
+        ),
+      ),
+    enabled: byteArtifactQuery.isSuccess && byteArtifactsForBindings.length > 0,
+    retry: false,
+  });
   const definitions = definitionQuery.data?.definitions ?? [];
   const selectedDefinition = definitions.find((item) => item.definition_id === definitionId);
   const createMutation = useMutation({
@@ -428,10 +456,18 @@ export default function WorkflowPlanningWorkspace({
     byteArtifactQuery.error instanceof ApiRequestError
       ? byteArtifactQuery.error.status
       : undefined;
+  const logicalChannelBindingErrorStatus =
+    logicalChannelBindingQuery.error instanceof ApiRequestError
+      ? logicalChannelBindingQuery.error.status
+      : undefined;
   const eventEnvelopes = eventEnvelopesForAdmission;
   const transportAdmissions = transportAdmissionsForArtifacts;
   const byteArtifacts =
     byteArtifactQuery.data?.flatMap((inventory) => inventory.byte_artifacts) ?? [];
+  const logicalChannelBindings =
+    logicalChannelBindingQuery.data?.flatMap(
+      (inventory) => inventory.logical_channel_bindings,
+    ) ?? [];
 
   const selectPlan = (plan: WorkflowRunPlan) => {
     setSelectedPlan(plan);
@@ -1375,6 +1411,154 @@ export default function WorkflowPlanningWorkspace({
                       Materialized means deterministic bytes exist in Atlas storage only. Raw bytes
                       and payload content are not exposed. No provider, route, credential, message,
                       publication, delivery, worker dispatch, or execution authority is present.
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {byteArtifactQuery.isSuccess && byteArtifacts.length > 0 && (
+                <div aria-labelledby="workflow-logical-channel-binding-title">
+                  <div className="workflow-section-heading">
+                    <div>
+                      <p className="eyebrow">READ-ONLY LOGICAL ROUTING EVIDENCE</p>
+                      <h3 id="workflow-logical-channel-binding-title">
+                        Logical channel binding
+                      </h3>
+                    </div>
+                    <span>Provider-neutral contract</span>
+                  </div>
+                  {logicalChannelBindingQuery.isLoading && (
+                    <div className="workflow-empty-state" role="status">
+                      <Link2 size={19} />
+                      <span>Loading authoritative logical channel binding...</span>
+                    </div>
+                  )}
+                  {logicalChannelBindingQuery.isError && (
+                    <div className="inline-error" role="alert">
+                      <div>
+                        <strong>
+                          {logicalChannelBindingErrorStatus === 401
+                            ? "Your session has expired"
+                            : logicalChannelBindingErrorStatus === 403
+                              ? "Logical channel binding permission is missing"
+                              : "Logical channel binding is unavailable"}
+                        </strong>
+                        <span>
+                          {logicalChannelBindingErrorStatus === 401
+                            ? "Sign in again to continue."
+                            : logicalChannelBindingErrorStatus === 403
+                              ? "Your current role or scope cannot inspect logical channel binding metadata."
+                              : "No binding, publication, delivery, dispatch, or execution state is inferred from this failed read."}
+                        </span>
+                      </div>
+                      <button
+                        className="secondary-action"
+                        type="button"
+                        aria-label="Retry logical channel binding read"
+                        onClick={() => void logicalChannelBindingQuery.refetch()}
+                      >
+                        <RefreshCw size={16} />
+                        Retry
+                      </button>
+                    </div>
+                  )}
+                  {logicalChannelBindingQuery.isSuccess && logicalChannelBindings.length > 0 && (
+                    <ol
+                      className="workflow-step-preview workflow-logical-channel-binding-list"
+                      aria-label="Logical channel binding"
+                    >
+                      {logicalChannelBindings.map((binding) => (
+                        <li key={binding.logical_channel_binding_id}>
+                          <Link2 size={17} />
+                          <div>
+                            <strong>
+                              <code title={binding.logical_channel_binding_id}>
+                                {safeHolderIdentifier(binding.logical_channel_binding_id)}
+                              </code>
+                              <span className="state-badge neutral">{binding.state}</span>
+                            </strong>
+                            <small>
+                              channel <code title={binding.logical_channel_id}>{binding.logical_channel_id}</code>{" "}
+                              v{binding.logical_channel_version}
+                            </small>
+                            <small>
+                              {binding.delivery_semantics} | durable required | {binding.ordering_key_kind} ordering | retention{" "}
+                              {binding.retention_class}
+                            </small>
+                            <small>
+                              ordering key <code title={binding.ordering_key_value}>{safeHolderIdentifier(binding.ordering_key_value)}</code>
+                            </small>
+                            <small>
+                              bound {formatTimestamp(binding.bound_at)} | organization {binding.scope.organization_id} | environment{" "}
+                              {binding.scope.environment_id} | site {binding.scope.site_id} | target {binding.target_id}
+                            </small>
+                            <small>
+                              publisher <code title={binding.publisher_subject_id}>{safeHolderIdentifier(binding.publisher_subject_id)}</code>{" "}
+                              | publication fence {binding.publication_fencing_token} | source fence{" "}
+                              {binding.orchestration_fencing_token}
+                            </small>
+                            <small>
+                              policy <code title={binding.policy_id}>{safeHolderIdentifier(binding.policy_id)}</code>{" "}
+                              v{binding.policy_version} | digest {shortDigest(binding.policy_digest)}
+                            </small>
+                            <small>
+                              artifact <code title={binding.byte_artifact_id}>{safeHolderIdentifier(binding.byte_artifact_id)}</code>{" "}
+                              | digest {shortDigest(binding.byte_artifact_digest)} | SHA-256{" "}
+                              <code title={binding.content_sha256}>{shortDigest(binding.content_sha256)}</code> |{" "}
+                              {binding.byte_count.toLocaleString()} bytes
+                            </small>
+                            <small>
+                              admission <code title={binding.transport_admission_id}>{safeHolderIdentifier(binding.transport_admission_id)}</code>{" "}
+                              | digest {shortDigest(binding.transport_admission_digest)} | event{" "}
+                              <code title={binding.event_id}>{safeHolderIdentifier(binding.event_id)}</code> | digest{" "}
+                              {shortDigest(binding.event_digest)}
+                            </small>
+                            <small>
+                              outbox <code title={binding.outbox_entry_id}>{safeHolderIdentifier(binding.outbox_entry_id)}</code>{" "}
+                              | digest {shortDigest(binding.outbox_entry_digest)} | intent{" "}
+                              <code title={binding.dispatch_intent_id}>{safeHolderIdentifier(binding.dispatch_intent_id)}</code> | digest{" "}
+                              {shortDigest(binding.dispatch_intent_digest)}
+                            </small>
+                            <small>
+                              attempt <code title={binding.attempt_id}>{safeHolderIdentifier(binding.attempt_id)}</code> | digest{" "}
+                              {shortDigest(binding.attempt_digest)} | run{" "}
+                              <code title={binding.run_id}>{safeHolderIdentifier(binding.run_id)}</code> | digest{" "}
+                              {shortDigest(binding.run_digest)}
+                            </small>
+                            <small>
+                              step <code title={binding.step_run_id}>{safeHolderIdentifier(binding.step_run_id)}</code> | digest{" "}
+                              {shortDigest(binding.step_run_digest)} | plan{" "}
+                              <code title={binding.plan_id}>{safeHolderIdentifier(binding.plan_id)}</code> | digest{" "}
+                              {shortDigest(binding.plan_digest)}
+                            </small>
+                            <small>
+                              publication lease <code title={binding.publication_lease_id}>{safeHolderIdentifier(binding.publication_lease_id)}</code>{" "}
+                              | {shortDigest(binding.publication_lease_digest)} | source lease{" "}
+                              <code title={binding.orchestration_lease_id}>{safeHolderIdentifier(binding.orchestration_lease_id)}</code>{" "}
+                              | {shortDigest(binding.orchestration_lease_digest)}
+                            </small>
+                            <small>
+                              authority publication false | delivery false | dispatch false | execution false | metadata digest{" "}
+                              {shortDigest(binding.canonical_digest)}
+                            </small>
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                  {logicalChannelBindingQuery.isSuccess && logicalChannelBindings.length === 0 && (
+                    <div className="workflow-empty-state" role="status">
+                      <Link2 size={19} />
+                      <span>No logical channel binding has been recorded.</span>
+                    </div>
+                  )}
+                  <div className="workflow-safety-boundary" role="note">
+                    <LockKeyhole size={18} />
+                    <span>
+                      Bound records logical requirements in Atlas storage only. No physical
+                      provider, broker, endpoint, topic, stream, queue, partition, routing key,
+                      credential, message, or network publication attempt exists. Publication,
+                      delivery, dispatch, and execution authority remain zero.
                     </span>
                   </div>
                 </div>

@@ -45,6 +45,18 @@ from atlas.modules.workflows.application.event_envelopes import (
     WORKFLOW_DISPATCH_EVENT_VERSION,
     WorkflowDispatchEventEnvelopeService,
 )
+from atlas.modules.workflows.application.logical_channel_binding_ports import (
+    WorkflowEventLogicalChannelBindingError,
+    WorkflowEventLogicalChannelBindingIdempotencyRecord,
+    WorkflowEventLogicalChannelBindingRepository,
+    WorkflowEventLogicalChannelBindingRequest,
+    WorkflowEventLogicalChannelBindingResult,
+    WorkflowEventLogicalChannelBindingStatus,
+)
+from atlas.modules.workflows.application.logical_channel_bindings import (
+    WORKFLOW_EVENT_LOGICAL_CHANNEL_BINDING_PRODUCER,
+    WorkflowEventLogicalChannelBindingService,
+)
 from atlas.modules.workflows.application.materialization import (
     WorkflowRunMaterializationService,
 )
@@ -122,6 +134,7 @@ __all__ = [
     "WORKFLOW_DISPATCH_EVENT_TYPE",
     "WORKFLOW_DISPATCH_EVENT_VERSION",
     "WORKFLOW_EVENT_BYTE_ARTIFACT_PRODUCER",
+    "WORKFLOW_EVENT_LOGICAL_CHANNEL_BINDING_PRODUCER",
     "WORKFLOW_EVENT_TRANSPORT_ADMISSION_PRODUCER",
     "WORKFLOW_OUTBOX_PUBLISHER_AUDIENCE",
     "WORKFLOW_WORKER_AUDIENCE",
@@ -154,6 +167,13 @@ __all__ = [
     "WorkflowEventByteArtifactResult",
     "WorkflowEventByteArtifactService",
     "WorkflowEventByteArtifactStatus",
+    "WorkflowEventLogicalChannelBindingError",
+    "WorkflowEventLogicalChannelBindingIdempotencyRecord",
+    "WorkflowEventLogicalChannelBindingRepository",
+    "WorkflowEventLogicalChannelBindingRequest",
+    "WorkflowEventLogicalChannelBindingResult",
+    "WorkflowEventLogicalChannelBindingService",
+    "WorkflowEventLogicalChannelBindingStatus",
     "WorkflowEventTransportAdmissionError",
     "WorkflowEventTransportAdmissionIdempotencyRecord",
     "WorkflowEventTransportAdmissionRepository",
