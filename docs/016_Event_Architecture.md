@@ -247,6 +247,15 @@ route, credential or provider message is selected, no network call or publicatio
 and no publication, delivery, dispatch or execution authority is granted. Provider and route
 selection and publication lifecycle evidence remain later boundaries.
 
+The same publisher may next bind the exact artifact to the code-owned
+`channel.workflow-dispatch.internal` logical publication contract. The binding freezes domain,
+classification, durable at-least-once delivery, workflow-run ordering, workflow-operational
+retention and maximum-size requirements while preserving exact artifact, event, workflow, scope
+and lease lineage. It selects no physical provider, broker, endpoint, topic, stream, queue,
+partition, routing key or credential, makes no network call and grants no publication, delivery,
+dispatch or execution authority. Physical transport profiles and publication lifecycle evidence
+remain later boundaries.
+
 ### 10.2 Publication State
 
 Outbox records track:

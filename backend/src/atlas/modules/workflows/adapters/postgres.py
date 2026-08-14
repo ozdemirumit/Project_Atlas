@@ -26,6 +26,8 @@ from atlas.core.persistence.models import (
     WorkflowDispatchOutboxEntryModel,
     WorkflowEventByteArtifactClaimModel,
     WorkflowEventByteArtifactModel,
+    WorkflowEventLogicalChannelBindingClaimModel,
+    WorkflowEventLogicalChannelBindingModel,
     WorkflowEventTransportAdmissionClaimModel,
     WorkflowEventTransportAdmissionModel,
     WorkflowExecutionAttemptModel,
@@ -88,6 +90,13 @@ from atlas.modules.workflows.application.event_envelope_ports import (
     WorkflowDispatchEventEnvelopePrepareResult,
     WorkflowDispatchEventEnvelopePrepareStatus,
 )
+from atlas.modules.workflows.application.logical_channel_binding_ports import (
+    WorkflowEventLogicalChannelBindingError,
+    WorkflowEventLogicalChannelBindingIdempotencyRecord,
+    WorkflowEventLogicalChannelBindingRequest,
+    WorkflowEventLogicalChannelBindingResult,
+    WorkflowEventLogicalChannelBindingStatus,
+)
 from atlas.modules.workflows.application.publication_lease_ports import (
     WorkflowOutboxPublicationLeaseAcquireIdempotencyRecord,
     WorkflowOutboxPublicationLeaseAcquireRequest,
@@ -118,6 +127,9 @@ from atlas.modules.workflows.domain import (
     WorkflowEventByteArtifact,
     WorkflowEventByteArtifactAuthority,
     WorkflowEventByteArtifactState,
+    WorkflowEventLogicalChannelBinding,
+    WorkflowEventLogicalChannelBindingAuthority,
+    WorkflowEventLogicalChannelBindingState,
     WorkflowEventTransportAdmission,
     WorkflowEventTransportAdmissionAuthority,
     WorkflowEventTransportAdmissionState,
@@ -144,6 +156,7 @@ from atlas.modules.workflows.domain import (
     canonical_digest,
     canonical_json_byte_count,
     canonical_json_bytes,
+    code_owned_workflow_event_logical_channel_policy,
     code_owned_workflow_event_transport_admission_policy,
 )
 
@@ -1120,6 +1133,13 @@ class PostgreSQLWorkflowPlanRepository:
             )
             return None if row is None else self._event_byte_artifact_from_row(row)
 
+    async def get_event_byte_artifact_by_id(
+        self, *, artifact_id: str
+    ) -> WorkflowEventByteArtifact | None:
+        async with self._sessions() as session:
+            row = await session.get(WorkflowEventByteArtifactModel, artifact_id)
+            return None if row is None else self._event_byte_artifact_from_row(row)
+
     async def get_event_byte_artifact_request(
         self,
         *,
@@ -1255,6 +1275,163 @@ class PostgreSQLWorkflowPlanRepository:
                 return replay
         return WorkflowEventByteArtifactResult(
             WorkflowEventByteArtifactStatus.EVIDENCE_CONFLICT, None
+        )
+
+    async def get_event_logical_channel_binding_by_artifact_id(
+        self, *, artifact_id: str
+    ) -> WorkflowEventLogicalChannelBinding | None:
+        async with self._sessions() as session:
+            row = cast(
+                WorkflowEventLogicalChannelBindingModel | None,
+                await session.scalar(
+                    select(WorkflowEventLogicalChannelBindingModel).where(
+                        WorkflowEventLogicalChannelBindingModel.artifact_id == artifact_id
+                    )
+                ),
+            )
+            return None if row is None else self._event_logical_channel_binding_from_row(row)
+
+    async def get_event_logical_channel_binding_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        publisher_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowEventLogicalChannelBindingIdempotencyRecord | None:
+        async with self._sessions() as session:
+            claim = await self._load_event_logical_channel_binding_claim(
+                session,
+                scope=scope,
+                publisher_subject_id=publisher_subject_id,
+                idempotency_key=idempotency_key,
+            )
+            if claim is None:
+                return None
+            binding_row = await session.get(
+                WorkflowEventLogicalChannelBindingModel, claim.binding_id
+            )
+            return self._event_logical_channel_binding_record_from_claim(claim, binding_row)
+
+    async def bind_event_logical_channel(
+        self, request: WorkflowEventLogicalChannelBindingRequest
+    ) -> WorkflowEventLogicalChannelBindingResult:
+        self._validate_event_logical_channel_binding_request(request)
+        candidate = request.candidate
+        async with self._sessions() as session:
+            replay = await self._event_logical_channel_binding_replay(session, request=request)
+            if replay is not None:
+                return replay
+
+            plan_row = cast(
+                WorkflowRunPlanModel | None,
+                await session.scalar(
+                    select(WorkflowRunPlanModel)
+                    .where(WorkflowRunPlanModel.plan_id == candidate.plan_id)
+                    .with_for_update()
+                ),
+            )
+            outbox_row = cast(
+                WorkflowDispatchOutboxEntryModel | None,
+                await session.scalar(
+                    select(WorkflowDispatchOutboxEntryModel)
+                    .where(
+                        WorkflowDispatchOutboxEntryModel.outbox_entry_id
+                        == candidate.outbox_entry_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            orchestration_lease_row = cast(
+                WorkflowOrchestrationLeaseModel | None,
+                await session.scalar(
+                    select(WorkflowOrchestrationLeaseModel)
+                    .where(WorkflowOrchestrationLeaseModel.plan_id == candidate.plan_id)
+                    .with_for_update()
+                ),
+            )
+            publication_lease_row = cast(
+                WorkflowOutboxPublicationLeaseModel | None,
+                await session.scalar(
+                    select(WorkflowOutboxPublicationLeaseModel)
+                    .where(
+                        WorkflowOutboxPublicationLeaseModel.outbox_entry_id
+                        == candidate.outbox_entry_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            envelope_row = cast(
+                WorkflowDispatchEventEnvelopeModel | None,
+                await session.scalar(
+                    select(WorkflowDispatchEventEnvelopeModel)
+                    .where(WorkflowDispatchEventEnvelopeModel.event_id == candidate.event_id)
+                    .with_for_update()
+                ),
+            )
+            admission_row = cast(
+                WorkflowEventTransportAdmissionModel | None,
+                await session.scalar(
+                    select(WorkflowEventTransportAdmissionModel)
+                    .where(
+                        WorkflowEventTransportAdmissionModel.admission_id == candidate.admission_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            artifact_row = cast(
+                WorkflowEventByteArtifactModel | None,
+                await session.scalar(
+                    select(WorkflowEventByteArtifactModel)
+                    .where(WorkflowEventByteArtifactModel.artifact_id == candidate.artifact_id)
+                    .with_for_update()
+                ),
+            )
+            if not self._event_logical_channel_binding_evidence_matches(
+                plan_row=plan_row,
+                outbox_row=outbox_row,
+                orchestration_lease_row=orchestration_lease_row,
+                publication_lease_row=publication_lease_row,
+                envelope_row=envelope_row,
+                admission_row=admission_row,
+                artifact_row=artifact_row,
+                request=request,
+            ):
+                await session.rollback()
+                return WorkflowEventLogicalChannelBindingResult(
+                    WorkflowEventLogicalChannelBindingStatus.EVIDENCE_CONFLICT, None
+                )
+
+            existing = cast(
+                WorkflowEventLogicalChannelBindingModel | None,
+                await session.scalar(
+                    select(WorkflowEventLogicalChannelBindingModel).where(
+                        WorkflowEventLogicalChannelBindingModel.artifact_id == candidate.artifact_id
+                    )
+                ),
+            )
+            if existing is not None:
+                await session.rollback()
+                return WorkflowEventLogicalChannelBindingResult(
+                    WorkflowEventLogicalChannelBindingStatus.ALREADY_BOUND,
+                    self._event_logical_channel_binding_from_row(existing),
+                )
+
+            try:
+                session.add(self._event_logical_channel_binding_model(candidate))
+                session.add(self._event_logical_channel_binding_claim_model(request))
+                await session.commit()
+                return WorkflowEventLogicalChannelBindingResult(
+                    WorkflowEventLogicalChannelBindingStatus.BOUND, candidate
+                )
+            except IntegrityError:
+                await session.rollback()
+
+        async with self._sessions() as session:
+            replay = await self._event_logical_channel_binding_replay(session, request=request)
+            if replay is not None:
+                return replay
+        return WorkflowEventLogicalChannelBindingResult(
+            WorkflowEventLogicalChannelBindingStatus.EVIDENCE_CONFLICT, None
         )
 
     async def get_dispatch_intent_staging_request(
@@ -4223,6 +4400,490 @@ class PostgreSQLWorkflowPlanRepository:
         raise WorkflowEventByteArtifactError(
             "workflow_event_byte_artifact_repository_contract_violation",
             "The workflow event byte artifact does not match its durable evidence.",
+        )
+
+    async def _event_logical_channel_binding_replay(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowEventLogicalChannelBindingRequest,
+    ) -> WorkflowEventLogicalChannelBindingResult | None:
+        candidate = request.candidate
+        claim = await self._load_event_logical_channel_binding_claim(
+            session,
+            scope=candidate.scope,
+            publisher_subject_id=candidate.publisher_subject_id,
+            idempotency_key=request.idempotency_key,
+        )
+        if claim is None:
+            return None
+        binding_row = await session.get(WorkflowEventLogicalChannelBindingModel, claim.binding_id)
+        record = self._event_logical_channel_binding_record_from_claim(claim, binding_row)
+        status = (
+            WorkflowEventLogicalChannelBindingStatus.REPLAY
+            if record.request_fingerprint == request.request_fingerprint
+            else WorkflowEventLogicalChannelBindingStatus.IDEMPOTENCY_CONFLICT
+        )
+        return WorkflowEventLogicalChannelBindingResult(status, record.binding)
+
+    @classmethod
+    async def _load_event_logical_channel_binding_claim(
+        cls,
+        session: AsyncSession,
+        *,
+        scope: WorkflowScope,
+        publisher_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowEventLogicalChannelBindingClaimModel | None:
+        scope_id = cls._event_logical_channel_binding_idempotency_scope(scope, publisher_subject_id)
+        return cast(
+            WorkflowEventLogicalChannelBindingClaimModel | None,
+            await session.scalar(
+                select(WorkflowEventLogicalChannelBindingClaimModel).where(
+                    WorkflowEventLogicalChannelBindingClaimModel.idempotency_scope_id == scope_id,
+                    WorkflowEventLogicalChannelBindingClaimModel.idempotency_key == idempotency_key,
+                    WorkflowEventLogicalChannelBindingClaimModel.organization_id
+                    == scope.organization_id,
+                    WorkflowEventLogicalChannelBindingClaimModel.environment_id
+                    == scope.environment_id,
+                    WorkflowEventLogicalChannelBindingClaimModel.site_id == scope.site_id,
+                    WorkflowEventLogicalChannelBindingClaimModel.publisher_subject_id
+                    == publisher_subject_id,
+                )
+            ),
+        )
+
+    @classmethod
+    def _event_logical_channel_binding_record_from_claim(
+        cls,
+        claim: WorkflowEventLogicalChannelBindingClaimModel,
+        binding_row: WorkflowEventLogicalChannelBindingModel | None,
+    ) -> WorkflowEventLogicalChannelBindingIdempotencyRecord:
+        if binding_row is None:
+            cls._event_logical_channel_binding_contract_violation()
+        assert binding_row is not None
+        binding = cls._event_logical_channel_binding_from_row(binding_row)
+        scope_id = cls._event_logical_channel_binding_idempotency_scope(
+            binding.scope, binding.publisher_subject_id
+        )
+        payload: dict[str, Any] = {
+            "idempotency_key": claim.idempotency_key,
+            "idempotency_scope_id": scope_id,
+            "request_fingerprint": claim.request_fingerprint,
+            "result_binding": cls._event_logical_channel_binding_payload(binding),
+            "result_digest": binding.canonical_digest,
+        }
+        if (
+            claim.idempotency_scope_id != scope_id
+            or claim.result_digest != binding.canonical_digest
+            or claim.binding_id != binding.binding_id
+            or claim.artifact_id != binding.artifact_id
+            or claim.admission_id != binding.admission_id
+            or claim.event_id != binding.event_id
+            or claim.outbox_entry_id != binding.outbox_entry_id
+            or claim.plan_id != binding.plan_id
+            or claim.organization_id != binding.scope.organization_id
+            or claim.environment_id != binding.scope.environment_id
+            or claim.site_id != binding.scope.site_id
+            or claim.publisher_subject_id != binding.publisher_subject_id
+            or claim.created_at.tzinfo is None
+            or claim.created_at != binding.bound_at
+            or claim.payload != payload
+            or claim.canonical_digest != canonical_digest(payload)
+        ):
+            cls._event_logical_channel_binding_contract_violation()
+        return WorkflowEventLogicalChannelBindingIdempotencyRecord(
+            request_fingerprint=claim.request_fingerprint,
+            binding=binding,
+        )
+
+    @classmethod
+    def _event_logical_channel_binding_from_row(
+        cls, row: WorkflowEventLogicalChannelBindingModel
+    ) -> WorkflowEventLogicalChannelBinding:
+        try:
+            binding = cls._event_logical_channel_binding_to_domain(row.payload)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowEventLogicalChannelBindingError(
+                "workflow_event_logical_channel_binding_repository_contract_violation",
+                "The logical-channel repository contains an invalid binding.",
+            ) from exc
+        if (
+            row.binding_id != binding.binding_id
+            or row.artifact_id != binding.artifact_id
+            or row.artifact_digest != binding.artifact_digest
+            or row.content_sha256 != binding.content_sha256
+            or row.canonical_byte_count != binding.canonical_byte_count
+            or row.admission_id != binding.admission_id
+            or row.admission_digest != binding.admission_digest
+            or row.event_id != binding.event_id
+            or row.event_digest != binding.event_digest
+            or row.event_type != binding.event_type
+            or row.event_version != binding.event_version
+            or row.schema_uri != binding.schema_uri
+            or row.outbox_entry_id != binding.outbox_entry_id
+            or row.outbox_entry_digest != binding.outbox_entry_digest
+            or row.dispatch_intent_id != binding.dispatch_intent_id
+            or row.dispatch_intent_digest != binding.dispatch_intent_digest
+            or row.plan_id != binding.plan_id
+            or row.plan_digest != binding.plan_digest
+            or row.run_id != binding.run_id
+            or row.run_digest != binding.run_digest
+            or row.step_run_id != binding.step_run_id
+            or row.step_run_digest != binding.step_run_digest
+            or row.step_id != binding.step_id
+            or row.attempt_id != binding.attempt_id
+            or row.attempt_digest != binding.attempt_digest
+            or row.attempt_number != binding.attempt_number
+            or row.organization_id != binding.scope.organization_id
+            or row.environment_id != binding.scope.environment_id
+            or row.site_id != binding.scope.site_id
+            or row.target_type != binding.target_type
+            or row.target_id != binding.target_id
+            or row.policy_id != binding.policy_id
+            or row.policy_version != binding.policy_version
+            or row.policy_digest != binding.policy_digest
+            or row.logical_channel_id != binding.logical_channel_id
+            or row.logical_channel_version != binding.logical_channel_version
+            or row.data_classification != binding.data_classification
+            or row.representation_name != binding.representation_name
+            or row.encoding != binding.encoding
+            or row.delivery_semantics != binding.delivery_semantics
+            or row.durability_required != binding.durability_required
+            or row.ordering_key_kind != binding.ordering_key_kind
+            or row.ordering_key_value != binding.ordering_key_value
+            or row.retention_class != binding.retention_class
+            or row.maximum_canonical_byte_count != binding.maximum_canonical_byte_count
+            or row.orchestration_lease_id != binding.orchestration_lease_id
+            or row.orchestration_lease_digest != binding.orchestration_lease_digest
+            or row.orchestration_fencing_token != binding.orchestration_fencing_token
+            or row.publication_lease_id != binding.publication_lease_id
+            or row.publication_lease_digest != binding.publication_lease_digest
+            or row.publication_fencing_token != binding.publication_fencing_token
+            or row.publisher_subject_id != binding.publisher_subject_id
+            or row.bound_at != binding.bound_at
+            or row.state != binding.state.value
+            or row.publication_authority_granted != binding.authority.publication_authorized
+            or row.delivery_authority_granted != binding.authority.delivery_authorized
+            or row.dispatch_authority_granted != binding.authority.dispatch_authorized
+            or row.execution_authority_granted != binding.authority.execution_authorized
+            or row.canonical_digest != binding.canonical_digest
+            or row.payload != cls._event_logical_channel_binding_payload(binding)
+        ):
+            cls._event_logical_channel_binding_contract_violation()
+        return binding
+
+    @classmethod
+    def _event_logical_channel_binding_model(
+        cls, binding: WorkflowEventLogicalChannelBinding
+    ) -> WorkflowEventLogicalChannelBindingModel:
+        return WorkflowEventLogicalChannelBindingModel(
+            binding_id=binding.binding_id,
+            artifact_id=binding.artifact_id,
+            artifact_digest=binding.artifact_digest,
+            content_sha256=binding.content_sha256,
+            canonical_byte_count=binding.canonical_byte_count,
+            admission_id=binding.admission_id,
+            admission_digest=binding.admission_digest,
+            event_id=binding.event_id,
+            event_digest=binding.event_digest,
+            event_type=binding.event_type,
+            event_version=binding.event_version,
+            schema_uri=binding.schema_uri,
+            outbox_entry_id=binding.outbox_entry_id,
+            outbox_entry_digest=binding.outbox_entry_digest,
+            dispatch_intent_id=binding.dispatch_intent_id,
+            dispatch_intent_digest=binding.dispatch_intent_digest,
+            plan_id=binding.plan_id,
+            plan_digest=binding.plan_digest,
+            run_id=binding.run_id,
+            run_digest=binding.run_digest,
+            step_run_id=binding.step_run_id,
+            step_run_digest=binding.step_run_digest,
+            step_id=binding.step_id,
+            attempt_id=binding.attempt_id,
+            attempt_digest=binding.attempt_digest,
+            attempt_number=binding.attempt_number,
+            organization_id=binding.scope.organization_id,
+            environment_id=binding.scope.environment_id,
+            site_id=binding.scope.site_id,
+            target_type=binding.target_type,
+            target_id=binding.target_id,
+            policy_id=binding.policy_id,
+            policy_version=binding.policy_version,
+            policy_digest=binding.policy_digest,
+            logical_channel_id=binding.logical_channel_id,
+            logical_channel_version=binding.logical_channel_version,
+            data_classification=binding.data_classification,
+            representation_name=binding.representation_name,
+            encoding=binding.encoding,
+            delivery_semantics=binding.delivery_semantics,
+            durability_required=binding.durability_required,
+            ordering_key_kind=binding.ordering_key_kind,
+            ordering_key_value=binding.ordering_key_value,
+            retention_class=binding.retention_class,
+            maximum_canonical_byte_count=binding.maximum_canonical_byte_count,
+            orchestration_lease_id=binding.orchestration_lease_id,
+            orchestration_lease_digest=binding.orchestration_lease_digest,
+            orchestration_fencing_token=binding.orchestration_fencing_token,
+            publication_lease_id=binding.publication_lease_id,
+            publication_lease_digest=binding.publication_lease_digest,
+            publication_fencing_token=binding.publication_fencing_token,
+            publisher_subject_id=binding.publisher_subject_id,
+            bound_at=binding.bound_at,
+            state=binding.state.value,
+            publication_authority_granted=binding.authority.publication_authorized,
+            delivery_authority_granted=binding.authority.delivery_authorized,
+            dispatch_authority_granted=binding.authority.dispatch_authorized,
+            execution_authority_granted=binding.authority.execution_authorized,
+            canonical_digest=binding.canonical_digest,
+            payload=cls._event_logical_channel_binding_payload(binding),
+        )
+
+    @classmethod
+    def _event_logical_channel_binding_claim_model(
+        cls, request: WorkflowEventLogicalChannelBindingRequest
+    ) -> WorkflowEventLogicalChannelBindingClaimModel:
+        binding = request.candidate
+        scope_id = cls._event_logical_channel_binding_idempotency_scope(
+            binding.scope, binding.publisher_subject_id
+        )
+        payload: dict[str, Any] = {
+            "idempotency_key": request.idempotency_key,
+            "idempotency_scope_id": scope_id,
+            "request_fingerprint": request.request_fingerprint,
+            "result_binding": cls._event_logical_channel_binding_payload(binding),
+            "result_digest": binding.canonical_digest,
+        }
+        digest = canonical_digest(payload)
+        return WorkflowEventLogicalChannelBindingClaimModel(
+            claim_id=f"workflow_event_channel_claim_{sha256(digest.encode()).hexdigest()[:32]}",
+            idempotency_scope_id=scope_id,
+            idempotency_key=request.idempotency_key,
+            request_fingerprint=request.request_fingerprint,
+            result_digest=binding.canonical_digest,
+            binding_id=binding.binding_id,
+            artifact_id=binding.artifact_id,
+            admission_id=binding.admission_id,
+            event_id=binding.event_id,
+            outbox_entry_id=binding.outbox_entry_id,
+            plan_id=binding.plan_id,
+            organization_id=binding.scope.organization_id,
+            environment_id=binding.scope.environment_id,
+            site_id=binding.scope.site_id,
+            publisher_subject_id=binding.publisher_subject_id,
+            created_at=request.requested_at,
+            canonical_digest=digest,
+            payload=payload,
+        )
+
+    @classmethod
+    def _event_logical_channel_binding_evidence_matches(
+        cls,
+        *,
+        plan_row: WorkflowRunPlanModel | None,
+        outbox_row: WorkflowDispatchOutboxEntryModel | None,
+        orchestration_lease_row: WorkflowOrchestrationLeaseModel | None,
+        publication_lease_row: WorkflowOutboxPublicationLeaseModel | None,
+        envelope_row: WorkflowDispatchEventEnvelopeModel | None,
+        admission_row: WorkflowEventTransportAdmissionModel | None,
+        artifact_row: WorkflowEventByteArtifactModel | None,
+        request: WorkflowEventLogicalChannelBindingRequest,
+    ) -> bool:
+        if any(
+            row is None
+            for row in (
+                plan_row,
+                outbox_row,
+                orchestration_lease_row,
+                publication_lease_row,
+                envelope_row,
+                admission_row,
+                artifact_row,
+            )
+        ):
+            return False
+        assert plan_row is not None
+        assert outbox_row is not None
+        assert orchestration_lease_row is not None
+        assert publication_lease_row is not None
+        assert envelope_row is not None
+        assert admission_row is not None
+        assert artifact_row is not None
+        try:
+            admission = cls._event_transport_admission_from_row(admission_row)
+            artifact = cls._event_byte_artifact_from_row(artifact_row)
+        except (WorkflowEventTransportAdmissionError, WorkflowEventByteArtifactError) as exc:
+            raise WorkflowEventLogicalChannelBindingError(
+                "workflow_event_logical_channel_binding_repository_contract_violation",
+                "Workflow evidence is inconsistent during logical-channel binding.",
+            ) from exc
+        artifact_request = WorkflowEventByteArtifactRequest(
+            expected_plan_digest=request.expected_plan_digest,
+            expected_outbox_entry_digest=request.expected_outbox_entry_digest,
+            expected_event_id=request.expected_event_id,
+            expected_event_digest=request.expected_event_digest,
+            expected_admission_id=request.expected_admission_id,
+            expected_admission_digest=request.expected_admission_digest,
+            expected_policy_digest=artifact.policy_digest,
+            expected_orchestration_lease_id=request.expected_orchestration_lease_id,
+            expected_orchestration_lease_digest=request.expected_orchestration_lease_digest,
+            expected_orchestration_fencing_token=request.expected_orchestration_fencing_token,
+            expected_publication_lease_id=request.expected_publication_lease_id,
+            expected_publication_lease_digest=request.expected_publication_lease_digest,
+            expected_publication_fencing_token=request.expected_publication_fencing_token,
+            publisher_subject_id=request.publisher_subject_id,
+            requested_at=request.requested_at,
+            candidate=artifact,
+            idempotency_key="logical-channel-evidence-validation",
+            request_fingerprint="0" * 64,
+        )
+        if not cls._event_byte_artifact_evidence_matches(
+            plan_row=plan_row,
+            outbox_row=outbox_row,
+            orchestration_lease_row=orchestration_lease_row,
+            publication_lease_row=publication_lease_row,
+            envelope_row=envelope_row,
+            admission_row=admission_row,
+            request=artifact_request,
+        ):
+            return False
+        candidate = request.candidate
+        policy = code_owned_workflow_event_logical_channel_policy()
+        return bool(
+            artifact.artifact_id == request.expected_artifact_id == candidate.artifact_id
+            and artifact.canonical_digest
+            == request.expected_artifact_digest
+            == candidate.artifact_digest
+            and artifact.content_sha256
+            == request.expected_content_sha256
+            == candidate.content_sha256
+            and artifact.canonical_byte_count
+            == request.expected_canonical_byte_count
+            == candidate.canonical_byte_count
+            and artifact.admission_id == candidate.admission_id == admission.admission_id
+            and artifact.admission_digest
+            == candidate.admission_digest
+            == admission.canonical_digest
+            and artifact.event_id == candidate.event_id
+            and artifact.event_digest == candidate.event_digest
+            and artifact.event_type == candidate.event_type
+            and artifact.event_version == candidate.event_version
+            and artifact.schema_uri == candidate.schema_uri
+            and artifact.outbox_entry_id == candidate.outbox_entry_id
+            and artifact.outbox_entry_digest == candidate.outbox_entry_digest
+            and artifact.dispatch_intent_id == candidate.dispatch_intent_id
+            and artifact.dispatch_intent_digest == candidate.dispatch_intent_digest
+            and artifact.plan_id == candidate.plan_id
+            and artifact.plan_digest == candidate.plan_digest
+            and artifact.run_id == candidate.run_id
+            and artifact.run_digest == candidate.run_digest
+            and artifact.step_run_id == candidate.step_run_id
+            and artifact.step_run_digest == candidate.step_run_digest
+            and artifact.step_id == candidate.step_id
+            and artifact.attempt_id == candidate.attempt_id
+            and artifact.attempt_digest == candidate.attempt_digest
+            and artifact.attempt_number == candidate.attempt_number == 1
+            and artifact.scope == candidate.scope
+            and artifact.target_id == candidate.target_id
+            and artifact.target_type == candidate.target_type
+            and artifact.data_classification == candidate.data_classification
+            and artifact.representation_name == candidate.representation_name
+            and artifact.encoding == candidate.encoding
+            and artifact.maximum_canonical_byte_count
+            == candidate.maximum_canonical_byte_count
+            == policy.maximum_canonical_byte_count
+            and artifact.orchestration_lease_id == candidate.orchestration_lease_id
+            and artifact.orchestration_lease_digest == candidate.orchestration_lease_digest
+            and artifact.orchestration_fencing_token == candidate.orchestration_fencing_token
+            and artifact.publication_lease_id == candidate.publication_lease_id
+            and artifact.publication_lease_digest == candidate.publication_lease_digest
+            and artifact.publication_fencing_token == candidate.publication_fencing_token
+            and artifact.publisher_subject_id
+            == request.publisher_subject_id
+            == candidate.publisher_subject_id
+            and candidate.policy_id == policy.policy_id
+            and candidate.policy_version == policy.policy_version
+            and candidate.policy_digest == request.expected_policy_digest == policy.canonical_digest
+            and candidate.logical_channel_id == policy.logical_channel_id
+            and candidate.logical_channel_version == policy.logical_channel_version
+            and candidate.event_type in policy.allowed_event_types
+            and candidate.event_version in policy.allowed_event_versions
+            and candidate.schema_uri in policy.allowed_schema_uris
+            and candidate.data_classification in policy.allowed_data_classifications
+            and candidate.representation_name == policy.representation_name
+            and candidate.encoding == policy.encoding
+            and candidate.delivery_semantics == policy.delivery_semantics
+            and candidate.durability_required == policy.durability_required
+            and candidate.ordering_key_kind == policy.ordering_key_kind
+            and candidate.ordering_key_value == candidate.run_id
+            and candidate.retention_class == policy.retention_class
+            and candidate.state is WorkflowEventLogicalChannelBindingState.BOUND
+            and not any(artifact.authority.canonical_value().values())
+            and not any(candidate.authority.canonical_value().values())
+            and not candidate.grants_publication_authority
+            and not candidate.grants_delivery_authority
+            and not candidate.grants_dispatch_authority
+            and not candidate.grants_execution_authority
+        )
+
+    @staticmethod
+    def _event_logical_channel_binding_idempotency_scope(
+        scope: WorkflowScope, publisher_subject_id: str
+    ) -> str:
+        return canonical_digest(
+            {"publisher_subject_id": publisher_subject_id, "scope": scope.canonical_value()}
+        )
+
+    @staticmethod
+    def _event_logical_channel_binding_payload(
+        binding: WorkflowEventLogicalChannelBinding,
+    ) -> dict[str, Any]:
+        return cast(dict[str, Any], binding.canonical_value())
+
+    @staticmethod
+    def _event_logical_channel_binding_to_domain(
+        raw: dict[str, Any],
+    ) -> WorkflowEventLogicalChannelBinding:
+        values = dict(raw)
+        values["scope"] = WorkflowScope(**cast(Any, values["scope"]))
+        values["bound_at"] = datetime.fromisoformat(str(values["bound_at"]))
+        values["state"] = WorkflowEventLogicalChannelBindingState(str(values["state"]))
+        values["authority"] = WorkflowEventLogicalChannelBindingAuthority(
+            **cast(Any, values["authority"])
+        )
+        return WorkflowEventLogicalChannelBinding(**cast(Any, values))
+
+    @staticmethod
+    def _validate_event_logical_channel_binding_request(
+        request: WorkflowEventLogicalChannelBindingRequest,
+    ) -> None:
+        candidate = request.candidate
+        if (
+            candidate.state is not WorkflowEventLogicalChannelBindingState.BOUND
+            or candidate.attempt_number != 1
+            or candidate.publisher_subject_id != request.publisher_subject_id
+            or candidate.bound_at != request.requested_at
+            or candidate.grants_publication_authority
+            or candidate.grants_delivery_authority
+            or candidate.grants_dispatch_authority
+            or candidate.grants_execution_authority
+        ):
+            raise ValueError("workflow event logical-channel binding payload is unsafe")
+        if not request.idempotency_key or len(request.idempotency_key) > 128:
+            raise ValueError("workflow event logical-channel binding idempotency key is invalid")
+        if len(request.request_fingerprint) != 64:
+            raise ValueError(
+                "workflow event logical-channel binding request fingerprint is invalid"
+            )
+        if request.requested_at.tzinfo is None:
+            raise ValueError("workflow event logical-channel binding time must be aware")
+
+    @staticmethod
+    def _event_logical_channel_binding_contract_violation() -> NoReturn:
+        raise WorkflowEventLogicalChannelBindingError(
+            "workflow_event_logical_channel_binding_repository_contract_violation",
+            "The workflow event logical-channel binding does not match its durable evidence.",
         )
 
     async def _publication_lease_acquire_replay(

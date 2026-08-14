@@ -127,6 +127,10 @@ class WorkflowEventByteArtifactState(StrEnum):
     MATERIALIZED = "materialized"
 
 
+class WorkflowEventLogicalChannelBindingState(StrEnum):
+    BOUND = "bound"
+
+
 @dataclass(frozen=True, slots=True)
 class WorkflowScope:
     organization_id: str
@@ -1538,6 +1542,351 @@ class WorkflowEventByteArtifact:
             "publication_lease_id": self.publication_lease_id,
             "publisher_subject_id": self.publisher_subject_id,
             "representation_name": self.representation_name,
+            "run_digest": self.run_digest,
+            "run_id": self.run_id,
+            "schema_uri": self.schema_uri,
+            "scope": self.scope.canonical_value(),
+            "state": self.state.value,
+            "step_id": self.step_id,
+            "step_run_digest": self.step_run_digest,
+            "step_run_id": self.step_run_id,
+            "target_id": self.target_id,
+            "target_type": self.target_type,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+    @property
+    def grants_publication_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_delivery_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_dispatch_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_execution_authority(self) -> bool:
+        return False
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventLogicalChannelPolicy:
+    """Code-owned logical event contract independent of physical transport."""
+
+    policy_id: str
+    policy_version: str
+    logical_channel_id: str
+    logical_channel_version: str
+    allowed_event_types: tuple[str, ...]
+    allowed_event_versions: tuple[str, ...]
+    allowed_schema_uris: tuple[str, ...]
+    allowed_data_classifications: tuple[str, ...]
+    representation_name: str
+    encoding: str
+    delivery_semantics: str
+    durability_required: bool
+    ordering_key_kind: str
+    retention_class: str
+    maximum_canonical_byte_count: int
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.policy_id, "logical channel policy_id"),
+            (self.policy_version, "logical channel policy_version"),
+            (self.logical_channel_id, "logical channel id"),
+            (self.logical_channel_version, "logical channel version"),
+        ):
+            _require_identifier(value, name=name)
+        for values, name in (
+            (self.allowed_event_types, "allowed event types"),
+            (self.allowed_event_versions, "allowed event versions"),
+            (self.allowed_schema_uris, "allowed schema URIs"),
+            (self.allowed_data_classifications, "allowed data classifications"),
+        ):
+            if not values or tuple(sorted(set(values))) != values:
+                raise ValueError(f"logical channel {name} must be unique and sorted")
+            for value in values:
+                _require_text(value, name=f"logical channel {name}", maximum=240)
+        if self.representation_name != "canonical-json" or self.encoding != "utf-8":
+            raise ValueError("logical channel representation is unsupported")
+        if self.delivery_semantics != "at-least-once":
+            raise ValueError("logical channel delivery semantics are unsupported")
+        if self.durability_required is not True:
+            raise ValueError("logical channel must require durable delivery")
+        if self.ordering_key_kind != "workflow-run":
+            raise ValueError("logical channel ordering key kind is unsupported")
+        if self.retention_class != "workflow-operational":
+            raise ValueError("logical channel retention class is unsupported")
+        if self.maximum_canonical_byte_count != 65_536:
+            raise ValueError("logical channel canonical byte limit is unsupported")
+        _require_digest(self.canonical_digest, name="logical channel policy digest")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("logical channel policy canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "allowed_data_classifications": list(self.allowed_data_classifications),
+            "allowed_event_types": list(self.allowed_event_types),
+            "allowed_event_versions": list(self.allowed_event_versions),
+            "allowed_schema_uris": list(self.allowed_schema_uris),
+            "delivery_semantics": self.delivery_semantics,
+            "durability_required": self.durability_required,
+            "encoding": self.encoding,
+            "logical_channel_id": self.logical_channel_id,
+            "logical_channel_version": self.logical_channel_version,
+            "maximum_canonical_byte_count": self.maximum_canonical_byte_count,
+            "ordering_key_kind": self.ordering_key_kind,
+            "policy_id": self.policy_id,
+            "policy_version": self.policy_version,
+            "representation_name": self.representation_name,
+            "retention_class": self.retention_class,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+
+def code_owned_workflow_event_logical_channel_policy() -> WorkflowEventLogicalChannelPolicy:
+    values: dict[str, object] = {
+        "policy_id": "policy.workflow-event-logical-channel",
+        "policy_version": "1.0",
+        "logical_channel_id": "channel.workflow-dispatch.internal",
+        "logical_channel_version": "1.0",
+        "allowed_event_types": ("WorkflowStepDispatchRequested",),
+        "allowed_event_versions": ("1.0",),
+        "allowed_schema_uris": ("urn:project-atlas:event:workflow-step-dispatch-requested:1.0",),
+        "allowed_data_classifications": ("internal",),
+        "representation_name": "canonical-json",
+        "encoding": "utf-8",
+        "delivery_semantics": "at-least-once",
+        "durability_required": True,
+        "ordering_key_kind": "workflow-run",
+        "retention_class": "workflow-operational",
+        "maximum_canonical_byte_count": 65_536,
+    }
+    digest_payload = {
+        key: list(value) if isinstance(value, tuple) else value for key, value in values.items()
+    }
+    return WorkflowEventLogicalChannelPolicy(
+        policy_id="policy.workflow-event-logical-channel",
+        policy_version="1.0",
+        logical_channel_id="channel.workflow-dispatch.internal",
+        logical_channel_version="1.0",
+        allowed_event_types=("WorkflowStepDispatchRequested",),
+        allowed_event_versions=("1.0",),
+        allowed_schema_uris=("urn:project-atlas:event:workflow-step-dispatch-requested:1.0",),
+        allowed_data_classifications=("internal",),
+        representation_name="canonical-json",
+        encoding="utf-8",
+        delivery_semantics="at-least-once",
+        durability_required=True,
+        ordering_key_kind="workflow-run",
+        retention_class="workflow-operational",
+        maximum_canonical_byte_count=65_536,
+        canonical_digest=canonical_digest(digest_payload),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventLogicalChannelBindingAuthority:
+    publication_authorized: bool = False
+    delivery_authorized: bool = False
+    dispatch_authorized: bool = False
+    execution_authorized: bool = False
+
+    def __post_init__(self) -> None:
+        if any(self.canonical_value().values()):
+            raise ValueError("logical channel bindings cannot grant operational authority")
+
+    def canonical_value(self) -> dict[str, bool]:
+        return {
+            "delivery_authorized": self.delivery_authorized,
+            "dispatch_authorized": self.dispatch_authorized,
+            "execution_authorized": self.execution_authorized,
+            "publication_authorized": self.publication_authorized,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventLogicalChannelBinding:
+    """Immutable logical channel evidence that grants no transport authority."""
+
+    binding_id: str
+    artifact_id: str
+    artifact_digest: str
+    content_sha256: str
+    canonical_byte_count: int
+    admission_id: str
+    admission_digest: str
+    event_id: str
+    event_digest: str
+    event_type: str
+    event_version: str
+    schema_uri: str
+    outbox_entry_id: str
+    outbox_entry_digest: str
+    dispatch_intent_id: str
+    dispatch_intent_digest: str
+    plan_id: str
+    plan_digest: str
+    run_id: str
+    run_digest: str
+    step_run_id: str
+    step_run_digest: str
+    step_id: str
+    attempt_id: str
+    attempt_digest: str
+    attempt_number: int
+    scope: WorkflowScope
+    target_id: str
+    target_type: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    logical_channel_id: str
+    logical_channel_version: str
+    data_classification: str
+    representation_name: str
+    encoding: str
+    delivery_semantics: str
+    durability_required: bool
+    ordering_key_kind: str
+    ordering_key_value: str
+    retention_class: str
+    maximum_canonical_byte_count: int
+    orchestration_lease_id: str
+    orchestration_lease_digest: str
+    orchestration_fencing_token: int
+    publication_lease_id: str
+    publication_lease_digest: str
+    publication_fencing_token: int
+    publisher_subject_id: str
+    bound_at: datetime
+    state: WorkflowEventLogicalChannelBindingState
+    authority: WorkflowEventLogicalChannelBindingAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.binding_id, "logical channel binding id"),
+            (self.artifact_id, "logical channel artifact_id"),
+            (self.admission_id, "logical channel admission_id"),
+            (self.event_id, "logical channel event_id"),
+            (self.outbox_entry_id, "logical channel outbox_entry_id"),
+            (self.dispatch_intent_id, "logical channel dispatch_intent_id"),
+            (self.plan_id, "logical channel plan_id"),
+            (self.run_id, "logical channel run_id"),
+            (self.step_run_id, "logical channel step_run_id"),
+            (self.step_id, "logical channel step_id"),
+            (self.attempt_id, "logical channel attempt_id"),
+            (self.target_id, "logical channel target_id"),
+            (self.policy_id, "logical channel policy_id"),
+            (self.policy_version, "logical channel policy_version"),
+            (self.logical_channel_id, "logical channel id"),
+            (self.logical_channel_version, "logical channel version"),
+            (self.ordering_key_value, "logical channel ordering_key_value"),
+            (self.orchestration_lease_id, "logical channel orchestration_lease_id"),
+            (self.publication_lease_id, "logical channel publication_lease_id"),
+            (self.publisher_subject_id, "logical channel publisher_subject_id"),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (self.artifact_digest, "logical channel artifact_digest"),
+            (self.content_sha256, "logical channel content_sha256"),
+            (self.admission_digest, "logical channel admission_digest"),
+            (self.event_digest, "logical channel event_digest"),
+            (self.outbox_entry_digest, "logical channel outbox_entry_digest"),
+            (self.dispatch_intent_digest, "logical channel dispatch_intent_digest"),
+            (self.plan_digest, "logical channel plan_digest"),
+            (self.run_digest, "logical channel run_digest"),
+            (self.step_run_digest, "logical channel step_run_digest"),
+            (self.attempt_digest, "logical channel attempt_digest"),
+            (self.policy_digest, "logical channel policy_digest"),
+            (self.orchestration_lease_digest, "logical channel orchestration_lease_digest"),
+            (self.publication_lease_digest, "logical channel publication_lease_digest"),
+            (self.canonical_digest, "logical channel canonical_digest"),
+        ):
+            _require_digest(value, name=name)
+        if self.event_type != "WorkflowStepDispatchRequested" or self.event_version != "1.0":
+            raise ValueError("logical channel event contract is unsupported")
+        if self.schema_uri != "urn:project-atlas:event:workflow-step-dispatch-requested:1.0":
+            raise ValueError("logical channel schema URI is unsupported")
+        if self.data_classification != "internal":
+            raise ValueError("logical channel classification must be internal")
+        if self.representation_name != "canonical-json" or self.encoding != "utf-8":
+            raise ValueError("logical channel representation is unsupported")
+        if self.delivery_semantics != "at-least-once" or self.durability_required is not True:
+            raise ValueError("logical channel delivery contract is unsupported")
+        if self.ordering_key_kind != "workflow-run" or self.ordering_key_value != self.run_id:
+            raise ValueError("logical channel ordering must use the exact workflow run")
+        if self.retention_class != "workflow-operational":
+            raise ValueError("logical channel retention class is unsupported")
+        if not 1 <= self.canonical_byte_count <= self.maximum_canonical_byte_count == 65_536:
+            raise ValueError("logical channel canonical byte count is invalid")
+        if self.attempt_number != 1 or self.target_type != "storage":
+            raise ValueError("logical channel lineage is unsupported")
+        if self.orchestration_fencing_token < 1 or self.publication_fencing_token < 1:
+            raise ValueError("logical channel fencing tokens are invalid")
+        if self.bound_at.tzinfo is None:
+            raise ValueError("logical channel binding time must be timezone-aware")
+        if self.state is not WorkflowEventLogicalChannelBindingState.BOUND:
+            raise ValueError("logical channel bindings must remain bound")
+        if any(self.authority.canonical_value().values()):
+            raise ValueError("logical channel bindings cannot grant operational authority")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("logical channel binding canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "admission_digest": self.admission_digest,
+            "admission_id": self.admission_id,
+            "artifact_digest": self.artifact_digest,
+            "artifact_id": self.artifact_id,
+            "attempt_digest": self.attempt_digest,
+            "attempt_id": self.attempt_id,
+            "attempt_number": self.attempt_number,
+            "authority": self.authority.canonical_value(),
+            "binding_id": self.binding_id,
+            "bound_at": self.bound_at.isoformat(),
+            "canonical_byte_count": self.canonical_byte_count,
+            "content_sha256": self.content_sha256,
+            "data_classification": self.data_classification,
+            "delivery_semantics": self.delivery_semantics,
+            "dispatch_intent_digest": self.dispatch_intent_digest,
+            "dispatch_intent_id": self.dispatch_intent_id,
+            "durability_required": self.durability_required,
+            "encoding": self.encoding,
+            "event_digest": self.event_digest,
+            "event_id": self.event_id,
+            "event_type": self.event_type,
+            "event_version": self.event_version,
+            "logical_channel_id": self.logical_channel_id,
+            "logical_channel_version": self.logical_channel_version,
+            "maximum_canonical_byte_count": self.maximum_canonical_byte_count,
+            "orchestration_fencing_token": self.orchestration_fencing_token,
+            "orchestration_lease_digest": self.orchestration_lease_digest,
+            "orchestration_lease_id": self.orchestration_lease_id,
+            "ordering_key_kind": self.ordering_key_kind,
+            "ordering_key_value": self.ordering_key_value,
+            "outbox_entry_digest": self.outbox_entry_digest,
+            "outbox_entry_id": self.outbox_entry_id,
+            "plan_digest": self.plan_digest,
+            "plan_id": self.plan_id,
+            "policy_digest": self.policy_digest,
+            "policy_id": self.policy_id,
+            "policy_version": self.policy_version,
+            "publication_fencing_token": self.publication_fencing_token,
+            "publication_lease_digest": self.publication_lease_digest,
+            "publication_lease_id": self.publication_lease_id,
+            "publisher_subject_id": self.publisher_subject_id,
+            "representation_name": self.representation_name,
+            "retention_class": self.retention_class,
             "run_digest": self.run_digest,
             "run_id": self.run_id,
             "schema_uri": self.schema_uri,

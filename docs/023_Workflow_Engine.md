@@ -574,6 +574,9 @@ MVP workflows do not execute C3 through C5 capabilities.
 - ADR-144 establishes deterministic provider-neutral UTF-8 canonical JSON byte-artifact
   materialization for the exact admitted event without exposing raw bytes to humans and without
   provider or route selection, publication, delivery, dispatch or execution authority.
+- ADR-145 establishes immutable binding of the exact byte artifact to a code-owned logical
+  publication channel contract without physical transport selection, credentials, network calls,
+  publication, delivery, dispatch or execution authority.
 
 ## 39. Assumptions
 

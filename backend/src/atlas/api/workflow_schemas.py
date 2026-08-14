@@ -12,6 +12,7 @@ from atlas.modules.workflows.domain import (
     WorkflowDispatchIntent,
     WorkflowDispatchOutboxEntry,
     WorkflowEventByteArtifact,
+    WorkflowEventLogicalChannelBinding,
     WorkflowEventTransportAdmission,
     WorkflowExecutionAttempt,
     WorkflowExecutionRun,
@@ -197,6 +198,20 @@ class MaterializeWorkflowEventByteArtifactInput(BaseModel):
     acknowledged_materialization_only_no_publication_delivery_dispatch_or_execution_authority: (
         Literal[True]
     )
+
+
+class BindWorkflowEventLogicalChannelInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["atlas.workflow-event-logical-channel-binding-input.v1"]
+    byte_artifact_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    content_sha256: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    policy_id: Literal["policy.workflow-event-logical-channel"]
+    policy_version: Literal["1.0"]
+    policy_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    publication_lease_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    publication_fencing_token: int = Field(ge=1)
+    acknowledged_binding_only_no_publication_delivery_dispatch_or_execution_authority: Literal[True]
 
 
 class WorkflowStepDefinitionData(BaseModel):
@@ -759,6 +774,142 @@ class WorkflowEventByteArtifactResponse(BaseModel):
 
 class WorkflowEventByteArtifactInventoryResponse(BaseModel):
     data: WorkflowEventByteArtifactInventoryData
+    meta: ResponseMeta
+
+
+class WorkflowEventLogicalChannelBindingData(BaseModel):
+    """Minimized logical contract metadata; physical transport stays unselected."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    logical_channel_binding_id: str
+    byte_artifact_id: str
+    byte_artifact_digest: str
+    content_sha256: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    byte_count: int = Field(ge=1, le=65_536)
+    transport_admission_id: str
+    transport_admission_digest: str
+    event_id: str
+    event_digest: str
+    outbox_entry_id: str
+    outbox_entry_digest: str
+    dispatch_intent_id: str
+    dispatch_intent_digest: str
+    plan_id: str
+    plan_digest: str
+    run_id: str
+    run_digest: str
+    step_run_id: str
+    step_run_digest: str
+    step_id: str
+    attempt_id: str
+    attempt_digest: str
+    attempt_number: Literal[1]
+    scope: WorkflowScopeData
+    target_id: str
+    target_type: Literal["storage"]
+    policy_id: Literal["policy.workflow-event-logical-channel"]
+    policy_version: Literal["1.0"]
+    policy_digest: str
+    logical_channel_id: Literal["channel.workflow-dispatch.internal"]
+    logical_channel_version: Literal["1.0"]
+    delivery_semantics: Literal["at-least-once"]
+    durability_required: Literal[True]
+    ordering_key_kind: Literal["workflow-run"]
+    ordering_key_value: str
+    retention_class: Literal["workflow-operational"]
+    publisher_subject_id: str
+    orchestration_lease_id: str
+    orchestration_lease_digest: str
+    orchestration_fencing_token: int = Field(ge=1)
+    publication_lease_id: str
+    publication_lease_digest: str
+    publication_fencing_token: int = Field(ge=1)
+    bound_at: datetime
+    state: Literal["bound"]
+    authority: WorkflowDispatchEventAuthorityData
+    grants_publication_authority: Literal[False]
+    grants_delivery_authority: Literal[False]
+    grants_dispatch_authority: Literal[False]
+    grants_execution_authority: Literal[False]
+    canonical_digest: str
+
+    @classmethod
+    def from_domain(
+        cls, binding: WorkflowEventLogicalChannelBinding
+    ) -> WorkflowEventLogicalChannelBindingData:
+        return cls.model_validate(
+            {
+                "logical_channel_binding_id": binding.binding_id,
+                "byte_artifact_id": binding.artifact_id,
+                "byte_artifact_digest": binding.artifact_digest,
+                "content_sha256": binding.content_sha256,
+                "byte_count": binding.canonical_byte_count,
+                "transport_admission_id": binding.admission_id,
+                "transport_admission_digest": binding.admission_digest,
+                "event_id": binding.event_id,
+                "event_digest": binding.event_digest,
+                "outbox_entry_id": binding.outbox_entry_id,
+                "outbox_entry_digest": binding.outbox_entry_digest,
+                "dispatch_intent_id": binding.dispatch_intent_id,
+                "dispatch_intent_digest": binding.dispatch_intent_digest,
+                "plan_id": binding.plan_id,
+                "plan_digest": binding.plan_digest,
+                "run_id": binding.run_id,
+                "run_digest": binding.run_digest,
+                "step_run_id": binding.step_run_id,
+                "step_run_digest": binding.step_run_digest,
+                "step_id": binding.step_id,
+                "attempt_id": binding.attempt_id,
+                "attempt_digest": binding.attempt_digest,
+                "attempt_number": binding.attempt_number,
+                "scope": binding.scope.canonical_value(),
+                "target_id": binding.target_id,
+                "target_type": binding.target_type,
+                "policy_id": binding.policy_id,
+                "policy_version": binding.policy_version,
+                "policy_digest": binding.policy_digest,
+                "logical_channel_id": binding.logical_channel_id,
+                "logical_channel_version": binding.logical_channel_version,
+                "delivery_semantics": binding.delivery_semantics,
+                "durability_required": binding.durability_required,
+                "ordering_key_kind": binding.ordering_key_kind,
+                "ordering_key_value": binding.ordering_key_value,
+                "retention_class": binding.retention_class,
+                "publisher_subject_id": binding.publisher_subject_id,
+                "orchestration_lease_id": binding.orchestration_lease_id,
+                "orchestration_lease_digest": binding.orchestration_lease_digest,
+                "orchestration_fencing_token": binding.orchestration_fencing_token,
+                "publication_lease_id": binding.publication_lease_id,
+                "publication_lease_digest": binding.publication_lease_digest,
+                "publication_fencing_token": binding.publication_fencing_token,
+                "bound_at": binding.bound_at,
+                "state": binding.state.value,
+                "authority": binding.authority.canonical_value(),
+                "grants_publication_authority": False,
+                "grants_delivery_authority": False,
+                "grants_dispatch_authority": False,
+                "grants_execution_authority": False,
+                "canonical_digest": binding.canonical_digest,
+            }
+        )
+
+
+class WorkflowEventLogicalChannelBindingInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    byte_artifact_id: str
+    logical_channel_bindings: list[WorkflowEventLogicalChannelBindingData] = Field(max_length=1)
+    durable: bool
+
+
+class WorkflowEventLogicalChannelBindingResponse(BaseModel):
+    data: WorkflowEventLogicalChannelBindingData
+    meta: ResponseMeta
+
+
+class WorkflowEventLogicalChannelBindingInventoryResponse(BaseModel):
+    data: WorkflowEventLogicalChannelBindingInventoryData
     meta: ResponseMeta
 
 

@@ -5423,6 +5423,169 @@ class WorkflowEventByteArtifactClaimModel(Base):
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
 
+class WorkflowEventLogicalChannelBindingModel(Base):
+    __tablename__ = "workflow_event_channel_bindings"
+    __table_args__ = (
+        UniqueConstraint("artifact_id", name="uq_wf_event_channel_binding_artifact"),
+        UniqueConstraint("canonical_digest", name="uq_wf_event_channel_binding_digest"),
+        CheckConstraint("attempt_number = 1", name="ck_wf_event_channel_binding_attempt"),
+        CheckConstraint(
+            "canonical_byte_count >= 1 AND canonical_byte_count <= maximum_canonical_byte_count",
+            name="ck_wf_event_channel_binding_byte_count",
+        ),
+        CheckConstraint(
+            "orchestration_fencing_token >= 1",
+            name="ck_wf_event_channel_binding_orch_fence",
+        ),
+        CheckConstraint(
+            "publication_fencing_token >= 1",
+            name="ck_wf_event_channel_binding_pub_fence",
+        ),
+        CheckConstraint("state = 'bound'", name="ck_wf_event_channel_binding_state"),
+        CheckConstraint(
+            "NOT publication_authority_granted "
+            "AND NOT delivery_authority_granted "
+            "AND NOT dispatch_authority_granted "
+            "AND NOT execution_authority_granted",
+            name="ck_wf_event_channel_binding_zero_auth",
+        ),
+    )
+
+    binding_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    artifact_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_event_byte_artifacts.artifact_id"), nullable=False, index=True
+    )
+    artifact_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    canonical_byte_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    admission_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_event_transport_admissions.admission_id"),
+        nullable=False,
+        index=True,
+    )
+    admission_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    event_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_dispatch_event_envelopes.event_id"), nullable=False, index=True
+    )
+    event_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    event_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    schema_uri: Mapped[str] = mapped_column(String(512), nullable=False)
+    outbox_entry_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_dispatch_outbox_entries.outbox_entry_id"),
+        nullable=False,
+        index=True,
+    )
+    outbox_entry_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    dispatch_intent_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_dispatch_intents.dispatch_intent_id"), nullable=False, index=True
+    )
+    dispatch_intent_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    plan_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_run_plans.plan_id"), nullable=False, index=True
+    )
+    plan_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_execution_runs.run_id"), nullable=False, index=True
+    )
+    run_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    step_run_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_execution_step_runs.step_run_id"), nullable=False, index=True
+    )
+    step_run_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    step_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    attempt_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_execution_attempts.attempt_id"), nullable=False, index=True
+    )
+    attempt_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    target_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    target_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    policy_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    logical_channel_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    logical_channel_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    data_classification: Mapped[str] = mapped_column(String(64), nullable=False)
+    representation_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    encoding: Mapped[str] = mapped_column(String(32), nullable=False)
+    delivery_semantics: Mapped[str] = mapped_column(String(64), nullable=False)
+    durability_required: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    ordering_key_kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    ordering_key_value: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    retention_class: Mapped[str] = mapped_column(String(64), nullable=False)
+    maximum_canonical_byte_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Current lease rows are replaceable. These columns preserve immutable
+    # historical evidence and deliberately have no foreign keys.
+    orchestration_lease_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    orchestration_lease_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    orchestration_fencing_token: Mapped[int] = mapped_column(Integer, nullable=False)
+    publication_lease_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    publication_lease_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    publication_fencing_token: Mapped[int] = mapped_column(Integer, nullable=False)
+    publisher_subject_id: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    bound_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    publication_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    delivery_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    dispatch_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    execution_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class WorkflowEventLogicalChannelBindingClaimModel(Base):
+    __tablename__ = "workflow_event_channel_binding_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "idempotency_scope_id",
+            "idempotency_key",
+            name="uq_wf_event_channel_claim_scope_idem",
+        ),
+        UniqueConstraint("binding_id", name="uq_wf_event_channel_claim_binding"),
+        UniqueConstraint("artifact_id", name="uq_wf_event_channel_claim_artifact"),
+        UniqueConstraint("canonical_digest", name="uq_wf_event_channel_claim_digest"),
+    )
+
+    claim_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    idempotency_scope_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    result_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    binding_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_event_channel_bindings.binding_id"), nullable=False, index=True
+    )
+    artifact_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_event_byte_artifacts.artifact_id"), nullable=False, index=True
+    )
+    admission_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_event_transport_admissions.admission_id"),
+        nullable=False,
+        index=True,
+    )
+    event_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_dispatch_event_envelopes.event_id"), nullable=False, index=True
+    )
+    outbox_entry_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_dispatch_outbox_entries.outbox_entry_id"),
+        nullable=False,
+        index=True,
+    )
+    plan_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_run_plans.plan_id"), nullable=False, index=True
+    )
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    publisher_subject_id: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
 class WorkflowDispatchIntentStagingClaimModel(Base):
     __tablename__ = "workflow_dispatch_intent_staging_claims"
     __table_args__ = (

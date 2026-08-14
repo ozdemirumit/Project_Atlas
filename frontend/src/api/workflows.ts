@@ -510,6 +510,66 @@ export type WorkflowEventByteArtifactInventory = {
   durable: boolean;
 };
 
+export type WorkflowEventLogicalChannelBinding = {
+  logical_channel_binding_id: string;
+  byte_artifact_id: string;
+  byte_artifact_digest: string;
+  content_sha256: string;
+  byte_count: number;
+  transport_admission_id: string;
+  transport_admission_digest: string;
+  event_id: string;
+  event_digest: string;
+  outbox_entry_id: string;
+  outbox_entry_digest: string;
+  dispatch_intent_id: string;
+  dispatch_intent_digest: string;
+  plan_id: string;
+  plan_digest: string;
+  run_id: string;
+  run_digest: string;
+  step_run_id: string;
+  step_run_digest: string;
+  step_id: string;
+  attempt_id: string;
+  attempt_digest: string;
+  attempt_number: 1;
+  scope: WorkflowRunPlan["scope"];
+  target_id: string;
+  target_type: "storage";
+  policy_id: "policy.workflow-event-logical-channel";
+  policy_version: "1.0";
+  policy_digest: string;
+  logical_channel_id: "channel.workflow-dispatch.internal";
+  logical_channel_version: "1.0";
+  delivery_semantics: "at-least-once";
+  durability_required: true;
+  ordering_key_kind: "workflow-run";
+  ordering_key_value: string;
+  retention_class: "workflow-operational";
+  publisher_subject_id: string;
+  orchestration_lease_id: string;
+  orchestration_lease_digest: string;
+  orchestration_fencing_token: number;
+  publication_lease_id: string;
+  publication_lease_digest: string;
+  publication_fencing_token: number;
+  bound_at: string;
+  state: "bound";
+  authority: WorkflowDispatchEventAuthority;
+  grants_publication_authority: false;
+  grants_delivery_authority: false;
+  grants_dispatch_authority: false;
+  grants_execution_authority: false;
+  canonical_digest: string;
+};
+
+export type WorkflowEventLogicalChannelBindingInventory = {
+  byte_artifact_id: string;
+  logical_channel_bindings: WorkflowEventLogicalChannelBinding[];
+  durable: boolean;
+};
+
 const digest = /^[a-f0-9]{64}$/;
 const capabilityClasses = new Set<WorkflowCapabilityClass>(["C0", "C1", "C2"]);
 const stepKinds = new Set<WorkflowStepKind>([
@@ -864,6 +924,64 @@ const eventByteArtifactFields = [
 const eventByteArtifactInventoryFields = [
   "transport_admission_id",
   "byte_artifacts",
+  "durable",
+] as const;
+const eventLogicalChannelBindingFields = [
+  "logical_channel_binding_id",
+  "byte_artifact_id",
+  "byte_artifact_digest",
+  "content_sha256",
+  "byte_count",
+  "transport_admission_id",
+  "transport_admission_digest",
+  "event_id",
+  "event_digest",
+  "outbox_entry_id",
+  "outbox_entry_digest",
+  "dispatch_intent_id",
+  "dispatch_intent_digest",
+  "plan_id",
+  "plan_digest",
+  "run_id",
+  "run_digest",
+  "step_run_id",
+  "step_run_digest",
+  "step_id",
+  "attempt_id",
+  "attempt_digest",
+  "attempt_number",
+  "scope",
+  "target_id",
+  "target_type",
+  "policy_id",
+  "policy_version",
+  "policy_digest",
+  "logical_channel_id",
+  "logical_channel_version",
+  "delivery_semantics",
+  "durability_required",
+  "ordering_key_kind",
+  "ordering_key_value",
+  "retention_class",
+  "publisher_subject_id",
+  "orchestration_lease_id",
+  "orchestration_lease_digest",
+  "orchestration_fencing_token",
+  "publication_lease_id",
+  "publication_lease_digest",
+  "publication_fencing_token",
+  "bound_at",
+  "state",
+  "authority",
+  "grants_publication_authority",
+  "grants_delivery_authority",
+  "grants_dispatch_authority",
+  "grants_execution_authority",
+  "canonical_digest",
+] as const;
+const eventLogicalChannelBindingInventoryFields = [
+  "byte_artifact_id",
+  "logical_channel_bindings",
   "durable",
 ] as const;
 const dispatchEventAuthorityFields = [
@@ -1624,6 +1742,77 @@ function isEventByteArtifactBoundToAdmission(
   );
 }
 
+function isEventLogicalChannelBindingBoundToArtifact(
+  value: unknown,
+  artifact: WorkflowEventByteArtifact,
+): value is WorkflowEventLogicalChannelBinding {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, eventLogicalChannelBindingFields) ||
+    !isExactScope(value.scope) ||
+    containsCredentialMaterial(value)
+  ) {
+    return false;
+  }
+  const bindingScope = value.scope;
+  return (
+    isIdentifier(value.logical_channel_binding_id) &&
+    value.byte_artifact_id === artifact.byte_artifact_id &&
+    value.byte_artifact_digest === artifact.canonical_digest &&
+    value.content_sha256 === artifact.content_sha256 &&
+    value.byte_count === artifact.byte_count &&
+    value.transport_admission_id === artifact.transport_admission_id &&
+    value.transport_admission_digest === artifact.transport_admission_digest &&
+    value.event_id === artifact.event_id &&
+    value.event_digest === artifact.event_digest &&
+    value.outbox_entry_id === artifact.outbox_entry_id &&
+    value.outbox_entry_digest === artifact.outbox_entry_digest &&
+    value.dispatch_intent_id === artifact.dispatch_intent_id &&
+    value.dispatch_intent_digest === artifact.dispatch_intent_digest &&
+    value.plan_id === artifact.plan_id &&
+    value.plan_digest === artifact.plan_digest &&
+    value.run_id === artifact.run_id &&
+    value.run_digest === artifact.run_digest &&
+    value.step_run_id === artifact.step_run_id &&
+    value.step_run_digest === artifact.step_run_digest &&
+    value.step_id === artifact.step_id &&
+    value.attempt_id === artifact.attempt_id &&
+    value.attempt_digest === artifact.attempt_digest &&
+    value.attempt_number === artifact.attempt_number &&
+    bindingScope.organization_id === artifact.scope.organization_id &&
+    bindingScope.environment_id === artifact.scope.environment_id &&
+    bindingScope.site_id === artifact.scope.site_id &&
+    value.target_id === artifact.target_id &&
+    value.target_type === artifact.target_type &&
+    value.policy_id === "policy.workflow-event-logical-channel" &&
+    value.policy_version === "1.0" &&
+    isDigest(value.policy_digest) &&
+    value.logical_channel_id === "channel.workflow-dispatch.internal" &&
+    value.logical_channel_version === "1.0" &&
+    value.delivery_semantics === "at-least-once" &&
+    value.durability_required === true &&
+    value.ordering_key_kind === "workflow-run" &&
+    value.ordering_key_value === artifact.run_id &&
+    value.retention_class === "workflow-operational" &&
+    value.publisher_subject_id === artifact.publisher_subject_id &&
+    value.orchestration_lease_id === artifact.orchestration_lease_id &&
+    value.orchestration_lease_digest === artifact.orchestration_lease_digest &&
+    value.orchestration_fencing_token === artifact.orchestration_fencing_token &&
+    value.publication_lease_id === artifact.publication_lease_id &&
+    value.publication_lease_digest === artifact.publication_lease_digest &&
+    value.publication_fencing_token === artifact.publication_fencing_token &&
+    isTimestamp(value.bound_at) &&
+    Date.parse(value.bound_at) >= Date.parse(artifact.materialized_at) &&
+    value.state === "bound" &&
+    hasSafeDispatchEventAuthority(value.authority) &&
+    value.grants_publication_authority === false &&
+    value.grants_delivery_authority === false &&
+    value.grants_dispatch_authority === false &&
+    value.grants_execution_authority === false &&
+    isDigest(value.canonical_digest)
+  );
+}
+
 function isRunPlan(value: unknown): value is WorkflowRunPlan {
   if (
     !isObject(value) ||
@@ -2086,6 +2275,47 @@ export async function listWorkflowEventByteArtifacts(input: {
     throw new ApiRequestError("Workflow event byte-artifact metadata response was unsafe", response.status);
   }
   return data as WorkflowEventByteArtifactInventory;
+}
+
+export async function listWorkflowEventLogicalChannelBindings(input: {
+  byteArtifact: WorkflowEventByteArtifact;
+  scope: WorkflowScope;
+  authorizedTargetIds: readonly string[];
+}): Promise<WorkflowEventLogicalChannelBindingInventory> {
+  const artifact = input.byteArtifact;
+  if (
+    artifact.scope.organization_id !== input.scope.organizationId ||
+    artifact.scope.environment_id !== input.scope.environmentId ||
+    artifact.scope.site_id !== input.scope.siteId ||
+    !input.authorizedTargetIds.includes(artifact.target_id) ||
+    !hasSafeDispatchEventAuthority(artifact.authority) ||
+    artifact.grants_publication_authority !== false ||
+    artifact.grants_delivery_authority !== false ||
+    artifact.grants_dispatch_authority !== false ||
+    artifact.grants_execution_authority !== false
+  ) {
+    throw new ApiRequestError("Workflow byte artifact is outside the authorized logical-channel-binding scope", 403);
+  }
+  const response = await apiFetch(
+    `/api/v1/workflows/plans/${encodeURIComponent(artifact.plan_id)}/runs/${encodeURIComponent(artifact.run_id)}/attempts/${encodeURIComponent(artifact.attempt_id)}/dispatch-intents/${encodeURIComponent(artifact.dispatch_intent_id)}/outbox/${encodeURIComponent(artifact.outbox_entry_id)}/event-envelope/${encodeURIComponent(artifact.event_id)}/transport-admission/${encodeURIComponent(artifact.transport_admission_id)}/byte-artifact/${encodeURIComponent(artifact.byte_artifact_id)}/logical-channel-binding`,
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(response, "Workflow logical-channel binding retrieval failed");
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, eventLogicalChannelBindingInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    data.byte_artifact_id !== artifact.byte_artifact_id ||
+    !Array.isArray(data.logical_channel_bindings) ||
+    data.logical_channel_bindings.length > 1 ||
+    typeof data.durable !== "boolean" ||
+    !data.logical_channel_bindings.every((binding) =>
+      isEventLogicalChannelBindingBoundToArtifact(binding, artifact),
+    )
+  ) {
+    throw new ApiRequestError("Workflow logical-channel binding response was unsafe", response.status);
+  }
+  return data as WorkflowEventLogicalChannelBindingInventory;
 }
 
 export async function createWorkflowPlan(input: {

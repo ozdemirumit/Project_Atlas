@@ -4,14 +4,76 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-194 |
-| Title | Deterministic workflow event byte-artifact materialization without transport selection |
+| Task ID | ATLAS-IMP-195 |
+| Title | Immutable workflow logical publication channel binding without physical transport selection |
 | Status | Local validation complete; ready for pull request |
-| Branch | `agent/workflow-wire-artifact-materialization` |
+| Branch | `agent/workflow-logical-channel-binding` |
 | Pull Request | Not opened |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-136, ADR-137, ADR-138, ADR-139, ADR-140, ADR-141, ADR-142, ADR-143, ADR-144 |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-136, ADR-137, ADR-138, ADR-139, ADR-140, ADR-141, ADR-142, ADR-143, ADR-144, ADR-145 |
 | Last Updated | 2026-08-14 |
-| Next Action | Commit, open PR, pass exact-head CI and merge only after green checks |
+| Next Action | Commit, open the pull request and verify exact-head CI |
+
+### ATLAS-IMP-195 Scope Rationale
+
+- IMP-194 creates deterministic bytes but intentionally leaves their logical event-domain,
+  delivery, ordering and retention requirements implicit. The next durable boundary binds one exact
+  artifact to a code-owned logical publication channel contract.
+- The logical contract freezes workflow domain, internal classification, durable at-least-once
+  delivery, workflow-run ordering, workflow-operational retention and the admitted size ceiling.
+- Physical provider and route selection, credentials, messages, publication attempts, delivery,
+  retries, quarantine, worker dispatch and execution remain deferred.
+
+### ATLAS-IMP-195 Acceptance Criteria
+
+- A dedicated publisher workload can idempotently bind exactly one materialized artifact under the
+  current active publication and source leases; stale fences, expired/released leases, changed
+  lineage, contract mismatch, tampered evidence and competing requests fail closed.
+- The binding records the immutable code-owned channel contract, exact workflow-run ordering key,
+  complete artifact/event/outbox/workflow/scope/publisher/lease lineage and zero publication,
+  delivery, dispatch and execution authority.
+- PostgreSQL locks and revalidates plan, outbox, current leases, envelope, admission and byte
+  artifact before the atomic binding/idempotency write. Production never falls back to memory and
+  no physical transport or credential field exists.
+- Human UI exposes minimized read-only logical-channel metadata through the normal
+  username/password session with no raw bytes or payload, no physical route data, no bind, select,
+  publish, deliver, dispatch or execution control and no second-login or MFA prompt.
+
+### ATLAS-IMP-195 Validation Evidence
+
+- Domain and application services bind one exact immutable byte artifact to the code-owned
+  `channel.workflow-dispatch.internal` version `1.0` contract under the current source and
+  publication leases. Exact replay returns the same binding; stale or released leases, changed
+  claims, contract mismatch, tampered lineage, competing requests and audit failure fail closed.
+- The binding records durable at-least-once delivery requirements, workflow-run ordering,
+  workflow-operational retention, the exact ordering key and complete artifact, admission, event,
+  outbox, intent, attempt, run, step, plan, scope, publisher and lease lineage. Publication,
+  delivery, dispatch and execution authority all remain false.
+- PostgreSQL locks and revalidates the authoritative lineage before the atomic binding and
+  idempotency write. Migration `20260814_0118` preserves historical lease evidence without foreign
+  keys to replaceable lease rows; Alembic reports the single head `20260814_0118`.
+- Ruff format/lint passed across 1,317 files, strict mypy passed across 1,032 source files, and the
+  full backend suite passed 1,790 tests with three expected Windows symlink skips. The full frontend
+  suite passed 442 tests across 95 files; ESLint, TypeScript and the production build passed with
+  only the pre-existing chunk-size advisory.
+- Live validation used plan `workflow-plan.5a56208a85aa250a786b6fb5`, event
+  `workflow-dispatch-event.72ab9810e4c67265c28f74a9`, admission
+  `workflow-event-transport-admission.c661411d19a0673443e2cba3`, artifact
+  `workflow-event-byte-artifact.73c9ed4ef6c83a94e63b3c32` and binding
+  `workflow-event-logical-channel-binding.54d8ed0fc0c79e7c84697310`. One `atlas-demo` /
+  `local-demo` username/password login opened Connector Inventory and the workflow evidence in the
+  same session without manual refresh, MFA, second login or an authorized-browser prompt. Browser
+  measurements found one logical-channel panel, zero forbidden operational buttons and no
+  horizontal overflow at 1,280 pixels.
+
+### ATLAS-IMP-194 Delivery Evidence
+
+- Source commit `c28cc5a43fe312985821137ffaf7ce89096fb343` passed exact-head PR CI run
+  `31781690933`; frontend completed in 5m17s and backend in 9m54s.
+- PR [#206](https://github.com/ozdemirumit/Project_Atlas/pull/206) was squash-merged as
+  `c47649d001b7093bd8706641ef6cb1aa137b67c3`.
+- The exact merged commit independently passed `main` CI run `31782426348`; frontend completed in
+  5m44s and backend in 9m36s. Local `main` was fast-forwarded to the same verified commit before
+  IMP-195 branched.
 
 ### ATLAS-IMP-194 Scope Rationale
 

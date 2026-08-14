@@ -1538,6 +1538,8 @@ from atlas.modules.workflows.application import (
     WorkflowDispatchIntentStagingService,
     WorkflowEventByteArtifactRepository,
     WorkflowEventByteArtifactService,
+    WorkflowEventLogicalChannelBindingRepository,
+    WorkflowEventLogicalChannelBindingService,
     WorkflowEventTransportAdmissionRepository,
     WorkflowEventTransportAdmissionService,
     WorkflowOrchestrationLeaseRepository,
@@ -1582,6 +1584,8 @@ def create_app(
     workflow_event_transport_admission_service: WorkflowEventTransportAdmissionService
     | None = None,
     workflow_event_byte_artifact_service: WorkflowEventByteArtifactService | None = None,
+    workflow_event_logical_channel_binding_service: WorkflowEventLogicalChannelBindingService
+    | None = None,
     security_export_service: SecurityExportService | None = None,
     session_service: SessionService | None = None,
     api_credential_service: ApiCredentialService | None = None,
@@ -5560,6 +5564,44 @@ def create_app(
         )
     else:
         resolved_workflow_event_byte_artifact_service = workflow_event_byte_artifact_service
+    if workflow_event_logical_channel_binding_service is None:
+        logical_channel_binding_repository_methods = (
+            "get_outbox_entry_by_id",
+            "get_publication_lease_by_outbox_entry_id",
+            "get_event_transport_admission_by_event_id",
+            "get_event_byte_artifact_by_id",
+            "get_event_logical_channel_binding_by_artifact_id",
+            "get_event_logical_channel_binding_request",
+            "bind_event_logical_channel",
+        )
+        if not all(
+            callable(getattr(workflow_repository, method_name, None))
+            for method_name in logical_channel_binding_repository_methods
+        ):
+            raise ValueError(
+                "workflow planning repository does not implement logical channel bindings; "
+                "inject workflow_event_logical_channel_binding_service explicitly"
+            )
+        workflow_event_logical_channel_binding_repository = cast(
+            WorkflowEventLogicalChannelBindingRepository,
+            workflow_repository,
+        )
+        resolved_workflow_event_logical_channel_binding_service = (
+            WorkflowEventLogicalChannelBindingService(
+                plan_repository=workflow_repository,
+                orchestration_lease_repository=(
+                    resolved_workflow_orchestration_lease_service.repository
+                ),
+                logical_channel_binding_repository=(
+                    workflow_event_logical_channel_binding_repository
+                ),
+                audit_sink=resolved_audit_sink,
+            )
+        )
+    else:
+        resolved_workflow_event_logical_channel_binding_service = (
+            workflow_event_logical_channel_binding_service
+        )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -5826,6 +5868,12 @@ def create_app(
         )
         app.state.workflow_event_byte_artifact_repository = (
             resolved_workflow_event_byte_artifact_service.repository
+        )
+        app.state.workflow_event_logical_channel_binding_service = (
+            resolved_workflow_event_logical_channel_binding_service
+        )
+        app.state.workflow_event_logical_channel_binding_repository = (
+            resolved_workflow_event_logical_channel_binding_service.repository
         )
         yield
         await resolved_workflow_planning_service.close()
