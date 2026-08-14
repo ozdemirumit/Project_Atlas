@@ -15,7 +15,11 @@ from atlas.modules.workflows.domain import (
     WorkflowDispatchOutboxEntry,
     WorkflowEventByteArtifact,
     WorkflowEventLogicalChannelBinding,
+    WorkflowEventPhysicalTransportEndpointMaterializationAttempt,
+    WorkflowEventPhysicalTransportEndpointMaterializationResult,
+    WorkflowEventPhysicalTransportEndpointMaterializationResultState,
     WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease,
+    WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaim,
     WorkflowEventPhysicalTransportRouteBinding,
     WorkflowEventPhysicalTransportRouteFreshnessAdmission,
     WorkflowEventTransportAdmission,
@@ -1365,7 +1369,7 @@ class WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseData(Bas
     authorized_at: datetime
     expires_at: datetime
     state: Literal["authorized_unconsumed"]
-    effective_state: Literal["active", "expired"]
+    effective_state: Literal["active", "expired", "consumed"]
     single_use: Literal[True]
     renewable: Literal[False]
     authority: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseAuthorityData
@@ -1377,6 +1381,7 @@ class WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseData(Bas
         lease: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease,
         *,
         evaluated_at: datetime,
+        consumed: bool = False,
     ) -> WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseData:
         return cls(
             lease_id=lease.authorization_lease_id,
@@ -1389,7 +1394,9 @@ class WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseData(Bas
             authorized_at=lease.issued_at,
             expires_at=lease.valid_until,
             state="authorized_unconsumed",
-            effective_state=lease.effective_state(evaluated_at=evaluated_at).value,
+            effective_state=(
+                "consumed" if consumed else lease.effective_state(evaluated_at=evaluated_at).value
+            ),
             single_use=True,
             renewable=False,
             authority=(
@@ -1420,6 +1427,125 @@ class WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseInventor
     BaseModel
 ):
     data: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseInventoryData
+    meta: ResponseMeta
+
+
+class CreateWorkflowEventPhysicalTransportEndpointMaterializationInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    authorization_lease_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    authorization_lease_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    policy_id: Literal["policy.workflow-event-physical-transport-endpoint-materialization"]
+    policy_version: Literal["1.0"]
+    irreversible_consumption_acknowledged: Literal[True]
+    uncertain_outcome_requires_new_authorization_acknowledged: Literal[True]
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class WorkflowEventPhysicalTransportEndpointMaterializationAuthorityData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    route_selection_authorized: Literal[False]
+    route_binding_authorized: Literal[False]
+    endpoint_resolution_authorized: Literal[False]
+    credential_access_authorized: Literal[False]
+    network_access_authorized: Literal[False]
+    readiness_probe_authorized: Literal[False]
+    publication_authorized: Literal[False]
+    delivery_authorized: Literal[False]
+    dispatch_authorized: Literal[False]
+    execution_authorized: Literal[False]
+
+
+class WorkflowEventPhysicalTransportEndpointMaterializationData(BaseModel):
+    """Human-safe outcome metadata without protected artifact or endpoint material."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    materialization_id: str
+    lease_id: str
+    freshness_admission_id: str
+    selection_generation: int = Field(ge=1)
+    policy_id: str
+    policy_version: str
+    scope: WorkflowScopeData
+    resolver_subject_id: str
+    consumed_at: datetime
+    recorded_at: datetime | None
+    outcome: Literal[
+        "materialized_protected",
+        "failed_closed_consumed",
+        "uncertain_consumed",
+    ]
+    lease_consumed: Literal[True]
+    protected_storage_verified: bool
+    raw_endpoint_disclosed: Literal[False]
+    authority: WorkflowEventPhysicalTransportEndpointMaterializationAuthorityData
+    integrity_reference: str = Field(min_length=3, max_length=256, pattern=STABLE_ID)
+
+    @classmethod
+    def from_domain(
+        cls,
+        *,
+        claim: WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaim,
+        attempt: WorkflowEventPhysicalTransportEndpointMaterializationAttempt,
+        result: WorkflowEventPhysicalTransportEndpointMaterializationResult | None,
+    ) -> WorkflowEventPhysicalTransportEndpointMaterializationData:
+        if result is None:
+            outcome = "uncertain_consumed"
+            recorded_at = None
+            protected_storage_verified = False
+        elif result.state is (
+            WorkflowEventPhysicalTransportEndpointMaterializationResultState.MATERIALIZED_PROTECTED
+        ):
+            outcome = "materialized_protected"
+            recorded_at = result.completed_at
+            protected_storage_verified = True
+        else:
+            outcome = "failed_closed_consumed"
+            recorded_at = result.completed_at
+            protected_storage_verified = False
+        return cls(
+            materialization_id=attempt.materialization_id,
+            lease_id=attempt.authorization_lease_id,
+            freshness_admission_id=attempt.freshness_admission_id,
+            selection_generation=attempt.current_selection_head_generation,
+            policy_id=attempt.policy_id,
+            policy_version=attempt.policy_version,
+            scope=WorkflowScopeData.model_validate(attempt.scope.canonical_value()),
+            resolver_subject_id=attempt.resolver_subject_id,
+            consumed_at=claim.claimed_at,
+            recorded_at=recorded_at,
+            outcome=outcome,
+            lease_consumed=True,
+            protected_storage_verified=protected_storage_verified,
+            raw_endpoint_disclosed=False,
+            authority=(
+                WorkflowEventPhysicalTransportEndpointMaterializationAuthorityData.model_validate(
+                    attempt.authority.canonical_value()
+                )
+            ),
+            integrity_reference=f"integrity.{attempt.materialization_id}",
+        )
+
+
+class WorkflowEventPhysicalTransportEndpointMaterializationInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    physical_transport_endpoint_materializations: list[
+        WorkflowEventPhysicalTransportEndpointMaterializationData
+    ] = Field(max_length=256)
+    server_time: datetime
+    durable: bool
+
+
+class WorkflowEventPhysicalTransportEndpointMaterializationResponse(BaseModel):
+    data: WorkflowEventPhysicalTransportEndpointMaterializationData
+    meta: ResponseMeta
+
+
+class WorkflowEventPhysicalTransportEndpointMaterializationInventoryResponse(BaseModel):
+    data: WorkflowEventPhysicalTransportEndpointMaterializationInventoryData
     meta: ResponseMeta
 
 

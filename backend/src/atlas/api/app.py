@@ -1526,6 +1526,12 @@ from atlas.modules.support.application.service import SupportBundleService
 from atlas.modules.upgrade.adapters.memory import InMemoryUpgradeSimulationRepository
 from atlas.modules.upgrade.adapters.postgres import PostgreSQLUpgradeSimulationRepository
 from atlas.modules.upgrade.application.service import UpgradeService
+from atlas.modules.workflows.adapters.endpoint_materialization_synthetic import (
+    SyntheticWorkflowPhysicalTransportEndpointMaterializer,
+)
+from atlas.modules.workflows.adapters.endpoint_materialization_unavailable import (
+    UnavailableWorkflowPhysicalTransportEndpointMaterializer,
+)
 from atlas.modules.workflows.adapters.memory import InMemoryWorkflowPlanRepository
 from atlas.modules.workflows.adapters.postgres import PostgreSQLWorkflowPlanRepository
 from atlas.modules.workflows.adapters.unavailable import UnavailableWorkflowPlanRepository
@@ -1542,6 +1548,8 @@ from atlas.modules.workflows.application import (
     WorkflowEventByteArtifactService,
     WorkflowEventLogicalChannelBindingRepository,
     WorkflowEventLogicalChannelBindingService,
+    WorkflowEventPhysicalTransportEndpointMaterializationRepository,
+    WorkflowEventPhysicalTransportEndpointMaterializationService,
     WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseRepository,
     WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseService,
     WorkflowEventPhysicalTransportRouteBindingRepository,
@@ -1873,6 +1881,9 @@ def create_app(
     ) = None,
     workflow_event_physical_transport_endpoint_resolution_authorization_lease_service: (
         WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseService | None
+    ) = None,
+    workflow_event_physical_transport_endpoint_materialization_service: (
+        WorkflowEventPhysicalTransportEndpointMaterializationService | None
     ) = None,
     workflow_transport_profile_snapshot_service: WorkflowTransportProfileSnapshotService
     | None = None,
@@ -6128,6 +6139,50 @@ def create_app(
         resolved_endpoint_resolution_authorization_lease_service = (
             workflow_event_physical_transport_endpoint_resolution_authorization_lease_service
         )
+    if workflow_event_physical_transport_endpoint_materialization_service is None:
+        endpoint_materialization_repository_methods = (
+            "get_authoritative_time",
+            "get_endpoint_resolution_authorization_lease_by_id",
+            "get_route_freshness_admission_by_id",
+            "get_physical_transport_route_binding_by_id",
+            "get_transport_route_snapshot_by_id",
+            "get_current_route_selection_head",
+            "get_endpoint_materialization_claim_by_lease",
+            "get_endpoint_materialization_attempt_by_lease",
+            "list_endpoint_materialization_attempts",
+            "get_endpoint_materialization_result_by_lease",
+            "claim_endpoint_materialization",
+            "record_endpoint_materialization_result",
+        )
+        if not all(
+            callable(getattr(workflow_repository, method_name, None))
+            for method_name in endpoint_materialization_repository_methods
+        ):
+            raise ValueError(
+                "workflow planning repository does not implement protected endpoint "
+                "materializations; inject "
+                "workflow_event_physical_transport_endpoint_materialization_service explicitly"
+            )
+        endpoint_materialization_repository = cast(
+            WorkflowEventPhysicalTransportEndpointMaterializationRepository,
+            workflow_repository,
+        )
+        endpoint_materializer = (
+            SyntheticWorkflowPhysicalTransportEndpointMaterializer()
+            if resolved_settings.environment == "development"
+            else UnavailableWorkflowPhysicalTransportEndpointMaterializer()
+        )
+        resolved_endpoint_materialization_service = (
+            WorkflowEventPhysicalTransportEndpointMaterializationService(
+                repository=endpoint_materialization_repository,
+                materializer=endpoint_materializer,
+                audit_sink=resolved_audit_sink,
+            )
+        )
+    else:
+        resolved_endpoint_materialization_service = (
+            workflow_event_physical_transport_endpoint_materialization_service
+        )
     configured_transport_route_selection_heads = (
         _deployment_event_transport_route_selection_heads(
             resolved_settings,
@@ -6468,6 +6523,12 @@ def create_app(
         )
         app.state.workflow_endpoint_resolution_authorization_lease_repository = (
             resolved_endpoint_resolution_authorization_lease_service.repository
+        )
+        app.state.workflow_endpoint_materialization_service = (
+            resolved_endpoint_materialization_service
+        )
+        app.state.workflow_endpoint_materialization_repository = (
+            resolved_endpoint_materialization_service.repository
         )
         app.state.workflow_transport_route_selection_heads = (
             configured_transport_route_selection_heads
