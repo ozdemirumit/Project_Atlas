@@ -2165,7 +2165,7 @@ export default function WorkflowPlanningWorkspace({
           <div>
             <p className="eyebrow">PROTECTED CREDENTIAL EVIDENCE</p>
             <h2 id="workflow-credential-materialization-title">
-              Credential materialization attempts and results
+              Credential materialization outcomes
             </h2>
           </div>
           <span>Read only</span>
@@ -2210,45 +2210,44 @@ export default function WorkflowPlanningWorkspace({
         )}
         {credentialMaterializationQuery.isSuccess &&
           credentialMaterializationQuery.data
-            .physical_transport_credential_materialization_attempts.length === 0 && (
+            .physical_transport_credential_materializations.length === 0 && (
             <div className="workflow-empty-state" role="status">
               <Database size={19} />
-              <span>No credential materialization attempts are recorded in this scope.</span>
+              <span>No credential materialization outcomes are recorded in this scope.</span>
             </div>
           )}
         {credentialMaterializationQuery.isSuccess &&
           credentialMaterializationQuery.data
-            .physical_transport_credential_materialization_attempts.length > 0 && (
+            .physical_transport_credential_materializations.length > 0 && (
             <ol
               className="workflow-step-preview workflow-physical-route-binding-list"
-              aria-label="Credential materialization attempts and results"
+              aria-label="Credential materialization outcomes"
             >
-              {credentialMaterializationQuery.data.physical_transport_credential_materialization_attempts.map(
-                (attempt) => {
-                  const result =
-                    credentialMaterializationQuery.data.physical_transport_credential_materialization_results.find(
-                      (candidate) => candidate.attempt_id === attempt.attempt_id,
-                    );
-                  const outcomeLabel = result
-                    ? result.state === "materialized_protected"
+              {credentialMaterializationQuery.data.physical_transport_credential_materializations.map(
+                (materialization) => {
+                  const outcomeLabel =
+                    materialization.outcome === "materialized_protected"
                       ? "Protected result recorded"
-                      : "Materialization failed"
-                    : "No known result";
+                      : materialization.outcome === "failed_closed_consumed"
+                        ? "Materialization failed closed"
+                        : "Outcome uncertain";
                   return (
-                    <li key={attempt.attempt_id}>
-                      {result?.state === "materialized_protected" ? (
+                    <li key={materialization.materialization_id}>
+                      {materialization.outcome === "materialized_protected" ? (
                         <ShieldCheck size={18} />
                       ) : (
                         <Ban size={18} />
                       )}
                       <div>
                         <strong>
-                          <code title={attempt.attempt_id}>
-                            {safeHolderIdentifier(attempt.attempt_id)}
+                          <code title={materialization.materialization_id}>
+                            {safeHolderIdentifier(materialization.materialization_id)}
                           </code>
                           <span
                             className={`state-badge ${
-                              result?.state === "materialized_protected" ? "neutral" : "warning"
+                              materialization.outcome === "materialized_protected"
+                                ? "neutral"
+                                : "warning"
                             }`}
                           >
                             {outcomeLabel}
@@ -2256,60 +2255,37 @@ export default function WorkflowPlanningWorkspace({
                         </strong>
                         <div className="workflow-physical-route-binding-grid">
                           <span>
-                            Materialization <code title={attempt.materialization_id}>{safeHolderIdentifier(attempt.materialization_id)}</code>
+                            Authorization lease <code title={materialization.lease_id}>{safeHolderIdentifier(materialization.lease_id)}</code>
                           </span>
                           <span>
-                            Consumption claim <code title={attempt.consumption_claim_id}>{safeHolderIdentifier(attempt.consumption_claim_id)}</code>
+                            Freshness admission <code title={materialization.freshness_admission_id}>{safeHolderIdentifier(materialization.freshness_admission_id)}</code>
                           </span>
                           <span>
-                            Authorization lease <code title={attempt.authorization_lease_id}>{safeHolderIdentifier(attempt.authorization_lease_id)}</code>
+                            Assignment revision <code title={materialization.assignment_revision}>{safeHolderIdentifier(materialization.assignment_revision)}</code>
                           </span>
                           <span>
-                            Freshness admission <code title={attempt.freshness_admission_id}>{safeHolderIdentifier(attempt.freshness_admission_id)}</code>
+                            Credential generation {materialization.credential_generation} | rotation epoch {materialization.rotation_epoch}
                           </span>
                           <span>
-                            Assignment snapshot <code title={attempt.credential_assignment_snapshot_id}>{safeHolderIdentifier(attempt.credential_assignment_snapshot_id)}</code>
+                            Organization {materialization.scope.organization_id} | environment {materialization.scope.environment_id} | site {materialization.scope.site_id}
                           </span>
                           <span>
-                            Assignment <code title={attempt.assignment_id}>{safeHolderIdentifier(attempt.assignment_id)}</code> | revision {attempt.assignment_revision}
+                            Accessor workload <code title={materialization.accessor_subject_id}>{safeHolderIdentifier(materialization.accessor_subject_id)}</code>
                           </span>
                           <span>
-                            Credential generation {attempt.credential_generation} | rotation epoch {attempt.rotation_epoch}
+                            Policy <code title={materialization.policy_id}>{safeHolderIdentifier(materialization.policy_id)}</code> v{materialization.policy_version}
                           </span>
                           <span>
-                            Organization {attempt.scope.organization_id} | environment {attempt.scope.environment_id} | site {attempt.scope.site_id}
+                            Consumed {formatTimestamp(materialization.consumed_at)} | lease consumed true
                           </span>
                           <span>
-                            Accessor workload <code title={attempt.accessor_subject_id}>{safeHolderIdentifier(attempt.accessor_subject_id)}</code>
+                            Recorded {materialization.recorded_at === null ? "No known result" : formatTimestamp(materialization.recorded_at)}
                           </span>
                           <span>
-                            Policy <code title={attempt.policy_id}>{safeHolderIdentifier(attempt.policy_id)}</code> v{attempt.policy_version}
+                            Protected storage verified {String(materialization.protected_storage_verified)} | raw credential disclosed false
                           </span>
-                          <span>Started {formatTimestamp(attempt.started_at)}</span>
-                          <span>Freshness valid until {formatTimestamp(attempt.freshness_valid_until)}</span>
-                          <span>Lease valid until {formatTimestamp(attempt.lease_valid_until)}</span>
-                          {result && (
-                            <>
-                              <span>Completed {formatTimestamp(result.completed_at)}</span>
-                              <span>
-                                Usable until {result.usable_until === null ? "Not applicable" : formatTimestamp(result.usable_until)}
-                              </span>
-                              <span>
-                                Failure class {result.failure_class === null ? "None" : readableKind(result.failure_class)}
-                              </span>
-                              <span>
-                                Materializer <code title={result.materializer_id}>{safeHolderIdentifier(result.materializer_id)}</code> v{result.materializer_version}
-                              </span>
-                              <span>
-                                Protected artifact revoked {String(result.protected_artifact_revoked)} | cleanup confirmed true
-                              </span>
-                              <span>
-                                Result integrity <code title={result.integrity_reference}>{safeHolderIdentifier(result.integrity_reference)}</code>
-                              </span>
-                            </>
-                          )}
                           <span>
-                            Attempt integrity <code title={attempt.integrity_reference}>{safeHolderIdentifier(attempt.integrity_reference)}</code>
+                            Integrity reference <code title={materialization.integrity_reference}>{safeHolderIdentifier(materialization.integrity_reference)}</code>
                           </span>
                           <span className="workflow-physical-route-binding-authority">
                             Authority endpoint resolution false | protected artifact access false |

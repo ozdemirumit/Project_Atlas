@@ -944,24 +944,12 @@ def _raise_physical_transport_endpoint_materialization(
 def _raise_physical_transport_credential_materialization(
     error: WorkflowEventPhysicalTransportCredentialMaterializationError,
 ) -> NoReturn:
-    if error.code.endswith("_invalid") or error.code.endswith("_required"):
-        status, title = 422, "Workflow credential materialization request invalid"
-    elif "unavailable" in error.code or "persistence" in error.code:
-        status, title = 503, "Workflow credential materialization service unavailable"
-    else:
-        status, title = 409, "Workflow credential materialization unavailable"
     raise AtlasError(
-        status=status,
-        code=error.code,
-        title=title,
+        status=409,
+        code="workflow_credential_materialization_unavailable",
+        title="Workflow credential materialization unavailable",
         detail="The credential materialization request cannot be completed.",
-        retryable=(
-            status == 503
-            and not isinstance(
-                error,
-                WorkflowEventPhysicalTransportCredentialMaterializationUncertainError,
-            )
-        ),
+        retryable=False,
     ) from error
 
 

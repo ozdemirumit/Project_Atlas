@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 from test_workflow_credential_materializations import fixture
@@ -32,6 +33,7 @@ from atlas.modules.workflows.application import (
     WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_ACCESSOR_AUDIENCE,
     WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_ACCESSOR_SUBJECT,
     WORKFLOW_TRANSPORT_PROFILE_REGISTRY_AUDIENCE,
+    WorkflowEventPhysicalTransportCredentialMaterializationError,
 )
 from atlas.modules.workflows.domain import (
     code_owned_workflow_event_physical_transport_credential_materialization_policy,
@@ -233,3 +235,51 @@ def test_post_rejects_browser_pat_wrong_workload_and_extra_fields() -> None:
     assert extra.status_code == 422
     assert "private-reference-value" not in extra.text.casefold()
     assert api_token not in pat.text
+
+
+def test_post_maps_internal_failures_to_one_non_oracle_error() -> None:
+    service, _, _, audit_sink, lease = asyncio.run(fixture())
+    workload_service, token = _credential_accessor_workload()
+    materialize = AsyncMock(
+        side_effect=[
+            WorkflowEventPhysicalTransportCredentialMaterializationError(
+                "credential_materialization_lease_not_found"
+            ),
+            WorkflowEventPhysicalTransportCredentialMaterializationError(
+                "credential_materialization_evidence_invalid"
+            ),
+            WorkflowEventPhysicalTransportCredentialMaterializationError(
+                "credential_materialization_persistence_unavailable"
+            ),
+        ]
+    )
+    app = create_app(
+        _settings().model_copy(update={"development_organization_id": "organization.atlas"}),
+        audit_sink=audit_sink,
+        workload_identity_service=workload_service,
+        workflow_event_physical_transport_credential_materialization_service=service,
+    )
+    headers = _workload_headers(
+        token,
+        WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_ACCESSOR_AUDIENCE,
+    )
+
+    with patch.object(service, "materialize", materialize), TestClient(app) as client:
+        responses = [client.post(ENDPOINT, json=_payload(lease), headers=headers) for _ in range(3)]
+
+    expected = {
+        "code": "workflow_credential_materialization_unavailable",
+        "title": "Workflow credential materialization unavailable",
+        "detail": "The credential materialization request cannot be completed.",
+        "retryable": False,
+    }
+    for response in responses:
+        assert response.status_code == 409
+        body = response.json()
+        assert {key: body[key] for key in expected} == expected
+        assert "not_found" not in response.text
+        assert "evidence_invalid" not in response.text
+        assert "persistence" not in response.text
+        assert response.headers["Cache-Control"] == "no-store, max-age=0"
+        assert response.headers["Referrer-Policy"] == "no-referrer"
+        _assert_no_step_up_language(response.text)

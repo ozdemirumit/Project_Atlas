@@ -958,65 +958,29 @@ export type WorkflowPhysicalTransportCredentialMaterializationAuthority = {
   infrastructure_mutation_authorized: false;
 };
 
-export type WorkflowPhysicalTransportCredentialMaterializationAttempt = {
-  attempt_id: string;
+export type WorkflowPhysicalTransportCredentialMaterialization = {
   materialization_id: string;
-  consumption_claim_id: string;
-  authorization_lease_id: string;
+  lease_id: string;
   freshness_admission_id: string;
-  credential_assignment_snapshot_id: string;
-  assignment_id: string;
   assignment_revision: string;
   credential_generation: number;
   rotation_epoch: number;
-  scope: WorkflowRunPlan["scope"];
-  accessor_subject_id: string;
   policy_id: string;
   policy_version: "1.0";
-  started_at: string;
-  freshness_valid_until: string;
-  lease_valid_until: string;
-  state: "materialization_started";
-  authority: WorkflowPhysicalTransportCredentialMaterializationAuthority;
-  integrity_reference: string;
-};
-
-export type WorkflowPhysicalTransportCredentialMaterializationResult = {
-  materialization_id: string;
-  attempt_id: string;
-  consumption_claim_id: string;
-  authorization_lease_id: string;
-  freshness_admission_id: string;
-  credential_assignment_snapshot_id: string;
-  assignment_id: string;
-  assignment_revision: string;
-  credential_generation: number;
-  rotation_epoch: number;
   scope: WorkflowRunPlan["scope"];
   accessor_subject_id: string;
-  policy_id: string;
-  policy_version: "1.0";
-  materializer_id: string;
-  materializer_version: string;
-  state: "materialized_protected" | "materialization_failed";
-  failure_class:
-    | "sealed_lineage_rejected"
-    | "credential_source_invalid"
-    | "policy_limit_exceeded"
-    | "deadline_expired"
-    | "protected_artifact_revoked"
-    | null;
-  completed_at: string;
-  usable_until: string | null;
-  protected_artifact_revoked: boolean;
-  cleanup_confirmed: true;
+  consumed_at: string;
+  recorded_at: string | null;
+  outcome: "materialized_protected" | "failed_closed_consumed" | "uncertain_consumed";
+  lease_consumed: true;
+  protected_storage_verified: boolean;
+  raw_credential_disclosed: false;
   authority: WorkflowPhysicalTransportCredentialMaterializationAuthority;
   integrity_reference: string;
 };
 
 export type WorkflowPhysicalTransportCredentialMaterializationInventory = {
-  physical_transport_credential_materialization_attempts: WorkflowPhysicalTransportCredentialMaterializationAttempt[];
-  physical_transport_credential_materialization_results: WorkflowPhysicalTransportCredentialMaterializationResult[];
+  physical_transport_credential_materializations: WorkflowPhysicalTransportCredentialMaterialization[];
   server_time: string;
   durable: boolean;
 };
@@ -1871,57 +1835,28 @@ const physicalTransportCredentialMaterializationAuthorityFields = [
   "execution_authorized",
   "infrastructure_mutation_authorized",
 ] as const;
-const physicalTransportCredentialMaterializationAttemptFields = [
-  "attempt_id",
+const physicalTransportCredentialMaterializationFields = [
   "materialization_id",
-  "consumption_claim_id",
-  "authorization_lease_id",
+  "lease_id",
   "freshness_admission_id",
-  "credential_assignment_snapshot_id",
-  "assignment_id",
   "assignment_revision",
   "credential_generation",
   "rotation_epoch",
-  "scope",
-  "accessor_subject_id",
   "policy_id",
   "policy_version",
-  "started_at",
-  "freshness_valid_until",
-  "lease_valid_until",
-  "state",
-  "authority",
-  "integrity_reference",
-] as const;
-const physicalTransportCredentialMaterializationResultFields = [
-  "materialization_id",
-  "attempt_id",
-  "consumption_claim_id",
-  "authorization_lease_id",
-  "freshness_admission_id",
-  "credential_assignment_snapshot_id",
-  "assignment_id",
-  "assignment_revision",
-  "credential_generation",
-  "rotation_epoch",
   "scope",
   "accessor_subject_id",
-  "policy_id",
-  "policy_version",
-  "materializer_id",
-  "materializer_version",
-  "state",
-  "failure_class",
-  "completed_at",
-  "usable_until",
-  "protected_artifact_revoked",
-  "cleanup_confirmed",
+  "consumed_at",
+  "recorded_at",
+  "outcome",
+  "lease_consumed",
+  "protected_storage_verified",
+  "raw_credential_disclosed",
   "authority",
   "integrity_reference",
 ] as const;
 const physicalTransportCredentialMaterializationInventoryFields = [
-  "physical_transport_credential_materialization_attempts",
-  "physical_transport_credential_materialization_results",
+  "physical_transport_credential_materializations",
   "server_time",
   "durable",
 ] as const;
@@ -3368,116 +3303,55 @@ function hasZeroPhysicalTransportCredentialMaterializationAuthority(
   );
 }
 
-function isPhysicalTransportCredentialMaterializationAttempt(
+function isPhysicalTransportCredentialMaterialization(
   value: unknown,
   scope: WorkflowScope,
   serverTime: string,
-): value is WorkflowPhysicalTransportCredentialMaterializationAttempt {
+): value is WorkflowPhysicalTransportCredentialMaterialization {
   if (
     !isObject(value) ||
-    !hasExactKeys(value, physicalTransportCredentialMaterializationAttemptFields) ||
+    !hasExactKeys(value, physicalTransportCredentialMaterializationFields) ||
     !isExactScope(value.scope) ||
     containsCredentialMaterial(value) ||
-    !isTimestamp(value.started_at) ||
-    !isTimestamp(value.freshness_valid_until) ||
-    !isTimestamp(value.lease_valid_until)
+    !isTimestamp(value.consumed_at) ||
+    (value.recorded_at !== null && !isTimestamp(value.recorded_at))
   ) {
     return false;
   }
-  const attemptScope = value.scope;
-  const startedAt = Date.parse(value.started_at);
-  const freshnessValidUntil = Date.parse(value.freshness_valid_until);
-  const leaseValidUntil = Date.parse(value.lease_valid_until);
+  const materializationScope = value.scope;
+  const consumedAt = Date.parse(value.consumed_at);
+  const recordedAt = value.recorded_at === null ? null : Date.parse(value.recorded_at);
+  const outcomeIsConsistent =
+    (value.outcome === "materialized_protected" &&
+      recordedAt !== null &&
+      value.protected_storage_verified === true) ||
+    (value.outcome === "failed_closed_consumed" &&
+      recordedAt !== null &&
+      value.protected_storage_verified === false) ||
+    (value.outcome === "uncertain_consumed" &&
+      recordedAt === null &&
+      value.protected_storage_verified === false);
   return (
-    isStableIdentifier(value.attempt_id) &&
     isStableIdentifier(value.materialization_id) &&
-    isStableIdentifier(value.consumption_claim_id) &&
-    isStableIdentifier(value.authorization_lease_id) &&
+    isStableIdentifier(value.lease_id) &&
     isStableIdentifier(value.freshness_admission_id) &&
-    isStableIdentifier(value.credential_assignment_snapshot_id) &&
-    isStableIdentifier(value.assignment_id) &&
     isStableIdentifier(value.assignment_revision) &&
     Number.isSafeInteger(value.credential_generation) &&
     Number(value.credential_generation) >= 1 &&
     Number.isSafeInteger(value.rotation_epoch) &&
     Number(value.rotation_epoch) >= 1 &&
-    attemptScope.organization_id === scope.organizationId &&
-    attemptScope.environment_id === scope.environmentId &&
-    attemptScope.site_id === scope.siteId &&
-    isStableIdentifier(value.accessor_subject_id) &&
-    isStableIdentifier(value.policy_id) &&
+    value.policy_id === "policy.workflow-event-physical-transport-credential-materialization" &&
     value.policy_version === "1.0" &&
-    startedAt <= Date.parse(serverTime) &&
-    startedAt < freshnessValidUntil &&
-    startedAt < leaseValidUntil &&
-    value.state === "materialization_started" &&
-    hasZeroPhysicalTransportCredentialMaterializationAuthority(value.authority) &&
-    isStableIdentifier(value.integrity_reference)
-  );
-}
-
-const credentialMaterializationFailureClasses = new Set([
-  "sealed_lineage_rejected",
-  "credential_source_invalid",
-  "policy_limit_exceeded",
-  "deadline_expired",
-  "protected_artifact_revoked",
-]);
-
-function isPhysicalTransportCredentialMaterializationResult(
-  value: unknown,
-  scope: WorkflowScope,
-  serverTime: string,
-): value is WorkflowPhysicalTransportCredentialMaterializationResult {
-  if (
-    !isObject(value) ||
-    !hasExactKeys(value, physicalTransportCredentialMaterializationResultFields) ||
-    !isExactScope(value.scope) ||
-    containsCredentialMaterial(value) ||
-    !isTimestamp(value.completed_at) ||
-    (value.usable_until !== null && !isTimestamp(value.usable_until))
-  ) {
-    return false;
-  }
-  const resultScope = value.scope;
-  const completedAt = Date.parse(value.completed_at);
-  const usableUntil = value.usable_until === null ? null : Date.parse(value.usable_until);
-  const isSuccess =
-    value.state === "materialized_protected" &&
-    value.failure_class === null &&
-    usableUntil !== null &&
-    completedAt < usableUntil &&
-    value.protected_artifact_revoked === false;
-  const isKnownFailure =
-    value.state === "materialization_failed" &&
-    typeof value.failure_class === "string" &&
-    credentialMaterializationFailureClasses.has(value.failure_class) &&
-    usableUntil === null &&
-    value.protected_artifact_revoked === true;
-  return (
-    isStableIdentifier(value.materialization_id) &&
-    isStableIdentifier(value.attempt_id) &&
-    isStableIdentifier(value.consumption_claim_id) &&
-    isStableIdentifier(value.authorization_lease_id) &&
-    isStableIdentifier(value.freshness_admission_id) &&
-    isStableIdentifier(value.credential_assignment_snapshot_id) &&
-    isStableIdentifier(value.assignment_id) &&
-    isStableIdentifier(value.assignment_revision) &&
-    Number.isSafeInteger(value.credential_generation) &&
-    Number(value.credential_generation) >= 1 &&
-    Number.isSafeInteger(value.rotation_epoch) &&
-    Number(value.rotation_epoch) >= 1 &&
-    resultScope.organization_id === scope.organizationId &&
-    resultScope.environment_id === scope.environmentId &&
-    resultScope.site_id === scope.siteId &&
+    materializationScope.organization_id === scope.organizationId &&
+    materializationScope.environment_id === scope.environmentId &&
+    materializationScope.site_id === scope.siteId &&
     isStableIdentifier(value.accessor_subject_id) &&
-    isStableIdentifier(value.policy_id) &&
-    value.policy_version === "1.0" &&
-    isStableIdentifier(value.materializer_id) &&
-    isIdentifier(value.materializer_version) &&
-    completedAt <= Date.parse(serverTime) &&
-    (isSuccess || isKnownFailure) &&
-    value.cleanup_confirmed === true &&
+    consumedAt <= Date.parse(serverTime) &&
+    (recordedAt === null ||
+      (recordedAt >= consumedAt && recordedAt <= Date.parse(serverTime))) &&
+    outcomeIsConsistent &&
+    value.lease_consumed === true &&
+    value.raw_credential_disclosed === false &&
     hasZeroPhysicalTransportCredentialMaterializationAuthority(value.authority) &&
     isStableIdentifier(value.integrity_reference)
   );
@@ -4539,10 +4413,8 @@ export async function listWorkflowPhysicalTransportCredentialMaterializations(in
     !isObject(data) ||
     !hasExactKeys(data, physicalTransportCredentialMaterializationInventoryFields) ||
     containsCredentialMaterial(data) ||
-    !Array.isArray(data.physical_transport_credential_materialization_attempts) ||
-    data.physical_transport_credential_materialization_attempts.length > 256 ||
-    !Array.isArray(data.physical_transport_credential_materialization_results) ||
-    data.physical_transport_credential_materialization_results.length > 256 ||
+    !Array.isArray(data.physical_transport_credential_materializations) ||
+    data.physical_transport_credential_materializations.length > 256 ||
     !isTimestamp(data.server_time) ||
     typeof data.durable !== "boolean"
   ) {
@@ -4553,11 +4425,8 @@ export async function listWorkflowPhysicalTransportCredentialMaterializations(in
   }
   const serverTime = data.server_time;
   if (
-    !data.physical_transport_credential_materialization_attempts.every((attempt) =>
-      isPhysicalTransportCredentialMaterializationAttempt(attempt, input.scope, serverTime),
-    ) ||
-    !data.physical_transport_credential_materialization_results.every((result) =>
-      isPhysicalTransportCredentialMaterializationResult(result, input.scope, serverTime),
+    !data.physical_transport_credential_materializations.every((materialization) =>
+      isPhysicalTransportCredentialMaterialization(materialization, input.scope, serverTime),
     )
   ) {
     throw new ApiRequestError(
@@ -4565,44 +4434,23 @@ export async function listWorkflowPhysicalTransportCredentialMaterializations(in
       response.status,
     );
   }
-  const attemptIds = new Set<string>();
   const materializationIds = new Set<string>();
   const leaseIds = new Set<string>();
-  for (const attempt of data.physical_transport_credential_materialization_attempts) {
+  for (const materialization of data.physical_transport_credential_materializations) {
     if (
-      !isObject(attempt) ||
-      typeof attempt.attempt_id !== "string" ||
-      typeof attempt.materialization_id !== "string" ||
-      typeof attempt.authorization_lease_id !== "string" ||
-      attemptIds.has(attempt.attempt_id) ||
-      materializationIds.has(attempt.materialization_id) ||
-      leaseIds.has(attempt.authorization_lease_id)
+      !isObject(materialization) ||
+      typeof materialization.materialization_id !== "string" ||
+      typeof materialization.lease_id !== "string" ||
+      materializationIds.has(materialization.materialization_id) ||
+      leaseIds.has(materialization.lease_id)
     ) {
       throw new ApiRequestError(
         "Workflow physical transport credential materialization response was unsafe",
         response.status,
       );
     }
-    attemptIds.add(attempt.attempt_id);
-    materializationIds.add(attempt.materialization_id);
-    leaseIds.add(attempt.authorization_lease_id);
-  }
-  const resultAttemptIds = new Set<string>();
-  for (const result of data.physical_transport_credential_materialization_results) {
-    if (
-      !isObject(result) ||
-      typeof result.attempt_id !== "string" ||
-      typeof result.materialization_id !== "string" ||
-      !attemptIds.has(result.attempt_id) ||
-      !materializationIds.has(result.materialization_id) ||
-      resultAttemptIds.has(result.attempt_id)
-    ) {
-      throw new ApiRequestError(
-        "Workflow physical transport credential materialization response was unsafe",
-        response.status,
-      );
-    }
-    resultAttemptIds.add(result.attempt_id);
+    materializationIds.add(materialization.materialization_id);
+    leaseIds.add(materialization.lease_id);
   }
   return data as WorkflowPhysicalTransportCredentialMaterializationInventory;
 }
