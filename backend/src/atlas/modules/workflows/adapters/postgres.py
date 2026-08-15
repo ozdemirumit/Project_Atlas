@@ -3178,13 +3178,30 @@ class PostgreSQLWorkflowPlanRepository:
                 return WorkflowEventPhysicalTransportCredentialMaterializationClaimResult(
                     statuses.EVIDENCE_CONFLICT, None, None, None
                 )
+            try:
+                await request.required_precommit_audit()
+            except Exception:
+                await session.rollback()
+                return WorkflowEventPhysicalTransportCredentialMaterializationClaimResult(
+                    statuses.PRECOMMIT_AUDIT_FAILED, None, None, None
+                )
+            commit_observed_at = cast(
+                datetime, await session.scalar(select(func.clock_timestamp()))
+            )
+            if not self._credential_materialization_evidence_matches(
+                *locked, request=request, observed_at=commit_observed_at
+            ):
+                await session.rollback()
+                return WorkflowEventPhysicalTransportCredentialMaterializationClaimResult(
+                    statuses.EVIDENCE_CONFLICT, None, None, None
+                )
             lease_row = locked[4]
             assert lease_row is not None
-            claim = self._credential_materialization_claim(request, claimed_at=observed_at)
+            claim = self._credential_materialization_claim(request, claimed_at=commit_observed_at)
             attempt = self._credential_materialization_attempt(
                 request,
                 claim=claim,
-                started_at=observed_at,
+                started_at=commit_observed_at,
                 lease_valid_until=lease_row.valid_until,
             )
             try:
@@ -11397,8 +11414,8 @@ class PostgreSQLWorkflowPlanRepository:
         result = request.result
         policy = code_owned_workflow_event_physical_transport_credential_materialization_policy()
         return bool(
-            lease.issued_at <= observed_at < lease.valid_until
-            and freshness.evaluated_at <= observed_at < freshness.valid_until
+            lease.issued_at <= result.completed_at < lease.valid_until
+            and freshness.evaluated_at <= result.completed_at < freshness.valid_until
             and result.completed_at < lease.valid_until
             and result.completed_at < freshness.valid_until
             and (result.usable_until is None or result.usable_until <= lease.valid_until)
@@ -12374,6 +12391,7 @@ class PostgreSQLWorkflowPlanRepository:
             or request.expected_materialization_policy_digest != policy.canonical_digest
             or request.irreversible_consumption_acknowledged is not True
             or request.uncertain_outcome_requires_new_authorization_acknowledged is not True
+            or not callable(request.required_precommit_audit)
         ):
             raise WorkflowEventPhysicalTransportCredentialMaterializationError(
                 "credential_materialization_request_invalid"

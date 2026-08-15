@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -40,6 +41,7 @@ class WorkflowEventPhysicalTransportCredentialMaterializationClaimStatus(StrEnum
     IDEMPOTENCY_CONFLICT = "idempotency_conflict"
     ALREADY_CONSUMED = "already_consumed"
     EVIDENCE_CONFLICT = "evidence_conflict"
+    PRECOMMIT_AUDIT_FAILED = "precommit_audit_failed"
 
 
 class WorkflowEventPhysicalTransportCredentialMaterializationResultStatus(StrEnum):
@@ -85,6 +87,7 @@ class WorkflowEventPhysicalTransportCredentialMaterializationClaimRequest:
     request_fingerprint: str
     irreversible_consumption_acknowledged: bool
     uncertain_outcome_requires_new_authorization_acknowledged: bool
+    required_precommit_audit: Callable[[], Awaitable[None]]
 
 
 @dataclass(frozen=True, slots=True)

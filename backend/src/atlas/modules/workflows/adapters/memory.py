@@ -2217,6 +2217,26 @@ class InMemoryWorkflowPlanRepository:
                 return WorkflowEventPhysicalTransportCredentialMaterializationClaimResult(
                     statuses.EVIDENCE_CONFLICT, None, None, None
                 )
+            try:
+                await request.required_precommit_audit()
+            except Exception:
+                return WorkflowEventPhysicalTransportCredentialMaterializationClaimResult(
+                    statuses.PRECOMMIT_AUDIT_FAILED, None, None, None
+                )
+            observed_at = datetime.now(UTC)
+            head = self._memory_credential_assignment_head(request.expected_assignment_id)
+            if not self._credential_materialization_evidence_matches(
+                lease=lease,
+                freshness=freshness,
+                binding=binding,
+                snapshot=snapshot,
+                head=head,
+                request=request,
+                observed_at=observed_at,
+            ):
+                return WorkflowEventPhysicalTransportCredentialMaterializationClaimResult(
+                    statuses.EVIDENCE_CONFLICT, None, None, None
+                )
             assert lease is not None
             claim = self._credential_materialization_claim(request, claimed_at=observed_at)
             attempt = self._credential_materialization_attempt(
@@ -4615,8 +4635,8 @@ class InMemoryWorkflowPlanRepository:
         assert head is not None
         result = request.result
         return bool(
-            lease.issued_at <= observed_at < lease.valid_until
-            and freshness.evaluated_at <= observed_at < freshness.valid_until
+            lease.issued_at <= result.completed_at < lease.valid_until
+            and freshness.evaluated_at <= result.completed_at < freshness.valid_until
             and result.completed_at < lease.valid_until
             and result.completed_at < freshness.valid_until
             and (result.usable_until is None or result.usable_until <= lease.valid_until)

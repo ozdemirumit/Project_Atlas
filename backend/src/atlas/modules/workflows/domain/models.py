@@ -4736,6 +4736,8 @@ class WorkflowEventPhysicalTransportCredentialMaterializationAttempt:
             for value in (self.started_at, self.freshness_valid_until, self.lease_valid_until)
         ):
             raise ValueError("credential materialization attempt times must be aware")
+        if not self.started_at < min(self.freshness_valid_until, self.lease_valid_until):
+            raise ValueError("credential materialization attempt starts outside validity window")
         if (
             self.state
             is not (
@@ -4817,6 +4819,7 @@ class WorkflowEventPhysicalTransportCredentialMaterializationInstruction:
     protected_artifact_schema_id: str
     protected_artifact_schema_version: str
     protected_artifact_profile_digest: str
+    started_at: datetime
     lease_valid_until: datetime
     canonical_digest: str
 
@@ -4858,8 +4861,10 @@ class WorkflowEventPhysicalTransportCredentialMaterializationInstruction:
             raise ValueError("credential materialization instruction rank must be positive")
         if self.privilege_class != "read-only":
             raise ValueError("credential materialization instruction must remain least privilege")
-        if self.lease_valid_until.tzinfo is None:
+        if self.started_at.tzinfo is None or self.lease_valid_until.tzinfo is None:
             raise ValueError("credential materialization instruction deadline must be aware")
+        if self.started_at >= self.lease_valid_until:
+            raise ValueError("credential materialization instruction starts outside lease")
         if self.canonical_digest != canonical_digest(self.digest_payload()):
             raise ValueError("credential materialization instruction canonical digest mismatch")
 

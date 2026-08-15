@@ -88,6 +88,7 @@ def _instruction(
         "protected_artifact_schema_id": policy.protected_artifact_schema_id,
         "protected_artifact_schema_version": policy.protected_artifact_schema_version,
         "protected_artifact_profile_digest": policy.protected_artifact_profile_digest,
+        "started_at": NOW - timedelta(milliseconds=50),
         "lease_valid_until": NOW + timedelta(seconds=15),
     }
     values.update(changes)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Any, cast
@@ -36,6 +37,7 @@ from atlas.modules.workflows.domain import (
     WorkflowEventPhysicalTransportCredentialMaterializationAuthority,
     WorkflowEventPhysicalTransportCredentialMaterializationFailureClass,
     WorkflowEventPhysicalTransportCredentialMaterializationInstruction,
+    WorkflowEventPhysicalTransportCredentialMaterializationPolicy,
     WorkflowEventPhysicalTransportCredentialMaterializationReceipt,
     WorkflowEventPhysicalTransportCredentialMaterializationResult,
     WorkflowEventPhysicalTransportCredentialMaterializationResultState,
@@ -211,6 +213,15 @@ class InMemoryCredentialMaterializationRepository:
                 None,
                 None,
             )
+        try:
+            await request.required_precommit_audit()
+        except Exception:
+            return WorkflowEventPhysicalTransportCredentialMaterializationClaimResult(
+                WorkflowEventPhysicalTransportCredentialMaterializationClaimStatus.PRECOMMIT_AUDIT_FAILED,
+                None,
+                None,
+                None,
+            )
         authority = WorkflowEventPhysicalTransportCredentialMaterializationAuthority()
         claim_values: dict[str, Any] = {
             "claim_id": request.claim_id,
@@ -321,6 +332,8 @@ class ObservingMaterializer:
         self.clock: Callable[[], datetime] = lambda: (
             MATERIALIZATION_NOW + timedelta(milliseconds=100)
         )
+        self.materialized_at_delta = timedelta(milliseconds=10)
+        self.usable_lifetime = timedelta(seconds=1)
         self.cleanup_calls = 0
 
     @property
@@ -366,9 +379,9 @@ class ObservingMaterializer:
             "source_assignment_digest": instruction.source_assignment_digest,
             "credential_generation": instruction.credential_generation,
             "rotation_epoch": instruction.rotation_epoch,
-            "materialized_at": completed_at - timedelta(milliseconds=10) if success else None,
+            "materialized_at": completed_at - self.materialized_at_delta if success else None,
             "completed_at": completed_at,
-            "usable_until": completed_at + timedelta(seconds=1) if success else None,
+            "usable_until": completed_at + self.usable_lifetime if success else None,
             "source_commitment_verified": success,
             "encrypted_at_rest": success,
             "accessor_bound": success,
@@ -473,7 +486,7 @@ async def test_claims_before_materializer_and_records_minimized_success() -> Non
     )
     assert [record.event_type.rsplit(".", 1)[-1] for record in audit.records] == [
         "requested",
-        "claimed",
+        "authorized",
         "completed",
     ]
 
@@ -557,12 +570,67 @@ async def test_audit_failure_respects_irreversible_boundary() -> None:
         await materialize(service, lease)
     assert repository.claims == {}
 
-    claimed = SelectiveAuditSink(fail_suffix=".claimed")
-    service, repository, adapter, _, lease = await fixture(audit=claimed)
+    authorized = SelectiveAuditSink(fail_suffix=".authorized")
+    service, repository, adapter, _, lease = await fixture(audit=authorized)
+    with pytest.raises(WorkflowEventPhysicalTransportCredentialMaterializationError) as error:
+        await materialize(service, lease)
+    assert error.value.code.endswith("_precommit_audit_failed")
+    assert lease.authorization_lease_id not in repository.claims
+    assert adapter.calls == []
+
+
+@pytest.mark.asyncio
+async def test_post_materialization_failures_cleanup_live_artifact() -> None:
+    completed = SelectiveAuditSink(fail_suffix=".completed")
+    service, repository, adapter, _, lease = await fixture(audit=completed)
     with pytest.raises(WorkflowEventPhysicalTransportCredentialMaterializationUncertainError):
         await materialize(service, lease)
     assert lease.authorization_lease_id in repository.claims
-    assert adapter.calls == []
+    assert lease.authorization_lease_id not in repository.results
+    assert adapter.cleanup_calls == 1
+
+    service, repository, adapter, _, lease = await fixture()
+    repository.force_result_conflict = True
+    with pytest.raises(WorkflowEventPhysicalTransportCredentialMaterializationUncertainError):
+        await materialize(service, lease)
+    assert lease.authorization_lease_id not in repository.results
+    assert adapter.cleanup_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_receipt_must_start_after_attempt_and_respect_policy_lifetime() -> None:
+    service, _, adapter, _, lease = await fixture()
+    adapter.materialized_at_delta = timedelta(seconds=2)
+    with pytest.raises(WorkflowEventPhysicalTransportCredentialMaterializationUncertainError):
+        await materialize(service, lease)
+    assert adapter.cleanup_calls == 1
+
+    service, repository, adapter, audit, lease = await fixture()
+    policy_values = service.policy.digest_payload()
+    policy_values["maximum_artifact_lifetime_seconds"] = 1
+    policy = WorkflowEventPhysicalTransportCredentialMaterializationPolicy(
+        **cast(Any, policy_values), canonical_digest=canonical_digest(policy_values)
+    )
+    adapter.usable_lifetime = timedelta(seconds=2)
+    service = WorkflowEventPhysicalTransportCredentialMaterializationService(
+        repository=cast(Any, repository),
+        materializer=adapter,
+        audit_sink=audit,
+        policy=policy,
+    )
+    with pytest.raises(WorkflowEventPhysicalTransportCredentialMaterializationUncertainError):
+        await materialize(service, lease)
+    assert adapter.cleanup_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_attempt_rejects_start_outside_freshness_or_lease_window() -> None:
+    service, repository, _, _, lease = await fixture()
+    result = await materialize(service, lease)
+    attempt = repository.attempts[result.authorization_lease_id]
+    for started_at in (attempt.freshness_valid_until, attempt.lease_valid_until):
+        with pytest.raises(ValueError, match="outside validity window"):
+            replace(attempt, started_at=started_at)
 
 
 def test_public_contract_has_no_secret_retry_or_caller_owned_lineage_fields() -> None:

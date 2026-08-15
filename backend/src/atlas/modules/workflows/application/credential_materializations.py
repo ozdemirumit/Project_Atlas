@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import StrEnum
 from hashlib import sha256
 from typing import Any, NoReturn, cast
@@ -158,6 +158,18 @@ class WorkflowEventPhysicalTransportCredentialMaterializationService:
             authorization_lease_id=authorization_lease_id,
             idempotency_key=idempotency_key,
         )
+
+        async def required_precommit_audit() -> None:
+            await self._audit(
+                context,
+                event_kind="authorized",
+                outcome="authorized",
+                result_code="credential_materialization_lease_consumption_authorized",
+                authorization_lease_id=authorization_lease_id,
+                idempotency_key=idempotency_key,
+                materialization_id=f"workflow-credential-materialization.{seed[:24]}",
+            )
+
         request = WorkflowEventPhysicalTransportCredentialMaterializationClaimRequest(
             claim_id=f"workflow-credential-materialization-claim.{seed[:24]}",
             attempt_id=f"workflow-credential-materialization-attempt.{seed[:24]}",
@@ -202,6 +214,7 @@ class WorkflowEventPhysicalTransportCredentialMaterializationService:
             request_fingerprint=fingerprint,
             irreversible_consumption_acknowledged=True,
             uncertain_outcome_requires_new_authorization_acknowledged=True,
+            required_precommit_audit=required_precommit_audit,
         )
         claimed = await self._repository.claim_credential_materialization(request)
         if (
@@ -226,30 +239,19 @@ class WorkflowEventPhysicalTransportCredentialMaterializationService:
         if claimed.claim is None or claimed.attempt is None or claimed.result is not None:
             self._uncertain("credential_materialization_claim_commit_uncertain")
 
-        try:
-            await self._audit(
-                context,
-                event_kind="claimed",
-                outcome="consumed",
-                result_code="credential_materialization_lease_consumed",
-                authorization_lease_id=authorization_lease_id,
-                idempotency_key=idempotency_key,
-                materialization_id=claimed.attempt.materialization_id,
-            )
-        except Exception as exc:
-            raise WorkflowEventPhysicalTransportCredentialMaterializationUncertainError(
-                "credential_materialization_outcome_uncertain"
-            ) from exc
-
         instruction = self._build_instruction(
             evidence=evidence,
             claim_id=claimed.claim.claim_id,
             attempt_id=claimed.attempt.attempt_id,
             materialization_id=claimed.attempt.materialization_id,
+            started_at=claimed.attempt.started_at,
         )
+        receipt: WorkflowEventPhysicalTransportCredentialMaterializationReceipt | None = None
+        receipt_verified = False
         try:
             receipt = await self._materializer.materialize(instruction)
             await self._verify_receipt(receipt, instruction)
+            receipt_verified = True
             result = self._build_result(
                 evidence=evidence,
                 claim=claimed.claim,
@@ -286,8 +288,12 @@ class WorkflowEventPhysicalTransportCredentialMaterializationService:
                 )
             )
         except WorkflowEventPhysicalTransportCredentialMaterializationUncertainError:
+            if receipt_verified and receipt is not None:
+                await self._cleanup_live_artifact(receipt)
             raise
         except Exception as exc:
+            if receipt_verified and receipt is not None:
+                await self._cleanup_live_artifact(receipt)
             raise WorkflowEventPhysicalTransportCredentialMaterializationUncertainError(
                 "credential_materialization_outcome_uncertain"
             ) from exc
@@ -299,6 +305,8 @@ class WorkflowEventPhysicalTransportCredentialMaterializationService:
             )
             or written.result is None
         ):
+            if receipt is not None:
+                await self._cleanup_live_artifact(receipt)
             self._uncertain("credential_materialization_result_persistence_uncertain")
         return written.result
 
@@ -420,6 +428,7 @@ class WorkflowEventPhysicalTransportCredentialMaterializationService:
         claim_id: str,
         attempt_id: str,
         materialization_id: str,
+        started_at: datetime,
     ) -> WorkflowEventPhysicalTransportCredentialMaterializationInstruction:
         snapshot = evidence.snapshot
         values: dict[str, Any] = {
@@ -459,6 +468,7 @@ class WorkflowEventPhysicalTransportCredentialMaterializationService:
             "protected_artifact_schema_id": self._policy.protected_artifact_schema_id,
             "protected_artifact_schema_version": self._policy.protected_artifact_schema_version,
             "protected_artifact_profile_digest": self._policy.protected_artifact_profile_digest,
+            "started_at": started_at,
             "lease_valid_until": evidence.lease.valid_until,
         }
         return WorkflowEventPhysicalTransportCredentialMaterializationInstruction(
@@ -486,10 +496,20 @@ class WorkflowEventPhysicalTransportCredentialMaterializationService:
             or receipt.source_assignment_digest != instruction.source_assignment_digest
             or receipt.credential_generation != instruction.credential_generation
             or receipt.rotation_epoch != instruction.rotation_epoch
+            or (
+                receipt.materialized_at is not None
+                and receipt.materialized_at < instruction.started_at
+            )
             or receipt.completed_at >= instruction.lease_valid_until
             or (
                 receipt.usable_until is not None
                 and receipt.usable_until > instruction.lease_valid_until
+            )
+            or (
+                receipt.materialized_at is not None
+                and receipt.usable_until is not None
+                and receipt.usable_until - receipt.materialized_at
+                > timedelta(seconds=self._policy.maximum_artifact_lifetime_seconds)
             )
         )
         if invalid:
@@ -502,6 +522,27 @@ class WorkflowEventPhysicalTransportCredentialMaterializationService:
             if cleaned is not True:
                 self._uncertain("credential_materialization_cleanup_uncertain")
             self._uncertain("credential_materialization_receipt_invalid")
+
+    async def _cleanup_live_artifact(
+        self,
+        receipt: WorkflowEventPhysicalTransportCredentialMaterializationReceipt,
+    ) -> None:
+        if (
+            receipt.state
+            is not (
+                WorkflowEventPhysicalTransportCredentialMaterializationResultState
+            ).MATERIALIZED_PROTECTED
+            or receipt.protected_artifact_revoked
+        ):
+            return
+        try:
+            cleaned = await self._materializer.revoke_or_destroy(receipt)
+        except Exception as exc:
+            raise WorkflowEventPhysicalTransportCredentialMaterializationUncertainError(
+                "credential_materialization_cleanup_uncertain"
+            ) from exc
+        if cleaned is not True:
+            self._uncertain("credential_materialization_cleanup_uncertain")
 
     def _build_result(
         self,

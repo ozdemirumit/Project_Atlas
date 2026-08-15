@@ -126,11 +126,26 @@ def test_claim_uses_exact_lock_order_db_time_and_atomic_claim_attempt_pair() -> 
     clock = source.index("clock_timestamp", lock)
     replay = source.index("_credential_materialization_claim_replay", clock)
     evidence = source.index("_credential_materialization_evidence_matches", replay)
-    claim_add = source.index("_credential_materialization_claim_model", evidence)
+    audit = source.index("required_precommit_audit", evidence)
+    second_clock = source.index("clock_timestamp", audit)
+    second_evidence = source.index("_credential_materialization_evidence_matches", second_clock)
+    claim_add = source.index("_credential_materialization_claim_model", second_evidence)
     flush = source.index("await session.flush()", claim_add)
     attempt_add = source.index("_credential_materialization_attempt_model", flush)
     commit = source.index("await session.commit()", attempt_add)
-    assert lock < clock < replay < evidence < claim_add < flush < attempt_add < commit
+    assert (
+        lock
+        < clock
+        < replay
+        < evidence
+        < audit
+        < second_clock
+        < second_evidence
+        < claim_add
+        < flush
+        < attempt_add
+        < commit
+    )
     assert "func.now" not in source
 
     lock_source = inspect.getsource(
@@ -165,6 +180,14 @@ def test_result_relocks_retimes_appends_and_never_reopens_claim() -> None:
     assert "func.now" not in source
     assert "update(" not in source
     assert "delete(" not in source
+    evidence_source = inspect.getsource(
+        PostgreSQLWorkflowPlanRepository._credential_materialization_result_evidence_matches
+    )
+    assert "lease.issued_at <= result.completed_at < lease.valid_until" in evidence_source
+    assert (
+        "freshness.evaluated_at <= result.completed_at < freshness.valid_until" in evidence_source
+    )
+    assert "lease.issued_at <= observed_at < lease.valid_until" not in evidence_source
 
 
 def test_migration_is_linear_three_table_append_only_evidence() -> None:
