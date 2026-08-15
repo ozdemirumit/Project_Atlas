@@ -4,14 +4,49 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-210 |
-| Title | Atomic single-use target-context access lease consumption and paired protected artifact opening without delivery or runtime authority |
-| Status | Pull request opened; exact-head CI pending |
-| Branch | `agent/protected-target-context-artifact-opening` |
-| Pull Request | [#223](https://github.com/ozdemirumit/Project_Atlas/pull/223) |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-152, ADR-157, ADR-158, ADR-159, ADR-160 |
+| Task ID | ATLAS-IMP-211 |
+| Title | Immutable protected target-context capsule consumer binding without handoff, unsealing, delivery, network or runtime authority |
+| Status | In progress; documentation slice defined |
+| Branch | `agent/protected-capsule-consumer-binding` |
+| Pull Request | Not opened |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-158, ADR-159, ADR-160, ADR-161 |
 | Last Updated | 2026-08-16 |
-| Next Action | Pass exact-head PostgreSQL CI for PR #223, merge by SHA and verify independent `main` CI |
+| Next Action | Implement the ADR-161 domain, application, PostgreSQL, API, security and read-only UI contracts |
+
+### ATLAS-IMP-211 Scope Rationale
+
+- IMP-210 creates one sealed, short-lived and explicitly non-bearer target-context capsule, but it
+  deliberately grants no handoff, unsealing, delivery, network or runtime authority.
+- The next smallest safe boundary binds one successful opening result to one server-derived future
+  consumer workload, versioned contract, code-owned purpose and exact pending event lineage.
+- Binding is immutable evidence for a later independently authorized handoff decision. It does not
+  move, expose, retrieve or operationally use the capsule or either protected artifact.
+
+### ATLAS-IMP-211 Acceptance Criteria
+
+- Only `service.workflow-protected-transport-target-context-capsule-binder` authenticated for
+  `audience.workflow-protected-transport-target-context-capsule-binder` may request a binding.
+  Human sessions, AI agents, the IMP-210 accessor, publishers and generic workflow services fail
+  closed.
+- Caller input is limited to opening-result ID/digest, code-owned policy ID/version and
+  idempotency. Capsule, consumer, purpose, outbox, event, route, assignment, endpoint, credential,
+  broker, network and runtime fields are server-derived and cannot be overridden.
+- PostgreSQL locks and revalidates the exact `opened_protected` result and complete claim/attempt/
+  receipt lineage, cleanup, non-bearer and deadline state, target-context and materialization
+  chains, live pending outbox/event artifact, current route and current credential assignment.
+- One transaction atomically appends one canonical binding and code-owned audit evidence. The
+  table is append-only; one opening result and capsule may produce only one exact consumer binding.
+- Exact replay returns the same minimized binding without external I/O. Changed, competing,
+  ambiguous, partial, expired, revoked, destroyed, published, quarantined or drifted evidence
+  fails closed and cannot create a second binding or extend capsule lifetime.
+- The boundary performs no protected-store, opener, broker, DNS, TLS, socket, proxy, provider,
+  handoff, unsealing, delivery, publication, dispatch, execution or infrastructure-mutation call.
+  All 17 authority fields are exactly false.
+- Workload POST and normal-session human GET use minimized non-oracle `no-store` contracts. Human
+  UI is read-only through one username/password login, with no MFA, second prompt, capsule identity
+  or operational controls.
+- Full local suites, real PostgreSQL concurrency/migration CI, live desktop/mobile inspection,
+  exact-head PR CI, SHA-locked merge and independent main CI must pass.
 
 ### ATLAS-IMP-210 Scope Rationale
 
@@ -60,6 +95,15 @@
   control.
 - Full local suites, real PostgreSQL concurrency/migration CI, live desktop/mobile inspection,
   exact-head PR CI, SHA-locked merge and independent main CI must pass.
+
+### ATLAS-IMP-210 Delivery Evidence
+
+- PR [#223](https://github.com/ozdemirumit/Project_Atlas/pull/223) was SHA-locked at
+  `68f0387f9d252b9501c8d96e0923cbee63ccb456` and squash-merged as
+  `a6259b9c50f5e49d67e9f0473f9a40beac526e00`.
+- Exact-head PR CI run `31911968721` completed successfully for backend and frontend, including
+  migration round-trip and real PostgreSQL target-context artifact-opening tests.
+- The merge commit independently passed `main` CI run `31912593834` before IMP-211 branched.
 
 ### ATLAS-IMP-210 Local Verification
 
