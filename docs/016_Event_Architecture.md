@@ -388,6 +388,14 @@ historical overlap observation only. The binding grants no protected-artifact ac
 delivery, network, readiness, publication, delivery, dispatch or execution capability; every later
 authority boundary must revalidate protected-store state and remaining lifetime independently.
 
+A later target-context access authorizer may issue one exact dedicated workload an append-only,
+single-use, non-renewable and non-transferable five-second lease. It first obtains independently
+signed metadata-only status attestations from both protected stores outside any database
+transaction, then atomically revalidates pending-outbox liveness, current route and credential-
+assignment heads and fences, canonical lineage and the full remaining window. Only protected-
+artifact access is authorized; artifact opening, endpoint reveal, credential delivery, network,
+readiness, publication, delivery, dispatch, execution and mutation remain separate boundaries.
+
 ### 10.2 Publication State
 
 Outbox records track:

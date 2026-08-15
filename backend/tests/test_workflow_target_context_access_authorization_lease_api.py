@@ -1,0 +1,527 @@
+from __future__ import annotations
+
+import asyncio
+from datetime import UTC, datetime, timedelta
+from typing import Any, cast
+
+import pytest
+from fastapi.testclient import TestClient
+from test_workflow_outbox_publication_lease_api import (
+    _assert_no_step_up_language,
+    _AuditSink,
+    _issue_api_token,
+    _login,
+    _settings,
+    _workload_headers,
+)
+
+from atlas.api.app import create_app
+from atlas.core.config import Settings
+from atlas.modules.identity.adapters.workload_identities import (
+    InMemoryWorkloadIdentityRepository,
+)
+from atlas.modules.identity.application.workload_identities import WorkloadIdentityService
+from atlas.modules.identity.domain.models import (
+    AssuranceLevel,
+    AuthenticatedSubject,
+    AuthenticationMethod,
+    SubjectKind,
+)
+from atlas.modules.workflows.adapters.target_context_access_status_attestors import (
+    DenyAllWorkflowProtectedArtifactStatusSignatureVerifier,
+    UnavailableWorkflowProtectedCredentialStatusAttestor,
+    UnavailableWorkflowProtectedEndpointStatusAttestor,
+)
+from atlas.modules.workflows.application import (
+    WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_ACCESSOR_AUDIENCE,
+    WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_ACCESSOR_SUBJECT,
+)
+from atlas.modules.workflows.application.target_context_access_authorization_lease_ports import (
+    WorkflowTargetContextAccessAuthorizationLeaseError,
+)
+from atlas.modules.workflows.domain import (
+    WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLease,
+    WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseAuthority,
+    WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseState,
+    WorkflowScope,
+    canonical_digest,
+    code_owned_workflow_event_physical_transport_target_context_access_authorization_policy,
+)
+
+ENDPOINT = "/api/v1/workflows/physical-transport-target-context-access-authorization-leases"
+SCOPE = WorkflowScope(
+    "organization.development",
+    "environment.development",
+    "site.local",
+)
+NOW = datetime(2026, 8, 15, 18, 0, tzinfo=UTC)
+
+
+def _lease(
+    *,
+    lease_id: str = "workflow-physical-transport-target-context-access-authorization-lease.api01",
+    scope: WorkflowScope = SCOPE,
+) -> WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLease:
+    policy = (
+        code_owned_workflow_event_physical_transport_target_context_access_authorization_policy()
+    )
+    authority = WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseAuthority()
+    values: dict[str, Any] = {
+        "authorization_lease_id": lease_id,
+        "target_context_binding_id": "workflow-physical-transport-target-context-binding.api01",
+        "target_context_binding_digest": "1" * 64,
+        "target_context_commitment": "2" * 64,
+        "endpoint_status_attestation_id": "status-attestation.endpoint.api01",
+        "endpoint_status_attestation_digest": "3" * 64,
+        "endpoint_status_attestation_valid_until": NOW + timedelta(minutes=1),
+        "credential_status_attestation_id": "status-attestation.credential.api01",
+        "credential_status_attestation_digest": "4" * 64,
+        "credential_status_attestation_valid_until": NOW + timedelta(minutes=1),
+        "scope": scope,
+        "accessor_subject_id": WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_ACCESSOR_SUBJECT,
+        "policy_id": policy.policy_id,
+        "policy_version": policy.policy_version,
+        "policy_digest": policy.canonical_digest,
+        "issued_at": NOW,
+        "valid_until": NOW + timedelta(seconds=5),
+        "joint_usable_until": NOW + timedelta(minutes=1),
+        "single_use": True,
+        "renewable": False,
+        "transferable": False,
+        "state": (
+            WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseState.AUTHORIZED_UNCONSUMED
+        ),
+        "authority": authority,
+    }
+    payload = {
+        "accessor_subject_id": values["accessor_subject_id"],
+        "authority": authority.canonical_value(),
+        "authorization_lease_id": values["authorization_lease_id"],
+        "credential_status_attestation_digest": values["credential_status_attestation_digest"],
+        "credential_status_attestation_id": values["credential_status_attestation_id"],
+        "credential_status_attestation_valid_until": values[
+            "credential_status_attestation_valid_until"
+        ].isoformat(),
+        "endpoint_status_attestation_digest": values["endpoint_status_attestation_digest"],
+        "endpoint_status_attestation_id": values["endpoint_status_attestation_id"],
+        "endpoint_status_attestation_valid_until": values[
+            "endpoint_status_attestation_valid_until"
+        ].isoformat(),
+        "issued_at": values["issued_at"].isoformat(),
+        "joint_usable_until": values["joint_usable_until"].isoformat(),
+        "policy_digest": values["policy_digest"],
+        "policy_id": values["policy_id"],
+        "policy_version": values["policy_version"],
+        "renewable": False,
+        "scope": scope.canonical_value(),
+        "single_use": True,
+        "state": "authorized_unconsumed",
+        "target_context_binding_digest": values["target_context_binding_digest"],
+        "target_context_binding_id": values["target_context_binding_id"],
+        "target_context_commitment": values["target_context_commitment"],
+        "transferable": False,
+        "valid_until": values["valid_until"].isoformat(),
+    }
+    return WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLease(
+        **values,
+        canonical_digest=canonical_digest(payload),
+    )
+
+
+class _Service:
+    durable = True
+
+    def __init__(
+        self,
+        leases: tuple[
+            WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLease, ...
+        ] = (),
+        *,
+        failure: WorkflowTargetContextAccessAuthorizationLeaseError | None = None,
+        unavailable: bool = False,
+        ignore_scope: bool = False,
+    ) -> None:
+        self.repository = self
+        self.leases = list(leases)
+        self.failure = failure
+        self.unavailable = unavailable
+        self.ignore_scope = ignore_scope
+        self.authorize_calls: list[dict[str, Any]] = []
+
+    async def get_authoritative_time(self) -> datetime:
+        if self.unavailable:
+            raise RuntimeError("repository unavailable")
+        return NOW + timedelta(seconds=1)
+
+    async def list_leases(
+        self,
+        *,
+        scope: WorkflowScope,
+        limit: int = 256,
+    ) -> tuple[WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLease, ...]:
+        if self.unavailable:
+            raise RuntimeError("repository unavailable")
+        if self.ignore_scope:
+            return tuple(self.leases)[:limit]
+        return tuple(item for item in self.leases if item.scope == scope)[:limit]
+
+    async def authorize(
+        self, **kwargs: Any
+    ) -> WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLease:
+        self.authorize_calls.append(kwargs)
+        if self.failure is not None:
+            raise self.failure
+        lease = _lease()
+        if not self.leases:
+            self.leases.append(lease)
+        return self.leases[0]
+
+
+def _workload_service_and_token(
+    *,
+    identity_id: str = WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_ACCESSOR_SUBJECT,
+    audience: str = WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_ACCESSOR_AUDIENCE,
+) -> tuple[WorkloadIdentityService, str]:
+    service = WorkloadIdentityService(
+        repository=InMemoryWorkloadIdentityRepository(),
+        audit_sink=_AuditSink(),
+        environment_id="environment.development",
+        signing_keys={11: b"target-context-access-authorization-api-test-key" * 2},
+    )
+    actor = AuthenticatedSubject(
+        subject_id="subject.enterprise.security-admin",
+        display_name="Security Administrator",
+        kind=SubjectKind.HUMAN,
+        provider_id="provider.ldap.enterprise",
+        authentication_method=AuthenticationMethod.LDAP,
+        assurance_level=AssuranceLevel.SINGLE_FACTOR,
+        authenticated_at=datetime.now(UTC),
+        organization_id="organization.development",
+        role_ids=("role.security-administrator",),
+    )
+    issued = asyncio.run(
+        service.create(
+            actor=actor,
+            identity_id=identity_id,
+            display_name="Workflow protected transport target-context accessor",
+            service_id="service.workflow-protected-transport-context-accessor",
+            instance_id="instance.workflow-protected-transport-context-accessor.local-01",
+            owner_subject_id="subject.enterprise.platform-owner",
+            purpose="Request one bounded protected target-context access authorization lease.",
+            audiences=(audience,),
+            secret_reference_ids=("secret.workflow-protected-transport-context-accessor.local-01",),
+            lifetime=timedelta(minutes=10),
+            reason="Create the exact IMP-209 API test workload.",
+            idempotency_key=f"target-context-accessor-{canonical_digest(identity_id)[:24]}",
+            correlation_id="correlation.target-context-access-authorization-api-identity",
+        )
+    )
+    return service, issued.token
+
+
+def _payload() -> dict[str, str]:
+    policy = (
+        code_owned_workflow_event_physical_transport_target_context_access_authorization_policy()
+    )
+    return {
+        "target_context_binding_id": ("workflow-physical-transport-target-context-binding.api01"),
+        "target_context_binding_digest": "1" * 64,
+        "policy_id": policy.policy_id,
+        "policy_version": policy.policy_version,
+        "idempotency_key": "target-context-access-authorization-api-0001",
+    }
+
+
+def _assert_no_store(response: Any) -> None:
+    assert response.headers["Cache-Control"] == "no-store, max-age=0"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["Referrer-Policy"] == "no-referrer"
+
+
+def _assert_minimized(item: dict[str, Any]) -> None:
+    assert set(item) == {
+        "authorization_lease_id",
+        "scope",
+        "accessor_subject_id",
+        "state",
+        "effective_state",
+        "issued_at",
+        "valid_until",
+        "single_use",
+        "renewable",
+        "transferable",
+        "policy",
+        "authority",
+        "integrity_reference",
+    }
+    assert set(item["policy"]) == {"policy_id", "policy_version"}
+    assert item["state"] == "authorized_unconsumed"
+    assert item["effective_state"] == "active"
+    assert item["single_use"] is True
+    assert item["renewable"] is False
+    assert item["transferable"] is False
+    assert item["accessor_subject_id"] == (
+        WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_ACCESSOR_SUBJECT
+    )
+    assert len(item["authority"]) == 17
+    assert item["authority"]["protected_artifact_access_authorized"] is True
+    assert sum(value is True for value in item["authority"].values()) == 1
+    assert datetime.fromisoformat(item["valid_until"]) - datetime.fromisoformat(
+        item["issued_at"]
+    ) == timedelta(seconds=5)
+    forbidden = {
+        "target_context_binding_id",
+        "target_context_binding_digest",
+        "target_context_commitment",
+        "materialization_id",
+        "artifact_id",
+        "attestation_id",
+        "protected_store",
+        "endpoint",
+        "credential",
+        "provider",
+        "fence",
+        "idempotency_key",
+        "request_fingerprint",
+        "canonical_digest",
+        "policy_digest",
+    }
+    assert not forbidden.intersection(item)
+
+
+def test_exact_workload_post_and_password_session_get_minimized_inventory() -> None:
+    workload_service, token = _workload_service_and_token()
+    service = _Service()
+    app = create_app(
+        _settings(),
+        audit_sink=_AuditSink(),
+        workload_identity_service=workload_service,
+        workflow_event_physical_transport_target_context_access_authorization_lease_service=cast(
+            Any, service
+        ),
+    )
+
+    with TestClient(app) as client:
+        unauthenticated = client.get(ENDPOINT)
+        csrf = _login(client)
+        empty = client.get(ENDPOINT)
+        browser_post = client.post(ENDPOINT, json=_payload(), headers={"X-CSRF-Token": csrf})
+        created = client.post(
+            ENDPOINT,
+            json=_payload(),
+            headers=_workload_headers(
+                token,
+                WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_ACCESSOR_AUDIENCE,
+            ),
+        )
+        inventory = client.get(ENDPOINT)
+
+    assert unauthenticated.status_code == 403
+    assert empty.status_code == 200
+    assert (
+        empty.json()["data"]["physical_transport_target_context_access_authorization_leases"] == []
+    )
+    assert browser_post.status_code == 401
+    assert browser_post.json()["code"] == "workload_authentication_failed"
+    assert created.status_code == 201
+    item = dict(created.json()["data"])
+    _assert_minimized(item)
+    assert inventory.status_code == 200
+    assert inventory.json()["data"][
+        "physical_transport_target_context_access_authorization_leases"
+    ] == [item]
+    assert inventory.json()["data"]["durable"] is True
+    for response in (unauthenticated, empty, browser_post, created, inventory):
+        _assert_no_store(response)
+    _assert_no_step_up_language(inventory.text + browser_post.text)
+    assert "authorized browser session" not in inventory.text.casefold()
+    context = service.authorize_calls[0]["context"]
+    assert context.subject_id == WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_ACCESSOR_SUBJECT
+    assert context.credential_audience == (
+        WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_ACCESSOR_AUDIENCE
+    )
+
+
+def test_post_rejects_humans_pats_wrong_workloads_and_extra_fields() -> None:
+    workload_service, exact_token = _workload_service_and_token()
+    wrong_service, wrong_subject_token = _workload_service_and_token(
+        identity_id="service.workflow-protected-transport-context-accessor-other"
+    )
+    service = _Service()
+    app = create_app(
+        _settings(),
+        audit_sink=_AuditSink(),
+        workload_identity_service=workload_service,
+        workflow_event_physical_transport_target_context_access_authorization_lease_service=cast(
+            Any, service
+        ),
+    )
+    wrong_subject_app = create_app(
+        _settings(),
+        audit_sink=_AuditSink(),
+        workload_identity_service=wrong_service,
+        workflow_event_physical_transport_target_context_access_authorization_lease_service=cast(
+            Any, service
+        ),
+    )
+
+    with TestClient(app) as client:
+        csrf = _login(client)
+        personal_token = _issue_api_token(client, csrf)
+        pat = client.post(
+            ENDPOINT,
+            json=_payload(),
+            headers={"Authorization": f"Bearer {personal_token}"},
+        )
+        wrong_audience = client.post(
+            ENDPOINT,
+            json=_payload(),
+            headers=_workload_headers(exact_token, "audience.workflow-worker"),
+        )
+        wrong_environment = client.post(
+            ENDPOINT,
+            json=_payload(),
+            headers={
+                **_workload_headers(
+                    exact_token,
+                    WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_ACCESSOR_AUDIENCE,
+                ),
+                "X-Atlas-Environment": "environment.other",
+            },
+        )
+        extra = client.post(
+            ENDPOINT,
+            json={
+                **_payload(),
+                "policy_digest": "9" * 64,
+                "ttl_seconds": 60,
+                "artifact_id": "artifact.attacker",
+            },
+            headers=_workload_headers(
+                exact_token,
+                WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_ACCESSOR_AUDIENCE,
+            ),
+        )
+    with TestClient(wrong_subject_app) as client:
+        wrong_subject = client.post(
+            ENDPOINT,
+            json=_payload(),
+            headers=_workload_headers(
+                wrong_subject_token,
+                WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_ACCESSOR_AUDIENCE,
+            ),
+        )
+
+    for denied in (pat, wrong_audience, wrong_environment, wrong_subject):
+        assert denied.status_code == 401
+        assert denied.json()["code"] == "workload_authentication_failed"
+        _assert_no_store(denied)
+        _assert_no_step_up_language(denied.text)
+    assert extra.status_code == 422
+    assert extra.json()["code"] == "validation_failed"
+    _assert_no_store(extra)
+    assert personal_token not in pat.text
+    assert service.authorize_calls == []
+
+
+def test_human_read_is_default_deny_and_scope_escape_is_non_oracle() -> None:
+    service = _Service((_lease(),))
+    denied_app = create_app(
+        Settings(
+            environment="development",
+            development_identity_enabled=True,
+            development_role_ids=("role.unassigned",),
+        ),
+        audit_sink=_AuditSink(),
+        workflow_event_physical_transport_target_context_access_authorization_lease_service=cast(
+            Any, service
+        ),
+    )
+    escaped = _lease(
+        lease_id=(
+            "workflow-physical-transport-target-context-access-authorization-lease.wrongscope"
+        ),
+        scope=WorkflowScope("organization.other", "environment.development", "site.local"),
+    )
+    escaped_app = create_app(
+        _settings(),
+        audit_sink=_AuditSink(),
+        workflow_event_physical_transport_target_context_access_authorization_lease_service=cast(
+            Any, _Service((escaped,), ignore_scope=True)
+        ),
+    )
+
+    with TestClient(denied_app) as client:
+        _login(client)
+        denied = client.get(ENDPOINT)
+    with TestClient(escaped_app) as client:
+        _login(client)
+        scope_escape = client.get(ENDPOINT)
+
+    assert denied.status_code == 403
+    assert denied.json()["code"] == "authorization_denied"
+    assert scope_escape.status_code == 503
+    assert scope_escape.json()["code"].endswith("_service_unavailable")
+    assert "scope" not in scope_escape.json()["detail"].casefold()
+    for response in (denied, scope_escape):
+        _assert_no_store(response)
+        _assert_no_step_up_language(response.text)
+
+
+def test_post_domain_conflict_is_normalized_without_internal_evidence() -> None:
+    workload_service, token = _workload_service_and_token()
+    service = _Service(
+        failure=WorkflowTargetContextAccessAuthorizationLeaseError(
+            "workflow_target_context_access_evidence_conflict",
+            "Protected store locator, credential and endpoint internals must not be rendered.",
+        )
+    )
+    app = create_app(
+        _settings(),
+        audit_sink=_AuditSink(),
+        workload_identity_service=workload_service,
+        workflow_event_physical_transport_target_context_access_authorization_lease_service=cast(
+            Any, service
+        ),
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            ENDPOINT,
+            json=_payload(),
+            headers=_workload_headers(
+                token,
+                WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_ACCESSOR_AUDIENCE,
+            ),
+        )
+
+    assert response.status_code == 409
+    assert response.json()["code"] == ("workflow_target_context_access_authorization_unavailable")
+    assert "locator" not in response.text.casefold()
+    assert "evidence_conflict" not in response.text
+    _assert_no_store(response)
+
+
+def test_default_app_composes_only_fail_closed_status_dependencies() -> None:
+    app = create_app(Settings(environment="test"), audit_sink=_AuditSink())
+
+    with TestClient(app) as client:
+        service = app.state.workflow_target_context_access_authorization_lease_service
+        endpoint_attestor = service._endpoint_status_attestor
+        credential_attestor = service._credential_status_attestor
+        verifier = service._status_signature_verifier
+
+        response = client.post(ENDPOINT, json=_payload())
+
+    assert isinstance(endpoint_attestor, UnavailableWorkflowProtectedEndpointStatusAttestor)
+    assert isinstance(credential_attestor, UnavailableWorkflowProtectedCredentialStatusAttestor)
+    assert isinstance(verifier, DenyAllWorkflowProtectedArtifactStatusSignatureVerifier)
+    assert verifier.verify_status_attestation(cast(Any, None)) is False
+    assert response.status_code == 401
+    assert response.json()["code"] == "workload_authentication_failed"
+    _assert_no_store(response)
+
+    with pytest.raises(WorkflowTargetContextAccessAuthorizationLeaseError):
+        asyncio.run(endpoint_attestor.attest_endpoint_artifact_status(cast(Any, None)))
+    with pytest.raises(WorkflowTargetContextAccessAuthorizationLeaseError):
+        asyncio.run(credential_attestor.attest_credential_artifact_status(cast(Any, None)))

@@ -4,14 +4,93 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-208 |
-| Title | Immutable workflow protected transport target-context binding without artifact access |
-| Status | Local validation complete; delivery in progress |
-| Branch | `agent/workflow-target-context-binding` |
-| Pull Request | Not opened |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-149, ADR-152, ADR-154, ADR-157, ADR-158 |
+| Task ID | ATLAS-IMP-209 |
+| Title | Bounded single-use workflow protected transport target-context access authorization lease without artifact opening or runtime authority |
+| Status | Delivery in progress; exact-head CI pending |
+| Branch | `agent/protected-target-context-access-lease` |
+| Pull Request | [#222](https://github.com/ozdemirumit/Project_Atlas/pull/222) |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-150, ADR-152, ADR-155, ADR-157, ADR-158, ADR-159 |
 | Last Updated | 2026-08-15 |
-| Next Action | Open the exact-head PR, pass CI, merge with SHA lock and verify independent main CI |
+| Next Action | Pass exact-head PR CI, merge with SHA lock and verify independent main CI |
+
+### ATLAS-IMP-209 Scope Rationale
+
+- IMP-208 proves that the successful protected endpoint and credential materialization outcomes
+  belong to one exact immutable target context, but deliberately grants no protected-artifact
+  access and makes no current protected-store claim.
+- The next smallest safe boundary grants one exact dedicated workload a five-second authorization
+  to request a later single-use access attempt only after current route, assignment, workflow and
+  protected-store evidence is independently revalidated.
+- Artifact opening, credential delivery, endpoint reveal, network/readiness, publication,
+  delivery, dispatch, execution, mutation and lease consumption remain separate later boundaries.
+
+### ATLAS-IMP-209 Acceptance Criteria
+
+- Only `service.workflow-protected-transport-context-accessor` authenticated for
+  `audience.workflow-protected-transport-context-accessor` may request a lease for itself. The
+  caller supplies only binding ID/digest, code-owned policy ID/version and idempotency; it cannot
+  supply policy digest, TTL, subject, artifact, endpoint, credential, network or runtime fields.
+- Before opening the database transaction, Atlas obtains fresh, independently signed, nonce-bound,
+  metadata-only status attestations from both trusted protected stores. No external call occurs
+  while a database transaction is open; transaction-time attestation validation is offline,
+  canonical, integrity-checked and deadline-bound.
+- The durable transaction locks and revalidates the exact target-context binding and both
+  materialization results, pending-outbox liveness, current route-selection head/fence, current
+  credential-assignment head/advisory fence, policy, scope, subject, attestations, prior lease and
+  idempotency evidence. Drift, cancellation, ambiguity, revocation, destruction or expiry fails
+  closed.
+- Active orchestration and publication leases are not dependencies and confer no authority here.
+  Their identity, expiry and fence values are neither caller inputs nor persisted lease lineage.
+- The code-owned lease lasts exactly five seconds and is issued only when the entire window remains
+  valid. Each binding can produce at most one append-only, single-use, non-renewable,
+  non-transferable `authorized_unconsumed` lease; expiry never permits renewal from the same
+  binding.
+- Exact replay returns the same lease only while the complete current evidence remains valid.
+  Changed or competing replay, expired authority or stale evidence cannot produce another lease.
+  Required precommit audit and a second database-time revalidation precede atomic lease and
+  idempotency persistence.
+- Exactly `protected_artifact_access_authorized` is true; endpoint resolution, route selection and
+  binding, credential selection, assignment binding, access, brokerage, resolution and delivery,
+  network, readiness, publication, delivery, dispatch, execution and infrastructure mutation are
+  all false.
+- Human API/UI reads are minimized and read-only through the normal username/password session with
+  no MFA, second login or authorized-browser prompt. Sensitive lineage, artifact, attestation,
+  endpoint, credential, provider, fence and idempotency fields and all operation controls are
+  absent.
+- Full local suites, real PostgreSQL concurrency/migration CI, live browser inspection, exact-head
+  PR CI, SHA-locked merge and independent main CI must pass.
+
+### ATLAS-IMP-209 Local Status
+
+- ADR-159, the ATLAS-016/ATLAS-023 traces, domain and application contracts, trusted signed
+  metadata-only attestation ports, durable append-only PostgreSQL persistence, exact workload
+  security, minimized API responses and the read-only browser presentation are implemented.
+- Issuance persists a separate canonical internal evidence record for the exact pending outbox,
+  route-selection head ID/digest/generation/fence and credential-assignment head. These internals
+  are omitted from the human API/UI, and route generation or fence drift invalidates replay even
+  when the selected route remains unchanged.
+- Ruff format/check, MyPy over all 1,065 source files and Alembic single-head validation at
+  `20260815_0132` pass. The focused integrated backend matrix passes with 37 tests and one local
+  PostgreSQL skip.
+- The full backend suite passes with 2,224 tests and 18 environment skips; the full frontend suite
+  passes with 691 tests across 95 files. The skips are limited to Windows symlink support and live
+  PostgreSQL tests that CI runs with `ATLAS_TEST_POSTGRES_DSN`.
+- Live validation used backend port 8000 and frontend port 5173. One normal
+  `atlas-demo` / `local-demo` username/password login opened the workflow workspace without MFA,
+  a second login or an authorized-browser prompt.
+- The target-context access authorization panel rendered as a compact read-only surface with zero
+  operation controls at desktop and 390-pixel mobile widths. The local non-durable repository and
+  unavailable protected-store attestors produced the expected fail-closed unavailable state; the
+  browser console contained no warning or error.
+
+### ATLAS-IMP-208 Delivery Evidence
+
+- PR [#221](https://github.com/ozdemirumit/Project_Atlas/pull/221) was SHA-locked at
+  `dbee3b286091a2c4ed20b42e597970f58b43a120` and squash-merged as
+  `abcbd4fb1128922cc35e925c1af93dd7de391690`.
+- Exact-head PR CI run `31878754192` completed successfully for backend and frontend, including
+  migration round-trip and real PostgreSQL target-context binding tests.
+- The merge commit independently passed `main` CI run `31879425761` before IMP-209 branched.
 
 ### ATLAS-IMP-208 Scope Rationale
 

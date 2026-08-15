@@ -1542,6 +1542,11 @@ from atlas.modules.workflows.adapters.endpoint_materialization_unavailable impor
 )
 from atlas.modules.workflows.adapters.memory import InMemoryWorkflowPlanRepository
 from atlas.modules.workflows.adapters.postgres import PostgreSQLWorkflowPlanRepository
+from atlas.modules.workflows.adapters.target_context_access_status_attestors import (
+    DenyAllWorkflowProtectedArtifactStatusSignatureVerifier,
+    UnavailableWorkflowProtectedCredentialStatusAttestor,
+    UnavailableWorkflowProtectedEndpointStatusAttestor,
+)
 from atlas.modules.workflows.adapters.unavailable import UnavailableWorkflowPlanRepository
 from atlas.modules.workflows.application import (
     DeploymentEventTransportProfileRegistry,
@@ -1571,6 +1576,7 @@ from atlas.modules.workflows.application import (
     WorkflowEventPhysicalTransportRouteBindingService,
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionRepository,
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionService,
+    WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseService,
     WorkflowEventPhysicalTransportTargetContextBindingRepository,
     WorkflowEventPhysicalTransportTargetContextBindingService,
     WorkflowEventTransportAdmissionRepository,
@@ -1585,6 +1591,7 @@ from atlas.modules.workflows.application import (
     WorkflowPlanRepository,
     WorkflowRunMaterializationRepository,
     WorkflowRunMaterializationService,
+    WorkflowTargetContextAccessAuthorizationLeaseRepository,
     WorkflowTransportCredentialAccessAuthorizationLeaseRepository,
     WorkflowTransportCredentialAssignmentBindingRepository,
     WorkflowTransportCredentialAssignmentFreshnessAdmissionRepository,
@@ -1612,6 +1619,7 @@ class _WorkflowCredentialAccessAuthorizationNoStoreMiddleware(BaseHTTPMiddleware
             "/api/v1/workflows/physical-transport-credential-access-authorization-leases",
             "/api/v1/workflows/physical-transport-credential-materializations",
             "/api/v1/workflows/physical-transport-target-context-bindings",
+            ("/api/v1/workflows/physical-transport-target-context-access-authorization-leases"),
         }
     )
 
@@ -2036,6 +2044,9 @@ def create_app(
     ) = None,
     workflow_event_physical_transport_target_context_binding_service: (
         WorkflowEventPhysicalTransportTargetContextBindingService | None
+    ) = None,
+    workflow_event_physical_transport_target_context_access_authorization_lease_service: (
+        WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseService | None
     ) = None,
     workflow_transport_profile_snapshot_service: WorkflowTransportProfileSnapshotService
     | None = None,
@@ -6581,6 +6592,42 @@ def create_app(
         resolved_target_context_binding_service = (
             workflow_event_physical_transport_target_context_binding_service
         )
+    if workflow_event_physical_transport_target_context_access_authorization_lease_service is None:
+        target_context_access_authorization_repository_methods = (
+            "get_authoritative_time",
+            "get_target_context_binding_by_id",
+            "list_target_context_access_authorization_leases",
+            "authorize_target_context_access",
+        )
+        if not all(
+            callable(getattr(workflow_repository, method_name, None))
+            for method_name in target_context_access_authorization_repository_methods
+        ):
+            raise ValueError(
+                "workflow planning repository does not implement protected transport "
+                "target-context access authorization leases; inject "
+                "workflow_event_physical_transport_target_context_access_authorization_"
+                "lease_service explicitly"
+            )
+        target_context_access_authorization_repository = cast(
+            WorkflowTargetContextAccessAuthorizationLeaseRepository,
+            workflow_repository,
+        )
+        resolved_target_context_access_authorization_lease_service = (
+            WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseService(
+                authorization_repository=target_context_access_authorization_repository,
+                endpoint_status_attestor=UnavailableWorkflowProtectedEndpointStatusAttestor(),
+                credential_status_attestor=(UnavailableWorkflowProtectedCredentialStatusAttestor()),
+                status_signature_verifier=(
+                    DenyAllWorkflowProtectedArtifactStatusSignatureVerifier()
+                ),
+                audit_sink=resolved_audit_sink,
+            )
+        )
+    else:
+        resolved_target_context_access_authorization_lease_service = (
+            workflow_event_physical_transport_target_context_access_authorization_lease_service
+        )
     configured_transport_route_selection_heads = (
         _deployment_event_transport_route_selection_heads(
             resolved_settings,
@@ -6986,6 +7033,12 @@ def create_app(
         app.state.workflow_target_context_binding_service = resolved_target_context_binding_service
         app.state.workflow_target_context_binding_repository = (
             resolved_target_context_binding_service.repository
+        )
+        app.state.workflow_target_context_access_authorization_lease_service = (
+            resolved_target_context_access_authorization_lease_service
+        )
+        app.state.workflow_target_context_access_authorization_lease_repository = (
+            resolved_target_context_access_authorization_lease_service.repository
         )
         app.state.workflow_transport_route_selection_heads = (
             configured_transport_route_selection_heads

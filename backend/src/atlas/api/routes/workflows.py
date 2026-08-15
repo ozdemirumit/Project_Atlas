@@ -19,6 +19,7 @@ from atlas.api.security import (
     authorize_workflow_physical_transport_endpoint_resolution_authorization_lease_read,
     authorize_workflow_physical_transport_route_binding_read,
     authorize_workflow_physical_transport_route_freshness_admission_read,
+    authorize_workflow_physical_transport_target_context_access_authorization_lease_read,
     authorize_workflow_physical_transport_target_context_binding_read,
     authorize_workflow_plan_cancel,
     authorize_workflow_plan_create,
@@ -34,6 +35,7 @@ from atlas.api.security import (
     workflow_physical_transport_endpoint_resolver_subject,
     workflow_physical_transport_route_binder_subject,
     workflow_physical_transport_route_freshness_admitter_subject,
+    workflow_physical_transport_target_context_accessor_subject,
     workflow_physical_transport_target_context_binder_subject,
     workflow_transport_compatibility_admitter_subject,
     workflow_transport_credential_assignment_registry_subject,
@@ -58,6 +60,7 @@ from atlas.api.workflow_schemas import (
     CreateWorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseInput,
     CreateWorkflowEventPhysicalTransportRouteBindingInput,
     CreateWorkflowEventPhysicalTransportRouteFreshnessAdmissionInput,
+    CreateWorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseInput,
     CreateWorkflowEventPhysicalTransportTargetContextBindingInput,
     CreateWorkflowEventTransportCompatibilityAdmissionInput,
     CreateWorkflowPlanInput,
@@ -138,6 +141,10 @@ from atlas.api.workflow_schemas import (
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionInventoryData,
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionInventoryResponse,
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionResponse,
+    WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseData,
+    WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseInventoryData,
+    WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseInventoryResponse,
+    WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseResponse,
     WorkflowEventPhysicalTransportTargetContextBindingData,
     WorkflowEventPhysicalTransportTargetContextBindingInventoryData,
     WorkflowEventPhysicalTransportTargetContextBindingInventoryResponse,
@@ -184,6 +191,7 @@ from atlas.modules.workflows.application import (
     WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_RESOLVER_AUDIENCE,
     WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_BINDER_AUDIENCE,
     WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMITTER_AUDIENCE,
+    WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_ACCESSOR_AUDIENCE,
     WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_BINDER_AUDIENCE,
     WORKFLOW_TRANSPORT_COMPATIBILITY_ADMITTER_AUDIENCE,
     WORKFLOW_TRANSPORT_CREDENTIAL_ASSIGNMENT_REGISTRY_AUDIENCE,
@@ -215,6 +223,7 @@ from atlas.modules.workflows.application import (
     WorkflowEventPhysicalTransportRouteBindingService,
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionError,
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionService,
+    WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseService,
     WorkflowEventPhysicalTransportTargetContextBindingError,
     WorkflowEventPhysicalTransportTargetContextBindingService,
     WorkflowEventTransportCompatibilityAdmissionService,
@@ -231,6 +240,7 @@ from atlas.modules.workflows.application import (
     WorkflowPhysicalTransportEndpointResolverContext,
     WorkflowPhysicalTransportRouteBinderContext,
     WorkflowPhysicalTransportRouteFreshnessAdmitterContext,
+    WorkflowPhysicalTransportTargetContextAccessorContext,
     WorkflowPhysicalTransportTargetContextBinderContext,
     WorkflowPlanningError,
     WorkflowPlanningService,
@@ -269,6 +279,9 @@ from atlas.modules.workflows.application.event_envelopes import (
 from atlas.modules.workflows.application.physical_route_binding_ports import (
     WorkflowEventPhysicalTransportRouteBindingError,
 )
+from atlas.modules.workflows.application.target_context_access_authorization_lease_ports import (
+    WorkflowTargetContextAccessAuthorizationLeaseError,
+)
 from atlas.modules.workflows.application.transport_admission_ports import (
     WorkflowEventTransportAdmissionError,
 )
@@ -300,6 +313,7 @@ from atlas.modules.workflows.domain import (
     WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease,
     WorkflowEventPhysicalTransportRouteBinding,
     WorkflowEventPhysicalTransportRouteFreshnessAdmission,
+    WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLease,
     WorkflowEventTransportAdmission,
     WorkflowEventTransportAdmissionPolicy,
     WorkflowEventTransportAdmissionState,
@@ -883,6 +897,38 @@ def _raise_physical_transport_credential_access_authorization_lease(
         code = "workflow_physical_transport_credential_access_authorization_unavailable"
         title = "Workflow credential-access authorization unavailable"
         detail = "The current evidence could not support credential-access authorization."
+    raise AtlasError(
+        status=status,
+        code=code,
+        title=title,
+        detail=detail,
+        retryable=status == 503,
+    ) from error
+
+
+def _raise_physical_transport_target_context_access_authorization_lease(
+    error: WorkflowTargetContextAccessAuthorizationLeaseError,
+) -> NoReturn:
+    if (
+        "repository" in error.code
+        or "audit" in error.code
+        or "persistence" in error.code
+        or "unavailable" in error.code
+    ):
+        status = 503
+        code = "workflow_target_context_access_authorization_service_unavailable"
+        title = "Workflow target-context access authorization service unavailable"
+        detail = "Target-context access authorization is temporarily unavailable."
+    elif error.code.endswith("_invalid") or error.code.endswith("_required"):
+        status = 422
+        code = "workflow_target_context_access_authorization_request_invalid"
+        title = "Workflow target-context access authorization request invalid"
+        detail = "The target-context access authorization request is invalid."
+    else:
+        status = 409
+        code = "workflow_target_context_access_authorization_unavailable"
+        title = "Workflow target-context access authorization unavailable"
+        detail = "The current evidence could not support target-context access authorization."
     raise AtlasError(
         status=status,
         code=code,
@@ -1648,6 +1694,23 @@ def _physical_transport_credential_access_authorization_lease_response(
         data=WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseData.from_domain(
             lease,
             evaluated_at=lease.issued_at,
+        ),
+        meta=_meta(request),
+    )
+
+
+def _physical_transport_target_context_access_authorization_lease_response(
+    lease: WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLease,
+    request: Request,
+    response: Response,
+) -> WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseResponse:
+    _no_store(response)
+    return WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseResponse(
+        data=(
+            WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseData.from_domain(
+                lease,
+                evaluated_at=lease.issued_at,
+            )
         ),
         meta=_meta(request),
     )
@@ -5170,6 +5233,123 @@ async def create_workflow_physical_transport_target_context_binding(
             evaluated_at=datetime.now(UTC),
         ),
         meta=_meta(request),
+    )
+
+
+@router.get(
+    "/physical-transport-target-context-access-authorization-leases",
+    response_model=(
+        WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseInventoryResponse
+    ),
+)
+async def list_workflow_physical_transport_target_context_access_authorization_leases(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[
+        AuthorizationDecision,
+        Depends(
+            authorize_workflow_physical_transport_target_context_access_authorization_lease_read
+        ),
+    ],
+) -> WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseInventoryResponse:
+    del decision
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    service = cast(
+        WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseService,
+        request.app.state.workflow_target_context_access_authorization_lease_service,
+    )
+    try:
+        server_time = await service.repository.get_authoritative_time()
+        leases = await service.list_leases(scope=scope, limit=256)
+        if server_time.tzinfo is None or any(lease.scope != scope for lease in leases):
+            raise WorkflowTargetContextAccessAuthorizationLeaseError(
+                "workflow_target_context_access_repository_scope_violation",
+                "Stored target-context access authorization metadata is invalid.",
+            )
+    except WorkflowTargetContextAccessAuthorizationLeaseError as error:
+        _raise_physical_transport_target_context_access_authorization_lease(error)
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_target_context_access_authorization_service_unavailable",
+            title="Workflow target-context access authorization service unavailable",
+            detail="Target-context access authorization metadata is temporarily unavailable.",
+            retryable=True,
+        ) from error
+    _no_store(response)
+    return WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseInventoryResponse(
+        data=WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseInventoryData(
+            physical_transport_target_context_access_authorization_leases=[
+                WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseData.from_domain(
+                    lease,
+                    evaluated_at=server_time,
+                )
+                for lease in sorted(
+                    leases,
+                    key=lambda value: value.authorization_lease_id,
+                )
+            ],
+            server_time=server_time,
+            durable=service.durable,
+        ),
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    "/physical-transport-target-context-access-authorization-leases",
+    response_model=WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseResponse,
+    status_code=201,
+)
+async def create_workflow_physical_transport_target_context_access_authorization_lease(
+    payload: CreateWorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[
+        AuthenticatedSubject,
+        Depends(workflow_physical_transport_target_context_accessor_subject),
+    ],
+) -> WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseResponse:
+    service = cast(
+        WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseService,
+        request.app.state.workflow_target_context_access_authorization_lease_service,
+    )
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    try:
+        lease = await service.authorize(
+            target_context_binding_id=payload.target_context_binding_id,
+            target_context_binding_digest=payload.target_context_binding_digest,
+            policy_id=payload.policy_id,
+            policy_version=payload.policy_version,
+            idempotency_key=payload.idempotency_key,
+            context=WorkflowPhysicalTransportTargetContextAccessorContext(
+                subject_id=subject.subject_id,
+                actor_type=subject.kind.value,
+                authentication_method=subject.authentication_method.value,
+                credential_audience=WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_ACCESSOR_AUDIENCE,
+                scope=scope,
+                correlation_id=str(request.state.correlation_id),
+                decision_id=(
+                    "decision.workflow-physical-transport-target-context-accessor-authenticated"
+                ),
+                requested_at=datetime.now(UTC),
+            ),
+        )
+    except WorkflowTargetContextAccessAuthorizationLeaseError as error:
+        _raise_physical_transport_target_context_access_authorization_lease(error)
+    return _physical_transport_target_context_access_authorization_lease_response(
+        lease,
+        request,
+        response,
     )
 
 

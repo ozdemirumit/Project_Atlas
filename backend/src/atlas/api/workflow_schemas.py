@@ -30,6 +30,7 @@ from atlas.modules.workflows.domain import (
     WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaim,
     WorkflowEventPhysicalTransportRouteBinding,
     WorkflowEventPhysicalTransportRouteFreshnessAdmission,
+    WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLease,
     WorkflowEventPhysicalTransportTargetContextBinding,
     WorkflowEventTransportAdmission,
     WorkflowEventTransportCompatibilityAdmission,
@@ -2156,6 +2157,125 @@ class WorkflowEventPhysicalTransportTargetContextBindingResponse(BaseModel):
 
 class WorkflowEventPhysicalTransportTargetContextBindingInventoryResponse(BaseModel):
     data: WorkflowEventPhysicalTransportTargetContextBindingInventoryData
+    meta: ResponseMeta
+
+
+class CreateWorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target_context_binding_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    target_context_binding_digest: str = Field(
+        min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$"
+    )
+    policy_id: Literal[
+        "policy.workflow-event-physical-transport-target-context-access-authorization"
+    ]
+    policy_version: Literal["1.0"]
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeasePolicyData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    policy_id: Literal[
+        "policy.workflow-event-physical-transport-target-context-access-authorization"
+    ]
+    policy_version: Literal["1.0"]
+
+
+class WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseAuthorityData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    endpoint_resolution_authorized: Literal[False]
+    protected_artifact_access_authorized: Literal[True]
+    route_selection_authorized: Literal[False]
+    route_binding_authorized: Literal[False]
+    credential_selection_authorized: Literal[False]
+    credential_assignment_binding_authorized: Literal[False]
+    credential_access_authorized: Literal[False]
+    credential_brokerage_authorized: Literal[False]
+    credential_resolution_authorized: Literal[False]
+    credential_delivery_authorized: Literal[False]
+    network_access_authorized: Literal[False]
+    readiness_probe_authorized: Literal[False]
+    publication_authorized: Literal[False]
+    delivery_authorized: Literal[False]
+    dispatch_authorized: Literal[False]
+    execution_authorized: Literal[False]
+    infrastructure_mutation_authorized: Literal[False]
+
+
+class WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseData(BaseModel):
+    """Human-safe lease evidence without binding, artifact or store internals."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    authorization_lease_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    scope: WorkflowScopeData
+    accessor_subject_id: Literal["service.workflow-protected-transport-context-accessor"]
+    state: Literal["authorized_unconsumed"]
+    effective_state: Literal["active", "expired"]
+    issued_at: datetime
+    valid_until: datetime
+    single_use: Literal[True]
+    renewable: Literal[False]
+    transferable: Literal[False]
+    policy: WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeasePolicyData
+    authority: WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseAuthorityData
+    integrity_reference: str = Field(min_length=3, max_length=256, pattern=STABLE_ID)
+
+    @classmethod
+    def from_domain(
+        cls,
+        lease: WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLease,
+        *,
+        evaluated_at: datetime,
+    ) -> WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseData:
+        return cls(
+            authorization_lease_id=lease.authorization_lease_id,
+            scope=WorkflowScopeData.model_validate(lease.scope.canonical_value()),
+            accessor_subject_id=lease.accessor_subject_id,
+            state="authorized_unconsumed",
+            effective_state=lease.effective_state(evaluated_at=evaluated_at).value,
+            issued_at=lease.issued_at,
+            valid_until=lease.valid_until,
+            single_use=True,
+            renewable=False,
+            transferable=False,
+            policy=(
+                WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeasePolicyData(
+                    policy_id=lease.policy_id,
+                    policy_version=lease.policy_version,
+                )
+            ),
+            authority=(
+                WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseAuthorityData.model_validate(
+                    lease.authority.canonical_value()
+                )
+            ),
+            integrity_reference=f"integrity.{lease.authorization_lease_id}",
+        )
+
+
+class WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    physical_transport_target_context_access_authorization_leases: list[
+        WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseData
+    ] = Field(max_length=256)
+    server_time: datetime
+    durable: bool
+
+
+class WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseResponse(BaseModel):
+    data: WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseData
+    meta: ResponseMeta
+
+
+class WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseInventoryResponse(
+    BaseModel
+):
+    data: WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseInventoryData
     meta: ResponseMeta
 
 

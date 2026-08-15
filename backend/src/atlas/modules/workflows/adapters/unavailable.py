@@ -107,6 +107,11 @@ from atlas.modules.workflows.application.route_freshness_admission_ports import 
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionRequest,
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionResult,
 )
+from atlas.modules.workflows.application.target_context_access_authorization_lease_ports import (
+    WorkflowTargetContextAccessAuthorizationLeaseError,
+    WorkflowTargetContextAccessAuthorizationLeaseRequest,
+    WorkflowTargetContextAccessAuthorizationLeaseResult,
+)
 from atlas.modules.workflows.application.target_context_binding_ports import (
     WorkflowEventPhysicalTransportTargetContextBindingError,
     WorkflowEventPhysicalTransportTargetContextBindingRequest,
@@ -159,6 +164,7 @@ from atlas.modules.workflows.domain import (
     WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaim,
     WorkflowEventPhysicalTransportRouteBinding,
     WorkflowEventPhysicalTransportRouteFreshnessAdmission,
+    WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLease,
     WorkflowEventPhysicalTransportTargetContextBinding,
     WorkflowEventTransportAdmission,
     WorkflowEventTransportCompatibilityAdmission,
@@ -786,6 +792,21 @@ class UnavailableWorkflowPlanRepository:
     ) -> tuple[WorkflowEventPhysicalTransportTargetContextBinding, ...]:
         self._raise_target_context_binding()
 
+    async def get_target_context_binding_by_id(
+        self, *, binding_id: str
+    ) -> WorkflowEventPhysicalTransportTargetContextBinding | None:
+        self._raise_target_context_access_authorization()
+
+    async def authorize_target_context_access(
+        self, request: WorkflowTargetContextAccessAuthorizationLeaseRequest
+    ) -> WorkflowTargetContextAccessAuthorizationLeaseResult:
+        self._raise_target_context_access_authorization()
+
+    async def list_target_context_access_authorization_leases(
+        self, *, scope: WorkflowScope, limit: int = 256
+    ) -> tuple[WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLease, ...]:
+        self._raise_target_context_access_authorization()
+
     async def acquire_publication_lease(
         self, request: WorkflowOutboxPublicationLeaseAcquireRequest
     ) -> WorkflowOutboxPublicationLeaseAcquireResult:
@@ -987,4 +1008,11 @@ class UnavailableWorkflowPlanRepository:
         raise WorkflowEventPhysicalTransportTargetContextBindingError(
             "workflow_target_context_binding_repository_unavailable",
             "Durable workflow target context binding storage is not configured.",
+        )
+
+    @staticmethod
+    def _raise_target_context_access_authorization() -> NoReturn:
+        raise WorkflowTargetContextAccessAuthorizationLeaseError(
+            "workflow_target_context_access_authorization_repository_unavailable",
+            "Durable target-context access authorization storage is not configured.",
         )

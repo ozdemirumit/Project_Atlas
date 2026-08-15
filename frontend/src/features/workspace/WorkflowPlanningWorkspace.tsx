@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  AlertTriangle,
   ArrowLeft,
   Ban,
   CalendarClock,
@@ -34,6 +35,7 @@ import {
   listWorkflowEndpointResolutionAuthorizationLeases,
   listWorkflowPhysicalTransportCredentialAccessAuthorizationLeases,
   listWorkflowPhysicalTransportCredentialMaterializations,
+  listWorkflowPhysicalTransportTargetContextAccessAuthorizationLeases,
   listWorkflowPhysicalTransportTargetContextBindings,
   listWorkflowPhysicalTransportCredentialAssignmentSnapshots,
   listWorkflowPhysicalTransportCredentialAssignmentFreshnessAdmissions,
@@ -220,6 +222,16 @@ export default function WorkflowPlanningWorkspace({
       siteId,
     ],
     queryFn: () => listWorkflowPhysicalTransportTargetContextBindings({ scope }),
+    retry: false,
+  });
+  const targetContextAccessAuthorizationLeaseQuery = useQuery({
+    queryKey: [
+      "workflow-physical-transport-target-context-access-authorization-leases",
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: () => listWorkflowPhysicalTransportTargetContextAccessAuthorizationLeases({ scope }),
     retry: false,
   });
   const targetQuery = useQuery({
@@ -681,6 +693,10 @@ export default function WorkflowPlanningWorkspace({
   const targetContextBindingErrorStatus =
     targetContextBindingQuery.error instanceof ApiRequestError
       ? targetContextBindingQuery.error.status
+      : undefined;
+  const targetContextAccessAuthorizationLeaseErrorStatus =
+    targetContextAccessAuthorizationLeaseQuery.error instanceof ApiRequestError
+      ? targetContextAccessAuthorizationLeaseQuery.error.status
       : undefined;
   const eventEnvelopes = eventEnvelopesForAdmission;
   const transportAdmissions = transportAdmissionsForArtifacts;
@@ -2465,6 +2481,132 @@ export default function WorkflowPlanningWorkspace({
             publication, dispatch, execution, or mutation authority.
           </span>
         </div>
+      </section>
+
+      <section
+        className="workflow-physical-route-binding-band"
+        aria-labelledby="workflow-target-context-access-authorization-lease-title"
+      >
+        <div className="workflow-section-heading">
+          <div>
+            <p className="eyebrow">PROTECTED ACCESS EVIDENCE</p>
+            <h2 id="workflow-target-context-access-authorization-lease-title">
+              Target-context access authorization leases
+            </h2>
+          </div>
+          <span>Read only</span>
+        </div>
+        {targetContextAccessAuthorizationLeaseQuery.isLoading && (
+          <div className="workflow-empty-state" role="status">
+            <RefreshCw className="spin" size={18} />
+            <span>Loading target-context access authorization leases...</span>
+          </div>
+        )}
+        {targetContextAccessAuthorizationLeaseQuery.isError && (
+          <div className="workflow-inline-error" role="alert">
+            <AlertTriangle aria-hidden="true" size={18} />
+            <div>
+              <strong>
+                {targetContextAccessAuthorizationLeaseErrorStatus === 401
+                  ? "Your session has expired"
+                  : targetContextAccessAuthorizationLeaseErrorStatus === 403
+                    ? "Target-context access authorization lease permission is missing"
+                    : "Target-context access authorization leases are unavailable"}
+              </strong>
+              <span>
+                {targetContextAccessAuthorizationLeaseErrorStatus === 401
+                  ? "Sign in again to continue."
+                  : targetContextAccessAuthorizationLeaseErrorStatus === 403
+                    ? "Your current role or scope cannot inspect target-context access authorization leases."
+                    : "No protected-access authority or operational state is inferred from this failed read."}
+              </span>
+            </div>
+          </div>
+        )}
+        {targetContextAccessAuthorizationLeaseQuery.isSuccess &&
+          targetContextAccessAuthorizationLeaseQuery.data
+            .physical_transport_target_context_access_authorization_leases.length === 0 && (
+            <div className="workflow-empty-state" role="status">
+              <Database size={19} />
+              <span>No target-context access authorization leases are recorded in this scope.</span>
+            </div>
+          )}
+        {targetContextAccessAuthorizationLeaseQuery.isSuccess &&
+          targetContextAccessAuthorizationLeaseQuery.data
+            .physical_transport_target_context_access_authorization_leases.length > 0 && (
+            <ol
+              className="workflow-step-preview workflow-physical-route-binding-list"
+              aria-label="Target-context access authorization leases"
+            >
+              {targetContextAccessAuthorizationLeaseQuery.data.physical_transport_target_context_access_authorization_leases.map(
+                (lease) => (
+                  <li key={lease.authorization_lease_id}>
+                    {lease.effective_state === "active" ? (
+                      <ShieldCheck size={18} />
+                    ) : (
+                      <FileClock size={18} />
+                    )}
+                    <div>
+                      <strong>
+                        <code title={lease.authorization_lease_id}>
+                          {safeHolderIdentifier(lease.authorization_lease_id)}
+                        </code>
+                        <span
+                          className={`state-badge ${
+                            lease.effective_state === "active" ? "neutral" : "warning"
+                          }`}
+                        >
+                          {lease.effective_state === "active" ? "Active" : "Expired"}
+                        </span>
+                      </strong>
+                      <div className="workflow-physical-route-binding-grid">
+                        <span>
+                          Organization {lease.scope.organization_id} | environment{" "}
+                          {lease.scope.environment_id} | site {lease.scope.site_id}
+                        </span>
+                        <span>
+                          Accessor{" "}
+                          <code title={lease.accessor_subject_id}>
+                            {safeHolderIdentifier(lease.accessor_subject_id)}
+                          </code>
+                        </span>
+                        <span>
+                          Issued {formatTimestamp(lease.issued_at)} | valid until{" "}
+                          {formatTimestamp(lease.valid_until)}
+                        </span>
+                        <span>
+                          Immutable state {readableKind(lease.state)} | effective state{" "}
+                          {lease.effective_state}
+                        </span>
+                        <span>Single use true | renewable false | transferable false</span>
+                        <span>
+                          Policy{" "}
+                          <code title={lease.policy.policy_id}>
+                            {safeHolderIdentifier(lease.policy.policy_id)}
+                          </code>{" "}
+                          v{lease.policy.policy_version}
+                        </span>
+                        <span>
+                          Integrity reference{" "}
+                          <code title={lease.integrity_reference}>
+                            {safeHolderIdentifier(lease.integrity_reference)}
+                          </code>
+                        </span>
+                        <span className="workflow-physical-route-binding-authority">
+                          Authority endpoint resolution false | protected artifact access true |
+                          route selection false | route binding false | credential selection false |
+                          credential assignment binding false | credential access false | credential
+                          brokerage false | credential resolution false | credential delivery false |
+                          network access false | readiness probe false | publication false | delivery
+                          false | dispatch false | execution false | infrastructure mutation false
+                        </span>
+                      </div>
+                    </div>
+                  </li>
+                ),
+              )}
+            </ol>
+          )}
       </section>
 
       {loading && (

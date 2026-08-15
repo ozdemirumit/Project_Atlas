@@ -1026,6 +1026,53 @@ export type WorkflowPhysicalTransportTargetContextBindingInventory = {
   durable: boolean;
 };
 
+export type WorkflowPhysicalTransportTargetContextAccessAuthorizationLeasePolicy = {
+  policy_id: "policy.workflow-event-physical-transport-target-context-access-authorization";
+  policy_version: "1.0";
+};
+
+export type WorkflowPhysicalTransportTargetContextAccessAuthorizationLeaseAuthority = {
+  endpoint_resolution_authorized: false;
+  protected_artifact_access_authorized: true;
+  route_selection_authorized: false;
+  route_binding_authorized: false;
+  credential_selection_authorized: false;
+  credential_assignment_binding_authorized: false;
+  credential_access_authorized: false;
+  credential_brokerage_authorized: false;
+  credential_resolution_authorized: false;
+  credential_delivery_authorized: false;
+  network_access_authorized: false;
+  readiness_probe_authorized: false;
+  publication_authorized: false;
+  delivery_authorized: false;
+  dispatch_authorized: false;
+  execution_authorized: false;
+  infrastructure_mutation_authorized: false;
+};
+
+export type WorkflowPhysicalTransportTargetContextAccessAuthorizationLease = {
+  authorization_lease_id: string;
+  scope: WorkflowRunPlan["scope"];
+  accessor_subject_id: "service.workflow-protected-transport-context-accessor";
+  state: "authorized_unconsumed";
+  effective_state: "active" | "expired";
+  issued_at: string;
+  valid_until: string;
+  single_use: true;
+  renewable: false;
+  transferable: false;
+  policy: WorkflowPhysicalTransportTargetContextAccessAuthorizationLeasePolicy;
+  authority: WorkflowPhysicalTransportTargetContextAccessAuthorizationLeaseAuthority;
+  integrity_reference: string;
+};
+
+export type WorkflowPhysicalTransportTargetContextAccessAuthorizationLeaseInventory = {
+  physical_transport_target_context_access_authorization_leases: WorkflowPhysicalTransportTargetContextAccessAuthorizationLease[];
+  server_time: string;
+  durable: boolean;
+};
+
 export type WorkflowPhysicalTransportCredentialAssignmentSnapshotAuthority = {
   endpoint_resolution_authorized: false;
   protected_artifact_access_authorized: false;
@@ -1936,6 +1983,49 @@ const physicalTransportTargetContextBindingFields = [
 ] as const;
 const physicalTransportTargetContextBindingInventoryFields = [
   "physical_transport_target_context_bindings",
+  "server_time",
+  "durable",
+] as const;
+const physicalTransportTargetContextAccessAuthorizationLeasePolicyFields = [
+  "policy_id",
+  "policy_version",
+] as const;
+const physicalTransportTargetContextAccessAuthorizationLeaseAuthorityFields = [
+  "endpoint_resolution_authorized",
+  "protected_artifact_access_authorized",
+  "route_selection_authorized",
+  "route_binding_authorized",
+  "credential_selection_authorized",
+  "credential_assignment_binding_authorized",
+  "credential_access_authorized",
+  "credential_brokerage_authorized",
+  "credential_resolution_authorized",
+  "credential_delivery_authorized",
+  "network_access_authorized",
+  "readiness_probe_authorized",
+  "publication_authorized",
+  "delivery_authorized",
+  "dispatch_authorized",
+  "execution_authorized",
+  "infrastructure_mutation_authorized",
+] as const;
+const physicalTransportTargetContextAccessAuthorizationLeaseFields = [
+  "authorization_lease_id",
+  "scope",
+  "accessor_subject_id",
+  "state",
+  "effective_state",
+  "issued_at",
+  "valid_until",
+  "single_use",
+  "renewable",
+  "transferable",
+  "policy",
+  "authority",
+  "integrity_reference",
+] as const;
+const physicalTransportTargetContextAccessAuthorizationLeaseInventoryFields = [
+  "physical_transport_target_context_access_authorization_leases",
   "server_time",
   "durable",
 ] as const;
@@ -3484,6 +3574,70 @@ function isPhysicalTransportTargetContextBinding(
   );
 }
 
+function hasProtectedArtifactAccessOnlyTargetContextAuthority(
+  value: unknown,
+): value is WorkflowPhysicalTransportTargetContextAccessAuthorizationLeaseAuthority {
+  return (
+    isObject(value) &&
+    hasExactKeys(value, physicalTransportTargetContextAccessAuthorizationLeaseAuthorityFields) &&
+    physicalTransportTargetContextAccessAuthorizationLeaseAuthorityFields.every((field) =>
+      field === "protected_artifact_access_authorized"
+        ? value[field] === true
+        : value[field] === false,
+    )
+  );
+}
+
+function isTargetContextAccessAuthorizationPolicy(
+  value: unknown,
+): value is WorkflowPhysicalTransportTargetContextAccessAuthorizationLeasePolicy {
+  return (
+    isObject(value) &&
+    hasExactKeys(value, physicalTransportTargetContextAccessAuthorizationLeasePolicyFields) &&
+    value.policy_id ===
+      "policy.workflow-event-physical-transport-target-context-access-authorization" &&
+    value.policy_version === "1.0"
+  );
+}
+
+function isPhysicalTransportTargetContextAccessAuthorizationLease(
+  value: unknown,
+  scope: WorkflowScope,
+  serverTime: string,
+): value is WorkflowPhysicalTransportTargetContextAccessAuthorizationLease {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, physicalTransportTargetContextAccessAuthorizationLeaseFields) ||
+    !isExactScope(value.scope) ||
+    containsCredentialMaterial(value) ||
+    !isTimezoneAwareTimestamp(value.issued_at) ||
+    !isTimezoneAwareTimestamp(value.valid_until)
+  ) {
+    return false;
+  }
+  const leaseScope = value.scope;
+  const issuedAt = Date.parse(value.issued_at);
+  const validUntil = Date.parse(value.valid_until);
+  const expectedEffectiveState = Date.parse(serverTime) >= validUntil ? "expired" : "active";
+  return (
+    isStableIdentifier(value.authorization_lease_id) &&
+    leaseScope.organization_id === scope.organizationId &&
+    leaseScope.environment_id === scope.environmentId &&
+    leaseScope.site_id === scope.siteId &&
+    value.accessor_subject_id === "service.workflow-protected-transport-context-accessor" &&
+    value.state === "authorized_unconsumed" &&
+    value.effective_state === expectedEffectiveState &&
+    validUntil - issuedAt === 5_000 &&
+    issuedAt <= Date.parse(serverTime) &&
+    value.single_use === true &&
+    value.renewable === false &&
+    value.transferable === false &&
+    isTargetContextAccessAuthorizationPolicy(value.policy) &&
+    hasProtectedArtifactAccessOnlyTargetContextAuthority(value.authority) &&
+    isStableIdentifier(value.integrity_reference)
+  );
+}
+
 function hasZeroPhysicalTransportCredentialAssignmentSnapshotAuthority(
   value: unknown,
 ): value is WorkflowPhysicalTransportCredentialAssignmentSnapshotAuthority {
@@ -4641,6 +4795,62 @@ export async function listWorkflowPhysicalTransportTargetContextBindings(input: 
     credentialMaterializationIds.add(binding.credential_materialization_id);
   }
   return data as WorkflowPhysicalTransportTargetContextBindingInventory;
+}
+
+export async function listWorkflowPhysicalTransportTargetContextAccessAuthorizationLeases(input: {
+  scope: WorkflowScope;
+}): Promise<WorkflowPhysicalTransportTargetContextAccessAuthorizationLeaseInventory> {
+  const response = await apiFetch(
+    "/api/v1/workflows/physical-transport-target-context-access-authorization-leases",
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(
+    response,
+    "Workflow physical transport target-context access authorization lease retrieval failed",
+  );
+  if (
+    !isObject(data) ||
+    !hasExactKeys(
+      data,
+      physicalTransportTargetContextAccessAuthorizationLeaseInventoryFields,
+    ) ||
+    containsCredentialMaterial(data) ||
+    !Array.isArray(data.physical_transport_target_context_access_authorization_leases) ||
+    data.physical_transport_target_context_access_authorization_leases.length > 256 ||
+    !isTimezoneAwareTimestamp(data.server_time) ||
+    typeof data.durable !== "boolean"
+  ) {
+    throw new ApiRequestError(
+      "Workflow physical transport target-context access authorization lease response was unsafe",
+      response.status,
+    );
+  }
+  const serverTime = data.server_time;
+  if (
+    !data.physical_transport_target_context_access_authorization_leases.every((lease) =>
+      isPhysicalTransportTargetContextAccessAuthorizationLease(lease, input.scope, serverTime),
+    )
+  ) {
+    throw new ApiRequestError(
+      "Workflow physical transport target-context access authorization lease response was unsafe",
+      response.status,
+    );
+  }
+  const leaseIds = new Set<string>();
+  for (const lease of data.physical_transport_target_context_access_authorization_leases) {
+    if (
+      !isObject(lease) ||
+      typeof lease.authorization_lease_id !== "string" ||
+      leaseIds.has(lease.authorization_lease_id)
+    ) {
+      throw new ApiRequestError(
+        "Workflow physical transport target-context access authorization lease response was unsafe",
+        response.status,
+      );
+    }
+    leaseIds.add(lease.authorization_lease_id);
+  }
+  return data as WorkflowPhysicalTransportTargetContextAccessAuthorizationLeaseInventory;
 }
 
 export async function listWorkflowPhysicalTransportCredentialAssignmentSnapshots(): Promise<WorkflowPhysicalTransportCredentialAssignmentSnapshotInventory> {

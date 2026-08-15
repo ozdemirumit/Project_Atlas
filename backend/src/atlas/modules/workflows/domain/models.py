@@ -216,6 +216,20 @@ class WorkflowEventPhysicalTransportTargetContextBindingEffectiveState(StrEnum):
     EXPIRED = "expired"
 
 
+class WorkflowProtectedArtifactKind(StrEnum):
+    ENDPOINT = "endpoint"
+    CREDENTIAL = "credential"
+
+
+class WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseState(StrEnum):
+    AUTHORIZED_UNCONSUMED = "authorized_unconsumed"
+
+
+class WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseEffectiveState(StrEnum):
+    ACTIVE = "active"
+    EXPIRED = "expired"
+
+
 class WorkflowEventPhysicalTransportCredentialMaterializationFailureClass(StrEnum):
     SEALED_LINEAGE_REJECTED = "sealed_lineage_rejected"
     CREDENTIAL_SOURCE_INVALID = "credential_source_invalid"
@@ -6862,6 +6876,414 @@ class WorkflowEventPhysicalTransportTargetContextBinding:
         if self.bound_at <= evaluated_at < self.joint_usable_until:
             return WorkflowEventPhysicalTransportTargetContextBindingEffectiveState.ACTIVE
         return WorkflowEventPhysicalTransportTargetContextBindingEffectiveState.EXPIRED
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportTargetContextAccessAuthorizationPolicy:
+    """Code-owned requirements for one bounded protected-artifact access lease."""
+
+    policy_id: str
+    policy_version: str
+    validity_window_seconds: int
+    full_window_required: bool
+    accessor_subject_bound: bool
+    single_use_required: bool
+    renewable_allowed: bool
+    transferable_allowed: bool
+    endpoint_status_attestation_required: bool
+    credential_status_attestation_required: bool
+    required_endpoint_status_attestor_id: str
+    required_endpoint_status_attestor_version: str
+    required_credential_status_attestor_id: str
+    required_credential_status_attestor_version: str
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        _require_identifier(self.policy_id, name="target context access policy id")
+        _require_identifier(self.policy_version, name="target context access policy version")
+        for value, name in (
+            (self.required_endpoint_status_attestor_id, "required endpoint status attestor id"),
+            (
+                self.required_endpoint_status_attestor_version,
+                "required endpoint status attestor version",
+            ),
+            (
+                self.required_credential_status_attestor_id,
+                "required credential status attestor id",
+            ),
+            (
+                self.required_credential_status_attestor_version,
+                "required credential status attestor version",
+            ),
+        ):
+            _require_identifier(value, name=name)
+        if (
+            self.required_endpoint_status_attestor_id
+            != "attestor.workflow-protected-endpoint-store-status"
+            or self.required_endpoint_status_attestor_version != "1.0"
+            or self.required_credential_status_attestor_id
+            != "attestor.workflow-protected-credential-store-status"
+            or self.required_credential_status_attestor_version != "1.0"
+        ):
+            raise ValueError("target context access policy requires code-owned status attestors")
+        if self.validity_window_seconds != 5:
+            raise ValueError("target context access policy window must be exactly 5 seconds")
+        if any(
+            value is not True
+            for value in (
+                self.full_window_required,
+                self.accessor_subject_bound,
+                self.single_use_required,
+                self.endpoint_status_attestation_required,
+                self.credential_status_attestation_required,
+            )
+        ):
+            raise ValueError("target context access policy requirements must remain enabled")
+        if self.renewable_allowed is not False or self.transferable_allowed is not False:
+            raise ValueError("target context access leases cannot be renewable or transferable")
+        _require_digest(self.canonical_digest, name="target context access policy digest")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("target context access policy canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "accessor_subject_bound": self.accessor_subject_bound,
+            "credential_status_attestation_required": (self.credential_status_attestation_required),
+            "endpoint_status_attestation_required": self.endpoint_status_attestation_required,
+            "full_window_required": self.full_window_required,
+            "policy_id": self.policy_id,
+            "policy_version": self.policy_version,
+            "required_credential_status_attestor_id": (self.required_credential_status_attestor_id),
+            "required_credential_status_attestor_version": (
+                self.required_credential_status_attestor_version
+            ),
+            "required_endpoint_status_attestor_id": self.required_endpoint_status_attestor_id,
+            "required_endpoint_status_attestor_version": (
+                self.required_endpoint_status_attestor_version
+            ),
+            "renewable_allowed": self.renewable_allowed,
+            "single_use_required": self.single_use_required,
+            "transferable_allowed": self.transferable_allowed,
+            "validity_window_seconds": self.validity_window_seconds,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+
+def code_owned_workflow_event_physical_transport_target_context_access_authorization_policy() -> (
+    WorkflowEventPhysicalTransportTargetContextAccessAuthorizationPolicy
+):
+    values: dict[str, object] = {
+        "policy_id": (
+            "policy.workflow-event-physical-transport-target-context-access-authorization"
+        ),
+        "policy_version": "1.0",
+        "validity_window_seconds": 5,
+        "full_window_required": True,
+        "accessor_subject_bound": True,
+        "single_use_required": True,
+        "renewable_allowed": False,
+        "transferable_allowed": False,
+        "endpoint_status_attestation_required": True,
+        "credential_status_attestation_required": True,
+        "required_endpoint_status_attestor_id": (
+            "attestor.workflow-protected-endpoint-store-status"
+        ),
+        "required_endpoint_status_attestor_version": "1.0",
+        "required_credential_status_attestor_id": (
+            "attestor.workflow-protected-credential-store-status"
+        ),
+        "required_credential_status_attestor_version": "1.0",
+    }
+    return WorkflowEventPhysicalTransportTargetContextAccessAuthorizationPolicy(
+        **cast(Any, values), canonical_digest=canonical_digest(values)
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedArtifactStatusAttestation:
+    """Signed metadata-only evidence about one protected artifact's current status."""
+
+    artifact_kind: WorkflowProtectedArtifactKind
+    materialization_id: str
+    materialization_digest: str
+    target_context_binding_id: str
+    target_context_binding_digest: str
+    target_context_commitment: str
+    protected_store_attestor_id: str
+    protected_store_attestor_version: str
+    attestation_id: str
+    request_nonce_digest: str
+    observed_at: datetime
+    valid_until: datetime
+    usable: bool
+    revoked: bool
+    destroyed: bool
+    signing_key_id: str
+    signature_algorithm: str
+    integrity_signature: str
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.artifact_kind, WorkflowProtectedArtifactKind):
+            raise ValueError("protected artifact status attestation kind is invalid")
+        for value, name in (
+            (self.materialization_id, "protected artifact materialization id"),
+            (self.target_context_binding_id, "target context binding id"),
+            (self.protected_store_attestor_id, "protected store attestor id"),
+            (self.protected_store_attestor_version, "protected store attestor version"),
+            (self.attestation_id, "protected artifact status attestation id"),
+            (self.signing_key_id, "protected artifact status signing key id"),
+            (self.signature_algorithm, "protected artifact status signature algorithm"),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (self.materialization_digest, "protected artifact materialization digest"),
+            (self.target_context_binding_digest, "target context binding digest"),
+            (self.target_context_commitment, "target context commitment"),
+            (self.request_nonce_digest, "protected artifact status request nonce digest"),
+            (self.canonical_digest, "protected artifact status attestation digest"),
+        ):
+            _require_digest(value, name=name)
+        if (
+            not self.integrity_signature
+            or self.integrity_signature != self.integrity_signature.strip()
+            or len(self.integrity_signature) > 2048
+            or any(character.isspace() for character in self.integrity_signature)
+        ):
+            raise ValueError("protected artifact status integrity signature is invalid")
+        if self.observed_at.tzinfo is None or self.valid_until.tzinfo is None:
+            raise ValueError("protected artifact status attestation times must be timezone-aware")
+        if self.observed_at >= self.valid_until:
+            raise ValueError("protected artifact status attestation must have a usable window")
+        if self.usable is not True or self.revoked is not False or self.destroyed is not False:
+            raise ValueError("protected artifact status attestation is not usable")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("protected artifact status attestation canonical digest mismatch")
+
+    def signature_payload(self) -> dict[str, object]:
+        return {
+            "artifact_kind": self.artifact_kind.value,
+            "attestation_id": self.attestation_id,
+            "destroyed": self.destroyed,
+            "materialization_digest": self.materialization_digest,
+            "materialization_id": self.materialization_id,
+            "observed_at": self.observed_at.isoformat(),
+            "protected_store_attestor_id": self.protected_store_attestor_id,
+            "protected_store_attestor_version": self.protected_store_attestor_version,
+            "request_nonce_digest": self.request_nonce_digest,
+            "revoked": self.revoked,
+            "signature_algorithm": self.signature_algorithm,
+            "signing_key_id": self.signing_key_id,
+            "target_context_binding_digest": self.target_context_binding_digest,
+            "target_context_binding_id": self.target_context_binding_id,
+            "target_context_commitment": self.target_context_commitment,
+            "usable": self.usable,
+            "valid_until": self.valid_until.isoformat(),
+        }
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            **self.signature_payload(),
+            "integrity_signature": self.integrity_signature,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseAuthority:
+    endpoint_resolution_authorized: bool = False
+    protected_artifact_access_authorized: bool = True
+    route_selection_authorized: bool = False
+    route_binding_authorized: bool = False
+    credential_selection_authorized: bool = False
+    credential_assignment_binding_authorized: bool = False
+    credential_access_authorized: bool = False
+    credential_brokerage_authorized: bool = False
+    credential_resolution_authorized: bool = False
+    credential_delivery_authorized: bool = False
+    network_access_authorized: bool = False
+    readiness_probe_authorized: bool = False
+    publication_authorized: bool = False
+    delivery_authorized: bool = False
+    dispatch_authorized: bool = False
+    execution_authorized: bool = False
+    infrastructure_mutation_authorized: bool = False
+
+    def __post_init__(self) -> None:
+        values = self.canonical_value()
+        if values["protected_artifact_access_authorized"] is not True or any(
+            value is not False
+            for name, value in values.items()
+            if name != "protected_artifact_access_authorized"
+        ):
+            raise ValueError("target context access leases grant only protected artifact access")
+
+    def canonical_value(self) -> dict[str, bool]:
+        return {
+            "credential_access_authorized": self.credential_access_authorized,
+            "credential_assignment_binding_authorized": (
+                self.credential_assignment_binding_authorized
+            ),
+            "credential_brokerage_authorized": self.credential_brokerage_authorized,
+            "credential_delivery_authorized": self.credential_delivery_authorized,
+            "credential_resolution_authorized": self.credential_resolution_authorized,
+            "credential_selection_authorized": self.credential_selection_authorized,
+            "delivery_authorized": self.delivery_authorized,
+            "dispatch_authorized": self.dispatch_authorized,
+            "endpoint_resolution_authorized": self.endpoint_resolution_authorized,
+            "execution_authorized": self.execution_authorized,
+            "infrastructure_mutation_authorized": self.infrastructure_mutation_authorized,
+            "network_access_authorized": self.network_access_authorized,
+            "protected_artifact_access_authorized": self.protected_artifact_access_authorized,
+            "publication_authorized": self.publication_authorized,
+            "readiness_probe_authorized": self.readiness_probe_authorized,
+            "route_binding_authorized": self.route_binding_authorized,
+            "route_selection_authorized": self.route_selection_authorized,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLease:
+    """Single-use access authority that never opens either protected artifact."""
+
+    authorization_lease_id: str
+    target_context_binding_id: str
+    target_context_binding_digest: str
+    target_context_commitment: str
+    endpoint_status_attestation_id: str
+    endpoint_status_attestation_digest: str
+    endpoint_status_attestation_valid_until: datetime
+    credential_status_attestation_id: str
+    credential_status_attestation_digest: str
+    credential_status_attestation_valid_until: datetime
+    scope: WorkflowScope
+    accessor_subject_id: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    issued_at: datetime
+    valid_until: datetime
+    joint_usable_until: datetime
+    single_use: bool
+    renewable: bool
+    transferable: bool
+    state: WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseState
+    authority: WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.authorization_lease_id, "target context access authorization lease id"),
+            (self.target_context_binding_id, "target context binding id"),
+            (self.endpoint_status_attestation_id, "endpoint status attestation id"),
+            (self.credential_status_attestation_id, "credential status attestation id"),
+            (self.accessor_subject_id, "target context accessor subject id"),
+            (self.policy_id, "target context access policy id"),
+            (self.policy_version, "target context access policy version"),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (self.target_context_binding_digest, "target context binding digest"),
+            (self.target_context_commitment, "target context commitment"),
+            (self.endpoint_status_attestation_digest, "endpoint status attestation digest"),
+            (self.credential_status_attestation_digest, "credential status attestation digest"),
+            (self.policy_digest, "target context access policy digest"),
+            (self.canonical_digest, "target context access authorization lease digest"),
+        ):
+            _require_digest(value, name=name)
+        if any(
+            value.tzinfo is None
+            for value in (
+                self.endpoint_status_attestation_valid_until,
+                self.credential_status_attestation_valid_until,
+                self.issued_at,
+                self.valid_until,
+                self.joint_usable_until,
+            )
+        ):
+            raise ValueError("target context access authorization times must be timezone-aware")
+        if self.valid_until - self.issued_at != timedelta(seconds=5):
+            raise ValueError("target context access lease must have an exact 5-second window")
+        if self.issued_at >= self.valid_until or any(
+            self.valid_until > deadline
+            for deadline in (
+                self.joint_usable_until,
+                self.endpoint_status_attestation_valid_until,
+                self.credential_status_attestation_valid_until,
+            )
+        ):
+            raise ValueError("target context access lease exceeds its evidence window")
+        if (
+            self.single_use is not True
+            or self.renewable is not False
+            or self.transferable is not False
+        ):
+            raise ValueError("target context access lease must be single-use and non-transferable")
+        if (
+            self.state
+            is not (
+                WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseState
+            ).AUTHORIZED_UNCONSUMED
+        ):
+            raise ValueError("target context access lease must remain authorized_unconsumed")
+        if (
+            self.authority
+            != WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseAuthority()
+        ):
+            raise ValueError("target context access lease has invalid authority declarations")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("target context access authorization lease canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "accessor_subject_id": self.accessor_subject_id,
+            "authority": self.authority.canonical_value(),
+            "authorization_lease_id": self.authorization_lease_id,
+            "credential_status_attestation_digest": self.credential_status_attestation_digest,
+            "credential_status_attestation_id": self.credential_status_attestation_id,
+            "credential_status_attestation_valid_until": (
+                self.credential_status_attestation_valid_until.isoformat()
+            ),
+            "endpoint_status_attestation_digest": self.endpoint_status_attestation_digest,
+            "endpoint_status_attestation_id": self.endpoint_status_attestation_id,
+            "endpoint_status_attestation_valid_until": (
+                self.endpoint_status_attestation_valid_until.isoformat()
+            ),
+            "issued_at": self.issued_at.isoformat(),
+            "joint_usable_until": self.joint_usable_until.isoformat(),
+            "policy_digest": self.policy_digest,
+            "policy_id": self.policy_id,
+            "policy_version": self.policy_version,
+            "renewable": self.renewable,
+            "scope": self.scope.canonical_value(),
+            "single_use": self.single_use,
+            "state": self.state.value,
+            "target_context_binding_digest": self.target_context_binding_digest,
+            "target_context_binding_id": self.target_context_binding_id,
+            "target_context_commitment": self.target_context_commitment,
+            "transferable": self.transferable,
+            "valid_until": self.valid_until.isoformat(),
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+    def effective_state(
+        self, *, evaluated_at: datetime
+    ) -> WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseEffectiveState:
+        if evaluated_at.tzinfo is None:
+            raise ValueError("target context access evaluation time must be aware")
+        if self.issued_at <= evaluated_at < self.valid_until:
+            return (
+                WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseEffectiveState
+            ).ACTIVE
+        return (
+            WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseEffectiveState
+        ).EXPIRED
 
 
 @dataclass(frozen=True, slots=True)

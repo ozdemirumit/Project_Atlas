@@ -125,6 +125,13 @@ from atlas.modules.workflows.application.route_freshness_admission_ports import 
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionResult,
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionStatus,
 )
+from atlas.modules.workflows.application.target_context_access_authorization_lease_ports import (
+    WorkflowTargetContextAccessAuthorizationLeaseIdempotencyRecord,
+    WorkflowTargetContextAccessAuthorizationLeaseRequest,
+    WorkflowTargetContextAccessAuthorizationLeaseResult,
+    WorkflowTargetContextAccessAuthorizationLeaseStatus,
+    validate_workflow_target_context_access_authorization_request,
+)
 from atlas.modules.workflows.application.target_context_binding_ports import (
     WorkflowEventPhysicalTransportTargetContextBindingRequest,
     WorkflowEventPhysicalTransportTargetContextBindingResult,
@@ -188,6 +195,7 @@ from atlas.modules.workflows.domain import (
     WorkflowEventPhysicalTransportRouteBindingState,
     WorkflowEventPhysicalTransportRouteFreshnessAdmission,
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionState,
+    WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLease,
     WorkflowEventPhysicalTransportTargetContextBinding,
     WorkflowEventPhysicalTransportTargetContextBindingAuthority,
     WorkflowEventPhysicalTransportTargetContextBindingState,
@@ -380,6 +388,13 @@ class InMemoryWorkflowPlanRepository:
         self._target_context_binding_requests: dict[
             tuple[WorkflowScope, str, str],
             tuple[str, WorkflowEventPhysicalTransportTargetContextBinding],
+        ] = {}
+        self._target_context_access_authorization_leases: dict[
+            str, WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLease
+        ] = {}
+        self._target_context_access_authorization_requests: dict[
+            tuple[WorkflowScope, str, str],
+            WorkflowTargetContextAccessAuthorizationLeaseIdempotencyRecord,
         ] = {}
         self._lock = asyncio.Lock()
 
@@ -2915,6 +2930,147 @@ class InMemoryWorkflowPlanRepository:
                 reverse=True,
             )
             return tuple(bindings[:limit])
+
+    async def get_target_context_binding_by_id(
+        self, *, binding_id: str
+    ) -> WorkflowEventPhysicalTransportTargetContextBinding | None:
+        async with self._lock:
+            return self._target_context_bindings.get(binding_id)
+
+    async def list_target_context_access_authorization_leases(
+        self,
+        *,
+        scope: WorkflowScope,
+        limit: int = 256,
+    ) -> tuple[WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLease, ...]:
+        if not 1 <= limit <= 256:
+            raise ValueError("target context access authorization lease limit is invalid")
+        async with self._lock:
+            leases = sorted(
+                (
+                    lease
+                    for lease in self._target_context_access_authorization_leases.values()
+                    if lease.scope == scope
+                ),
+                key=lambda lease: (lease.issued_at, lease.authorization_lease_id),
+                reverse=True,
+            )
+            return tuple(leases[:limit])
+
+    async def authorize_target_context_access(
+        self,
+        request: WorkflowTargetContextAccessAuthorizationLeaseRequest,
+    ) -> WorkflowTargetContextAccessAuthorizationLeaseResult:
+        statuses = WorkflowTargetContextAccessAuthorizationLeaseStatus
+        request_key = (request.scope, request.accessor_subject_id, request.idempotency_key)
+        async with self._lock:
+            try:
+                validate_workflow_target_context_access_authorization_request(request)
+            except (TypeError, ValueError):
+                return WorkflowTargetContextAccessAuthorizationLeaseResult(
+                    statuses.EVIDENCE_CONFLICT, None
+                )
+            observed_at = datetime.now(UTC)
+            binding = self._target_context_bindings.get(request.expected_target_context_binding_id)
+            if not self._target_context_access_evidence_matches(
+                request=request,
+                binding=binding,
+                observed_at=observed_at,
+            ):
+                return WorkflowTargetContextAccessAuthorizationLeaseResult(
+                    statuses.EVIDENCE_CONFLICT, None
+                )
+
+            prior = self._target_context_access_authorization_requests.get(request_key)
+            if prior is not None:
+                if prior.request_fingerprint != request.request_fingerprint:
+                    return WorkflowTargetContextAccessAuthorizationLeaseResult(
+                        statuses.IDEMPOTENCY_CONFLICT, None
+                    )
+                if prior.lease.valid_until <= observed_at:
+                    return WorkflowTargetContextAccessAuthorizationLeaseResult(
+                        statuses.EVIDENCE_CONFLICT, None
+                    )
+                return WorkflowTargetContextAccessAuthorizationLeaseResult(
+                    statuses.REPLAY, prior.lease
+                )
+
+            existing = self._target_context_access_authorization_leases.get(
+                request.expected_target_context_binding_id
+            )
+            if existing is not None:
+                return WorkflowTargetContextAccessAuthorizationLeaseResult(
+                    statuses.ALREADY_AUTHORIZED, existing
+                )
+            try:
+                await request.required_precommit_audit()
+            except Exception:
+                return WorkflowTargetContextAccessAuthorizationLeaseResult(
+                    statuses.PRECOMMIT_AUDIT_FAILED, None
+                )
+
+            commit_observed_at = datetime.now(UTC)
+            try:
+                validate_workflow_target_context_access_authorization_request(request)
+            except (TypeError, ValueError):
+                return WorkflowTargetContextAccessAuthorizationLeaseResult(
+                    statuses.EVIDENCE_CONFLICT, None
+                )
+            if not self._target_context_access_evidence_matches(
+                request=request,
+                binding=self._target_context_bindings.get(
+                    request.expected_target_context_binding_id
+                ),
+                observed_at=commit_observed_at,
+            ):
+                return WorkflowTargetContextAccessAuthorizationLeaseResult(
+                    statuses.EVIDENCE_CONFLICT, None
+                )
+            lease = request.candidate
+            self._target_context_access_authorization_leases[lease.target_context_binding_id] = (
+                lease
+            )
+            self._target_context_access_authorization_requests[request_key] = (
+                WorkflowTargetContextAccessAuthorizationLeaseIdempotencyRecord(
+                    request_fingerprint=request.request_fingerprint,
+                    lease=lease,
+                )
+            )
+            return WorkflowTargetContextAccessAuthorizationLeaseResult(statuses.AUTHORIZED, lease)
+
+    @staticmethod
+    def _target_context_access_evidence_matches(
+        *,
+        request: WorkflowTargetContextAccessAuthorizationLeaseRequest,
+        binding: WorkflowEventPhysicalTransportTargetContextBinding | None,
+        observed_at: datetime,
+    ) -> bool:
+        if binding is None:
+            return False
+        endpoint = request.endpoint_status_attestation
+        credential = request.credential_status_attestation
+        candidate = request.candidate
+        return (
+            binding.binding_id == request.expected_target_context_binding_id
+            and binding.canonical_digest == request.expected_target_context_binding_digest
+            and canonical_digest(binding.digest_payload()) == binding.canonical_digest
+            and binding.target_context_commitment == request.expected_target_context_commitment
+            and binding.endpoint_materialization_id == request.expected_endpoint_materialization_id
+            and binding.endpoint_materialization_digest
+            == request.expected_endpoint_materialization_digest
+            and binding.credential_materialization_id
+            == request.expected_credential_materialization_id
+            and binding.credential_materialization_digest
+            == request.expected_credential_materialization_digest
+            and binding.scope == request.scope
+            and binding.bound_at <= observed_at
+            and candidate.issued_at <= observed_at < candidate.valid_until
+            and candidate.valid_until <= binding.joint_usable_until
+            and candidate.valid_until <= endpoint.valid_until
+            and candidate.valid_until <= credential.valid_until
+            and endpoint.observed_at <= observed_at < endpoint.valid_until
+            and credential.observed_at <= observed_at < credential.valid_until
+        )
 
     async def bind_target_context(
         self,

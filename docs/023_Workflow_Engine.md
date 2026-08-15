@@ -639,6 +639,13 @@ MVP workflows do not execute C3 through C5 capabilities.
   physical-route and assignment lineage. It opens neither artifact, records only the bounded
   overlap observation and grants no artifact access, credential delivery, network, readiness,
   publication, dispatch or execution authority.
+- ADR-159 establishes one append-only, single-use and exact five-second target-context access-
+  authorization lease for the dedicated accessor workload. Two trusted metadata-only protected-
+  store attestations are acquired before the database transaction; the transaction then
+  revalidates pending-outbox liveness, current route and credential-assignment heads and fences,
+  canonical lineage and the full window without depending on orchestration or publication leases.
+  Only protected-artifact access is authorized; consumption, artifact opening, credential
+  delivery, endpoint reveal and every network or runtime authority remain separate boundaries.
 
 ## 39. Assumptions
 
