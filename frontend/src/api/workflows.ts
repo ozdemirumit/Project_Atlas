@@ -738,6 +738,50 @@ export type WorkflowPhysicalTransportCredentialAssignmentBindingInventory = {
   durable: boolean;
 };
 
+export type WorkflowPhysicalTransportCredentialAssignmentFreshnessAdmissionAuthority = {
+  endpoint_resolution_authorized: false;
+  protected_artifact_access_authorized: false;
+  route_selection_authorized: false;
+  route_binding_authorized: false;
+  credential_selection_authorized: false;
+  credential_assignment_binding_authorized: false;
+  credential_access_authorized: false;
+  credential_brokerage_authorized: false;
+  credential_resolution_authorized: false;
+  credential_delivery_authorized: false;
+  network_access_authorized: false;
+  readiness_probe_authorized: false;
+  publication_authorized: false;
+  delivery_authorized: false;
+  dispatch_authorized: false;
+  execution_authorized: false;
+  infrastructure_mutation_authorized: false;
+};
+
+export type WorkflowPhysicalTransportCredentialAssignmentFreshnessAdmission = {
+  freshness_admission_id: string;
+  physical_transport_credential_assignment_binding_id: string;
+  credential_assignment_snapshot_id: string;
+  assignment_id: string;
+  assignment_revision: string;
+  credential_generation: number;
+  rotation_epoch: number;
+  policy_id: string;
+  policy_version: string;
+  scope: WorkflowRunPlan["scope"];
+  admitter_subject_id: string;
+  evaluated_at: string;
+  valid_until: string;
+  state: "admitted_current";
+  authority: WorkflowPhysicalTransportCredentialAssignmentFreshnessAdmissionAuthority;
+  integrity_reference: string;
+};
+
+export type WorkflowPhysicalTransportCredentialAssignmentFreshnessAdmissionInventory = {
+  physical_transport_credential_assignment_freshness_admissions: WorkflowPhysicalTransportCredentialAssignmentFreshnessAdmission[];
+  durable: boolean;
+};
+
 export type WorkflowPhysicalTransportRouteFreshnessAdmissionAuthority = {
   route_selection_authorized: false;
   route_binding_authorized: false;
@@ -1494,6 +1538,47 @@ const physicalTransportCredentialAssignmentBindingInventoryFields = [
   "physical_transport_credential_assignment_bindings",
   "durable",
 ] as const;
+const physicalTransportCredentialAssignmentFreshnessAdmissionAuthorityFields = [
+  "endpoint_resolution_authorized",
+  "protected_artifact_access_authorized",
+  "route_selection_authorized",
+  "route_binding_authorized",
+  "credential_selection_authorized",
+  "credential_assignment_binding_authorized",
+  "credential_access_authorized",
+  "credential_brokerage_authorized",
+  "credential_resolution_authorized",
+  "credential_delivery_authorized",
+  "network_access_authorized",
+  "readiness_probe_authorized",
+  "publication_authorized",
+  "delivery_authorized",
+  "dispatch_authorized",
+  "execution_authorized",
+  "infrastructure_mutation_authorized",
+] as const;
+const physicalTransportCredentialAssignmentFreshnessAdmissionFields = [
+  "freshness_admission_id",
+  "physical_transport_credential_assignment_binding_id",
+  "credential_assignment_snapshot_id",
+  "assignment_id",
+  "assignment_revision",
+  "credential_generation",
+  "rotation_epoch",
+  "policy_id",
+  "policy_version",
+  "scope",
+  "admitter_subject_id",
+  "evaluated_at",
+  "valid_until",
+  "state",
+  "authority",
+  "integrity_reference",
+] as const;
+const physicalTransportCredentialAssignmentFreshnessAdmissionInventoryFields = [
+  "physical_transport_credential_assignment_freshness_admissions",
+  "durable",
+] as const;
 const physicalTransportRouteFreshnessAdmissionAuthorityFields = [
   "route_selection_authorized",
   "route_binding_authorized",
@@ -1729,6 +1814,10 @@ function isDigest(value: unknown): value is string {
 
 function isTimestamp(value: unknown): value is string {
   return typeof value === "string" && !Number.isNaN(Date.parse(value));
+}
+
+function isTimezoneAwareTimestamp(value: unknown): value is string {
+  return isTimestamp(value) && /(?:Z|[+-]\d{2}:\d{2})$/i.test(value);
 }
 
 function isSortedUniqueArray<T extends string>(
@@ -2747,6 +2836,62 @@ function isPhysicalTransportCredentialAssignmentBinding(
   );
 }
 
+function hasZeroPhysicalTransportCredentialAssignmentFreshnessAdmissionAuthority(
+  value: unknown,
+): value is WorkflowPhysicalTransportCredentialAssignmentFreshnessAdmissionAuthority {
+  return (
+    isObject(value) &&
+    hasExactKeys(
+      value,
+      physicalTransportCredentialAssignmentFreshnessAdmissionAuthorityFields,
+    ) &&
+    physicalTransportCredentialAssignmentFreshnessAdmissionAuthorityFields.every(
+      (field) => value[field] === false,
+    )
+  );
+}
+
+function isPhysicalTransportCredentialAssignmentFreshnessAdmission(
+  value: unknown,
+  scope: WorkflowScope,
+): value is WorkflowPhysicalTransportCredentialAssignmentFreshnessAdmission {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, physicalTransportCredentialAssignmentFreshnessAdmissionFields) ||
+    !isExactScope(value.scope) ||
+    containsCredentialMaterial(value) ||
+    !isTimezoneAwareTimestamp(value.evaluated_at) ||
+    !isTimezoneAwareTimestamp(value.valid_until)
+  ) {
+    return false;
+  }
+  const admissionScope = value.scope;
+  const evaluatedAt = Date.parse(value.evaluated_at);
+  const validUntil = Date.parse(value.valid_until);
+  return (
+    isStableIdentifier(value.freshness_admission_id) &&
+    isStableIdentifier(value.physical_transport_credential_assignment_binding_id) &&
+    isStableIdentifier(value.credential_assignment_snapshot_id) &&
+    isStableIdentifier(value.assignment_id) &&
+    isStableIdentifier(value.assignment_revision) &&
+    Number.isSafeInteger(value.credential_generation) &&
+    Number(value.credential_generation) >= 1 &&
+    Number.isSafeInteger(value.rotation_epoch) &&
+    Number(value.rotation_epoch) >= 1 &&
+    isStableIdentifier(value.policy_id) &&
+    isIdentifier(value.policy_version) &&
+    admissionScope.organization_id === scope.organizationId &&
+    admissionScope.environment_id === scope.environmentId &&
+    admissionScope.site_id === scope.siteId &&
+    isStableIdentifier(value.admitter_subject_id) &&
+    evaluatedAt < validUntil &&
+    validUntil - evaluatedAt <= 60_000 &&
+    value.state === "admitted_current" &&
+    hasZeroPhysicalTransportCredentialAssignmentFreshnessAdmissionAuthority(value.authority) &&
+    isStableIdentifier(value.integrity_reference)
+  );
+}
+
 function hasZeroPhysicalTransportRouteFreshnessAdmissionAuthority(
   value: unknown,
 ): value is WorkflowPhysicalTransportRouteFreshnessAdmissionAuthority {
@@ -3689,6 +3834,53 @@ export async function listWorkflowPhysicalTransportCredentialAssignmentBindings(
     sourcePairs.add(sourcePair);
   }
   return data as WorkflowPhysicalTransportCredentialAssignmentBindingInventory;
+}
+
+export async function listWorkflowPhysicalTransportCredentialAssignmentFreshnessAdmissions(input: {
+  scope: WorkflowScope;
+}): Promise<WorkflowPhysicalTransportCredentialAssignmentFreshnessAdmissionInventory> {
+  const response = await apiFetch(
+    "/api/v1/workflows/physical-transport-credential-assignment-freshness-admissions",
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(
+    response,
+    "Workflow physical transport credential-assignment freshness admission retrieval failed",
+  );
+  if (
+    !isObject(data) ||
+    !hasExactKeys(
+      data,
+      physicalTransportCredentialAssignmentFreshnessAdmissionInventoryFields,
+    ) ||
+    containsCredentialMaterial(data) ||
+    !Array.isArray(data.physical_transport_credential_assignment_freshness_admissions) ||
+    data.physical_transport_credential_assignment_freshness_admissions.length > 256 ||
+    typeof data.durable !== "boolean" ||
+    !data.physical_transport_credential_assignment_freshness_admissions.every((admission) =>
+      isPhysicalTransportCredentialAssignmentFreshnessAdmission(admission, input.scope),
+    )
+  ) {
+    throw new ApiRequestError(
+      "Workflow physical transport credential-assignment freshness admission response was unsafe",
+      response.status,
+    );
+  }
+  const admissionIds = new Set(
+    data.physical_transport_credential_assignment_freshness_admissions.map((admission) =>
+      isObject(admission) ? admission.freshness_admission_id : undefined,
+    ),
+  );
+  if (
+    admissionIds.size !==
+    data.physical_transport_credential_assignment_freshness_admissions.length
+  ) {
+    throw new ApiRequestError(
+      "Workflow physical transport credential-assignment freshness admission response was unsafe",
+      response.status,
+    );
+  }
+  return data as WorkflowPhysicalTransportCredentialAssignmentFreshnessAdmissionInventory;
 }
 
 export async function listWorkflowPhysicalTransportRouteFreshnessAdmissions(input: {

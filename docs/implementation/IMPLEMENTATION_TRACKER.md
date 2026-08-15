@@ -4,14 +4,77 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-204 |
-| Title | Immutable workflow physical-transport credential-assignment binding without access authority |
-| Status | Implemented and locally validated; PR pending |
-| Branch | `agent/workflow-credential-assignment-bindings` |
-| Pull Request | Not opened |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-149, ADR-150, ADR-151, ADR-152, ADR-153, ADR-154 |
+| Task ID | ATLAS-IMP-205 |
+| Title | Immutable workflow physical-transport credential-assignment freshness admission without access authority |
+| Status | In progress |
+| Branch | `agent/workflow-credential-assignment-freshness-admissions` |
+| Pull Request | [#218](https://github.com/ozdemirumit/Project_Atlas/pull/218) |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-150, ADR-153, ADR-154, ADR-155 |
 | Last Updated | 2026-08-15 |
-| Next Action | Publish the verified PR, pass exact-head CI, merge and verify independent main CI |
+| Next Action | Complete PR CI, merge and independent `main` CI verification |
+
+### ATLAS-IMP-205 Scope Rationale
+
+- IMP-204 binds one exact credential-assignment snapshot to workflow lineage but deliberately
+  records historical selection only.
+- The next smallest boundary revalidates that bound assignment revision against the deployment
+  registry's unique current head, rotation rank, active lifecycle, expiry and revocation state.
+- Freshness remains bounded evidence. Credential access, brokerage, secret delivery, network
+  readiness, publication, delivery, dispatch and execution remain deferred.
+
+### ATLAS-IMP-205 Acceptance Criteria
+
+- Only the exact dedicated credential-assignment freshness-admitter workload may create an
+  admission using binding ID/digest, code-owned policy and idempotency. Callers cannot provide a
+  credential, secret, head decision, rank, lifetime, endpoint, broker or authority field.
+- Atlas locks and revalidates the immutable credential-assignment binding and assignment snapshot,
+  then fences the assignment registry and proves one exact active, unexpired and unrevoked current
+  head at the strict maximum rotation epoch and credential generation.
+- The admission has a code-owned validity window no later than assignment expiry. Exact replay
+  revalidates current head, lifecycle and validity; rotation, revocation, deactivation, expiry,
+  ambiguity and source drift fail closed.
+- Memory and PostgreSQL repositories preserve parity; production has no memory fallback;
+  admission/claim rows are atomic, immutable and append-only; concurrent head changes cannot race
+  admission.
+- Required audit ordering, normalized external errors, dedicated workload POST authorization,
+  default-deny human read permission, CSRF/no-store behavior and minimized C1 responses apply.
+- Human API/UI reads are read-only through the normal username/password session with no MFA,
+  second login, authorized-browser prompt, secret data or operational control.
+- Full local suites, real PostgreSQL concurrency/migration CI, live browser inspection, exact-head
+  PR CI, SHA-locked merge and independent main CI must pass.
+
+### ATLAS-IMP-205 Local Validation Evidence
+
+- Ruff formatting and lint checks passed; MyPy passed across `1057` source/test files and Alembic
+  reports the single head `20260815_0128`.
+- The complete backend suite passed with `2078 passed` and `14 skipped` when isolated under the
+  repository-local pytest temp directory. Skips are limited to unavailable Windows symlink support
+  and PostgreSQL cases that require CI's `ATLAS_TEST_POSTGRES_DSN`.
+- The focused IMP-205 and adjacent workflow regression suite passed `57` tests with one local
+  PostgreSQL skip. CI includes the new live PostgreSQL atomic replay, multi-admission and
+  append-only test plus the `0127 -> head` migration round trip.
+- Frontend TypeScript, ESLint and production build passed. The complete Workflow Planning suite
+  passed `340` tests, including historical policy rotation, strict minimized response validation,
+  17 explicit zero-authority fields and no mutation controls.
+- Independent review findings were closed: exact replay always enters repository locking and DB
+  time validation; precommit audit is followed by a second DB-time/evidence check; historical
+  policy identity is preserved; zero-authority values require exact booleans; and the API boundary
+  rejects every non-dedicated workload subject.
+- Live validation at `http://127.0.0.1:5262/#/workspace/workflows` used one normal
+  `atlas-demo` / `local-demo` session against the IMP-205 backend on port `8012`. Workflow Planning
+  rendered the new credential-assignment freshness region read-only with zero action controls; the
+  same session opened Connector Inventory without MFA, a second login or an authorized-browser
+  prompt. Browser console inspection found no warnings or errors.
+
+### ATLAS-IMP-204 Delivery Evidence
+
+- PR [#217](https://github.com/ozdemirumit/Project_Atlas/pull/217) was SHA-locked at
+  `90febfd6d4f15365f7b6a3501f85f7db533824d1` and squash-merged as
+  `da95b325c6fda284b736c99655641ac0470e01e8`.
+- The exact merge commit independently passed `main` CI run `31860198928`; backend and frontend
+  completed successfully, including migration round-trip, real PostgreSQL integration, full tests
+  and the production frontend build.
+- Local `main` was fast-forwarded to the verified merge commit before IMP-205 branched.
 
 ### ATLAS-IMP-204 Scope Rationale
 

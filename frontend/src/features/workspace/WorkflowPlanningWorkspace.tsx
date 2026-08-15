@@ -33,6 +33,7 @@ import {
   listWorkflowDispatchOutboxPublicationLeases,
   listWorkflowEndpointResolutionAuthorizationLeases,
   listWorkflowPhysicalTransportCredentialAssignmentSnapshots,
+  listWorkflowPhysicalTransportCredentialAssignmentFreshnessAdmissions,
   listWorkflowPhysicalTransportEndpointMaterializations,
   listWorkflowEventByteArtifacts,
   listWorkflowEventLogicalChannelBindings,
@@ -76,6 +77,10 @@ function formatTimestamp(value: string): string {
 }
 
 function routeFreshnessWindowIsOpen(validUntil: string): boolean {
+  return Date.parse(validUntil) > Date.now();
+}
+
+function credentialAssignmentFreshnessWindowIsOpen(validUntil: string): boolean {
   return Date.parse(validUntil) > Date.now();
 }
 
@@ -140,6 +145,17 @@ export default function WorkflowPlanningWorkspace({
       siteId,
     ],
     queryFn: listWorkflowPhysicalTransportCredentialAssignmentBindings,
+    retry: false,
+  });
+  const physicalTransportCredentialAssignmentFreshnessAdmissionQuery = useQuery({
+    queryKey: [
+      "workflow-physical-transport-credential-assignment-freshness-admissions",
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: () =>
+      listWorkflowPhysicalTransportCredentialAssignmentFreshnessAdmissions({ scope }),
     retry: false,
   });
   const physicalTransportRouteFreshnessAdmissionQuery = useQuery({
@@ -603,6 +619,10 @@ export default function WorkflowPlanningWorkspace({
   const physicalTransportCredentialAssignmentBindingErrorStatus =
     physicalTransportCredentialAssignmentBindingQuery.error instanceof ApiRequestError
       ? physicalTransportCredentialAssignmentBindingQuery.error.status
+      : undefined;
+  const physicalTransportCredentialAssignmentFreshnessAdmissionErrorStatus =
+    physicalTransportCredentialAssignmentFreshnessAdmissionQuery.error instanceof ApiRequestError
+      ? physicalTransportCredentialAssignmentFreshnessAdmissionQuery.error.status
       : undefined;
   const physicalTransportRouteFreshnessAdmissionErrorStatus =
     physicalTransportRouteFreshnessAdmissionQuery.error instanceof ApiRequestError
@@ -1323,6 +1343,168 @@ export default function WorkflowPlanningWorkspace({
                 ),
               )}
             </ol>
+          )}
+      </section>
+
+      <section
+        className="workflow-physical-route-binding-band"
+        aria-labelledby="workflow-physical-transport-credential-assignment-freshness-admission-title"
+      >
+        <div className="workflow-section-heading">
+          <div>
+            <p className="eyebrow">POINT-IN-TIME CREDENTIAL-ASSIGNMENT FRESHNESS EVIDENCE</p>
+            <h2 id="workflow-physical-transport-credential-assignment-freshness-admission-title">
+              Physical transport credential-assignment freshness admissions
+            </h2>
+          </div>
+          <span>Read only</span>
+        </div>
+        {physicalTransportCredentialAssignmentFreshnessAdmissionQuery.isLoading && (
+          <div className="workflow-empty-state" role="status">
+            <RefreshCw className="spin" size={18} />
+            <span>
+              Loading physical transport credential-assignment freshness admissions...
+            </span>
+          </div>
+        )}
+        {physicalTransportCredentialAssignmentFreshnessAdmissionQuery.isError && (
+          <div className="inline-error" role="alert">
+            <div>
+              <strong>
+                {physicalTransportCredentialAssignmentFreshnessAdmissionErrorStatus === 401
+                  ? "Your session has expired"
+                  : physicalTransportCredentialAssignmentFreshnessAdmissionErrorStatus === 403
+                    ? "Credential-assignment freshness permission is missing"
+                    : "Credential-assignment freshness admissions are unavailable"}
+              </strong>
+              <span>
+                {physicalTransportCredentialAssignmentFreshnessAdmissionErrorStatus === 401
+                  ? "Sign in again to continue."
+                  : physicalTransportCredentialAssignmentFreshnessAdmissionErrorStatus === 403
+                    ? "Your current role or scope cannot inspect credential-assignment freshness evidence."
+                    : "No current-head, expiry, revocation or operational state is inferred from this failed read."}
+              </span>
+            </div>
+            {physicalTransportCredentialAssignmentFreshnessAdmissionErrorStatus !== 401 &&
+              physicalTransportCredentialAssignmentFreshnessAdmissionErrorStatus !== 403 && (
+                <button
+                  className="secondary-action"
+                  type="button"
+                  aria-label="Retry physical transport credential-assignment freshness admission read"
+                  onClick={() =>
+                    void physicalTransportCredentialAssignmentFreshnessAdmissionQuery.refetch()
+                  }
+                >
+                  <RefreshCw size={16} />
+                  Retry
+                </button>
+              )}
+          </div>
+        )}
+        {physicalTransportCredentialAssignmentFreshnessAdmissionQuery.isSuccess &&
+          physicalTransportCredentialAssignmentFreshnessAdmissionQuery.data
+            .physical_transport_credential_assignment_freshness_admissions.length === 0 && (
+            <div className="workflow-empty-state" role="status">
+              <CalendarClock size={19} /> No physical transport credential-assignment freshness
+              admissions are recorded in this scope.
+            </div>
+          )}
+        {physicalTransportCredentialAssignmentFreshnessAdmissionQuery.isSuccess &&
+          physicalTransportCredentialAssignmentFreshnessAdmissionQuery.data
+            .physical_transport_credential_assignment_freshness_admissions.length > 0 && (
+            <>
+              <ol
+                className="workflow-step-preview workflow-physical-route-binding-list"
+                aria-label="Physical transport credential-assignment freshness admissions"
+              >
+                {physicalTransportCredentialAssignmentFreshnessAdmissionQuery.data.physical_transport_credential_assignment_freshness_admissions.map(
+                  (admission) => {
+                    const windowOpen = credentialAssignmentFreshnessWindowIsOpen(
+                      admission.valid_until,
+                    );
+                    return (
+                      <li key={admission.freshness_admission_id}>
+                        <ShieldCheck size={18} />
+                        <div>
+                          <strong>
+                            <code title={admission.freshness_admission_id}>
+                              {safeHolderIdentifier(admission.freshness_admission_id)}
+                            </code>
+                            <span className="state-badge neutral">{admission.state}</span>
+                            <span
+                              className={`state-badge ${windowOpen ? "neutral" : "warning"}`}
+                            >
+                              {windowOpen ? "Time window open" : "Expired"}
+                            </span>
+                          </strong>
+                          <div className="workflow-physical-route-binding-grid">
+                            <span>
+                              Credential-assignment binding{" "}
+                              <code
+                                title={
+                                  admission.physical_transport_credential_assignment_binding_id
+                                }
+                              >
+                                {safeHolderIdentifier(
+                                  admission.physical_transport_credential_assignment_binding_id,
+                                )}
+                              </code>
+                            </span>
+                            <span>
+                              Assignment snapshot{" "}
+                              <code title={admission.credential_assignment_snapshot_id}>
+                                {safeHolderIdentifier(admission.credential_assignment_snapshot_id)}
+                              </code>
+                            </span>
+                            <span>
+                              Assignment <code title={admission.assignment_id}>{safeHolderIdentifier(admission.assignment_id)}</code>{" "}
+                              | revision <code title={admission.assignment_revision}>{safeHolderIdentifier(admission.assignment_revision)}</code>
+                            </span>
+                            <span>
+                              Rotation epoch {admission.rotation_epoch} | credential generation{" "}
+                              {admission.credential_generation}
+                            </span>
+                            <span>
+                              Evaluated {formatTimestamp(admission.evaluated_at)} | valid until{" "}
+                              {formatTimestamp(admission.valid_until)}
+                            </span>
+                            <span>
+                              Policy <code title={admission.policy_id}>{safeHolderIdentifier(admission.policy_id)}</code>{" "}
+                              v{admission.policy_version}
+                            </span>
+                            <span>
+                              Organization {admission.scope.organization_id} | environment{" "}
+                              {admission.scope.environment_id} | site {admission.scope.site_id}
+                            </span>
+                            <span>
+                              Admitter <code title={admission.admitter_subject_id}>{safeHolderIdentifier(admission.admitter_subject_id)}</code>
+                            </span>
+                            <span>
+                              Integrity reference{" "}
+                              <code title={admission.integrity_reference}>
+                                {safeHolderIdentifier(admission.integrity_reference)}
+                              </code>
+                            </span>
+                            <span>
+                              Zero authority: route selection and binding, endpoint resolution,
+                              protected-artifact access, credential selection, assignment binding,
+                              access, brokerage, resolution and delivery, network access, readiness
+                              probes, publication, delivery, dispatch, execution and infrastructure
+                              mutation are all false.
+                            </span>
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  },
+                )}
+              </ol>
+              <p className="workflow-safety-note">
+                Freshness admissions are point-in-time evidence only. An open time window does not
+                independently prove that the assignment remains the current, active or non-revoked
+                head and grants no credential or operational authority.
+              </p>
+            </>
           )}
       </section>
 

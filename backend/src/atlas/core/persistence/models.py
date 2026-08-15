@@ -10,6 +10,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Integer,
     LargeBinary,
     String,
@@ -6470,6 +6471,172 @@ class WorkflowEventPhysicalTransportCredentialAssignmentBindingClaimModel(Base):
     environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     binder_subject_id: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionModel(Base):
+    __tablename__ = "workflow_event_transport_credential_freshness_admissions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["assignment_id", "assignment_revision"],
+            [
+                "deployment_event_transport_credential_assignments.assignment_id",
+                "deployment_event_transport_credential_assignments.assignment_revision",
+            ],
+            name="fk_wf_cred_fresh_assignment",
+        ),
+        UniqueConstraint("canonical_digest", name="uq_wf_cred_fresh_digest"),
+        CheckConstraint(
+            "credential_generation > 0 AND rotation_epoch > 0",
+            name="ck_wf_cred_fresh_rank",
+        ),
+        CheckConstraint("state = 'admitted_current'", name="ck_wf_cred_fresh_state"),
+        CheckConstraint(
+            "assignment_activated_at <= evaluated_at "
+            "AND evaluated_at < valid_until "
+            "AND valid_until <= assignment_expires_at "
+            "AND valid_until <= evaluated_at + INTERVAL '60 seconds'",
+            name="ck_wf_cred_fresh_window",
+        ),
+        CheckConstraint(
+            "assignment_active AND assignment_non_revoked",
+            name="ck_wf_cred_fresh_lifecycle",
+        ),
+        CheckConstraint(
+            "NOT route_selection_authority_granted "
+            "AND NOT route_binding_authority_granted "
+            "AND NOT endpoint_resolution_authority_granted "
+            "AND NOT protected_artifact_access_authority_granted "
+            "AND NOT credential_selection_authority_granted "
+            "AND NOT credential_assignment_binding_authority_granted "
+            "AND NOT credential_access_authority_granted "
+            "AND NOT credential_brokerage_authority_granted "
+            "AND NOT credential_resolution_authority_granted "
+            "AND NOT credential_delivery_authority_granted "
+            "AND NOT network_access_authority_granted "
+            "AND NOT readiness_probe_authority_granted "
+            "AND NOT publication_authority_granted "
+            "AND NOT delivery_authority_granted "
+            "AND NOT dispatch_authority_granted "
+            "AND NOT execution_authority_granted "
+            "AND NOT infrastructure_mutation_authority_granted",
+            name="ck_wf_cred_fresh_zero_auth",
+        ),
+    )
+
+    freshness_admission_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    credential_assignment_binding_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_event_physical_transport_credential_bindings.binding_id"),
+        nullable=False,
+        index=True,
+    )
+    credential_assignment_binding_digest: Mapped[str] = mapped_column(
+        String(64), nullable=False, index=True
+    )
+    credential_assignment_snapshot_id: Mapped[str] = mapped_column(
+        ForeignKey("event_transport_credential_assignment_snapshots.snapshot_id"),
+        nullable=False,
+        index=True,
+    )
+    credential_assignment_snapshot_digest: Mapped[str] = mapped_column(
+        String(64), nullable=False, index=True
+    )
+    assignment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    assignment_revision: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    source_assignment_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    credential_generation: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    rotation_epoch: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    assignment_activated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    assignment_expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    assignment_active: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    assignment_non_revoked: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    policy_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    admitter_subject_id: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    evaluated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    valid_until: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    state: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    route_selection_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    route_binding_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    endpoint_resolution_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    protected_artifact_access_authority_granted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False
+    )
+    credential_selection_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_assignment_binding_authority_granted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False
+    )
+    credential_access_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_brokerage_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_resolution_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_delivery_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    network_access_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    readiness_probe_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    publication_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    delivery_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    dispatch_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    execution_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    infrastructure_mutation_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class WorkflowEventPhysicalTransportCredentialAssignmentFreshnessClaimModel(Base):
+    __tablename__ = "workflow_event_transport_credential_freshness_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "idempotency_scope_id",
+            "idempotency_key",
+            name="uq_wf_cred_fresh_claim_scope_idem",
+        ),
+        UniqueConstraint(
+            "freshness_admission_id",
+            name="uq_wf_cred_fresh_claim_admission",
+        ),
+        UniqueConstraint("canonical_digest", name="uq_wf_cred_fresh_claim_digest"),
+    )
+
+    claim_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    idempotency_scope_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    result_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    freshness_admission_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "workflow_event_transport_credential_freshness_admissions.freshness_admission_id"
+        ),
+        nullable=False,
+        index=True,
+    )
+    credential_assignment_binding_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_event_physical_transport_credential_bindings.binding_id"),
+        nullable=False,
+        index=True,
+    )
+    credential_assignment_snapshot_id: Mapped[str] = mapped_column(
+        ForeignKey("event_transport_credential_assignment_snapshots.snapshot_id"),
+        nullable=False,
+        index=True,
+    )
+    assignment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    assignment_revision: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    policy_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    admitter_subject_id: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
