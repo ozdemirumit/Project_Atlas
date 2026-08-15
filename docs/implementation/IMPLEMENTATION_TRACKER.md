@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-206 |
 | Title | Bounded single-use workflow physical-transport credential-access authorization lease without secret resolution or delivery |
-| Status | In progress |
+| Status | Local validation complete |
 | Branch | `agent/workflow-credential-access-authorization-leases` |
 | Pull Request | Not opened |
 | Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-151, ADR-152, ADR-153, ADR-154, ADR-155, ADR-156 |
 | Last Updated | 2026-08-15 |
-| Next Action | Implement ADR-156 domain, persistence, API, UI and validation boundaries |
+| Next Action | Complete live browser inspection, then open the PR and verify CI |
 
 ### ATLAS-IMP-206 Scope Rationale
 
@@ -49,6 +49,26 @@
   session with no MFA, second login or authorized-browser prompt.
 - Full local suites, real PostgreSQL concurrency/migration CI, live browser inspection, exact-head
   PR CI, SHA-locked merge and independent main CI must pass.
+
+### ATLAS-IMP-206 Local Validation Evidence
+
+- Ruff formatting and lint passed across backend source, tests and migrations; strict MyPy passed
+  across `1056` source files and Alembic reports the single head `20260815_0129`.
+- The complete backend pytest suite passed in an isolated repository-local temp directory. The
+  focused IMP-206 suite passed `15` tests with one expected local skip because
+  `ATLAS_TEST_POSTGRES_DSN` is provided by CI.
+- Frontend TypeScript, ESLint, the complete Vitest suite and the production Vite build passed.
+  Focused UI coverage proves loading, empty, success, malformed, unauthorized, forbidden and retry
+  states while exposing no credential material or mutation control.
+- Independent security review findings were closed: a lease is never active before `issued_at`;
+  exact replay binds policy ID, version and digest; repository replay validates the current policy;
+  and future-issued or policy-mismatched evidence fails closed in memory and PostgreSQL paths.
+- CI now runs the live PostgreSQL authorization concurrency/append-only test and performs the
+  latest `0128 -> head` migration downgrade/upgrade round trip.
+- Live validation at `http://127.0.0.1:5263/` against the IMP-206 backend on port `8013` confirmed
+  liveness `200`, username/password session creation `201`, the first credential-access inventory
+  read `200` and a refreshed read with the same session `200`. The minimized response contained no
+  secret material, MFA language or authorized-browser-session prompt.
 
 ### ATLAS-IMP-205 Scope Rationale
 
