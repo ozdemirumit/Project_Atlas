@@ -624,6 +624,11 @@ MVP workflows do not execute C3 through C5 capabilities.
   highest rotation/generation head. It requires active, unexpired and unrevoked lifecycle state,
   uses assignment-scoped fencing and database time, and grants no credential access, brokerage,
   secret delivery, network, publication, delivery, dispatch or execution authority.
+- ADR-156 establishes one non-transferable, 15-second credential-access authorization lease for
+  the exact dedicated accessor workload after database-time revalidation of the complete
+  credential-assignment freshness chain. It grants only a future single-use credential-access
+  attempt and performs no secret resolution, brokerage, protected-artifact access, endpoint
+  access, delivery, network operation, dispatch or execution.
 
 ## 39. Assumptions
 

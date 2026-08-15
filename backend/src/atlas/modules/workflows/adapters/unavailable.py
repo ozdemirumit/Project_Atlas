@@ -38,6 +38,11 @@ from atlas.modules.workflows.application.byte_artifact_ports import (
     WorkflowEventByteArtifactRequest,
     WorkflowEventByteArtifactResult,
 )
+from atlas.modules.workflows.application.credential_access_authorization_lease_ports import (
+    WorkflowTransportCredentialAccessAuthorizationLeaseError,
+    WorkflowTransportCredentialAccessAuthorizationLeaseRequest,
+    WorkflowTransportCredentialAccessAuthorizationLeaseResult,
+)
 from atlas.modules.workflows.application.credential_assignment_binding_ports import (
     WorkflowTransportCredentialAssignmentBindingError,
     WorkflowTransportCredentialAssignmentBindingIdempotencyRecord,
@@ -130,6 +135,7 @@ from atlas.modules.workflows.domain import (
     WorkflowDispatchOutboxEntry,
     WorkflowEventByteArtifact,
     WorkflowEventLogicalChannelBinding,
+    WorkflowEventPhysicalTransportCredentialAccessAuthorizationLease,
     WorkflowEventPhysicalTransportCredentialAssignmentBinding,
     WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmission,
     WorkflowEventPhysicalTransportEndpointMaterializationAttempt,
@@ -602,6 +608,21 @@ class UnavailableWorkflowPlanRepository:
     ) -> WorkflowTransportCredentialAssignmentFreshnessAdmissionResult:
         self._raise_credential_assignment_freshness()
 
+    async def get_credential_assignment_freshness_admission_by_id(
+        self, *, freshness_admission_id: str
+    ) -> WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmission | None:
+        self._raise_credential_access_authorization()
+
+    async def list_credential_access_authorization_leases(
+        self, *, scope: WorkflowScope, limit: int = 256
+    ) -> tuple[WorkflowEventPhysicalTransportCredentialAccessAuthorizationLease, ...]:
+        self._raise_credential_access_authorization()
+
+    async def authorize_credential_access(
+        self, request: WorkflowTransportCredentialAccessAuthorizationLeaseRequest
+    ) -> WorkflowTransportCredentialAccessAuthorizationLeaseResult:
+        self._raise_credential_access_authorization()
+
     async def get_current_route_selection_head(
         self, *, scope: WorkflowScope, route_set_id: str
     ) -> DeploymentEventTransportRouteSelectionHead | None:
@@ -843,6 +864,13 @@ class UnavailableWorkflowPlanRepository:
         raise WorkflowTransportCredentialAssignmentFreshnessAdmissionError(
             "workflow_transport_credential_assignment_freshness_repository_unavailable",
             "Durable credential-assignment freshness admission storage is not configured.",
+        )
+
+    @staticmethod
+    def _raise_credential_access_authorization() -> NoReturn:
+        raise WorkflowTransportCredentialAccessAuthorizationLeaseError(
+            "workflow_transport_credential_access_authorization_repository_unavailable",
+            "Durable credential-access authorization lease storage is not configured.",
         )
 
     @staticmethod

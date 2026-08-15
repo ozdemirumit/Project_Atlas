@@ -56,7 +56,7 @@ jobs:
         env:
           ATLAS_DATABASE_URL: postgresql+psycopg://atlas:atlas@localhost:5432/atlas_test
         run: >-
-          uv run alembic downgrade 20260815_0127 &&
+          uv run alembic downgrade 20260815_0128 &&
           uv run alembic upgrade head
       - name: Test PostgreSQL integration
         working-directory: backend
@@ -68,6 +68,7 @@ jobs:
           tests/test_workflow_transport_credential_assignment_snapshots_postgres.py
           tests/test_workflow_transport_credential_assignment_bindings_postgres.py
           tests/test_workflow_transport_credential_assignment_freshness_admissions_postgres.py
+          tests/test_workflow_credential_access_authorization_leases_postgres.py
           -k live_postgres
       - name: Test
         working-directory: backend
