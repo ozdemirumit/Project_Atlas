@@ -4,14 +4,51 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-205 |
-| Title | Immutable workflow physical-transport credential-assignment freshness admission without access authority |
+| Task ID | ATLAS-IMP-206 |
+| Title | Bounded single-use workflow physical-transport credential-access authorization lease without secret resolution or delivery |
 | Status | In progress |
-| Branch | `agent/workflow-credential-assignment-freshness-admissions` |
-| Pull Request | [#218](https://github.com/ozdemirumit/Project_Atlas/pull/218) |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-150, ADR-153, ADR-154, ADR-155 |
+| Branch | `agent/workflow-credential-access-authorization-leases` |
+| Pull Request | Not opened |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-151, ADR-152, ADR-153, ADR-154, ADR-155, ADR-156 |
 | Last Updated | 2026-08-15 |
-| Next Action | Complete PR CI, merge and independent `main` CI verification |
+| Next Action | Implement ADR-156 domain, persistence, API, UI and validation boundaries |
+
+### ATLAS-IMP-206 Scope Rationale
+
+- IMP-205 proves for a bounded interval that one exact credential-assignment revision remains the
+  authoritative active, unexpired and unrevoked registry head, but deliberately grants no access
+  authority.
+- The next smallest boundary issues one non-transferable, single-use credential-access
+  authorization lease to one exact dedicated workload after re-fencing and revalidating the full
+  assignment chain.
+- Secret resolution, brokerage calls, protected credential materialization, endpoint-artifact
+  access and ephemeral delivery remain separate later boundaries.
+
+### ATLAS-IMP-206 Acceptance Criteria
+
+- Only the exact dedicated credential-access workload and audience may request a lease for its own
+  subject using freshness-admission ID/digest, code-owned policy and idempotency. Callers cannot
+  supply subject, scope, TTL, assignment, credential, target, broker, secret or authority fields.
+- Atlas locks and revalidates the exact binding, assignment snapshot and freshness admission,
+  acquires the same assignment-scoped advisory fence as registry synchronization, reads every
+  revision and proves the unique current head remains active, unexpired and unrevoked.
+- The code-owned lease lasts exactly 15 seconds from database time and is issued only when the full
+  window remains inside both freshness-admission and assignment expiry. It is single-use,
+  non-renewable, non-transferable and not a bearer token.
+- Exact replay always re-enters repository locking and database-time validation. Expiry, rotation,
+  revocation, deactivation, ambiguity, source drift, competing identity and audit failure fail
+  closed. One freshness admission can produce at most one lease.
+- Required precommit audit is followed by a second database clock read and complete revalidation;
+  lease and idempotency claim persist atomically as append-only rows with no production memory
+  fallback.
+- Only `credential_access_authorized` is exactly true; the other 16 authority dimensions are
+  exactly false. Issuance performs no credential selection, brokerage, resolution, delivery,
+  endpoint access, network call, readiness probe, publication, dispatch, execution or mutation.
+- Workload-only POST, default-deny human GET, normalized non-oracle errors, CSRF/no-store behavior
+  and minimized C1 responses apply. Human UI is read-only through the normal username/password
+  session with no MFA, second login or authorized-browser prompt.
+- Full local suites, real PostgreSQL concurrency/migration CI, live browser inspection, exact-head
+  PR CI, SHA-locked merge and independent main CI must pass.
 
 ### ATLAS-IMP-205 Scope Rationale
 
@@ -65,6 +102,16 @@
   rendered the new credential-assignment freshness region read-only with zero action controls; the
   same session opened Connector Inventory without MFA, a second login or an authorized-browser
   prompt. Browser console inspection found no warnings or errors.
+
+### ATLAS-IMP-205 Delivery Evidence
+
+- PR [#218](https://github.com/ozdemirumit/Project_Atlas/pull/218) was SHA-locked at
+  `e4cbcdd10e2c5a5e880cd5a9934281a0c5b476df` and squash-merged as
+  `a6142df5ecf74b5a7b620ca0983784286262d111`.
+- The exact merge commit independently passed `main` CI run `31865225091`; backend and frontend
+  completed successfully, including migration round-trip, real PostgreSQL integration, full tests
+  and the production frontend build.
+- Local `main` was fast-forwarded to the verified merge commit before IMP-206 branched.
 
 ### ATLAS-IMP-204 Delivery Evidence
 

@@ -363,6 +363,13 @@ credential-access authorizer must repeat the fenced head and lifecycle checks im
 issuing any capability, and no secret, endpoint, brokerage, network or operational authority is
 introduced here.
 
+Credential access is authorized through a separate immutable, 15-second, single-use lease bound
+to one exact freshness admission, assignment chain and dedicated accessor workload. Issuance
+reuses the assignment advisory fence, database time and a second complete validation after audit.
+It grants only credential-access authority for a future one-way consumer and performs no secret
+resolution, brokerage, protected-artifact access, endpoint access, delivery or network operation.
+Humans may inspect minimized lease evidence through the existing username/password session only.
+
 ### 10.2 Publication State
 
 Outbox records track:
