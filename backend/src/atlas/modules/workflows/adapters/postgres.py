@@ -36,6 +36,8 @@ from atlas.core.persistence.models import (
     WorkflowEventByteArtifactModel,
     WorkflowEventLogicalChannelBindingClaimModel,
     WorkflowEventLogicalChannelBindingModel,
+    WorkflowEventPhysicalTransportCredentialAccessAuthorizationClaimModel,
+    WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseModel,
     WorkflowEventPhysicalTransportCredentialAssignmentBindingClaimModel,
     WorkflowEventPhysicalTransportCredentialAssignmentBindingModel,
     WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionModel,
@@ -98,6 +100,14 @@ from atlas.modules.workflows.application.byte_artifact_ports import (
     WorkflowEventByteArtifactRequest,
     WorkflowEventByteArtifactResult,
     WorkflowEventByteArtifactStatus,
+)
+from atlas.modules.workflows.application.credential_access_authorization_lease_ports import (
+    WorkflowTransportCredentialAccessAuthorizationLeaseError,
+    WorkflowTransportCredentialAccessAuthorizationLeaseIdempotencyRecord,
+    WorkflowTransportCredentialAccessAuthorizationLeaseRequest,
+    WorkflowTransportCredentialAccessAuthorizationLeaseResult,
+    WorkflowTransportCredentialAccessAuthorizationLeaseStatus,
+    validate_workflow_transport_credential_access_authorization_request,
 )
 from atlas.modules.workflows.application.credential_assignment_binding_ports import (
     WorkflowTransportCredentialAssignmentBindingError,
@@ -238,6 +248,9 @@ from atlas.modules.workflows.domain import (
     WorkflowEventLogicalChannelBinding,
     WorkflowEventLogicalChannelBindingAuthority,
     WorkflowEventLogicalChannelBindingState,
+    WorkflowEventPhysicalTransportCredentialAccessAuthorizationLease,
+    WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseAuthority,
+    WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseState,
     WorkflowEventPhysicalTransportCredentialAssignmentBinding,
     WorkflowEventPhysicalTransportCredentialAssignmentBindingAuthority,
     WorkflowEventPhysicalTransportCredentialAssignmentBindingState,
@@ -2751,6 +2764,20 @@ class PostgreSQLWorkflowPlanRepository:
                 self._credential_assignment_freshness_admission_from_row(row) for row in rows
             )
 
+    async def get_credential_assignment_freshness_admission_by_id(
+        self, *, freshness_admission_id: str
+    ) -> WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmission | None:
+        async with self._sessions() as session:
+            row = await session.get(
+                WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionModel,
+                freshness_admission_id,
+            )
+            return (
+                None
+                if row is None
+                else self._credential_assignment_freshness_admission_from_row(row)
+            )
+
     async def get_credential_assignment_freshness_admission_request(
         self,
         *,
@@ -2882,6 +2909,168 @@ class PostgreSQLWorkflowPlanRepository:
                 return replay
         return WorkflowTransportCredentialAssignmentFreshnessAdmissionResult(
             WorkflowTransportCredentialAssignmentFreshnessAdmissionStatus.EVIDENCE_CONFLICT,
+            None,
+        )
+
+    async def list_credential_access_authorization_leases(
+        self, *, scope: WorkflowScope, limit: int = 256
+    ) -> tuple[WorkflowEventPhysicalTransportCredentialAccessAuthorizationLease, ...]:
+        if not 1 <= limit <= 256:
+            raise ValueError("credential-access authorization lease limit is invalid")
+        async with self._sessions() as session:
+            rows = tuple(
+                (
+                    await session.scalars(
+                        select(
+                            WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseModel
+                        )
+                        .where(
+                            WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseModel.organization_id
+                            == scope.organization_id,
+                            WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseModel.environment_id
+                            == scope.environment_id,
+                            WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseModel.site_id
+                            == scope.site_id,
+                        )
+                        .order_by(
+                            WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseModel.issued_at.desc(),
+                            WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseModel.authorization_lease_id,
+                        )
+                        .limit(limit)
+                    )
+                ).all()
+            )
+            return tuple(self._credential_access_lease_from_row(row) for row in rows)
+
+    async def authorize_credential_access(
+        self, request: WorkflowTransportCredentialAccessAuthorizationLeaseRequest
+    ) -> WorkflowTransportCredentialAccessAuthorizationLeaseResult:
+        validate_workflow_transport_credential_access_authorization_request(request)
+        async with self._sessions() as session:
+            (
+                binding_row,
+                snapshot_row,
+                head,
+                admission_row,
+                observed_at,
+            ) = await self._lock_credential_access_authorization_sources(session, request=request)
+            replay = await self._credential_access_authorization_replay(
+                session,
+                request=request,
+                binding_row=binding_row,
+                snapshot_row=snapshot_row,
+                head=head,
+                admission_row=admission_row,
+                observed_at=observed_at,
+            )
+            if replay is not None:
+                await session.rollback()
+                return replay
+            if not self._credential_access_authorization_evidence_matches(
+                binding_row=binding_row,
+                snapshot_row=snapshot_row,
+                head=head,
+                admission_row=admission_row,
+                observed_at=observed_at,
+                request=request,
+            ):
+                await session.rollback()
+                return WorkflowTransportCredentialAccessAuthorizationLeaseResult(
+                    WorkflowTransportCredentialAccessAuthorizationLeaseStatus.EVIDENCE_CONFLICT,
+                    None,
+                )
+            existing = cast(
+                WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseModel | None,
+                await session.scalar(
+                    select(
+                        WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseModel
+                    ).where(
+                        WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseModel.freshness_admission_id
+                        == request.expected_freshness_admission_id
+                    )
+                ),
+            )
+            if existing is not None:
+                await session.rollback()
+                return WorkflowTransportCredentialAccessAuthorizationLeaseResult(
+                    WorkflowTransportCredentialAccessAuthorizationLeaseStatus.ALREADY_AUTHORIZED,
+                    self._credential_access_lease_from_row(existing),
+                )
+            try:
+                await request.required_precommit_audit()
+            except Exception:
+                await session.rollback()
+                return WorkflowTransportCredentialAccessAuthorizationLeaseResult(
+                    WorkflowTransportCredentialAccessAuthorizationLeaseStatus.PRECOMMIT_AUDIT_FAILED,
+                    None,
+                )
+            commit_observed_at = cast(
+                datetime, await session.scalar(select(func.clock_timestamp()))
+            )
+            if not self._credential_access_authorization_evidence_matches(
+                binding_row=binding_row,
+                snapshot_row=snapshot_row,
+                head=head,
+                admission_row=admission_row,
+                observed_at=commit_observed_at,
+                request=request,
+            ):
+                await session.rollback()
+                return WorkflowTransportCredentialAccessAuthorizationLeaseResult(
+                    WorkflowTransportCredentialAccessAuthorizationLeaseStatus.EVIDENCE_CONFLICT,
+                    None,
+                )
+            try:
+                session.add(self._credential_access_lease_model(request.candidate))
+                await session.flush()
+                session.add(self._credential_access_claim_model(request))
+                await session.commit()
+                return WorkflowTransportCredentialAccessAuthorizationLeaseResult(
+                    WorkflowTransportCredentialAccessAuthorizationLeaseStatus.AUTHORIZED,
+                    request.candidate,
+                )
+            except IntegrityError:
+                await session.rollback()
+
+        async with self._sessions() as session:
+            (
+                binding_row,
+                snapshot_row,
+                head,
+                admission_row,
+                observed_at,
+            ) = await self._lock_credential_access_authorization_sources(session, request=request)
+            replay = await self._credential_access_authorization_replay(
+                session,
+                request=request,
+                binding_row=binding_row,
+                snapshot_row=snapshot_row,
+                head=head,
+                admission_row=admission_row,
+                observed_at=observed_at,
+            )
+            if replay is not None:
+                await session.rollback()
+                return replay
+            existing = cast(
+                WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseModel | None,
+                await session.scalar(
+                    select(
+                        WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseModel
+                    ).where(
+                        WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseModel.freshness_admission_id
+                        == request.expected_freshness_admission_id
+                    )
+                ),
+            )
+            await session.rollback()
+            if existing is not None:
+                return WorkflowTransportCredentialAccessAuthorizationLeaseResult(
+                    WorkflowTransportCredentialAccessAuthorizationLeaseStatus.ALREADY_AUTHORIZED,
+                    self._credential_access_lease_from_row(existing),
+                )
+        return WorkflowTransportCredentialAccessAuthorizationLeaseResult(
+            WorkflowTransportCredentialAccessAuthorizationLeaseStatus.EVIDENCE_CONFLICT,
             None,
         )
 
@@ -9543,6 +9732,614 @@ class PostgreSQLWorkflowPlanRepository:
         raise WorkflowTransportCredentialAssignmentFreshnessAdmissionError(
             "workflow_transport_credential_assignment_freshness_repository_contract_violation",
             "Credential-assignment freshness evidence does not match durable state.",
+        )
+
+    async def _lock_credential_access_authorization_sources(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowTransportCredentialAccessAuthorizationLeaseRequest,
+    ) -> tuple[
+        WorkflowEventPhysicalTransportCredentialAssignmentBindingModel | None,
+        EventPhysicalTransportCredentialAssignmentSnapshotModel | None,
+        DeploymentPhysicalTransportCredentialAssignment | None,
+        WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionModel | None,
+        datetime,
+    ]:
+        binding_row = cast(
+            WorkflowEventPhysicalTransportCredentialAssignmentBindingModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportCredentialAssignmentBindingModel)
+                .where(
+                    WorkflowEventPhysicalTransportCredentialAssignmentBindingModel.binding_id
+                    == request.expected_credential_assignment_binding_id
+                )
+                .with_for_update()
+            ),
+        )
+        snapshot_row = cast(
+            EventPhysicalTransportCredentialAssignmentSnapshotModel | None,
+            await session.scalar(
+                select(EventPhysicalTransportCredentialAssignmentSnapshotModel)
+                .where(
+                    EventPhysicalTransportCredentialAssignmentSnapshotModel.snapshot_id
+                    == request.expected_credential_assignment_snapshot_id
+                )
+                .with_for_update()
+            ),
+        )
+        await session.scalar(
+            select(
+                func.pg_advisory_xact_lock(
+                    self._credential_assignment_registry_lock_id(request.expected_assignment_id)
+                )
+            )
+        )
+        assignment_rows = tuple(
+            (
+                await session.scalars(
+                    select(DeploymentEventTransportCredentialAssignmentModel)
+                    .where(
+                        DeploymentEventTransportCredentialAssignmentModel.assignment_id
+                        == request.expected_assignment_id
+                    )
+                    .order_by(
+                        DeploymentEventTransportCredentialAssignmentModel.rotation_epoch,
+                        DeploymentEventTransportCredentialAssignmentModel.credential_generation,
+                        DeploymentEventTransportCredentialAssignmentModel.assignment_revision,
+                    )
+                    .with_for_update()
+                )
+            ).all()
+        )
+        try:
+            head = select_deployment_physical_transport_credential_assignment_head(
+                tuple(self._credential_assignment_from_row(row) for row in assignment_rows)
+            )
+        except (ValueError, WorkflowTransportCredentialAssignmentSnapshotError):
+            head = None
+        admission_row = cast(
+            WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionModel)
+                .where(
+                    WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionModel.freshness_admission_id
+                    == request.expected_freshness_admission_id
+                )
+                .with_for_update()
+            ),
+        )
+        observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+        return binding_row, snapshot_row, head, admission_row, observed_at
+
+    async def _credential_access_authorization_replay(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowTransportCredentialAccessAuthorizationLeaseRequest,
+        binding_row: WorkflowEventPhysicalTransportCredentialAssignmentBindingModel | None,
+        snapshot_row: EventPhysicalTransportCredentialAssignmentSnapshotModel | None,
+        head: DeploymentPhysicalTransportCredentialAssignment | None,
+        admission_row: WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionModel
+        | None,
+        observed_at: datetime,
+    ) -> WorkflowTransportCredentialAccessAuthorizationLeaseResult | None:
+        claim = await self._load_credential_access_claim(
+            session,
+            scope=request.scope,
+            accessor_subject_id=request.accessor_subject_id,
+            idempotency_key=request.idempotency_key,
+        )
+        if claim is None:
+            return None
+        lease_row = await session.get(
+            WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseModel,
+            claim.authorization_lease_id,
+        )
+        record = self._credential_access_record_from_claim(claim, lease_row)
+        if claim.request_fingerprint != request.request_fingerprint:
+            return WorkflowTransportCredentialAccessAuthorizationLeaseResult(
+                WorkflowTransportCredentialAccessAuthorizationLeaseStatus.IDEMPOTENCY_CONFLICT,
+                record.lease,
+            )
+        if not self._credential_access_authorization_remains_current(
+            record.lease,
+            binding_row=binding_row,
+            snapshot_row=snapshot_row,
+            head=head,
+            admission_row=admission_row,
+            observed_at=observed_at,
+        ):
+            return WorkflowTransportCredentialAccessAuthorizationLeaseResult(
+                WorkflowTransportCredentialAccessAuthorizationLeaseStatus.EVIDENCE_CONFLICT,
+                None,
+            )
+        return WorkflowTransportCredentialAccessAuthorizationLeaseResult(
+            WorkflowTransportCredentialAccessAuthorizationLeaseStatus.REPLAY,
+            record.lease,
+        )
+
+    @classmethod
+    async def _load_credential_access_claim(
+        cls,
+        session: AsyncSession,
+        *,
+        scope: WorkflowScope,
+        accessor_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowEventPhysicalTransportCredentialAccessAuthorizationClaimModel | None:
+        return cast(
+            WorkflowEventPhysicalTransportCredentialAccessAuthorizationClaimModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportCredentialAccessAuthorizationClaimModel).where(
+                    WorkflowEventPhysicalTransportCredentialAccessAuthorizationClaimModel.idempotency_scope_id
+                    == cls._credential_access_idempotency_scope(scope, accessor_subject_id),
+                    WorkflowEventPhysicalTransportCredentialAccessAuthorizationClaimModel.idempotency_key
+                    == idempotency_key,
+                    WorkflowEventPhysicalTransportCredentialAccessAuthorizationClaimModel.organization_id
+                    == scope.organization_id,
+                    WorkflowEventPhysicalTransportCredentialAccessAuthorizationClaimModel.environment_id
+                    == scope.environment_id,
+                    WorkflowEventPhysicalTransportCredentialAccessAuthorizationClaimModel.site_id
+                    == scope.site_id,
+                    WorkflowEventPhysicalTransportCredentialAccessAuthorizationClaimModel.accessor_subject_id
+                    == accessor_subject_id,
+                )
+            ),
+        )
+
+    @classmethod
+    def _credential_access_record_from_claim(
+        cls,
+        claim: WorkflowEventPhysicalTransportCredentialAccessAuthorizationClaimModel,
+        lease_row: WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseModel | None,
+    ) -> WorkflowTransportCredentialAccessAuthorizationLeaseIdempotencyRecord:
+        if lease_row is None:
+            cls._credential_access_contract_violation()
+        assert lease_row is not None
+        lease = cls._credential_access_lease_from_row(lease_row)
+        scope_id = cls._credential_access_idempotency_scope(lease.scope, lease.accessor_subject_id)
+        payload: dict[str, Any] = {
+            "idempotency_key": claim.idempotency_key,
+            "idempotency_scope_id": scope_id,
+            "request_fingerprint": claim.request_fingerprint,
+            "result_digest": lease.canonical_digest,
+            "result_lease": cls._credential_access_payload(lease),
+        }
+        if (
+            claim.idempotency_scope_id != scope_id
+            or claim.result_digest != lease.canonical_digest
+            or claim.authorization_lease_id != lease.authorization_lease_id
+            or claim.freshness_admission_id != lease.freshness_admission_id
+            or claim.assignment_id != lease.assignment_id
+            or claim.assignment_revision != lease.assignment_revision
+            or claim.policy_digest != lease.policy_digest
+            or claim.organization_id != lease.scope.organization_id
+            or claim.environment_id != lease.scope.environment_id
+            or claim.site_id != lease.scope.site_id
+            or claim.accessor_subject_id != lease.accessor_subject_id
+            or claim.created_at != lease.issued_at
+            or claim.created_at.tzinfo is None
+            or claim.payload != payload
+            or claim.canonical_digest != canonical_digest(payload)
+        ):
+            cls._credential_access_contract_violation()
+        return WorkflowTransportCredentialAccessAuthorizationLeaseIdempotencyRecord(
+            request_fingerprint=claim.request_fingerprint,
+            lease=lease,
+        )
+
+    @classmethod
+    def _credential_access_lease_from_row(
+        cls,
+        row: WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseModel,
+    ) -> WorkflowEventPhysicalTransportCredentialAccessAuthorizationLease:
+        try:
+            lease = cls._credential_access_to_domain(row.payload)
+            expected = cls._credential_access_lease_model(lease)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowTransportCredentialAccessAuthorizationLeaseError(
+                "workflow_transport_credential_access_authorization_repository_contract_violation",
+                "The credential-access authorization lease record is invalid.",
+            ) from exc
+        for name in (
+            "authorization_lease_id",
+            "freshness_admission_id",
+            "freshness_admission_digest",
+            "credential_assignment_binding_id",
+            "credential_assignment_binding_digest",
+            "credential_assignment_snapshot_id",
+            "credential_assignment_snapshot_digest",
+            "assignment_id",
+            "assignment_revision",
+            "source_assignment_digest",
+            "credential_generation",
+            "rotation_epoch",
+            "assignment_activated_at",
+            "assignment_expires_at",
+            "assignment_active",
+            "assignment_non_revoked",
+            "policy_id",
+            "policy_version",
+            "policy_digest",
+            "organization_id",
+            "environment_id",
+            "site_id",
+            "accessor_subject_id",
+            "issued_at",
+            "valid_until",
+            "state",
+            "endpoint_resolution_authority_granted",
+            "protected_artifact_access_authority_granted",
+            "route_selection_authority_granted",
+            "route_binding_authority_granted",
+            "credential_selection_authority_granted",
+            "credential_assignment_binding_authority_granted",
+            "credential_access_authority_granted",
+            "credential_brokerage_authority_granted",
+            "credential_resolution_authority_granted",
+            "credential_delivery_authority_granted",
+            "network_access_authority_granted",
+            "readiness_probe_authority_granted",
+            "publication_authority_granted",
+            "delivery_authority_granted",
+            "dispatch_authority_granted",
+            "execution_authority_granted",
+            "infrastructure_mutation_authority_granted",
+            "canonical_digest",
+            "payload",
+        ):
+            if getattr(row, name) != getattr(expected, name):
+                cls._credential_access_contract_violation()
+        return lease
+
+    @classmethod
+    def _credential_access_lease_model(
+        cls, lease: WorkflowEventPhysicalTransportCredentialAccessAuthorizationLease
+    ) -> WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseModel:
+        authority = lease.authority
+        return WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseModel(
+            authorization_lease_id=lease.authorization_lease_id,
+            freshness_admission_id=lease.freshness_admission_id,
+            freshness_admission_digest=lease.freshness_admission_digest,
+            credential_assignment_binding_id=(
+                lease.physical_transport_credential_assignment_binding_id
+            ),
+            credential_assignment_binding_digest=(
+                lease.physical_transport_credential_assignment_binding_digest
+            ),
+            credential_assignment_snapshot_id=lease.credential_assignment_snapshot_id,
+            credential_assignment_snapshot_digest=lease.credential_assignment_snapshot_digest,
+            assignment_id=lease.assignment_id,
+            assignment_revision=lease.assignment_revision,
+            source_assignment_digest=lease.source_assignment_digest,
+            credential_generation=lease.credential_generation,
+            rotation_epoch=lease.rotation_epoch,
+            assignment_activated_at=lease.assignment_activated_at,
+            assignment_expires_at=lease.assignment_expires_at,
+            assignment_active=lease.assignment_active,
+            assignment_non_revoked=lease.assignment_non_revoked,
+            policy_id=lease.policy_id,
+            policy_version=lease.policy_version,
+            policy_digest=lease.policy_digest,
+            organization_id=lease.scope.organization_id,
+            environment_id=lease.scope.environment_id,
+            site_id=lease.scope.site_id,
+            accessor_subject_id=lease.accessor_subject_id,
+            issued_at=lease.issued_at,
+            valid_until=lease.valid_until,
+            state=lease.state.value,
+            endpoint_resolution_authority_granted=authority.endpoint_resolution_authorized,
+            protected_artifact_access_authority_granted=(
+                authority.protected_artifact_access_authorized
+            ),
+            route_selection_authority_granted=authority.route_selection_authorized,
+            route_binding_authority_granted=authority.route_binding_authorized,
+            credential_selection_authority_granted=authority.credential_selection_authorized,
+            credential_assignment_binding_authority_granted=(
+                authority.credential_assignment_binding_authorized
+            ),
+            credential_access_authority_granted=authority.credential_access_authorized,
+            credential_brokerage_authority_granted=authority.credential_brokerage_authorized,
+            credential_resolution_authority_granted=authority.credential_resolution_authorized,
+            credential_delivery_authority_granted=authority.credential_delivery_authorized,
+            network_access_authority_granted=authority.network_access_authorized,
+            readiness_probe_authority_granted=authority.readiness_probe_authorized,
+            publication_authority_granted=authority.publication_authorized,
+            delivery_authority_granted=authority.delivery_authorized,
+            dispatch_authority_granted=authority.dispatch_authorized,
+            execution_authority_granted=authority.execution_authorized,
+            infrastructure_mutation_authority_granted=(
+                authority.infrastructure_mutation_authorized
+            ),
+            canonical_digest=lease.canonical_digest,
+            payload=cls._credential_access_payload(lease),
+        )
+
+    @classmethod
+    def _credential_access_claim_model(
+        cls, request: WorkflowTransportCredentialAccessAuthorizationLeaseRequest
+    ) -> WorkflowEventPhysicalTransportCredentialAccessAuthorizationClaimModel:
+        lease = request.candidate
+        scope_id = cls._credential_access_idempotency_scope(lease.scope, lease.accessor_subject_id)
+        payload: dict[str, Any] = {
+            "idempotency_key": request.idempotency_key,
+            "idempotency_scope_id": scope_id,
+            "request_fingerprint": request.request_fingerprint,
+            "result_digest": lease.canonical_digest,
+            "result_lease": cls._credential_access_payload(lease),
+        }
+        digest = canonical_digest(payload)
+        return WorkflowEventPhysicalTransportCredentialAccessAuthorizationClaimModel(
+            claim_id=f"wf_cred_access_claim_{sha256(digest.encode()).hexdigest()[:32]}",
+            idempotency_scope_id=scope_id,
+            idempotency_key=request.idempotency_key,
+            request_fingerprint=request.request_fingerprint,
+            result_digest=lease.canonical_digest,
+            authorization_lease_id=lease.authorization_lease_id,
+            freshness_admission_id=lease.freshness_admission_id,
+            assignment_id=lease.assignment_id,
+            assignment_revision=lease.assignment_revision,
+            policy_digest=lease.policy_digest,
+            organization_id=lease.scope.organization_id,
+            environment_id=lease.scope.environment_id,
+            site_id=lease.scope.site_id,
+            accessor_subject_id=lease.accessor_subject_id,
+            created_at=lease.issued_at,
+            canonical_digest=digest,
+            payload=payload,
+        )
+
+    @classmethod
+    def _credential_access_authorization_evidence_matches(
+        cls,
+        *,
+        binding_row: WorkflowEventPhysicalTransportCredentialAssignmentBindingModel | None,
+        snapshot_row: EventPhysicalTransportCredentialAssignmentSnapshotModel | None,
+        head: DeploymentPhysicalTransportCredentialAssignment | None,
+        admission_row: WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionModel
+        | None,
+        observed_at: datetime,
+        request: WorkflowTransportCredentialAccessAuthorizationLeaseRequest,
+    ) -> bool:
+        if binding_row is None or snapshot_row is None or head is None or admission_row is None:
+            return False
+        try:
+            binding = cls._credential_assignment_binding_from_row(binding_row)
+            snapshot = cls._credential_assignment_snapshot_from_row(snapshot_row)
+            admission = cls._credential_assignment_freshness_admission_from_row(admission_row)
+        except (
+            WorkflowTransportCredentialAssignmentBindingError,
+            WorkflowTransportCredentialAssignmentSnapshotError,
+            WorkflowTransportCredentialAssignmentFreshnessAdmissionError,
+        ):
+            return False
+        candidate = request.candidate
+        return bool(
+            canonical_digest(head.digest_payload()) == head.canonical_digest
+            and canonical_digest(candidate.digest_payload()) == candidate.canonical_digest
+            and admission.freshness_admission_id
+            == request.expected_freshness_admission_id
+            == candidate.freshness_admission_id
+            and admission.canonical_digest
+            == request.expected_freshness_admission_digest
+            == candidate.freshness_admission_digest
+            and admission.valid_until == request.expected_freshness_admission_valid_until
+            and admission.state.value == "admitted_current"
+            and binding.binding_id
+            == admission.physical_transport_credential_assignment_binding_id
+            == request.expected_credential_assignment_binding_id
+            == candidate.physical_transport_credential_assignment_binding_id
+            and binding.canonical_digest
+            == admission.physical_transport_credential_assignment_binding_digest
+            == request.expected_credential_assignment_binding_digest
+            == candidate.physical_transport_credential_assignment_binding_digest
+            and binding.state
+            is WorkflowEventPhysicalTransportCredentialAssignmentBindingState.BOUND
+            and snapshot.snapshot_id
+            == binding.credential_assignment_snapshot_id
+            == admission.credential_assignment_snapshot_id
+            == request.expected_credential_assignment_snapshot_id
+            == candidate.credential_assignment_snapshot_id
+            and snapshot.canonical_digest
+            == binding.credential_assignment_snapshot_digest
+            == admission.credential_assignment_snapshot_digest
+            == request.expected_credential_assignment_snapshot_digest
+            == candidate.credential_assignment_snapshot_digest
+            and snapshot.state
+            is EventPhysicalTransportCredentialAssignmentSnapshotState.SNAPSHOTTED
+            and head.assignment_id
+            == snapshot.assignment_id
+            == admission.assignment_id
+            == request.expected_assignment_id
+            == candidate.assignment_id
+            and head.assignment_revision
+            == snapshot.assignment_revision
+            == admission.assignment_revision
+            == request.expected_assignment_revision
+            == candidate.assignment_revision
+            and head.canonical_digest
+            == snapshot.source_assignment_digest
+            == admission.source_assignment_digest
+            == request.expected_source_assignment_digest
+            == candidate.source_assignment_digest
+            and head.credential_generation
+            == snapshot.credential_generation
+            == admission.credential_generation
+            == request.expected_credential_generation
+            == candidate.credential_generation
+            and head.rotation_epoch
+            == snapshot.rotation_epoch
+            == admission.rotation_epoch
+            == request.expected_rotation_epoch
+            == candidate.rotation_epoch
+            and head.activated_at
+            == snapshot.activated_at
+            == admission.assignment_activated_at
+            == request.expected_assignment_activated_at
+            == candidate.assignment_activated_at
+            and head.expires_at
+            == snapshot.expires_at
+            == admission.assignment_expires_at
+            == request.expected_assignment_expires_at
+            == candidate.assignment_expires_at
+            and head.scope
+            == snapshot.scope
+            == binding.scope
+            == admission.scope
+            == request.scope
+            == candidate.scope
+            and head.route_id == snapshot.route_id
+            and head.route_revision == snapshot.route_revision
+            and head.source_route_digest == snapshot.source_route_digest
+            and head.credential_requirement_profile_id == snapshot.credential_requirement_profile_id
+            and head.credential_requirement_profile_version
+            == snapshot.credential_requirement_profile_version
+            and head.credential_requirement_profile_digest
+            == snapshot.credential_requirement_profile_digest
+            and head.credential_profile_id == snapshot.credential_profile_id
+            and head.credential_profile_version == snapshot.credential_profile_version
+            and head.credential_profile_digest == snapshot.credential_profile_digest
+            and head.authentication_mechanism_class == snapshot.authentication_mechanism_class
+            and head.principal_class == snapshot.principal_class
+            and head.privilege_class == snapshot.privilege_class == "read-only"
+            and head.target_scope_commitment == snapshot.target_scope_commitment
+            and head.broker_policy_id == snapshot.broker_policy_id
+            and head.broker_policy_version == snapshot.broker_policy_version
+            and head.broker_policy_digest == snapshot.broker_policy_digest
+            and head.active
+            == request.expected_assignment_active
+            == admission.assignment_active
+            == candidate.assignment_active
+            is True
+            and head.revoked == request.expected_assignment_revoked is False
+            and admission.assignment_non_revoked is True
+            and candidate.assignment_non_revoked is True
+            and head.activated_at <= observed_at < candidate.valid_until <= head.expires_at
+            and candidate.valid_until <= admission.valid_until
+            and candidate.issued_at == request.requested_at
+            and candidate.valid_until - candidate.issued_at
+            == timedelta(seconds=request.expected_validity_window_seconds)
+            and candidate.policy_digest == request.expected_policy_digest
+            and candidate.accessor_subject_id == request.accessor_subject_id
+            and candidate.state.value == "authorized_unconsumed"
+            and not any(
+                value is not False for value in admission.authority.canonical_value().values()
+            )
+            and not any(
+                value is not False for value in binding.authority.canonical_value().values()
+            )
+            and not any(
+                value is not False for value in snapshot.authority.canonical_value().values()
+            )
+            and candidate.authority.credential_access_authorized is True
+            and not any(
+                value is not False
+                for name, value in candidate.authority.canonical_value().items()
+                if name != "credential_access_authorized"
+            )
+        )
+
+    @classmethod
+    def _credential_access_authorization_remains_current(
+        cls,
+        lease: WorkflowEventPhysicalTransportCredentialAccessAuthorizationLease,
+        *,
+        binding_row: WorkflowEventPhysicalTransportCredentialAssignmentBindingModel | None,
+        snapshot_row: EventPhysicalTransportCredentialAssignmentSnapshotModel | None,
+        head: DeploymentPhysicalTransportCredentialAssignment | None,
+        admission_row: WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionModel
+        | None,
+        observed_at: datetime,
+    ) -> bool:
+        if binding_row is None or snapshot_row is None or head is None or admission_row is None:
+            return False
+        try:
+            binding = cls._credential_assignment_binding_from_row(binding_row)
+            snapshot = cls._credential_assignment_snapshot_from_row(snapshot_row)
+            admission = cls._credential_assignment_freshness_admission_from_row(admission_row)
+        except (
+            WorkflowTransportCredentialAssignmentBindingError,
+            WorkflowTransportCredentialAssignmentSnapshotError,
+            WorkflowTransportCredentialAssignmentFreshnessAdmissionError,
+        ):
+            return False
+        return bool(
+            canonical_digest(lease.digest_payload()) == lease.canonical_digest
+            and lease.freshness_admission_id == admission.freshness_admission_id
+            and lease.freshness_admission_digest == admission.canonical_digest
+            and lease.physical_transport_credential_assignment_binding_id == binding.binding_id
+            and lease.physical_transport_credential_assignment_binding_digest
+            == binding.canonical_digest
+            and lease.credential_assignment_snapshot_id == snapshot.snapshot_id
+            and lease.credential_assignment_snapshot_digest == snapshot.canonical_digest
+            and lease.assignment_id == head.assignment_id == admission.assignment_id
+            and lease.assignment_revision
+            == head.assignment_revision
+            == admission.assignment_revision
+            and lease.source_assignment_digest
+            == head.canonical_digest
+            == admission.source_assignment_digest
+            and lease.credential_generation
+            == head.credential_generation
+            == admission.credential_generation
+            and lease.rotation_epoch == head.rotation_epoch == admission.rotation_epoch
+            and lease.assignment_activated_at == head.activated_at
+            and lease.assignment_expires_at == head.expires_at
+            and head.active
+            and not head.revoked
+            and head.activated_at <= observed_at < lease.valid_until
+            and observed_at < admission.valid_until
+            and lease.valid_until <= head.expires_at
+            and lease.scope == admission.scope == binding.scope == snapshot.scope == head.scope
+            and lease.authority.credential_access_authorized is True
+            and not any(
+                value is not False
+                for name, value in lease.authority.canonical_value().items()
+                if name != "credential_access_authorized"
+            )
+        )
+
+    @staticmethod
+    def _credential_access_payload(
+        lease: WorkflowEventPhysicalTransportCredentialAccessAuthorizationLease,
+    ) -> dict[str, Any]:
+        return cast(dict[str, Any], lease.canonical_value())
+
+    @staticmethod
+    def _credential_access_to_domain(
+        raw: dict[str, Any],
+    ) -> WorkflowEventPhysicalTransportCredentialAccessAuthorizationLease:
+        values = dict(raw)
+        values["scope"] = WorkflowScope(**cast(Any, values["scope"]))
+        for name in (
+            "assignment_activated_at",
+            "assignment_expires_at",
+            "issued_at",
+            "valid_until",
+        ):
+            values[name] = datetime.fromisoformat(str(values[name]))
+        values["state"] = WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseState(
+            str(values["state"])
+        )
+        values["authority"] = (
+            WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseAuthority(
+                **cast(Any, values["authority"])
+            )
+        )
+        return WorkflowEventPhysicalTransportCredentialAccessAuthorizationLease(**cast(Any, values))
+
+    @staticmethod
+    def _credential_access_idempotency_scope(scope: WorkflowScope, accessor_subject_id: str) -> str:
+        return canonical_digest(
+            {"accessor_subject_id": accessor_subject_id, "scope": scope.canonical_value()}
+        )
+
+    @staticmethod
+    def _credential_access_contract_violation() -> NoReturn:
+        raise WorkflowTransportCredentialAccessAuthorizationLeaseError(
+            "workflow_transport_credential_access_authorization_repository_contract_violation",
+            "Credential-access authorization evidence does not match durable state.",
         )
 
     async def _physical_transport_route_binding_replay(
