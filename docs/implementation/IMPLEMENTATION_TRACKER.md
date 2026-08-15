@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-210 |
 | Title | Atomic single-use target-context access lease consumption and paired protected artifact opening without delivery or runtime authority |
-| Status | In progress; documentation slice defined |
+| Status | Implementation and local verification complete; delivery pending |
 | Branch | `agent/protected-target-context-artifact-opening` |
 | Pull Request | Not opened |
 | Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-152, ADR-157, ADR-158, ADR-159, ADR-160 |
-| Last Updated | 2026-08-15 |
-| Next Action | Implement the ADR-160 domain, application, persistence, API, security and read-only UI contracts |
+| Last Updated | 2026-08-16 |
+| Next Action | Open the IMP-210 pull request, pass exact-head PostgreSQL CI, merge by SHA and verify independent `main` CI |
 
 ### ATLAS-IMP-210 Scope Rationale
 
@@ -60,6 +60,21 @@
   control.
 - Full local suites, real PostgreSQL concurrency/migration CI, live desktop/mobile inspection,
   exact-head PR CI, SHA-locked merge and independent main CI must pass.
+
+### ATLAS-IMP-210 Local Verification
+
+- Backend Ruff formatting/lint and MyPy passed. The complete backend suite passed with `2264`
+  tests and `20` environment-dependent skips; the two new live PostgreSQL cases are wired into CI
+  through `ATLAS_TEST_POSTGRES_DSN` together with migration downgrade/upgrade verification.
+- Frontend TypeScript and ESLint passed. All `95` test files and `708` tests passed, followed by a
+  successful production Vite build.
+- Live validation at `http://127.0.0.1:5173/` used one normal `atlas-demo` / `local-demo`
+  username/password session. The Target-context artifact openings region rendered as read-only on
+  desktop and mobile, exposed no buttons or links, required no MFA or second browser prompt, had no
+  horizontal overflow and produced no browser console warnings or errors.
+- Independent final review found no P0, P1 or P2 issue after full canonical audit replay checks,
+  nonce/opener identity binding, claim-attempt-result deadline validation and exact replay
+  no-reopen behavior were verified.
 
 ### ATLAS-IMP-209 Delivery Evidence
 

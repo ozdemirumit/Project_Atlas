@@ -25,6 +25,9 @@ from atlas.modules.workflows.application.target_context_artifact_opening_ports i
     WorkflowPhysicalTransportTargetContextArtifactOpener,
     WorkflowTargetContextArtifactOpeningClaimRequest,
     WorkflowTargetContextArtifactOpeningClaimStatus,
+    WorkflowTargetContextArtifactOpeningReplayLookup,
+    WorkflowTargetContextArtifactOpeningReplayLookupRequest,
+    WorkflowTargetContextArtifactOpeningReplayStatus,
     WorkflowTargetContextArtifactOpeningRepository,
     WorkflowTargetContextArtifactOpeningResultRequest,
     WorkflowTargetContextArtifactOpeningResultStatus,
@@ -36,6 +39,7 @@ from atlas.modules.workflows.domain import (
     WorkflowEventPhysicalTransportEndpointMaterializationResultState,
     WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLease,
     WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseState,
+    WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttempt,
     WorkflowEventPhysicalTransportTargetContextArtifactOpeningAuthority,
     WorkflowEventPhysicalTransportTargetContextArtifactOpeningInstruction,
     WorkflowEventPhysicalTransportTargetContextArtifactOpeningPolicy,
@@ -128,23 +132,13 @@ class WorkflowEventPhysicalTransportTargetContextArtifactOpeningService:
         )
         if not self._repository.durable:
             self._raise("target_context_artifact_opening_durable_repository_required")
-        if (
-            not self._opener.available
-            or self._opener.opener_contract_id != self._policy.required_opener_contract_id
-        ):
-            self._raise("target_context_artifact_opening_trusted_opener_unavailable")
-
-        evidence = await self._load_and_attest(
-            authorization_lease_id=authorization_lease_id,
-            authorization_lease_digest=authorization_lease_digest,
-            context=context,
-        )
         idempotency_digest = sha256(
             f"{context.subject_id}\x00{idempotency_key}".encode()
         ).hexdigest()
         fingerprint = canonical_digest(
             {
                 "accessor_subject_id": context.subject_id,
+                "credential_audience": context.credential_audience,
                 "authorization_lease_digest": authorization_lease_digest,
                 "authorization_lease_id": authorization_lease_id,
                 "idempotency_digest": idempotency_digest,
@@ -164,26 +158,56 @@ class WorkflowEventPhysicalTransportTargetContextArtifactOpeningService:
             }
         )
         opening_id = f"workflow-target-context-artifact-opening.{seed[:24]}"
-        await self._audit(
-            context,
-            event_kind="requested",
-            outcome="requested",
-            result_code="target_context_artifact_opening_requested",
-            authorization_lease_id=authorization_lease_id,
-            opening_id=opening_id,
-            idempotency_key=idempotency_key,
-        )
-
-        async def required_precommit_audit() -> None:
-            await self._audit(
-                context,
-                event_kind="authorized",
-                outcome="authorized",
-                result_code="target_context_artifact_opening_lease_consumption_authorized",
+        replay = await self._repository.lookup_target_context_artifact_opening_replay(
+            WorkflowTargetContextArtifactOpeningReplayLookupRequest(
                 authorization_lease_id=authorization_lease_id,
+                authorization_lease_digest=authorization_lease_digest,
+                scope=context.scope,
+                accessor_subject_id=context.subject_id,
+                credential_audience=context.credential_audience,
+                policy_id=self._policy.policy_id,
+                policy_version=self._policy.policy_version,
+                policy_digest=self._policy.canonical_digest,
+                idempotency_digest=idempotency_digest,
+                request_fingerprint=fingerprint,
                 opening_id=opening_id,
-                idempotency_key=idempotency_key,
             )
+        )
+        replay_result = self._resolve_replay(replay)
+        if replay_result is not None:
+            return replay_result
+
+        if (
+            not self._opener.available
+            or self._opener.opener_contract_id != self._policy.required_opener_contract_id
+        ):
+            self._raise("target_context_artifact_opening_trusted_opener_unavailable")
+
+        evidence = await self._load_and_attest(
+            authorization_lease_id=authorization_lease_id,
+            authorization_lease_digest=authorization_lease_digest,
+            context=context,
+        )
+        consumption_authorization_audit_payload: dict[str, object] = {
+            "schema_id": "audit.workflow-target-context-access-lease-consumption-authorization",
+            "schema_version": "1.0",
+            "event_type": "target_context_artifact_opening_lease_consumption_authorized",
+            "claim_id": f"workflow-target-context-access-consumption-claim.{seed[:24]}",
+            "attempt_id": f"workflow-target-context-artifact-opening-attempt.{seed[:24]}",
+            "opening_id": opening_id,
+            "authorization_lease_id": authorization_lease_id,
+            "authorization_lease_digest": authorization_lease_digest,
+            "scope": context.scope.canonical_value(),
+            "accessor_subject_id": context.subject_id,
+            "credential_audience": context.credential_audience,
+            "policy_id": self._policy.policy_id,
+            "policy_version": self._policy.policy_version,
+            "policy_digest": self._policy.canonical_digest,
+            "idempotency_digest": idempotency_digest,
+            "request_fingerprint": fingerprint,
+            "irreversible_consumption_acknowledged": True,
+            "uncertain_outcome_requires_new_authorization_acknowledged": True,
+        }
 
         request = WorkflowTargetContextArtifactOpeningClaimRequest(
             claim_id=f"workflow-target-context-access-consumption-claim.{seed[:24]}",
@@ -228,7 +252,10 @@ class WorkflowEventPhysicalTransportTargetContextArtifactOpeningService:
             request_fingerprint=fingerprint,
             irreversible_consumption_acknowledged=True,
             uncertain_outcome_requires_new_authorization_acknowledged=True,
-            required_precommit_audit=required_precommit_audit,
+            consumption_authorization_audit_payload=consumption_authorization_audit_payload,
+            consumption_authorization_audit_digest=canonical_digest(
+                consumption_authorization_audit_payload
+            ),
         )
         claimed = await self._repository.claim_target_context_artifact_opening(request)
         if claimed.status is WorkflowTargetContextArtifactOpeningClaimStatus.REPLAY_COMPLETED:
@@ -252,22 +279,6 @@ class WorkflowEventPhysicalTransportTargetContextArtifactOpeningService:
                 claim_digest=claimed.claim.canonical_digest,
                 attempt_digest=claimed.attempt.canonical_digest,
                 receipt=receipt,
-            )
-            await self._audit(
-                context,
-                event_kind=(
-                    "completed"
-                    if result.state
-                    is (
-                        WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultState
-                    ).OPENED_PROTECTED
-                    else "failed"
-                ),
-                outcome=result.state.value,
-                result_code=f"target_context_artifact_opening_{result.state.value}",
-                authorization_lease_id=authorization_lease_id,
-                opening_id=result.opening_id,
-                idempotency_key=idempotency_key,
             )
             written = await self._repository.record_target_context_artifact_opening_result(
                 WorkflowTargetContextArtifactOpeningResultRequest(
@@ -301,6 +312,31 @@ class WorkflowEventPhysicalTransportTargetContextArtifactOpeningService:
             if receipt is not None and receipt.sealed_capsule_id is not None:
                 await self._destroy_capsule(receipt)
             self._uncertain("target_context_artifact_opening_result_persistence_uncertain")
+        await self._export_audit_best_effort(
+            context,
+            event_kind="authorized",
+            outcome="authorized",
+            result_code="target_context_artifact_opening_lease_consumption_authorized",
+            authorization_lease_id=authorization_lease_id,
+            opening_id=written.result.opening_id,
+            idempotency_key=idempotency_key,
+        )
+        await self._export_audit_best_effort(
+            context,
+            event_kind=(
+                "completed"
+                if written.result.state
+                is (
+                    WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultState
+                ).OPENED_PROTECTED
+                else "failed"
+            ),
+            outcome=written.result.state.value,
+            result_code=f"target_context_artifact_opening_{written.result.state.value}",
+            authorization_lease_id=authorization_lease_id,
+            opening_id=written.result.opening_id,
+            idempotency_key=idempotency_key,
+        )
         return written.result
 
     async def list_results(
@@ -310,6 +346,24 @@ class WorkflowEventPhysicalTransportTargetContextArtifactOpeningService:
             self._raise("target_context_artifact_opening_durable_repository_required")
         return await self._repository.list_target_context_artifact_opening_results(
             scope=scope, limit=limit
+        )
+
+    async def list_attempts(
+        self, *, scope: WorkflowScope, limit: int = 256
+    ) -> tuple[WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttempt, ...]:
+        if not self._repository.durable:
+            self._raise("target_context_artifact_opening_durable_repository_required")
+        return await self._repository.list_target_context_artifact_opening_attempts(
+            scope=scope, limit=limit
+        )
+
+    async def get_results_for_opening_ids(
+        self, *, scope: WorkflowScope, opening_ids: tuple[str, ...]
+    ) -> tuple[WorkflowEventPhysicalTransportTargetContextArtifactOpeningResult, ...]:
+        if not self._repository.durable:
+            self._raise("target_context_artifact_opening_durable_repository_required")
+        return await self._repository.get_target_context_artifact_opening_results_by_opening_ids(
+            scope=scope, opening_ids=opening_ids
         )
 
     def _require_request(self, **values: object) -> None:
@@ -347,6 +401,23 @@ class WorkflowEventPhysicalTransportTargetContextArtifactOpeningService:
             or not 8 <= len(cast(str, values["idempotency_key"])) <= 128
         ):
             self._raise("target_context_artifact_opening_request_invalid")
+
+    def _resolve_replay(
+        self, replay: WorkflowTargetContextArtifactOpeningReplayLookup
+    ) -> WorkflowEventPhysicalTransportTargetContextArtifactOpeningResult | None:
+        if replay.status is WorkflowTargetContextArtifactOpeningReplayStatus.NONE:
+            if replay.result is not None:
+                self._raise("target_context_artifact_opening_replay_evidence_conflict")
+            return None
+        if replay.status is WorkflowTargetContextArtifactOpeningReplayStatus.TERMINAL:
+            if replay.result is None:
+                self._uncertain("target_context_artifact_opening_replay_result_missing")
+            return replay.result
+        if replay.status is WorkflowTargetContextArtifactOpeningReplayStatus.CLAIM_ONLY_UNCERTAIN:
+            self._uncertain("target_context_artifact_opening_outcome_uncertain")
+        if replay.result is not None:
+            self._raise("target_context_artifact_opening_replay_evidence_conflict")
+        self._raise(f"target_context_artifact_opening_{replay.status.value}")
 
     async def _load_and_attest(
         self,
@@ -761,6 +832,16 @@ class WorkflowEventPhysicalTransportTargetContextArtifactOpeningService:
                 ),
             )
         )
+
+    async def _export_audit_best_effort(
+        self,
+        context: WorkflowPhysicalTransportTargetContextAccessorContext,
+        **values: str,
+    ) -> None:
+        try:
+            await self._audit(context, **values)
+        except Exception:
+            return
 
     @staticmethod
     def _payload(values: dict[str, object]) -> dict[str, object]:

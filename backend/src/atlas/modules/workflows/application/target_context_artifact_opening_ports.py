@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -55,6 +54,35 @@ class WorkflowTargetContextArtifactOpeningResultStatus(StrEnum):
     CONFLICT = "conflict"
 
 
+class WorkflowTargetContextArtifactOpeningReplayStatus(StrEnum):
+    NONE = "none"
+    TERMINAL = "terminal"
+    CLAIM_ONLY_UNCERTAIN = "claim_only_uncertain"
+    IDEMPOTENCY_CONFLICT = "idempotency_conflict"
+    ALREADY_CONSUMED = "already_consumed"
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowTargetContextArtifactOpeningReplayLookupRequest:
+    authorization_lease_id: str
+    authorization_lease_digest: str
+    scope: WorkflowScope
+    accessor_subject_id: str
+    credential_audience: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    idempotency_digest: str
+    request_fingerprint: str
+    opening_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowTargetContextArtifactOpeningReplayLookup:
+    status: WorkflowTargetContextArtifactOpeningReplayStatus
+    result: WorkflowEventPhysicalTransportTargetContextArtifactOpeningResult | None
+
+
 @dataclass(frozen=True, slots=True)
 class WorkflowTargetContextArtifactOpeningClaimRequest:
     """Offline evidence for the locked, database-timed point of no return."""
@@ -93,7 +121,8 @@ class WorkflowTargetContextArtifactOpeningClaimRequest:
     request_fingerprint: str
     irreversible_consumption_acknowledged: bool
     uncertain_outcome_requires_new_authorization_acknowledged: bool
-    required_precommit_audit: Callable[[], Awaitable[None]]
+    consumption_authorization_audit_payload: dict[str, object]
+    consumption_authorization_audit_digest: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,6 +194,12 @@ class WorkflowTargetContextArtifactOpeningRepository(Protocol):
         self, *, materialization_id: str
     ) -> WorkflowEventPhysicalTransportCredentialMaterializationResult | None: ...
 
+    async def lookup_target_context_artifact_opening_replay(
+        self, request: WorkflowTargetContextArtifactOpeningReplayLookupRequest
+    ) -> WorkflowTargetContextArtifactOpeningReplayLookup:
+        """Resolve an existing consumption without attestation or opener I/O."""
+        ...
+
     async def claim_target_context_artifact_opening(
         self, request: WorkflowTargetContextArtifactOpeningClaimRequest
     ) -> WorkflowTargetContextArtifactOpeningClaimResult:
@@ -181,12 +216,40 @@ class WorkflowTargetContextArtifactOpeningRepository(Protocol):
         self, *, scope: WorkflowScope, limit: int
     ) -> tuple[WorkflowEventPhysicalTransportTargetContextArtifactOpeningResult, ...]: ...
 
+    async def list_target_context_artifact_opening_attempts(
+        self, *, scope: WorkflowScope, limit: int
+    ) -> tuple[WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttempt, ...]: ...
+
+    async def get_target_context_artifact_opening_results_by_opening_ids(
+        self, *, scope: WorkflowScope, opening_ids: tuple[str, ...]
+    ) -> tuple[WorkflowEventPhysicalTransportTargetContextArtifactOpeningResult, ...]: ...
+
 
 def validate_workflow_target_context_artifact_opening_claim_request(
     request: WorkflowTargetContextArtifactOpeningClaimRequest,
 ) -> None:
     endpoint = request.endpoint_status_attestation
     credential = request.credential_status_attestation
+    expected_audit_payload: dict[str, object] = {
+        "schema_id": "audit.workflow-target-context-access-lease-consumption-authorization",
+        "schema_version": "1.0",
+        "event_type": "target_context_artifact_opening_lease_consumption_authorized",
+        "claim_id": request.claim_id,
+        "attempt_id": request.attempt_id,
+        "opening_id": request.opening_id,
+        "authorization_lease_id": request.authorization_lease_id,
+        "authorization_lease_digest": request.authorization_lease_digest,
+        "scope": request.scope.canonical_value(),
+        "accessor_subject_id": request.accessor_subject_id,
+        "credential_audience": "audience.workflow-protected-transport-context-accessor",
+        "policy_id": request.expected_policy_id,
+        "policy_version": request.expected_policy_version,
+        "policy_digest": request.expected_policy_digest,
+        "idempotency_digest": request.idempotency_digest,
+        "request_fingerprint": request.request_fingerprint,
+        "irreversible_consumption_acknowledged": True,
+        "uncertain_outcome_requires_new_authorization_acknowledged": True,
+    }
     if (
         request.irreversible_consumption_acknowledged is not True
         or request.uncertain_outcome_requires_new_authorization_acknowledged is not True
@@ -232,6 +295,9 @@ def validate_workflow_target_context_artifact_opening_claim_request(
         or credential.valid_until <= credential.observed_at
         or request.expected_endpoint_usable_until.tzinfo is None
         or request.expected_credential_usable_until.tzinfo is None
+        or request.consumption_authorization_audit_payload != expected_audit_payload
+        or request.consumption_authorization_audit_digest
+        != canonical_digest(expected_audit_payload)
     ):
         raise ValueError("target context artifact opening claim evidence is unsafe")
     try:
@@ -255,6 +321,7 @@ def validate_workflow_target_context_artifact_opening_claim_request(
         request.expected_policy_digest,
         request.idempotency_digest,
         request.request_fingerprint,
+        request.consumption_authorization_audit_digest,
     ):
         if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
             raise ValueError("target context artifact opening claim digest is invalid")
@@ -267,6 +334,9 @@ __all__ = [
     "WorkflowTargetContextArtifactOpeningClaimRequest",
     "WorkflowTargetContextArtifactOpeningClaimResult",
     "WorkflowTargetContextArtifactOpeningClaimStatus",
+    "WorkflowTargetContextArtifactOpeningReplayLookup",
+    "WorkflowTargetContextArtifactOpeningReplayLookupRequest",
+    "WorkflowTargetContextArtifactOpeningReplayStatus",
     "WorkflowTargetContextArtifactOpeningRepository",
     "WorkflowTargetContextArtifactOpeningResultRequest",
     "WorkflowTargetContextArtifactOpeningResultStatus",

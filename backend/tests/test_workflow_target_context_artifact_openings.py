@@ -37,6 +37,11 @@ from atlas.modules.workflows.application import (
     WorkflowTargetContextArtifactOpeningResultWrite,
     validate_workflow_target_context_artifact_opening_claim_request,
 )
+from atlas.modules.workflows.application.target_context_artifact_opening_ports import (
+    WorkflowTargetContextArtifactOpeningReplayLookup,
+    WorkflowTargetContextArtifactOpeningReplayLookupRequest,
+    WorkflowTargetContextArtifactOpeningReplayStatus,
+)
 from atlas.modules.workflows.domain import (
     WorkflowEventPhysicalTransportCredentialMaterializationAuthority,
     WorkflowEventPhysicalTransportCredentialMaterializationResultState,
@@ -124,6 +129,7 @@ class InMemoryTargetContextArtifactOpeningRepository:
             str, WorkflowEventPhysicalTransportTargetContextArtifactOpeningResult
         ] = {}
         self.force_result_conflict = False
+        self.last_claim_request: WorkflowTargetContextArtifactOpeningClaimRequest | None = None
 
     @property
     def durable(self) -> bool:
@@ -151,11 +157,40 @@ class InMemoryTargetContextArtifactOpeningRepository:
         self.calls.append("load-credential-result")
         return self.credential if self.credential.materialization_id == materialization_id else None
 
+    async def lookup_target_context_artifact_opening_replay(
+        self, request: WorkflowTargetContextArtifactOpeningReplayLookupRequest
+    ) -> WorkflowTargetContextArtifactOpeningReplayLookup:
+        self.calls.append("replay-lookup")
+        prior = self.claims.get(request.authorization_lease_id)
+        if prior is None:
+            return WorkflowTargetContextArtifactOpeningReplayLookup(
+                WorkflowTargetContextArtifactOpeningReplayStatus.NONE, None
+            )
+        if prior.idempotency_digest == request.idempotency_digest:
+            if prior.request_fingerprint != request.request_fingerprint:
+                return WorkflowTargetContextArtifactOpeningReplayLookup(
+                    WorkflowTargetContextArtifactOpeningReplayStatus.IDEMPOTENCY_CONFLICT, None
+                )
+        elif prior.request_fingerprint != request.request_fingerprint:
+            return WorkflowTargetContextArtifactOpeningReplayLookup(
+                WorkflowTargetContextArtifactOpeningReplayStatus.ALREADY_CONSUMED, None
+            )
+        result = self.results.get(request.authorization_lease_id)
+        return WorkflowTargetContextArtifactOpeningReplayLookup(
+            (
+                WorkflowTargetContextArtifactOpeningReplayStatus.TERMINAL
+                if result is not None
+                else WorkflowTargetContextArtifactOpeningReplayStatus.CLAIM_ONLY_UNCERTAIN
+            ),
+            result,
+        )
+
     async def claim_target_context_artifact_opening(
         self, request: WorkflowTargetContextArtifactOpeningClaimRequest
     ) -> WorkflowTargetContextArtifactOpeningClaimResult:
         self.calls.append("claim-transaction")
         validate_workflow_target_context_artifact_opening_claim_request(request)
+        self.last_claim_request = request
         prior = self.claims.get(request.authorization_lease_id)
         if prior is not None:
             if prior.request_fingerprint != request.request_fingerprint:
@@ -192,15 +227,6 @@ class InMemoryTargetContextArtifactOpeningRepository:
         ):
             return WorkflowTargetContextArtifactOpeningClaimResult(
                 WorkflowTargetContextArtifactOpeningClaimStatus.EVIDENCE_CONFLICT,
-                None,
-                None,
-                None,
-            )
-        try:
-            await request.required_precommit_audit()
-        except Exception:
-            return WorkflowTargetContextArtifactOpeningClaimResult(
-                WorkflowTargetContextArtifactOpeningClaimStatus.PRECOMMIT_AUDIT_FAILED,
                 None,
                 None,
                 None,
@@ -258,6 +284,9 @@ class InMemoryTargetContextArtifactOpeningRepository:
             "credential_status_attestation_digest": (
                 request.credential_status_attestation.canonical_digest
             ),
+            "request_nonce_digest": request.expected_request_nonce_digest,
+            "opener_contract_id": request.expected_opener_contract_id,
+            "opener_attestor_id": request.expected_opener_attestor_id,
             "scope": request.scope,
             "accessor_subject_id": request.accessor_subject_id,
             "policy_id": request.expected_policy_id,
@@ -363,6 +392,7 @@ async def fixture(
         WorkflowEventPhysicalTransportTargetContextArtifactOpeningFailureClass | None
     ) = None,
     durable: bool = True,
+    audit_sink: Any | None = None,
 ) -> tuple[
     WorkflowEventPhysicalTransportTargetContextArtifactOpeningService,
     InMemoryTargetContextArtifactOpeningRepository,
@@ -391,7 +421,7 @@ async def fixture(
         credential_status_attestor=credential,
         status_signature_verifier=verifier,
         opener=opener,
-        audit_sink=CollectingAuditSink(),
+        audit_sink=audit_sink or CollectingAuditSink(),
     )
     return service, repository, opener, lease, calls
 
@@ -413,6 +443,24 @@ async def open_artifacts(
     }
     values.update(changes)
     return await service.open_artifacts(**cast(Any, values))
+
+
+def unavailable_replay_service(
+    repository: InMemoryTargetContextArtifactOpeningRepository,
+    calls: list[str],
+) -> WorkflowEventPhysicalTransportTargetContextArtifactOpeningService:
+    return WorkflowEventPhysicalTransportTargetContextArtifactOpeningService(
+        repository=cast(Any, repository),
+        endpoint_status_attestor=FakeStatusAttestor(
+            kind=WorkflowProtectedArtifactKind.ENDPOINT, calls=calls
+        ),
+        credential_status_attestor=FakeStatusAttestor(
+            kind=WorkflowProtectedArtifactKind.CREDENTIAL, calls=calls
+        ),
+        status_signature_verifier=HmacStatusSignatureVerifier(calls),
+        opener=UnavailableWorkflowPhysicalTransportTargetContextArtifactOpener(),
+        audit_sink=CollectingAuditSink(),
+    )
 
 
 def test_policy_authority_and_public_contract_are_strict() -> None:
@@ -492,22 +540,36 @@ async def test_claim_and_attempt_commit_before_paired_opener_and_result_is_zero_
         )
     )
     assert await service.list_results(scope=SCOPE) == (result,)
+    replay_index = calls.index("replay-lookup")
+    assert "authoritative-time" in calls[replay_index + 1 :]
+    assert repository.last_claim_request is not None
+    audit_payload = repository.last_claim_request.consumption_authorization_audit_payload
+    assert repository.last_claim_request.consumption_authorization_audit_digest == canonical_digest(
+        audit_payload
+    )
+    assert audit_payload["authorization_lease_id"] == lease.authorization_lease_id
+    assert "required_precommit_audit" not in {
+        field.name for field in fields(WorkflowTargetContextArtifactOpeningClaimRequest)
+    }
 
 
 @pytest.mark.asyncio
 async def test_exact_terminal_replay_never_calls_opener_again() -> None:
-    service, _, opener, lease, _ = await fixture()
+    service, repository, opener, lease, calls = await fixture()
     first = await open_artifacts(service, lease)
 
-    second = await open_artifacts(service, lease)
+    repository.now = lease.valid_until + timedelta(seconds=1)
+    calls.clear()
+    second = await open_artifacts(unavailable_replay_service(repository, calls), lease)
 
     assert second == first
     assert len(opener.calls) == 1
+    assert calls == ["replay-lookup"]
 
 
 @pytest.mark.asyncio
 async def test_claim_only_is_outcome_uncertain_and_never_retries_opener() -> None:
-    service, repository, opener, lease, _ = await fixture(opener_type=ExplodingOpener)
+    service, repository, opener, lease, calls = await fixture(opener_type=ExplodingOpener)
 
     with pytest.raises(
         WorkflowEventPhysicalTransportTargetContextArtifactOpeningUncertainError,
@@ -517,8 +579,53 @@ async def test_claim_only_is_outcome_uncertain_and_never_retries_opener() -> Non
     assert lease.authorization_lease_id in repository.claims
     assert lease.authorization_lease_id not in repository.results
 
+    repository.now = lease.valid_until + timedelta(seconds=1)
+    calls.clear()
     with pytest.raises(WorkflowEventPhysicalTransportTargetContextArtifactOpeningUncertainError):
-        await open_artifacts(service, lease)
+        await open_artifacts(unavailable_replay_service(repository, calls), lease)
+    assert len(opener.calls) == 1
+    assert calls == ["replay-lookup"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("changes", "expected_code"),
+    (
+        (
+            {"authorization_lease_digest": "f" * 64},
+            "target_context_artifact_opening_idempotency_conflict",
+        ),
+        (
+            {"idempotency_key": "target-context-artifact-opening-0002"},
+            "target_context_artifact_opening_already_consumed",
+        ),
+    ),
+)
+async def test_consumed_replay_conflicts_fail_closed_without_external_calls(
+    changes: dict[str, Any], expected_code: str
+) -> None:
+    service, repository, _, lease, calls = await fixture()
+    await open_artifacts(service, lease)
+    calls.clear()
+
+    with pytest.raises(
+        WorkflowEventPhysicalTransportTargetContextArtifactOpeningError,
+        match=expected_code,
+    ):
+        await open_artifacts(unavailable_replay_service(repository, calls), lease, **changes)
+
+    assert calls == ["replay-lookup"]
+
+
+@pytest.mark.asyncio
+async def test_external_audit_export_failure_does_not_change_committed_result() -> None:
+    service, repository, opener, lease, _ = await fixture(
+        audit_sink=CollectingAuditSink(fail_kind="authorized")
+    )
+
+    result = await open_artifacts(service, lease)
+
+    assert result == repository.results[lease.authorization_lease_id]
     assert len(opener.calls) == 1
 
 

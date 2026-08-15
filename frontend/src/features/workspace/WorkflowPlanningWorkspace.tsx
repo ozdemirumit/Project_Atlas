@@ -2713,7 +2713,6 @@ export default function WorkflowPlanningWorkspace({
                           Attempt {readableKind(opening.attempt_state)} | result{" "}
                           {readableKind(opening.result_state)}
                         </span>
-                        <span>Issued {formatTimestamp(opening.issued_at)}</span>
                         <span>Started {formatTimestamp(opening.started_at)}</span>
                         <span>
                           Completed{" "}

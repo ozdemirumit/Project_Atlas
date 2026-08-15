@@ -1103,7 +1103,6 @@ export type WorkflowPhysicalTransportTargetContextArtifactOpening = {
   scope: WorkflowRunPlan["scope"];
   attempt_state: "started" | "completed";
   result_state: "pending" | "opened_protected" | "opening_failed" | "outcome_uncertain";
-  issued_at: string;
   started_at: string;
   completed_at: string | null;
   policy: WorkflowPhysicalTransportTargetContextArtifactOpeningPolicy;
@@ -2101,7 +2100,6 @@ const physicalTransportTargetContextArtifactOpeningFields = [
   "scope",
   "attempt_state",
   "result_state",
-  "issued_at",
   "started_at",
   "completed_at",
   "policy",
@@ -3756,14 +3754,12 @@ function isPhysicalTransportTargetContextArtifactOpening(
     !hasExactKeys(value, physicalTransportTargetContextArtifactOpeningFields) ||
     !isExactScope(value.scope) ||
     containsCredentialMaterial(value) ||
-    !isTimezoneAwareTimestamp(value.issued_at) ||
     !isTimezoneAwareTimestamp(value.started_at) ||
     (value.completed_at !== null && !isTimezoneAwareTimestamp(value.completed_at))
   ) {
     return false;
   }
   const openingScope = value.scope;
-  const issuedAt = Date.parse(value.issued_at);
   const startedAt = Date.parse(value.started_at);
   const completedAt = value.completed_at === null ? null : Date.parse(value.completed_at);
   const evaluatedAt = Date.parse(serverTime);
@@ -3782,7 +3778,6 @@ function isPhysicalTransportTargetContextArtifactOpening(
     openingScope.organization_id === scope.organizationId &&
     openingScope.environment_id === scope.environmentId &&
     openingScope.site_id === scope.siteId &&
-    issuedAt <= startedAt &&
     startedAt <= evaluatedAt &&
     (completedAt === null || (completedAt >= startedAt && completedAt <= evaluatedAt)) &&
     stateIsConsistent &&

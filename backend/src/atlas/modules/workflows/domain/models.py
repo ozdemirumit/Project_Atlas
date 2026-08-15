@@ -7954,6 +7954,9 @@ class WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttempt:
     credential_protected_artifact_digest: str
     credential_status_attestation_id: str
     credential_status_attestation_digest: str
+    request_nonce_digest: str
+    opener_contract_id: str
+    opener_attestor_id: str
     scope: WorkflowScope
     accessor_subject_id: str
     policy_id: str
@@ -7980,6 +7983,8 @@ class WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttempt:
             self.credential_materialization_id,
             self.credential_protected_artifact_id,
             self.credential_status_attestation_id,
+            self.opener_contract_id,
+            self.opener_attestor_id,
             self.accessor_subject_id,
             self.policy_id,
             self.policy_version,
@@ -7996,6 +8001,7 @@ class WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttempt:
             self.credential_materialization_digest,
             self.credential_protected_artifact_digest,
             self.credential_status_attestation_digest,
+            self.request_nonce_digest,
             self.policy_digest,
             self.canonical_digest,
         )

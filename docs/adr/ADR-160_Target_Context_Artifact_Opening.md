@@ -123,12 +123,15 @@ context overlap, both source artifact deadlines and both attestation deadlines m
 and agree exactly. Cancellation, supersession, ambiguity, drift, expiry, revocation, destruction,
 integrity failure or insufficient remaining time fails closed.
 
-Required consumption-authorization audit is durably recorded before commitment. Atlas then reads
-database time again and repeats every database-resident currentness, integrity and deadline check.
-The transaction atomically appends exactly one consumption claim and one started opening attempt.
+Required consumption-authorization audit is represented by a code-owned canonical payload and
+digest stored with the consumption claim in the same transaction. It is not an external audit-sink
+callback and performs no I/O while locks are held. Atlas then reads database time again and repeats
+every database-resident currentness, integrity and deadline check. The transaction atomically
+appends exactly one consumption claim, its authorization-audit evidence and one started opening attempt.
 This commit is the irreversible point of no return. Only after the commit succeeds may Atlas call
 the trusted opener. A database rollback, audit failure or validation failure before commit leaves
-the lease unconsumed; no opener has been called.
+the lease unconsumed; no opener has been called. SIEM or audit-sink export occurs only after durable
+commit and is best-effort secondary export, never the source of truth for consumption.
 
 ### Trusted Paired Opener And Sealed Capsule
 

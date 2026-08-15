@@ -965,7 +965,6 @@ const targetContextArtifactOpening: WorkflowPhysicalTransportTargetContextArtifa
   scope: { ...plan.scope },
   attempt_state: "completed",
   result_state: "opened_protected",
-  issued_at: "2026-08-14T10:08:20Z",
   started_at: "2026-08-14T10:08:23Z",
   completed_at: "2026-08-14T10:08:24Z",
   policy: {
@@ -5140,7 +5139,6 @@ describe("WorkflowPlanningWorkspace", () => {
     expect(records).toHaveTextContent("pending");
     expect(records).toHaveTextContent("opening failed");
     expect(records).toHaveTextContent("outcome uncertain");
-    expect(records).toHaveTextContent("Issued");
     expect(records).toHaveTextContent("Started");
     expect(records).toHaveTextContent("Completed");
     expect(records).toHaveTextContent("Not recorded");

@@ -57,6 +57,9 @@ from atlas.core.persistence.models import (
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionModel,
     WorkflowEventPhysicalTransportTargetContextAccessAuthorizationClaimModel,
     WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseModel,
+    WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel,
+    WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptModel,
+    WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel,
     WorkflowEventPhysicalTransportTargetContextBindingClaimModel,
     WorkflowEventPhysicalTransportTargetContextBindingModel,
     WorkflowEventTransportAdmissionClaimModel,
@@ -218,6 +221,19 @@ from atlas.modules.workflows.application.target_context_access_authorization_lea
     WorkflowTargetContextAccessAuthorizationLeaseStatus,
     validate_workflow_target_context_access_authorization_request,
 )
+from atlas.modules.workflows.application.target_context_artifact_opening_ports import (
+    WorkflowEventPhysicalTransportTargetContextArtifactOpeningError,
+    WorkflowTargetContextArtifactOpeningClaimRequest,
+    WorkflowTargetContextArtifactOpeningClaimResult,
+    WorkflowTargetContextArtifactOpeningClaimStatus,
+    WorkflowTargetContextArtifactOpeningReplayLookup,
+    WorkflowTargetContextArtifactOpeningReplayLookupRequest,
+    WorkflowTargetContextArtifactOpeningReplayStatus,
+    WorkflowTargetContextArtifactOpeningResultRequest,
+    WorkflowTargetContextArtifactOpeningResultStatus,
+    WorkflowTargetContextArtifactOpeningResultWrite,
+    validate_workflow_target_context_artifact_opening_claim_request,
+)
 from atlas.modules.workflows.application.target_context_binding_ports import (
     WorkflowEventPhysicalTransportTargetContextBindingError,
     WorkflowEventPhysicalTransportTargetContextBindingRequest,
@@ -314,6 +330,13 @@ from atlas.modules.workflows.domain import (
     WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLease,
     WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseAuthority,
     WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseState,
+    WorkflowEventPhysicalTransportTargetContextAccessLeaseConsumptionClaim,
+    WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttempt,
+    WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptState,
+    WorkflowEventPhysicalTransportTargetContextArtifactOpeningAuthority,
+    WorkflowEventPhysicalTransportTargetContextArtifactOpeningFailureClass,
+    WorkflowEventPhysicalTransportTargetContextArtifactOpeningResult,
+    WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultState,
     WorkflowEventPhysicalTransportTargetContextBinding,
     WorkflowEventPhysicalTransportTargetContextBindingAuthority,
     WorkflowEventPhysicalTransportTargetContextBindingState,
@@ -355,6 +378,7 @@ from atlas.modules.workflows.domain import (
     code_owned_workflow_event_physical_transport_endpoint_resolution_authorization_policy,
     code_owned_workflow_event_physical_transport_route_freshness_policy,
     code_owned_workflow_event_physical_transport_target_context_access_authorization_policy,
+    code_owned_workflow_event_physical_transport_target_context_artifact_opening_policy,
     code_owned_workflow_event_physical_transport_target_context_binding_policy,
     code_owned_workflow_event_transport_admission_policy,
     select_deployment_physical_transport_credential_assignment_head,
@@ -395,6 +419,7 @@ class _TargetContextAccessLockedSources:
     credential_snapshot: EventPhysicalTransportCredentialAssignmentSnapshotModel | None
     credential_head: DeploymentPhysicalTransportCredentialAssignment | None
     observed_at: datetime
+    materialization_chains: _TargetContextLockedSources | None = None
 
 
 class PostgreSQLWorkflowPlanRepository:
@@ -417,7 +442,7 @@ class PostgreSQLWorkflowPlanRepository:
 
     async def get_authoritative_time(self) -> datetime:
         async with self._sessions() as session:
-            return cast(datetime, await session.scalar(select(func.now())))
+            return cast(datetime, await session.scalar(select(func.clock_timestamp())))
 
     async def get_by_id(self, *, plan_id: str) -> WorkflowRunPlan | None:
         async with self._sessions() as session:
@@ -4247,6 +4272,242 @@ class PostgreSQLWorkflowPlanRepository:
             )
             return tuple(self._target_context_access_lease_from_row(row) for row in rows)
 
+    async def get_target_context_access_authorization_lease_by_id(
+        self, *, authorization_lease_id: str
+    ) -> WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLease | None:
+        async with self._sessions() as session:
+            row = await session.get(
+                WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseModel,
+                authorization_lease_id,
+            )
+            return None if row is None else self._target_context_access_lease_from_row(row)
+
+    async def get_endpoint_materialization_result_by_id(
+        self, *, materialization_id: str
+    ) -> WorkflowEventPhysicalTransportEndpointMaterializationResult | None:
+        async with self._sessions() as session:
+            row = await session.get(
+                WorkflowEventPhysicalTransportEndpointMaterializationResultModel,
+                materialization_id,
+            )
+            return None if row is None else self._endpoint_materialization_result_from_row(row)
+
+    async def get_credential_materialization_result_by_id(
+        self, *, materialization_id: str
+    ) -> WorkflowEventPhysicalTransportCredentialMaterializationResult | None:
+        async with self._sessions() as session:
+            row = await session.get(
+                WorkflowEventPhysicalTransportCredentialMaterializationResultModel,
+                materialization_id,
+            )
+            return None if row is None else self._credential_materialization_result_from_row(row)
+
+    async def list_target_context_artifact_opening_attempts(
+        self, *, scope: WorkflowScope, limit: int = 256
+    ) -> tuple[WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttempt, ...]:
+        if not 1 <= limit <= 256:
+            raise ValueError("target context artifact opening attempt limit is invalid")
+        async with self._sessions() as session:
+            rows = tuple(
+                (
+                    await session.scalars(
+                        select(
+                            WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptModel
+                        )
+                        .where(
+                            WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptModel.organization_id
+                            == scope.organization_id,
+                            WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptModel.environment_id
+                            == scope.environment_id,
+                            WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptModel.site_id
+                            == scope.site_id,
+                        )
+                        .order_by(
+                            WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptModel.started_at.desc(),
+                            WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptModel.attempt_id,
+                        )
+                        .limit(limit)
+                    )
+                ).all()
+            )
+            claim_rows = {
+                row.claim_id: row
+                for row in (
+                    await session.scalars(
+                        select(
+                            WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel
+                        ).where(
+                            WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel.claim_id.in_(
+                                tuple(item.consumption_claim_id for item in rows)
+                            )
+                        )
+                    )
+                ).all()
+            }
+        attempts: list[WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttempt] = []
+        for row in rows:
+            attempt = self._target_context_artifact_opening_attempt_from_row(row)
+            claim_row = claim_rows.get(attempt.consumption_claim_id)
+            if claim_row is None:
+                self._target_context_artifact_opening_contract_violation()
+            claim = self._target_context_artifact_opening_claim_from_row(claim_row)
+            if not self._target_context_artifact_opening_attempt_matches_claim(attempt, claim):
+                self._target_context_artifact_opening_contract_violation()
+            attempts.append(attempt)
+        return tuple(attempts)
+
+    async def list_target_context_artifact_opening_results(
+        self, *, scope: WorkflowScope, limit: int = 256
+    ) -> tuple[WorkflowEventPhysicalTransportTargetContextArtifactOpeningResult, ...]:
+        if not 1 <= limit <= 256:
+            raise ValueError("target context artifact opening result limit is invalid")
+        async with self._sessions() as session:
+            rows = tuple(
+                (
+                    await session.scalars(
+                        select(
+                            WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel
+                        )
+                        .where(
+                            WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel.organization_id
+                            == scope.organization_id,
+                            WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel.environment_id
+                            == scope.environment_id,
+                            WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel.site_id
+                            == scope.site_id,
+                        )
+                        .order_by(
+                            WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel.completed_at.desc(),
+                            WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel.opening_id,
+                        )
+                        .limit(limit)
+                    )
+                ).all()
+            )
+            attempt_rows = {
+                row.attempt_id: row
+                for row in (
+                    await session.scalars(
+                        select(
+                            WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptModel
+                        ).where(
+                            WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptModel.attempt_id.in_(
+                                tuple(item.attempt_id for item in rows)
+                            )
+                        )
+                    )
+                ).all()
+            }
+            claim_rows = {
+                row.claim_id: row
+                for row in (
+                    await session.scalars(
+                        select(
+                            WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel
+                        ).where(
+                            WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel.claim_id.in_(
+                                tuple(item.consumption_claim_id for item in rows)
+                            )
+                        )
+                    )
+                ).all()
+            }
+        results: list[WorkflowEventPhysicalTransportTargetContextArtifactOpeningResult] = []
+        for row in rows:
+            result = self._target_context_artifact_opening_result_from_row(row)
+            attempt_row = attempt_rows.get(result.attempt_id)
+            claim_row = claim_rows.get(result.consumption_claim_id)
+            if attempt_row is None or claim_row is None:
+                self._target_context_artifact_opening_contract_violation()
+            attempt = self._target_context_artifact_opening_attempt_from_row(attempt_row)
+            claim = self._target_context_artifact_opening_claim_from_row(claim_row)
+            if (
+                not self._target_context_artifact_opening_attempt_matches_claim(attempt, claim)
+                or result.opening_id != attempt.opening_id
+                or result.attempt_digest != attempt.canonical_digest
+                or result.consumption_claim_digest != claim.canonical_digest
+            ):
+                self._target_context_artifact_opening_contract_violation()
+            results.append(result)
+        return tuple(results)
+
+    async def get_target_context_artifact_opening_results_by_opening_ids(
+        self, *, scope: WorkflowScope, opening_ids: tuple[str, ...]
+    ) -> tuple[WorkflowEventPhysicalTransportTargetContextArtifactOpeningResult, ...]:
+        if (
+            len(opening_ids) > 256
+            or len(set(opening_ids)) != len(opening_ids)
+            or any(not 3 <= len(opening_id) <= 128 for opening_id in opening_ids)
+        ):
+            raise ValueError("target context artifact opening result identifiers are invalid")
+        if not opening_ids:
+            return ()
+        async with self._sessions() as session:
+            rows = tuple(
+                (
+                    await session.scalars(
+                        select(
+                            WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel
+                        )
+                        .where(
+                            WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel.organization_id
+                            == scope.organization_id,
+                            WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel.environment_id
+                            == scope.environment_id,
+                            WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel.site_id
+                            == scope.site_id,
+                            WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel.opening_id.in_(
+                                opening_ids
+                            ),
+                        )
+                        .order_by(
+                            WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel.opening_id
+                        )
+                    )
+                ).all()
+            )
+            attempt_rows = {
+                row.attempt_id: row
+                for row in (
+                    await session.scalars(
+                        select(
+                            WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptModel
+                        ).where(
+                            WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptModel.attempt_id.in_(
+                                tuple(item.attempt_id for item in rows)
+                            )
+                        )
+                    )
+                ).all()
+            }
+            claim_rows = {
+                row.claim_id: row
+                for row in (
+                    await session.scalars(
+                        select(
+                            WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel
+                        ).where(
+                            WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel.claim_id.in_(
+                                tuple(item.consumption_claim_id for item in rows)
+                            )
+                        )
+                    )
+                ).all()
+            }
+        results: list[WorkflowEventPhysicalTransportTargetContextArtifactOpeningResult] = []
+        for row in rows:
+            result = self._target_context_artifact_opening_result_from_row(row)
+            attempt_row = attempt_rows.get(result.attempt_id)
+            claim_row = claim_rows.get(result.consumption_claim_id)
+            if attempt_row is None or claim_row is None:
+                self._target_context_artifact_opening_contract_violation()
+            attempt = self._target_context_artifact_opening_attempt_from_row(attempt_row)
+            claim = self._target_context_artifact_opening_claim_from_row(claim_row)
+            if not self._target_context_artifact_opening_lineage_matches(claim, attempt, result):
+                self._target_context_artifact_opening_contract_violation()
+            results.append(result)
+        return tuple(results)
+
     async def authorize_target_context_access(
         self,
         request: WorkflowTargetContextAccessAuthorizationLeaseRequest,
@@ -4347,6 +4608,279 @@ class PostgreSQLWorkflowPlanRepository:
                     self._target_context_access_lease_from_row(existing),
                 )
         return WorkflowTargetContextAccessAuthorizationLeaseResult(statuses.EVIDENCE_CONFLICT, None)
+
+    async def lookup_target_context_artifact_opening_replay(
+        self, request: WorkflowTargetContextArtifactOpeningReplayLookupRequest
+    ) -> WorkflowTargetContextArtifactOpeningReplayLookup:
+        statuses = WorkflowTargetContextArtifactOpeningReplayStatus
+        scope_id = self._target_context_artifact_opening_idempotency_scope(
+            request.scope, request.accessor_subject_id
+        )
+        async with self._sessions() as session:
+            rows = tuple(
+                (
+                    await session.scalars(
+                        select(
+                            WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel
+                        ).where(
+                            WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel.organization_id
+                            == request.scope.organization_id,
+                            WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel.environment_id
+                            == request.scope.environment_id,
+                            WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel.site_id
+                            == request.scope.site_id,
+                            WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel.accessor_subject_id
+                            == request.accessor_subject_id,
+                            or_(
+                                and_(
+                                    WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel.idempotency_scope_id
+                                    == scope_id,
+                                    WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel.idempotency_digest
+                                    == request.idempotency_digest,
+                                ),
+                                WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel.authorization_lease_id
+                                == request.authorization_lease_id,
+                            ),
+                        )
+                    )
+                ).all()
+            )
+            if not rows:
+                return WorkflowTargetContextArtifactOpeningReplayLookup(statuses.NONE, None)
+            idempotent = next(
+                (
+                    row
+                    for row in rows
+                    if row.idempotency_scope_id == scope_id
+                    and row.idempotency_digest == request.idempotency_digest
+                ),
+                None,
+            )
+            if idempotent is None:
+                return WorkflowTargetContextArtifactOpeningReplayLookup(
+                    statuses.ALREADY_CONSUMED, None
+                )
+            claim = self._target_context_artifact_opening_claim_from_row(idempotent)
+            audit_payload = dict(idempotent.consumption_authorization_audit_payload)
+            attempt_row = cast(
+                WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptModel | None,
+                await session.scalar(
+                    select(
+                        WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptModel
+                    ).where(
+                        WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptModel.consumption_claim_id
+                        == claim.claim_id
+                    )
+                ),
+            )
+            if attempt_row is None:
+                self._target_context_artifact_opening_contract_violation()
+            attempt = self._target_context_artifact_opening_attempt_from_row(attempt_row)
+            if not self._target_context_artifact_opening_lineage_matches(claim, attempt):
+                self._target_context_artifact_opening_contract_violation()
+            if not self._target_context_artifact_opening_audit_matches(
+                idempotent, claim=claim, attempt=attempt
+            ):
+                self._target_context_artifact_opening_contract_violation()
+            if (
+                claim.request_fingerprint != request.request_fingerprint
+                or claim.authorization_lease_id != request.authorization_lease_id
+                or claim.authorization_lease_digest != request.authorization_lease_digest
+                or claim.opening_id != request.opening_id
+                or claim.scope != request.scope
+                or claim.accessor_subject_id != request.accessor_subject_id
+                or request.credential_audience
+                != "audience.workflow-protected-transport-context-accessor"
+                or audit_payload.get("credential_audience") != request.credential_audience
+                or attempt.policy_id != request.policy_id
+                or attempt.policy_version != request.policy_version
+                or attempt.policy_digest != request.policy_digest
+            ):
+                return WorkflowTargetContextArtifactOpeningReplayLookup(
+                    statuses.IDEMPOTENCY_CONFLICT, None
+                )
+            result_row = cast(
+                WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel | None,
+                await session.scalar(
+                    select(
+                        WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel
+                    ).where(
+                        WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel.attempt_id
+                        == attempt.attempt_id
+                    )
+                ),
+            )
+            if result_row is None:
+                return WorkflowTargetContextArtifactOpeningReplayLookup(
+                    statuses.CLAIM_ONLY_UNCERTAIN, None
+                )
+            result = self._target_context_artifact_opening_result_from_row(result_row)
+            if not self._target_context_artifact_opening_lineage_matches(claim, attempt, result):
+                self._target_context_artifact_opening_contract_violation()
+            return WorkflowTargetContextArtifactOpeningReplayLookup(statuses.TERMINAL, result)
+
+    async def claim_target_context_artifact_opening(
+        self, request: WorkflowTargetContextArtifactOpeningClaimRequest
+    ) -> WorkflowTargetContextArtifactOpeningClaimResult:
+        statuses = WorkflowTargetContextArtifactOpeningClaimStatus
+        async with self._sessions() as session:
+            locked = await self._lock_target_context_access_sources(
+                session, request=cast(Any, request)
+            )
+            lease_row = cast(
+                WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseModel | None,
+                await session.scalar(
+                    select(WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseModel)
+                    .where(
+                        WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseModel.authorization_lease_id
+                        == request.authorization_lease_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            replay = await self._target_context_artifact_opening_replay(session, request=request)
+            if replay is not None:
+                await session.rollback()
+                return replay
+            if not self._target_context_artifact_opening_request_is_valid(
+                request
+            ) or not self._target_context_artifact_opening_evidence_matches(
+                request=request, locked=locked, lease_row=lease_row
+            ):
+                await session.rollback()
+                return WorkflowTargetContextArtifactOpeningClaimResult(
+                    statuses.EVIDENCE_CONFLICT, None, None, None
+                )
+            commit_observed_at = cast(
+                datetime, await session.scalar(select(func.clock_timestamp()))
+            )
+            locked = dataclass_replace(locked, observed_at=commit_observed_at)
+            if not self._target_context_artifact_opening_request_is_valid(
+                request
+            ) or not self._target_context_artifact_opening_evidence_matches(
+                request=request, locked=locked, lease_row=lease_row
+            ):
+                await session.rollback()
+                return WorkflowTargetContextArtifactOpeningClaimResult(
+                    statuses.EVIDENCE_CONFLICT, None, None, None
+                )
+            claim = self._target_context_artifact_opening_claim(request, locked=locked)
+            attempt = self._target_context_artifact_opening_attempt(
+                request, claim=claim, locked=locked, lease_row=cast(Any, lease_row)
+            )
+            try:
+                session.add(
+                    self._target_context_artifact_opening_claim_model(
+                        request, claim=claim, locked=locked
+                    )
+                )
+                await session.flush()
+                session.add(
+                    self._target_context_artifact_opening_attempt_model(request, attempt=attempt)
+                )
+                await session.commit()
+                return WorkflowTargetContextArtifactOpeningClaimResult(
+                    statuses.CLAIMED, claim, attempt, None
+                )
+            except IntegrityError:
+                await session.rollback()
+
+        async with self._sessions() as session:
+            replay = await self._target_context_artifact_opening_replay(session, request=request)
+            await session.rollback()
+            if replay is not None:
+                return replay
+        return WorkflowTargetContextArtifactOpeningClaimResult(
+            statuses.EVIDENCE_CONFLICT, None, None, None
+        )
+
+    async def record_target_context_artifact_opening_result(
+        self, request: WorkflowTargetContextArtifactOpeningResultRequest
+    ) -> WorkflowTargetContextArtifactOpeningResultWrite:
+        statuses = WorkflowTargetContextArtifactOpeningResultStatus
+        result = request.result
+        async with self._sessions() as session:
+            lease_row = cast(
+                WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseModel | None,
+                await session.scalar(
+                    select(WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseModel)
+                    .where(
+                        WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseModel.authorization_lease_id
+                        == result.authorization_lease_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            claim_row = cast(
+                WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel | None,
+                await session.scalar(
+                    select(WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel)
+                    .where(
+                        WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel.claim_id
+                        == result.consumption_claim_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            attempt_row = cast(
+                WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptModel | None,
+                await session.scalar(
+                    select(WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptModel)
+                    .where(
+                        WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptModel.attempt_id
+                        == result.attempt_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            existing = cast(
+                WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel | None,
+                await session.scalar(
+                    select(WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel)
+                    .where(
+                        WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel.opening_id
+                        == result.opening_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            if existing is not None:
+                stored = self._target_context_artifact_opening_result_from_row(existing)
+                await session.rollback()
+                return WorkflowTargetContextArtifactOpeningResultWrite(
+                    statuses.REPLAY
+                    if stored.canonical_digest == result.canonical_digest
+                    else statuses.CONFLICT,
+                    stored if stored.canonical_digest == result.canonical_digest else None,
+                )
+            if not self._target_context_artifact_opening_result_matches(
+                request=request,
+                claim_row=claim_row,
+                attempt_row=attempt_row,
+                lease_row=lease_row,
+            ):
+                await session.rollback()
+                return WorkflowTargetContextArtifactOpeningResultWrite(statuses.CONFLICT, None)
+            try:
+                session.add(self._target_context_artifact_opening_result_model(result))
+                await session.commit()
+                return WorkflowTargetContextArtifactOpeningResultWrite(statuses.RECORDED, result)
+            except IntegrityError:
+                await session.rollback()
+        async with self._sessions() as session:
+            existing = await session.get(
+                WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel,
+                result.opening_id,
+            )
+            if existing is None:
+                return WorkflowTargetContextArtifactOpeningResultWrite(statuses.CONFLICT, None)
+            stored = self._target_context_artifact_opening_result_from_row(existing)
+            return WorkflowTargetContextArtifactOpeningResultWrite(
+                statuses.REPLAY
+                if stored.canonical_digest == result.canonical_digest
+                else statuses.CONFLICT,
+                stored if stored.canonical_digest == result.canonical_digest else None,
+            )
 
     async def _lock_target_context_sources(
         self,
@@ -4698,8 +5232,9 @@ class PostgreSQLWorkflowPlanRepository:
             status, binding if exact else None
         )
 
+    @classmethod
     def _target_context_binding_evidence(
-        self,
+        cls,
         locked: _TargetContextLockedSources,
         *,
         request: WorkflowEventPhysicalTransportTargetContextBindingRequest,
@@ -4707,34 +5242,34 @@ class PostgreSQLWorkflowPlanRepository:
         require_live_overlap: bool,
     ) -> dict[str, Any] | None:
         try:
-            route_binding = self._physical_transport_route_binding_from_row(locked.route_binding)
-            route_snapshot = self._transport_route_snapshot_from_row(locked.route_snapshot)
-            endpoint_freshness = self._route_freshness_admission_from_row(locked.endpoint_freshness)
-            endpoint_lease = self._endpoint_resolution_authorization_lease_from_row(
+            route_binding = cls._physical_transport_route_binding_from_row(locked.route_binding)
+            route_snapshot = cls._transport_route_snapshot_from_row(locked.route_snapshot)
+            endpoint_freshness = cls._route_freshness_admission_from_row(locked.endpoint_freshness)
+            endpoint_lease = cls._endpoint_resolution_authorization_lease_from_row(
                 locked.endpoint_lease
             )
-            endpoint_claim = self._endpoint_materialization_claim_from_row(locked.endpoint_claim)
-            endpoint_attempt = self._endpoint_materialization_attempt_from_row(
+            endpoint_claim = cls._endpoint_materialization_claim_from_row(locked.endpoint_claim)
+            endpoint_attempt = cls._endpoint_materialization_attempt_from_row(
                 locked.endpoint_attempt
             )
-            endpoint_result = self._endpoint_materialization_result_from_row(locked.endpoint_result)
-            credential_binding = self._credential_assignment_binding_from_row(
+            endpoint_result = cls._endpoint_materialization_result_from_row(locked.endpoint_result)
+            credential_binding = cls._credential_assignment_binding_from_row(
                 locked.credential_binding
             )
-            credential_snapshot = self._credential_assignment_snapshot_from_row(
+            credential_snapshot = cls._credential_assignment_snapshot_from_row(
                 locked.credential_snapshot
             )
-            credential_freshness = self._credential_assignment_freshness_admission_from_row(
+            credential_freshness = cls._credential_assignment_freshness_admission_from_row(
                 locked.credential_freshness
             )
-            credential_lease = self._credential_access_lease_from_row(locked.credential_lease)
-            credential_claim = self._credential_materialization_claim_from_row(
+            credential_lease = cls._credential_access_lease_from_row(locked.credential_lease)
+            credential_claim = cls._credential_materialization_claim_from_row(
                 locked.credential_claim
             )
-            credential_attempt = self._credential_materialization_attempt_from_row(
+            credential_attempt = cls._credential_materialization_attempt_from_row(
                 locked.credential_attempt
             )
-            credential_result = self._credential_materialization_result_from_row(
+            credential_result = cls._credential_materialization_result_from_row(
                 locked.credential_result
             )
         except Exception as exc:
@@ -5431,6 +5966,7 @@ class PostgreSQLWorkflowPlanRepository:
         route_snapshot = route_head = None
         credential_binding = credential_snapshot = None
         credential_head: DeploymentPhysicalTransportCredentialAssignment | None = None
+        materialization_chains: _TargetContextLockedSources | None = None
         if binding is not None:
             endpoint_result = cast(
                 WorkflowEventPhysicalTransportEndpointMaterializationResultModel | None,
@@ -5578,6 +6114,23 @@ class PostgreSQLWorkflowPlanRepository:
                     )
                 except Exception:
                     credential_head = None
+            if (
+                endpoint_result is not None
+                and credential_result is not None
+                and route_binding is not None
+                and route_snapshot is not None
+                and credential_binding is not None
+                and credential_snapshot is not None
+            ):
+                materialization_chains = await self._lock_target_context_materialization_chains(
+                    session,
+                    endpoint_result=endpoint_result,
+                    credential_result=credential_result,
+                    route_binding=route_binding,
+                    route_snapshot=route_snapshot,
+                    credential_binding=credential_binding,
+                    credential_snapshot=credential_snapshot,
+                )
         observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
         return _TargetContextAccessLockedSources(
             binding=binding,
@@ -5591,7 +6144,114 @@ class PostgreSQLWorkflowPlanRepository:
             credential_binding=credential_binding,
             credential_snapshot=credential_snapshot,
             credential_head=credential_head,
+            materialization_chains=materialization_chains,
             observed_at=observed_at,
+        )
+
+    async def _lock_target_context_materialization_chains(
+        self,
+        session: AsyncSession,
+        *,
+        endpoint_result: WorkflowEventPhysicalTransportEndpointMaterializationResultModel,
+        credential_result: WorkflowEventPhysicalTransportCredentialMaterializationResultModel,
+        route_binding: WorkflowEventPhysicalTransportRouteBindingModel,
+        route_snapshot: EventPhysicalTransportRouteSnapshotModel,
+        credential_binding: WorkflowEventPhysicalTransportCredentialAssignmentBindingModel,
+        credential_snapshot: EventPhysicalTransportCredentialAssignmentSnapshotModel,
+    ) -> _TargetContextLockedSources | None:
+        model_keys: tuple[tuple[type[Any], str], ...] = (
+            (
+                WorkflowEventPhysicalTransportRouteFreshnessAdmissionModel,
+                endpoint_result.freshness_admission_id,
+            ),
+            (
+                WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel,
+                endpoint_result.authorization_lease_id,
+            ),
+            (
+                WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaimModel,
+                endpoint_result.consumption_claim_id,
+            ),
+            (
+                WorkflowEventPhysicalTransportEndpointMaterializationAttemptModel,
+                endpoint_result.attempt_id,
+            ),
+            (
+                WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionModel,
+                credential_result.freshness_admission_id,
+            ),
+            (
+                WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseModel,
+                credential_result.authorization_lease_id,
+            ),
+            (
+                WorkflowEventPhysicalTransportCredentialAccessLeaseConsumptionClaimModel,
+                credential_result.consumption_claim_id,
+            ),
+            (
+                WorkflowEventPhysicalTransportCredentialMaterializationAttemptModel,
+                credential_result.attempt_id,
+            ),
+        )
+        locked_rows: list[Any] = []
+        for model, key in model_keys:
+            row = await session.scalar(
+                select(model).where(model.__mapper__.primary_key[0] == key).with_for_update()
+            )
+            if row is None:
+                return None
+            locked_rows.append(row)
+        (
+            endpoint_freshness,
+            endpoint_lease,
+            endpoint_claim,
+            endpoint_attempt,
+            credential_freshness,
+            credential_lease,
+            credential_claim,
+            credential_attempt,
+        ) = locked_rows
+        return _TargetContextLockedSources(
+            route_binding=route_binding,
+            route_snapshot=route_snapshot,
+            endpoint_freshness=cast(
+                WorkflowEventPhysicalTransportRouteFreshnessAdmissionModel,
+                endpoint_freshness,
+            ),
+            endpoint_lease=cast(
+                WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel,
+                endpoint_lease,
+            ),
+            endpoint_claim=cast(
+                WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaimModel,
+                endpoint_claim,
+            ),
+            endpoint_attempt=cast(
+                WorkflowEventPhysicalTransportEndpointMaterializationAttemptModel,
+                endpoint_attempt,
+            ),
+            endpoint_result=endpoint_result,
+            credential_binding=credential_binding,
+            credential_snapshot=credential_snapshot,
+            credential_freshness=cast(
+                WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionModel,
+                credential_freshness,
+            ),
+            credential_lease=cast(
+                WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseModel,
+                credential_lease,
+            ),
+            credential_claim=cast(
+                WorkflowEventPhysicalTransportCredentialAccessLeaseConsumptionClaimModel,
+                credential_claim,
+            ),
+            credential_attempt=cast(
+                WorkflowEventPhysicalTransportCredentialMaterializationAttemptModel,
+                credential_attempt,
+            ),
+            credential_result=credential_result,
+            existing_bindings=(),
+            idempotency_claim=None,
         )
 
     @staticmethod
@@ -5625,6 +6285,7 @@ class PostgreSQLWorkflowPlanRepository:
                 locked.credential_binding,
                 locked.credential_snapshot,
                 locked.credential_head,
+                locked.materialization_chains,
             )
         ):
             return False
@@ -6197,6 +6858,1090 @@ class PostgreSQLWorkflowPlanRepository:
         raise WorkflowTargetContextAccessAuthorizationLeaseError(
             "workflow_target_context_access_repository_contract_violation",
             "Stored target-context access authorization evidence is invalid.",
+        )
+
+    @staticmethod
+    def _target_context_artifact_opening_request_is_valid(
+        request: WorkflowTargetContextArtifactOpeningClaimRequest,
+    ) -> bool:
+        try:
+            validate_workflow_target_context_artifact_opening_claim_request(request)
+        except (TypeError, ValueError):
+            return False
+        return True
+
+    @classmethod
+    def _target_context_artifact_opening_evidence_matches(
+        cls,
+        *,
+        request: WorkflowTargetContextArtifactOpeningClaimRequest,
+        locked: _TargetContextAccessLockedSources,
+        lease_row: WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseModel | None,
+    ) -> bool:
+        if lease_row is None or any(
+            value is None
+            for value in (
+                locked.binding,
+                locked.endpoint_result,
+                locked.credential_result,
+                locked.route_binding,
+                locked.logical_binding,
+                locked.outbox,
+                locked.route_snapshot,
+                locked.route_head,
+                locked.credential_binding,
+                locked.credential_snapshot,
+                locked.credential_head,
+                locked.materialization_chains,
+            )
+        ):
+            return False
+        try:
+            lease = cls._target_context_access_lease_from_row(lease_row)
+            binding = cls._target_context_binding_from_row(cast(Any, locked.binding))
+            endpoint = cls._endpoint_materialization_result_from_row(
+                cast(Any, locked.endpoint_result)
+            )
+            credential = cls._credential_materialization_result_from_row(
+                cast(Any, locked.credential_result)
+            )
+            route_binding = cls._physical_transport_route_binding_from_row(
+                cast(Any, locked.route_binding)
+            )
+            logical_binding = cls._event_logical_channel_binding_from_row(
+                cast(Any, locked.logical_binding)
+            )
+            outbox = cls._dispatch_outbox_from_row(cast(Any, locked.outbox))
+            route_snapshot = cls._transport_route_snapshot_from_row(
+                cast(Any, locked.route_snapshot)
+            )
+            route_head = cls._route_selection_head_from_row(cast(Any, locked.route_head))
+            credential_binding = cls._credential_assignment_binding_from_row(
+                cast(Any, locked.credential_binding)
+            )
+            credential_snapshot = cls._credential_assignment_snapshot_from_row(
+                cast(Any, locked.credential_snapshot)
+            )
+            credential_head = cast(
+                DeploymentPhysicalTransportCredentialAssignment, locked.credential_head
+            )
+            current_evidence = cls._target_context_access_authorization_evidence_payload(locked)
+            binding_policy = (
+                code_owned_workflow_event_physical_transport_target_context_binding_policy()
+            )
+            chain_request = WorkflowEventPhysicalTransportTargetContextBindingRequest(
+                expected_endpoint_materialization_id=endpoint.materialization_id,
+                expected_endpoint_materialization_digest=endpoint.canonical_digest,
+                expected_credential_materialization_id=credential.materialization_id,
+                expected_credential_materialization_digest=credential.canonical_digest,
+                expected_policy_id=binding_policy.policy_id,
+                expected_policy_version=binding_policy.policy_version,
+                expected_policy_digest=binding_policy.canonical_digest,
+                scope=binding.scope,
+                binder_subject_id=binding.binder_subject_id,
+                requested_at=locked.observed_at,
+                idempotency_key="opening-chain-revalidation",
+                request_fingerprint=canonical_digest(
+                    {
+                        "binding_id": binding.binding_id,
+                        "binding_digest": binding.canonical_digest,
+                        "operation": "opening-chain-revalidation",
+                    }
+                ),
+                required_precommit_audit=cast(Any, None),
+            )
+            chain_evidence = cls._target_context_binding_evidence(
+                cast(_TargetContextLockedSources, locked.materialization_chains),
+                request=chain_request,
+                observed_at=locked.observed_at,
+                require_live_overlap=True,
+            )
+        except Exception:
+            return False
+        if chain_evidence is None:
+            return False
+        endpoint_attestation = request.endpoint_status_attestation
+        credential_attestation = request.credential_status_attestation
+        policy = (
+            code_owned_workflow_event_physical_transport_target_context_artifact_opening_policy()
+        )
+        expected_commitment = cls._target_context_commitment(
+            evidence={
+                "route_binding": route_binding,
+                "route_snapshot": route_snapshot,
+                "endpoint_result": endpoint,
+                "credential_binding": credential_binding,
+                "credential_snapshot": credential_snapshot,
+                "credential_result": credential,
+            },
+            policy=code_owned_workflow_event_physical_transport_target_context_binding_policy(),
+        )
+        deadline = min(
+            lease.valid_until,
+            binding.joint_usable_until,
+            request.expected_endpoint_usable_until,
+            request.expected_credential_usable_until,
+            endpoint_attestation.valid_until,
+            credential_attestation.valid_until,
+            credential_head.expires_at,
+        )
+        return bool(
+            lease.authorization_lease_id == request.authorization_lease_id
+            and lease.canonical_digest == request.authorization_lease_digest
+            and lease.target_context_binding_id == request.expected_target_context_binding_id
+            and lease.target_context_binding_digest
+            == request.expected_target_context_binding_digest
+            and lease.target_context_commitment == request.expected_target_context_commitment
+            and lease.scope == request.scope
+            and lease.accessor_subject_id == request.accessor_subject_id
+            and lease.state
+            is (
+                WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseState
+            ).AUTHORIZED_UNCONSUMED
+            and lease.authority.protected_artifact_access_authorized
+            and all(
+                value is False
+                for name, value in lease.authority.canonical_value().items()
+                if name != "protected_artifact_access_authorized"
+            )
+            and binding.binding_id == request.expected_target_context_binding_id
+            and binding.canonical_digest == request.expected_target_context_binding_digest
+            and binding.target_context_commitment
+            == request.expected_target_context_commitment
+            == expected_commitment
+            and chain_evidence["route_binding"] == route_binding
+            and chain_evidence["route_snapshot"] == route_snapshot
+            and chain_evidence["endpoint_result"] == endpoint
+            and chain_evidence["credential_binding"] == credential_binding
+            and chain_evidence["credential_snapshot"] == credential_snapshot
+            and chain_evidence["credential_result"] == credential
+            and binding.scope == request.scope
+            and endpoint.scope
+            == credential.scope
+            == route_binding.scope
+            == logical_binding.scope
+            == outbox.scope
+            == route_snapshot.scope
+            == route_head.scope
+            == credential_binding.scope
+            == credential_snapshot.scope
+            == credential_head.scope
+            == binding.scope
+            and endpoint.materialization_id == request.expected_endpoint_materialization_id
+            and endpoint.canonical_digest == request.expected_endpoint_materialization_digest
+            and endpoint.protected_artifact_id == request.expected_endpoint_protected_artifact_id
+            and endpoint.protected_artifact_digest
+            == request.expected_endpoint_protected_artifact_digest
+            and endpoint.usable_until == request.expected_endpoint_usable_until
+            and not endpoint.protected_artifact_revoked
+            and credential.materialization_id == request.expected_credential_materialization_id
+            and credential.canonical_digest == request.expected_credential_materialization_digest
+            and credential.protected_artifact_id
+            == request.expected_credential_protected_artifact_id
+            and credential.protected_artifact_digest
+            == request.expected_credential_protected_artifact_digest
+            and credential.usable_until == request.expected_credential_usable_until
+            and not credential.protected_artifact_revoked
+            and binding.physical_transport_route_binding_id == route_binding.binding_id
+            and binding.physical_transport_route_binding_digest == route_binding.canonical_digest
+            and route_binding.logical_channel_binding_id == logical_binding.binding_id
+            and route_binding.logical_channel_binding_digest == logical_binding.canonical_digest
+            and logical_binding.outbox_entry_id == outbox.outbox_entry_id
+            and logical_binding.outbox_entry_digest == outbox.canonical_digest
+            and outbox.state is WorkflowDispatchOutboxState.PENDING_PUBLICATION
+            and binding.transport_route_snapshot_id == route_snapshot.snapshot_id
+            and binding.transport_route_snapshot_digest == route_snapshot.canonical_digest
+            and route_head.current
+            and route_head.selection_active
+            and route_head.selection_eligible
+            and not route_head.selection_suspended
+            and not route_head.selection_withdrawn
+            and not route_head.selection_superseded
+            and route_head.route_set_id == route_snapshot.route_set_id
+            and route_head.route_set_revision == route_snapshot.route_set_revision
+            and route_head.selection_epoch_id == route_snapshot.selection_epoch_id
+            and route_head.selection_epoch_revision == route_snapshot.selection_epoch_revision
+            and route_head.selected_route_id == route_snapshot.route_id
+            and route_head.selected_route_revision == route_snapshot.route_revision
+            and route_head.selected_route_digest == route_snapshot.source_route_digest
+            and binding.physical_transport_credential_assignment_binding_id
+            == credential_binding.binding_id
+            and binding.physical_transport_credential_assignment_binding_digest
+            == credential_binding.canonical_digest
+            and binding.credential_assignment_snapshot_id == credential_snapshot.snapshot_id
+            and binding.credential_assignment_snapshot_digest
+            == credential_snapshot.canonical_digest
+            and credential_binding.credential_assignment_snapshot_id
+            == credential_snapshot.snapshot_id
+            and credential_head.assignment_id == credential_snapshot.assignment_id
+            and credential_head.assignment_revision == credential_snapshot.assignment_revision
+            and credential_head.canonical_digest == credential_snapshot.source_assignment_digest
+            and credential_head.credential_generation == credential_snapshot.credential_generation
+            and credential_head.rotation_epoch == credential_snapshot.rotation_epoch
+            and credential_head.active
+            and not credential_head.revoked
+            and credential_head.activated_at <= locked.observed_at
+            and lease_row.authorization_evidence_digest == canonical_digest(current_evidence)
+            and request.expected_policy_id == policy.policy_id
+            and request.expected_policy_version == policy.policy_version
+            and request.expected_policy_digest == policy.canonical_digest
+            and lease.issued_at <= locked.observed_at < deadline
+            and endpoint_attestation.observed_at <= locked.observed_at
+            and credential_attestation.observed_at <= locked.observed_at
+        )
+
+    async def _target_context_artifact_opening_replay(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowTargetContextArtifactOpeningClaimRequest,
+    ) -> WorkflowTargetContextArtifactOpeningClaimResult | None:
+        scope_id = self._target_context_artifact_opening_idempotency_scope(
+            request.scope, request.accessor_subject_id
+        )
+        rows = tuple(
+            (
+                await session.scalars(
+                    select(WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel)
+                    .where(
+                        WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel.organization_id
+                        == request.scope.organization_id,
+                        WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel.environment_id
+                        == request.scope.environment_id,
+                        WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel.site_id
+                        == request.scope.site_id,
+                        WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel.accessor_subject_id
+                        == request.accessor_subject_id,
+                        or_(
+                            and_(
+                                WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel.idempotency_scope_id
+                                == scope_id,
+                                WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel.idempotency_key
+                                == request.idempotency_key,
+                            ),
+                            and_(
+                                WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel.authorization_lease_id
+                                == request.authorization_lease_id,
+                                WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel.organization_id
+                                == request.scope.organization_id,
+                                WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel.environment_id
+                                == request.scope.environment_id,
+                                WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel.site_id
+                                == request.scope.site_id,
+                                WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel.accessor_subject_id
+                                == request.accessor_subject_id,
+                            ),
+                        ),
+                    )
+                    .order_by(
+                        WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel.claimed_at,
+                        WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel.claim_id,
+                    )
+                    .with_for_update()
+                )
+            ).all()
+        )
+        if not rows:
+            return None
+        idempotent = next(
+            (
+                row
+                for row in rows
+                if row.idempotency_scope_id == scope_id
+                and row.idempotency_key == request.idempotency_key
+            ),
+            None,
+        )
+        if idempotent is None:
+            return WorkflowTargetContextArtifactOpeningClaimResult(
+                WorkflowTargetContextArtifactOpeningClaimStatus.ALREADY_CONSUMED,
+                None,
+                None,
+                None,
+            )
+        if (
+            idempotent.request_fingerprint != request.request_fingerprint
+            or idempotent.authorization_lease_id != request.authorization_lease_id
+            or idempotent.authorization_lease_digest != request.authorization_lease_digest
+            or idempotent.idempotency_digest != request.idempotency_digest
+        ):
+            return WorkflowTargetContextArtifactOpeningClaimResult(
+                WorkflowTargetContextArtifactOpeningClaimStatus.IDEMPOTENCY_CONFLICT,
+                None,
+                None,
+                None,
+            )
+        claim = self._target_context_artifact_opening_claim_from_row(idempotent)
+        attempt_row = cast(
+            WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptModel)
+                .where(
+                    WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptModel.consumption_claim_id
+                    == claim.claim_id
+                )
+                .with_for_update()
+            ),
+        )
+        if attempt_row is None:
+            self._target_context_artifact_opening_contract_violation()
+        attempt = self._target_context_artifact_opening_attempt_from_row(attempt_row)
+        if not self._target_context_artifact_opening_lineage_matches(claim, attempt):
+            self._target_context_artifact_opening_contract_violation()
+        if not self._target_context_artifact_opening_audit_matches(
+            idempotent, claim=claim, attempt=attempt
+        ):
+            self._target_context_artifact_opening_contract_violation()
+        result_row = cast(
+            WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel)
+                .where(
+                    WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel.attempt_id
+                    == attempt.attempt_id
+                )
+                .with_for_update()
+            ),
+        )
+        result = (
+            None
+            if result_row is None
+            else self._target_context_artifact_opening_result_from_row(result_row)
+        )
+        if result is not None and not self._target_context_artifact_opening_lineage_matches(
+            claim, attempt, result
+        ):
+            self._target_context_artifact_opening_contract_violation()
+        return WorkflowTargetContextArtifactOpeningClaimResult(
+            WorkflowTargetContextArtifactOpeningClaimStatus.REPLAY_COMPLETED
+            if result is not None
+            else WorkflowTargetContextArtifactOpeningClaimStatus.CLAIM_ONLY_UNCERTAIN,
+            claim,
+            attempt,
+            result,
+        )
+
+    @staticmethod
+    def _target_context_artifact_opening_idempotency_scope(
+        scope: WorkflowScope, accessor_subject_id: str
+    ) -> str:
+        return canonical_digest(
+            {
+                "accessor_subject_id": accessor_subject_id,
+                "operation": "consume-target-context-access-and-open-protected-pair",
+                "scope": scope.canonical_value(),
+            }
+        )
+
+    @staticmethod
+    def _target_context_artifact_opening_expected_audit_payload(
+        *,
+        claim: WorkflowEventPhysicalTransportTargetContextAccessLeaseConsumptionClaim,
+        attempt: WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttempt,
+    ) -> dict[str, object]:
+        return {
+            "schema_id": "audit.workflow-target-context-access-lease-consumption-authorization",
+            "schema_version": "1.0",
+            "event_type": "target_context_artifact_opening_lease_consumption_authorized",
+            "claim_id": claim.claim_id,
+            "attempt_id": attempt.attempt_id,
+            "opening_id": claim.opening_id,
+            "authorization_lease_id": claim.authorization_lease_id,
+            "authorization_lease_digest": claim.authorization_lease_digest,
+            "scope": claim.scope.canonical_value(),
+            "accessor_subject_id": claim.accessor_subject_id,
+            "credential_audience": "audience.workflow-protected-transport-context-accessor",
+            "policy_id": attempt.policy_id,
+            "policy_version": attempt.policy_version,
+            "policy_digest": attempt.policy_digest,
+            "idempotency_digest": claim.idempotency_digest,
+            "request_fingerprint": claim.request_fingerprint,
+            "irreversible_consumption_acknowledged": True,
+            "uncertain_outcome_requires_new_authorization_acknowledged": True,
+        }
+
+    @classmethod
+    def _target_context_artifact_opening_audit_matches(
+        cls,
+        row: WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel,
+        *,
+        claim: WorkflowEventPhysicalTransportTargetContextAccessLeaseConsumptionClaim,
+        attempt: WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttempt,
+    ) -> bool:
+        expected = cls._target_context_artifact_opening_expected_audit_payload(
+            claim=claim, attempt=attempt
+        )
+        return bool(
+            dict(row.consumption_authorization_audit_payload) == expected
+            and row.consumption_authorization_audit_digest == canonical_digest(expected)
+        )
+
+    @staticmethod
+    def _target_context_artifact_opening_lineage_matches(
+        claim: WorkflowEventPhysicalTransportTargetContextAccessLeaseConsumptionClaim,
+        attempt: WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttempt,
+        result: WorkflowEventPhysicalTransportTargetContextArtifactOpeningResult | None = None,
+    ) -> bool:
+        base_matches = (
+            attempt.attempt_id == claim.attempt_id
+            and attempt.opening_id == claim.opening_id
+            and attempt.consumption_claim_id == claim.claim_id
+            and attempt.authorization_lease_id == claim.authorization_lease_id
+            and attempt.authorization_lease_digest == claim.authorization_lease_digest
+            and attempt.target_context_binding_id == claim.target_context_binding_id
+            and attempt.target_context_binding_digest == claim.target_context_binding_digest
+            and attempt.target_context_commitment == claim.target_context_commitment
+            and attempt.scope == claim.scope
+            and attempt.accessor_subject_id == claim.accessor_subject_id
+            and attempt.started_at == claim.claimed_at
+            and not any(attempt.authority.canonical_value().values())
+            and not any(claim.authority.canonical_value().values())
+        )
+        if not base_matches or result is None:
+            return base_matches
+        return bool(
+            result.opening_id == attempt.opening_id
+            and result.attempt_id == attempt.attempt_id
+            and result.attempt_digest == attempt.canonical_digest
+            and result.consumption_claim_id == claim.claim_id
+            and result.consumption_claim_digest == claim.canonical_digest
+            and result.authorization_lease_id == attempt.authorization_lease_id
+            and result.authorization_lease_digest == attempt.authorization_lease_digest
+            and result.target_context_binding_id == attempt.target_context_binding_id
+            and result.target_context_binding_digest == attempt.target_context_binding_digest
+            and result.target_context_commitment == attempt.target_context_commitment
+            and result.scope == attempt.scope
+            and result.accessor_subject_id == attempt.accessor_subject_id
+            and result.policy_id == attempt.policy_id
+            and result.policy_version == attempt.policy_version
+            and result.policy_digest == attempt.policy_digest
+            and attempt.started_at <= result.completed_at
+            and result.completed_at
+            < min(
+                attempt.lease_valid_until,
+                attempt.joint_usable_until,
+                attempt.evidence_valid_until,
+            )
+            and (
+                result.usable_until is None
+                or result.usable_until
+                <= min(
+                    attempt.lease_valid_until,
+                    attempt.joint_usable_until,
+                    attempt.evidence_valid_until,
+                )
+            )
+            and not any(result.authority.canonical_value().values())
+        )
+
+    @staticmethod
+    def _target_context_artifact_opening_authority_columns(
+        authority: WorkflowEventPhysicalTransportTargetContextArtifactOpeningAuthority,
+    ) -> dict[str, bool]:
+        return {
+            name.replace("_authorized", "_authority_granted"): value
+            for name, value in authority.canonical_value().items()
+        }
+
+    @classmethod
+    def _target_context_artifact_opening_claim(
+        cls,
+        request: WorkflowTargetContextArtifactOpeningClaimRequest,
+        *,
+        locked: _TargetContextAccessLockedSources,
+    ) -> WorkflowEventPhysicalTransportTargetContextAccessLeaseConsumptionClaim:
+        authority = WorkflowEventPhysicalTransportTargetContextArtifactOpeningAuthority()
+        values: dict[str, object] = {
+            "claim_id": request.claim_id,
+            "authorization_lease_id": request.authorization_lease_id,
+            "authorization_lease_digest": request.authorization_lease_digest,
+            "target_context_binding_id": request.expected_target_context_binding_id,
+            "target_context_binding_digest": request.expected_target_context_binding_digest,
+            "target_context_commitment": request.expected_target_context_commitment,
+            "attempt_id": request.attempt_id,
+            "opening_id": request.opening_id,
+            "scope": request.scope,
+            "accessor_subject_id": request.accessor_subject_id,
+            "claimed_at": locked.observed_at,
+            "request_fingerprint": request.request_fingerprint,
+            "idempotency_digest": request.idempotency_digest,
+            "authority": authority,
+        }
+        return WorkflowEventPhysicalTransportTargetContextAccessLeaseConsumptionClaim(
+            **cast(Any, values), canonical_digest=canonical_digest(cls._opening_payload(values))
+        )
+
+    @classmethod
+    def _target_context_artifact_opening_attempt(
+        cls,
+        request: WorkflowTargetContextArtifactOpeningClaimRequest,
+        *,
+        claim: WorkflowEventPhysicalTransportTargetContextAccessLeaseConsumptionClaim,
+        locked: _TargetContextAccessLockedSources,
+        lease_row: WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseModel,
+    ) -> WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttempt:
+        lease = cls._target_context_access_lease_from_row(lease_row)
+        binding = cls._target_context_binding_from_row(cast(Any, locked.binding))
+        authority = WorkflowEventPhysicalTransportTargetContextArtifactOpeningAuthority()
+        values: dict[str, object] = {
+            "attempt_id": request.attempt_id,
+            "opening_id": request.opening_id,
+            "consumption_claim_id": claim.claim_id,
+            "authorization_lease_id": request.authorization_lease_id,
+            "authorization_lease_digest": request.authorization_lease_digest,
+            "target_context_binding_id": request.expected_target_context_binding_id,
+            "target_context_binding_digest": request.expected_target_context_binding_digest,
+            "target_context_commitment": request.expected_target_context_commitment,
+            "endpoint_materialization_id": request.expected_endpoint_materialization_id,
+            "endpoint_materialization_digest": request.expected_endpoint_materialization_digest,
+            "endpoint_protected_artifact_id": request.expected_endpoint_protected_artifact_id,
+            "endpoint_protected_artifact_digest": (
+                request.expected_endpoint_protected_artifact_digest
+            ),
+            "endpoint_status_attestation_id": request.endpoint_status_attestation.attestation_id,
+            "endpoint_status_attestation_digest": (
+                request.endpoint_status_attestation.canonical_digest
+            ),
+            "credential_materialization_id": request.expected_credential_materialization_id,
+            "credential_materialization_digest": request.expected_credential_materialization_digest,
+            "credential_protected_artifact_id": request.expected_credential_protected_artifact_id,
+            "credential_protected_artifact_digest": (
+                request.expected_credential_protected_artifact_digest
+            ),
+            "credential_status_attestation_id": (
+                request.credential_status_attestation.attestation_id
+            ),
+            "credential_status_attestation_digest": (
+                request.credential_status_attestation.canonical_digest
+            ),
+            "request_nonce_digest": request.expected_request_nonce_digest,
+            "opener_contract_id": request.expected_opener_contract_id,
+            "opener_attestor_id": request.expected_opener_attestor_id,
+            "scope": request.scope,
+            "accessor_subject_id": request.accessor_subject_id,
+            "policy_id": request.expected_policy_id,
+            "policy_version": request.expected_policy_version,
+            "policy_digest": request.expected_policy_digest,
+            "started_at": locked.observed_at,
+            "lease_valid_until": lease.valid_until,
+            "joint_usable_until": binding.joint_usable_until,
+            "evidence_valid_until": min(
+                request.expected_endpoint_usable_until,
+                request.expected_credential_usable_until,
+                request.endpoint_status_attestation.valid_until,
+                request.credential_status_attestation.valid_until,
+            ),
+            "state": (
+                WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptState
+            ).OPENING_STARTED,
+            "authority": authority,
+        }
+        return WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttempt(
+            **cast(Any, values), canonical_digest=canonical_digest(cls._opening_payload(values))
+        )
+
+    @staticmethod
+    def _opening_payload(values: dict[str, object]) -> dict[str, object]:
+        return {
+            name: (
+                value.isoformat()
+                if isinstance(value, datetime)
+                else value.value
+                if isinstance(value, Enum)
+                else value.canonical_value()
+                if hasattr(value, "canonical_value")
+                else value
+            )
+            for name, value in values.items()
+        }
+
+    @classmethod
+    def _target_context_artifact_opening_claim_model(
+        cls,
+        request: WorkflowTargetContextArtifactOpeningClaimRequest,
+        *,
+        claim: WorkflowEventPhysicalTransportTargetContextAccessLeaseConsumptionClaim,
+        locked: _TargetContextAccessLockedSources,
+    ) -> WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel:
+        evidence = cls._target_context_access_authorization_evidence_payload(locked)
+        return WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel(
+            claim_id=claim.claim_id,
+            idempotency_scope_id=cls._target_context_artifact_opening_idempotency_scope(
+                claim.scope, claim.accessor_subject_id
+            ),
+            idempotency_key=request.idempotency_key,
+            idempotency_digest=claim.idempotency_digest,
+            request_fingerprint=claim.request_fingerprint,
+            authorization_lease_id=claim.authorization_lease_id,
+            authorization_lease_digest=claim.authorization_lease_digest,
+            target_context_binding_id=claim.target_context_binding_id,
+            target_context_binding_digest=claim.target_context_binding_digest,
+            target_context_commitment=claim.target_context_commitment,
+            attempt_id=claim.attempt_id,
+            opening_id=claim.opening_id,
+            authorization_evidence_digest=canonical_digest(evidence),
+            consumption_authorization_audit_digest=(request.consumption_authorization_audit_digest),
+            organization_id=claim.scope.organization_id,
+            environment_id=claim.scope.environment_id,
+            site_id=claim.scope.site_id,
+            accessor_subject_id=claim.accessor_subject_id,
+            claimed_at=claim.claimed_at,
+            **cls._target_context_artifact_opening_authority_columns(claim.authority),
+            canonical_digest=claim.canonical_digest,
+            payload=claim.digest_payload(),
+            authorization_evidence_payload=evidence,
+            consumption_authorization_audit_payload=(
+                request.consumption_authorization_audit_payload
+            ),
+        )
+
+    @classmethod
+    def _target_context_artifact_opening_attempt_model(
+        cls,
+        request: WorkflowTargetContextArtifactOpeningClaimRequest,
+        *,
+        attempt: WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttempt,
+    ) -> WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptModel:
+        return WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptModel(
+            **{
+                name: getattr(attempt, name)
+                for name in (
+                    "attempt_id",
+                    "opening_id",
+                    "consumption_claim_id",
+                    "authorization_lease_id",
+                    "authorization_lease_digest",
+                    "target_context_binding_id",
+                    "target_context_binding_digest",
+                    "target_context_commitment",
+                    "endpoint_materialization_id",
+                    "endpoint_materialization_digest",
+                    "endpoint_protected_artifact_id",
+                    "endpoint_protected_artifact_digest",
+                    "endpoint_status_attestation_id",
+                    "endpoint_status_attestation_digest",
+                    "credential_materialization_id",
+                    "credential_materialization_digest",
+                    "credential_protected_artifact_id",
+                    "credential_protected_artifact_digest",
+                    "credential_status_attestation_id",
+                    "credential_status_attestation_digest",
+                    "request_nonce_digest",
+                    "opener_contract_id",
+                    "opener_attestor_id",
+                    "accessor_subject_id",
+                    "policy_id",
+                    "policy_version",
+                    "policy_digest",
+                    "started_at",
+                    "lease_valid_until",
+                    "joint_usable_until",
+                    "evidence_valid_until",
+                )
+            },
+            organization_id=attempt.scope.organization_id,
+            environment_id=attempt.scope.environment_id,
+            site_id=attempt.scope.site_id,
+            state=attempt.state.value,
+            **cls._target_context_artifact_opening_authority_columns(attempt.authority),
+            canonical_digest=attempt.canonical_digest,
+            payload=attempt.digest_payload(),
+            endpoint_attestation_payload=request.endpoint_status_attestation.canonical_value(),
+            credential_attestation_payload=request.credential_status_attestation.canonical_value(),
+        )
+
+    @classmethod
+    def _target_context_artifact_opening_claim_from_row(
+        cls, row: WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel
+    ) -> WorkflowEventPhysicalTransportTargetContextAccessLeaseConsumptionClaim:
+        try:
+            values = dict(row.payload)
+            values["scope"] = WorkflowScope(**cast(Any, values["scope"]))
+            values["claimed_at"] = datetime.fromisoformat(str(values["claimed_at"]))
+            values["authority"] = (
+                WorkflowEventPhysicalTransportTargetContextArtifactOpeningAuthority(
+                    **cast(Any, values["authority"])
+                )
+            )
+            claim = WorkflowEventPhysicalTransportTargetContextAccessLeaseConsumptionClaim(
+                **cast(Any, values), canonical_digest=row.canonical_digest
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowEventPhysicalTransportTargetContextArtifactOpeningError(
+                "workflow_target_context_artifact_opening_repository_contract_violation"
+            ) from exc
+        explicit = {
+            name: getattr(row, name)
+            for name in (
+                "claim_id",
+                "authorization_lease_id",
+                "authorization_lease_digest",
+                "target_context_binding_id",
+                "target_context_binding_digest",
+                "target_context_commitment",
+                "attempt_id",
+                "opening_id",
+                "accessor_subject_id",
+                "claimed_at",
+                "request_fingerprint",
+                "idempotency_digest",
+            )
+        }
+        if (
+            any(getattr(claim, name) != value for name, value in explicit.items())
+            or row.organization_id != claim.scope.organization_id
+            or row.environment_id != claim.scope.environment_id
+            or row.site_id != claim.scope.site_id
+            or row.idempotency_scope_id
+            != cls._target_context_artifact_opening_idempotency_scope(
+                claim.scope, claim.accessor_subject_id
+            )
+            or row.payload != claim.digest_payload()
+            or row.canonical_digest != claim.canonical_digest
+            or row.authorization_evidence_digest
+            != canonical_digest(dict(row.authorization_evidence_payload))
+            or row.consumption_authorization_audit_digest
+            != canonical_digest(dict(row.consumption_authorization_audit_payload))
+            or cls._row_opening_authority(row) != claim.authority.canonical_value()
+        ):
+            cls._target_context_artifact_opening_contract_violation()
+        return claim
+
+    @classmethod
+    def _target_context_artifact_opening_attempt_from_row(
+        cls, row: WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptModel
+    ) -> WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttempt:
+        try:
+            values = dict(row.payload)
+            values["scope"] = WorkflowScope(**cast(Any, values["scope"]))
+            for name in (
+                "started_at",
+                "lease_valid_until",
+                "joint_usable_until",
+                "evidence_valid_until",
+            ):
+                values[name] = datetime.fromisoformat(str(values[name]))
+            values["state"] = (
+                WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptState(
+                    str(values["state"])
+                )
+            )
+            values["authority"] = (
+                WorkflowEventPhysicalTransportTargetContextArtifactOpeningAuthority(
+                    **cast(Any, values["authority"])
+                )
+            )
+            attempt = WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttempt(
+                **cast(Any, values), canonical_digest=row.canonical_digest
+            )
+            endpoint_attestation = cls._target_context_access_attestation_from_payload(
+                row.endpoint_attestation_payload
+            )
+            credential_attestation = cls._target_context_access_attestation_from_payload(
+                row.credential_attestation_payload
+            )
+            policy_factory = (
+                code_owned_workflow_event_physical_transport_target_context_artifact_opening_policy
+            )
+            policy = policy_factory()
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowEventPhysicalTransportTargetContextArtifactOpeningError(
+                "workflow_target_context_artifact_opening_repository_contract_violation"
+            ) from exc
+        explicit_names = (
+            "attempt_id",
+            "opening_id",
+            "consumption_claim_id",
+            "authorization_lease_id",
+            "authorization_lease_digest",
+            "target_context_binding_id",
+            "target_context_binding_digest",
+            "target_context_commitment",
+            "endpoint_materialization_id",
+            "endpoint_materialization_digest",
+            "endpoint_protected_artifact_id",
+            "endpoint_protected_artifact_digest",
+            "endpoint_status_attestation_id",
+            "endpoint_status_attestation_digest",
+            "credential_materialization_id",
+            "credential_materialization_digest",
+            "credential_protected_artifact_id",
+            "credential_protected_artifact_digest",
+            "credential_status_attestation_id",
+            "credential_status_attestation_digest",
+            "request_nonce_digest",
+            "opener_contract_id",
+            "opener_attestor_id",
+            "accessor_subject_id",
+            "policy_id",
+            "policy_version",
+            "policy_digest",
+            "started_at",
+            "lease_valid_until",
+            "joint_usable_until",
+            "evidence_valid_until",
+        )
+        if (
+            any(getattr(attempt, name) != getattr(row, name) for name in explicit_names)
+            or row.organization_id != attempt.scope.organization_id
+            or row.environment_id != attempt.scope.environment_id
+            or row.site_id != attempt.scope.site_id
+            or row.state != attempt.state.value
+            or row.payload != attempt.digest_payload()
+            or cls._row_opening_authority(row) != attempt.authority.canonical_value()
+            or endpoint_attestation.attestation_id != attempt.endpoint_status_attestation_id
+            or endpoint_attestation.canonical_digest != attempt.endpoint_status_attestation_digest
+            or credential_attestation.attestation_id != attempt.credential_status_attestation_id
+            or credential_attestation.canonical_digest
+            != attempt.credential_status_attestation_digest
+            or endpoint_attestation.request_nonce_digest != row.request_nonce_digest
+            or credential_attestation.request_nonce_digest != row.request_nonce_digest
+            or row.request_nonce_digest != attempt.request_nonce_digest
+            or row.opener_contract_id != attempt.opener_contract_id
+            or row.opener_attestor_id != attempt.opener_attestor_id
+            or attempt.policy_id != policy.policy_id
+            or attempt.policy_version != policy.policy_version
+            or attempt.policy_digest != policy.canonical_digest
+            or attempt.opener_contract_id != policy.required_opener_contract_id
+            or attempt.opener_attestor_id != policy.required_opener_attestor_id
+        ):
+            cls._target_context_artifact_opening_contract_violation()
+        return attempt
+
+    @classmethod
+    def _target_context_artifact_opening_result_model(
+        cls, result: WorkflowEventPhysicalTransportTargetContextArtifactOpeningResult
+    ) -> WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel:
+        return WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel(
+            **{
+                name: getattr(result, name)
+                for name in (
+                    "opening_id",
+                    "attempt_id",
+                    "attempt_digest",
+                    "consumption_claim_id",
+                    "consumption_claim_digest",
+                    "authorization_lease_id",
+                    "authorization_lease_digest",
+                    "target_context_binding_id",
+                    "target_context_binding_digest",
+                    "target_context_commitment",
+                    "policy_id",
+                    "policy_version",
+                    "policy_digest",
+                    "opener_id",
+                    "opener_version",
+                    "opening_receipt_digest",
+                    "sealed_capsule_id",
+                    "sealed_capsule_digest",
+                    "capsule_is_bearer_capability",
+                    "capsule_schema_id",
+                    "capsule_schema_version",
+                    "accessor_subject_id",
+                    "completed_at",
+                    "usable_until",
+                    "protected_sources_closed",
+                    "cleanup_confirmed",
+                )
+            },
+            state=result.state.value,
+            failure_class=None if result.failure_class is None else result.failure_class.value,
+            organization_id=result.scope.organization_id,
+            environment_id=result.scope.environment_id,
+            site_id=result.scope.site_id,
+            **cls._target_context_artifact_opening_authority_columns(result.authority),
+            canonical_digest=result.canonical_digest,
+            payload=result.digest_payload(),
+        )
+
+    @classmethod
+    def _target_context_artifact_opening_result_from_row(
+        cls, row: WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel
+    ) -> WorkflowEventPhysicalTransportTargetContextArtifactOpeningResult:
+        try:
+            values = dict(row.payload)
+            values["scope"] = WorkflowScope(**cast(Any, values["scope"]))
+            values["completed_at"] = datetime.fromisoformat(str(values["completed_at"]))
+            if values["usable_until"] is not None:
+                values["usable_until"] = datetime.fromisoformat(str(values["usable_until"]))
+            values["state"] = WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultState(
+                str(values["state"])
+            )
+            if values["failure_class"] is not None:
+                values["failure_class"] = (
+                    WorkflowEventPhysicalTransportTargetContextArtifactOpeningFailureClass(
+                        str(values["failure_class"])
+                    )
+                )
+            values["authority"] = (
+                WorkflowEventPhysicalTransportTargetContextArtifactOpeningAuthority(
+                    **cast(Any, values["authority"])
+                )
+            )
+            result = WorkflowEventPhysicalTransportTargetContextArtifactOpeningResult(
+                **cast(Any, values), canonical_digest=row.canonical_digest
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowEventPhysicalTransportTargetContextArtifactOpeningError(
+                "workflow_target_context_artifact_opening_repository_contract_violation"
+            ) from exc
+        explicit_names = (
+            "opening_id",
+            "attempt_id",
+            "attempt_digest",
+            "consumption_claim_id",
+            "consumption_claim_digest",
+            "authorization_lease_id",
+            "authorization_lease_digest",
+            "target_context_binding_id",
+            "target_context_binding_digest",
+            "target_context_commitment",
+            "policy_id",
+            "policy_version",
+            "policy_digest",
+            "opener_id",
+            "opener_version",
+            "opening_receipt_digest",
+            "sealed_capsule_id",
+            "sealed_capsule_digest",
+            "capsule_is_bearer_capability",
+            "capsule_schema_id",
+            "capsule_schema_version",
+            "accessor_subject_id",
+            "completed_at",
+            "usable_until",
+            "protected_sources_closed",
+            "cleanup_confirmed",
+        )
+        if (
+            any(getattr(result, name) != getattr(row, name) for name in explicit_names)
+            or row.organization_id != result.scope.organization_id
+            or row.environment_id != result.scope.environment_id
+            or row.site_id != result.scope.site_id
+            or row.state != result.state.value
+            or row.failure_class
+            != (None if result.failure_class is None else result.failure_class.value)
+            or row.payload != result.digest_payload()
+            or cls._row_opening_authority(row) != result.authority.canonical_value()
+        ):
+            cls._target_context_artifact_opening_contract_violation()
+        return result
+
+    @staticmethod
+    def _row_opening_authority(row: Any) -> dict[str, bool]:
+        return {
+            name: bool(getattr(row, name.replace("_authorized", "_authority_granted")))
+            for name in (
+                WorkflowEventPhysicalTransportTargetContextArtifactOpeningAuthority()
+            ).canonical_value()
+        }
+
+    @staticmethod
+    def _target_context_artifact_opening_attempt_matches_claim(
+        attempt: WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttempt,
+        claim: WorkflowEventPhysicalTransportTargetContextAccessLeaseConsumptionClaim,
+    ) -> bool:
+        return bool(
+            attempt.consumption_claim_id == claim.claim_id
+            and attempt.attempt_id == claim.attempt_id
+            and attempt.opening_id == claim.opening_id
+            and attempt.authorization_lease_id == claim.authorization_lease_id
+            and attempt.authorization_lease_digest == claim.authorization_lease_digest
+            and attempt.target_context_binding_id == claim.target_context_binding_id
+            and attempt.target_context_binding_digest == claim.target_context_binding_digest
+            and attempt.target_context_commitment == claim.target_context_commitment
+            and attempt.scope == claim.scope
+            and attempt.accessor_subject_id == claim.accessor_subject_id
+            and attempt.started_at == claim.claimed_at
+            and not any(attempt.authority.canonical_value().values())
+            and not any(claim.authority.canonical_value().values())
+        )
+
+    @classmethod
+    def _target_context_artifact_opening_result_matches(
+        cls,
+        *,
+        request: WorkflowTargetContextArtifactOpeningResultRequest,
+        claim_row: WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel | None,
+        attempt_row: WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptModel | None,
+        lease_row: WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseModel | None,
+    ) -> bool:
+        if claim_row is None or attempt_row is None or lease_row is None:
+            return False
+        try:
+            claim = cls._target_context_artifact_opening_claim_from_row(claim_row)
+            attempt = cls._target_context_artifact_opening_attempt_from_row(attempt_row)
+            lease = cls._target_context_access_lease_from_row(lease_row)
+            result = request.result
+            policy_factory = (
+                code_owned_workflow_event_physical_transport_target_context_artifact_opening_policy
+            )
+            policy = policy_factory()
+            maximum_until = min(
+                attempt.lease_valid_until,
+                attempt.joint_usable_until,
+                attempt.evidence_valid_until,
+            )
+        except Exception:
+            return False
+        return bool(
+            result.canonical_digest == canonical_digest(result.digest_payload())
+            and not any(result.authority.canonical_value().values())
+            and result.consumption_claim_id == claim.claim_id
+            and result.consumption_claim_digest
+            == request.expected_claim_digest
+            == claim.canonical_digest
+            and result.attempt_id == attempt.attempt_id
+            and result.attempt_digest == request.expected_attempt_digest == attempt.canonical_digest
+            and result.opening_id == claim.opening_id == attempt.opening_id
+            and result.authorization_lease_id
+            == claim.authorization_lease_id
+            == attempt.authorization_lease_id
+            == lease.authorization_lease_id
+            and result.authorization_lease_digest
+            == claim.authorization_lease_digest
+            == attempt.authorization_lease_digest
+            == lease.canonical_digest
+            and request.expected_lease_valid_until == attempt.lease_valid_until == lease.valid_until
+            and result.target_context_binding_id
+            == claim.target_context_binding_id
+            == attempt.target_context_binding_id
+            == lease.target_context_binding_id
+            and result.target_context_binding_digest
+            == request.expected_target_context_binding_digest
+            == claim.target_context_binding_digest
+            == attempt.target_context_binding_digest
+            == lease.target_context_binding_digest
+            and result.target_context_commitment
+            == claim.target_context_commitment
+            == attempt.target_context_commitment
+            == lease.target_context_commitment
+            and request.expected_endpoint_materialization_digest
+            == attempt.endpoint_materialization_digest
+            and request.expected_credential_materialization_digest
+            == attempt.credential_materialization_digest
+            and result.scope == claim.scope == attempt.scope == lease.scope
+            and result.accessor_subject_id
+            == claim.accessor_subject_id
+            == attempt.accessor_subject_id
+            == lease.accessor_subject_id
+            and result.policy_id == attempt.policy_id == policy.policy_id
+            and result.policy_version == attempt.policy_version == policy.policy_version
+            and result.policy_digest == attempt.policy_digest == policy.canonical_digest
+            and result.capsule_schema_id == policy.capsule_schema_id
+            and result.capsule_schema_version == policy.capsule_schema_version
+            and attempt.started_at <= result.completed_at < maximum_until
+            and (result.usable_until is None or result.usable_until <= maximum_until)
+            and result.protected_sources_closed
+            and result.cleanup_confirmed
+            and result.capsule_is_bearer_capability is False
+        )
+
+    @staticmethod
+    def _target_context_artifact_opening_contract_violation() -> NoReturn:
+        raise WorkflowEventPhysicalTransportTargetContextArtifactOpeningError(
+            "workflow_target_context_artifact_opening_repository_contract_violation",
+            "Stored target-context artifact opening evidence is invalid.",
         )
 
     async def get_dispatch_intent_staging_request(

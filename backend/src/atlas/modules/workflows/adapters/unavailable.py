@@ -112,6 +112,15 @@ from atlas.modules.workflows.application.target_context_access_authorization_lea
     WorkflowTargetContextAccessAuthorizationLeaseRequest,
     WorkflowTargetContextAccessAuthorizationLeaseResult,
 )
+from atlas.modules.workflows.application.target_context_artifact_opening_ports import (
+    WorkflowEventPhysicalTransportTargetContextArtifactOpeningError,
+    WorkflowTargetContextArtifactOpeningClaimRequest,
+    WorkflowTargetContextArtifactOpeningClaimResult,
+    WorkflowTargetContextArtifactOpeningReplayLookup,
+    WorkflowTargetContextArtifactOpeningReplayLookupRequest,
+    WorkflowTargetContextArtifactOpeningResultRequest,
+    WorkflowTargetContextArtifactOpeningResultWrite,
+)
 from atlas.modules.workflows.application.target_context_binding_ports import (
     WorkflowEventPhysicalTransportTargetContextBindingError,
     WorkflowEventPhysicalTransportTargetContextBindingRequest,
@@ -165,6 +174,8 @@ from atlas.modules.workflows.domain import (
     WorkflowEventPhysicalTransportRouteBinding,
     WorkflowEventPhysicalTransportRouteFreshnessAdmission,
     WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLease,
+    WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttempt,
+    WorkflowEventPhysicalTransportTargetContextArtifactOpeningResult,
     WorkflowEventPhysicalTransportTargetContextBinding,
     WorkflowEventTransportAdmission,
     WorkflowEventTransportCompatibilityAdmission,
@@ -807,6 +818,51 @@ class UnavailableWorkflowPlanRepository:
     ) -> tuple[WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLease, ...]:
         self._raise_target_context_access_authorization()
 
+    async def get_target_context_access_authorization_lease_by_id(
+        self, *, authorization_lease_id: str
+    ) -> WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLease | None:
+        self._raise_target_context_artifact_opening()
+
+    async def get_endpoint_materialization_result_by_id(
+        self, *, materialization_id: str
+    ) -> WorkflowEventPhysicalTransportEndpointMaterializationResult | None:
+        self._raise_target_context_artifact_opening()
+
+    async def get_credential_materialization_result_by_id(
+        self, *, materialization_id: str
+    ) -> WorkflowEventPhysicalTransportCredentialMaterializationResult | None:
+        self._raise_target_context_artifact_opening()
+
+    async def lookup_target_context_artifact_opening_replay(
+        self, request: WorkflowTargetContextArtifactOpeningReplayLookupRequest
+    ) -> WorkflowTargetContextArtifactOpeningReplayLookup:
+        self._raise_target_context_artifact_opening()
+
+    async def claim_target_context_artifact_opening(
+        self, request: WorkflowTargetContextArtifactOpeningClaimRequest
+    ) -> WorkflowTargetContextArtifactOpeningClaimResult:
+        self._raise_target_context_artifact_opening()
+
+    async def record_target_context_artifact_opening_result(
+        self, request: WorkflowTargetContextArtifactOpeningResultRequest
+    ) -> WorkflowTargetContextArtifactOpeningResultWrite:
+        self._raise_target_context_artifact_opening()
+
+    async def list_target_context_artifact_opening_attempts(
+        self, *, scope: WorkflowScope, limit: int = 256
+    ) -> tuple[WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttempt, ...]:
+        self._raise_target_context_artifact_opening()
+
+    async def list_target_context_artifact_opening_results(
+        self, *, scope: WorkflowScope, limit: int = 256
+    ) -> tuple[WorkflowEventPhysicalTransportTargetContextArtifactOpeningResult, ...]:
+        self._raise_target_context_artifact_opening()
+
+    async def get_target_context_artifact_opening_results_by_opening_ids(
+        self, *, scope: WorkflowScope, opening_ids: tuple[str, ...]
+    ) -> tuple[WorkflowEventPhysicalTransportTargetContextArtifactOpeningResult, ...]:
+        self._raise_target_context_artifact_opening()
+
     async def acquire_publication_lease(
         self, request: WorkflowOutboxPublicationLeaseAcquireRequest
     ) -> WorkflowOutboxPublicationLeaseAcquireResult:
@@ -1015,4 +1071,11 @@ class UnavailableWorkflowPlanRepository:
         raise WorkflowTargetContextAccessAuthorizationLeaseError(
             "workflow_target_context_access_authorization_repository_unavailable",
             "Durable target-context access authorization storage is not configured.",
+        )
+
+    @staticmethod
+    def _raise_target_context_artifact_opening() -> NoReturn:
+        raise WorkflowEventPhysicalTransportTargetContextArtifactOpeningError(
+            "workflow_target_context_artifact_opening_repository_unavailable",
+            "Durable target-context artifact opening storage is not configured.",
         )
