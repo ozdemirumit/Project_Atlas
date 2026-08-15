@@ -396,6 +396,21 @@ assignment heads and fences, canonical lineage and the full remaining window. On
 artifact access is authorized; artifact opening, endpoint reveal, credential delivery, network,
 readiness, publication, delivery, dispatch, execution and mutation remain separate boundaries.
 
+Target-context artifact opening is a later two-phase, crash-safe protected boundary. Fresh signed,
+nonce-bound endpoint and credential status/openability attestations are obtained before the
+transaction. PostgreSQL then repeats current outbox, route, assignment, lease, artifact and
+attestation checks and atomically appends one irreversible lease-consumption claim plus one started
+paired-opening attempt. Only after that commit may the trusted opener open the exact endpoint and
+credential artifacts together. Claim-only uncertainty is never retried, and exact terminal replay
+never invokes the opener again.
+
+The opener keeps both raw values inside the protected boundary and may return only a signed receipt
+for a sealed, short-lived target-context capsule lineage. Capsule identity is not a bearer
+capability. Claim, attempt and result events are append-only evidence with all 17 authority fields
+false; they grant no endpoint reveal, credential delivery, network, readiness, publication,
+delivery, dispatch, execution or mutation authority. Event payloads must omit raw artifacts,
+capsule material, protected-store locators and sensitive internal currentness evidence.
+
 ### 10.2 Publication State
 
 Outbox records track:
@@ -788,3 +803,4 @@ This document is ready to enter Review when:
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial event types, principles, and consumers |
 | 0.2.0 | 2026-08-03 | Architecture Owner | Added canonical envelope, producer ownership, delivery semantics, schema governance, replay, security, failure handling, testing, and initial event catalog |
 | 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |
+| 1.1.0 | 2026-08-15 | Workflow Architecture | Added atomic paired target-context artifact-opening event boundary and zero-authority capsule lineage |
