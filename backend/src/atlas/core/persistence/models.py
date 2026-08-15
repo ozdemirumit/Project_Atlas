@@ -8337,6 +8337,441 @@ class WorkflowEventPhysicalTransportTargetContextAccessAuthorizationClaimModel(B
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
 
+class WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel(Base):
+    __tablename__ = "workflow_event_tctx_access_consumption_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "idempotency_scope_id", "idempotency_key", name="uq_wf_tctx_open_claim_idem"
+        ),
+        UniqueConstraint("authorization_lease_id", name="uq_wf_tctx_open_claim_lease"),
+        UniqueConstraint("attempt_id", name="uq_wf_tctx_open_claim_attempt"),
+        UniqueConstraint("opening_id", name="uq_wf_tctx_open_claim_opening"),
+        UniqueConstraint("canonical_digest", name="uq_wf_tctx_open_claim_digest"),
+        UniqueConstraint(
+            "claim_id",
+            "authorization_lease_id",
+            "attempt_id",
+            "opening_id",
+            "target_context_binding_id",
+            "organization_id",
+            "environment_id",
+            "site_id",
+            name="uq_wf_tctx_open_claim_lineage",
+        ),
+        CheckConstraint(
+            "NOT route_selection_authority_granted "
+            "AND NOT route_binding_authority_granted "
+            "AND NOT endpoint_resolution_authority_granted "
+            "AND NOT protected_artifact_access_authority_granted "
+            "AND NOT credential_selection_authority_granted "
+            "AND NOT credential_assignment_binding_authority_granted "
+            "AND NOT credential_access_authority_granted "
+            "AND NOT credential_brokerage_authority_granted "
+            "AND NOT credential_resolution_authority_granted "
+            "AND NOT credential_delivery_authority_granted "
+            "AND NOT network_access_authority_granted "
+            "AND NOT readiness_probe_authority_granted "
+            "AND NOT publication_authority_granted "
+            "AND NOT delivery_authority_granted "
+            "AND NOT dispatch_authority_granted "
+            "AND NOT execution_authority_granted "
+            "AND NOT infrastructure_mutation_authority_granted",
+            name="ck_wf_tctx_open_claim_authority",
+        ),
+        CheckConstraint(
+            "char_length(consumption_authorization_audit_digest) = 64 "
+            "AND consumption_authorization_audit_digest ~ '^[0-9a-f]{64}$' "
+            "AND jsonb_typeof(consumption_authorization_audit_payload) = 'object' "
+            "AND consumption_authorization_audit_payload <> '{}'::jsonb",
+            name="ck_wf_tctx_open_claim_audit_digest",
+        ),
+        Index("ix_wf_tctx_open_claim_scope", "idempotency_scope_id"),
+        Index("ix_wf_tctx_open_claim_lease", "authorization_lease_id"),
+        Index("ix_wf_tctx_open_claim_binding", "target_context_binding_id"),
+        Index("ix_wf_tctx_open_claim_subject", "accessor_subject_id"),
+        Index("ix_wf_tctx_open_claim_time", "claimed_at"),
+    )
+
+    claim_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    idempotency_scope_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    idempotency_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    authorization_lease_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "workflow_event_tctx_access_authorization_leases.authorization_lease_id",
+            name="fk_wf_tctx_open_claim_lease",
+        ),
+        nullable=False,
+    )
+    authorization_lease_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_context_binding_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "workflow_event_transport_target_context_bindings.binding_id",
+            name="fk_wf_tctx_open_claim_binding",
+        ),
+        nullable=False,
+    )
+    target_context_binding_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_context_commitment: Mapped[str] = mapped_column(String(64), nullable=False)
+    attempt_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    opening_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    authorization_evidence_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    consumption_authorization_audit_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    accessor_subject_id: Mapped[str] = mapped_column(String(240), nullable=False)
+    claimed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    route_selection_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    route_binding_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    endpoint_resolution_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    protected_artifact_access_authority_granted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False
+    )
+    credential_selection_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_assignment_binding_authority_granted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False
+    )
+    credential_access_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_brokerage_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_resolution_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_delivery_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    network_access_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    readiness_probe_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    publication_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    delivery_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    dispatch_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    execution_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    infrastructure_mutation_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    authorization_evidence_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    consumption_authorization_audit_payload: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False
+    )
+
+
+class WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptModel(Base):
+    __tablename__ = "workflow_event_tctx_artifact_opening_attempts"
+    __table_args__ = (
+        UniqueConstraint("opening_id", name="uq_wf_tctx_open_attempt_opening"),
+        UniqueConstraint("consumption_claim_id", name="uq_wf_tctx_open_attempt_claim"),
+        UniqueConstraint("authorization_lease_id", name="uq_wf_tctx_open_attempt_lease"),
+        UniqueConstraint("canonical_digest", name="uq_wf_tctx_open_attempt_digest"),
+        UniqueConstraint(
+            "attempt_id",
+            "consumption_claim_id",
+            "authorization_lease_id",
+            "opening_id",
+            "target_context_binding_id",
+            "organization_id",
+            "environment_id",
+            "site_id",
+            name="uq_wf_tctx_open_attempt_lineage",
+        ),
+        ForeignKeyConstraint(
+            [
+                "consumption_claim_id",
+                "authorization_lease_id",
+                "attempt_id",
+                "opening_id",
+                "target_context_binding_id",
+                "organization_id",
+                "environment_id",
+                "site_id",
+            ],
+            [
+                "workflow_event_tctx_access_consumption_claims.claim_id",
+                "workflow_event_tctx_access_consumption_claims.authorization_lease_id",
+                "workflow_event_tctx_access_consumption_claims.attempt_id",
+                "workflow_event_tctx_access_consumption_claims.opening_id",
+                "workflow_event_tctx_access_consumption_claims.target_context_binding_id",
+                "workflow_event_tctx_access_consumption_claims.organization_id",
+                "workflow_event_tctx_access_consumption_claims.environment_id",
+                "workflow_event_tctx_access_consumption_claims.site_id",
+            ],
+            name="fk_wf_tctx_open_attempt_claim_lineage",
+        ),
+        CheckConstraint("state = 'opening_started'", name="ck_wf_tctx_open_attempt_state"),
+        CheckConstraint(
+            "started_at < lease_valid_until "
+            "AND started_at < joint_usable_until "
+            "AND started_at < evidence_valid_until",
+            name="ck_wf_tctx_open_attempt_window",
+        ),
+        CheckConstraint(
+            "NOT route_selection_authority_granted "
+            "AND NOT route_binding_authority_granted "
+            "AND NOT endpoint_resolution_authority_granted "
+            "AND NOT protected_artifact_access_authority_granted "
+            "AND NOT credential_selection_authority_granted "
+            "AND NOT credential_assignment_binding_authority_granted "
+            "AND NOT credential_access_authority_granted "
+            "AND NOT credential_brokerage_authority_granted "
+            "AND NOT credential_resolution_authority_granted "
+            "AND NOT credential_delivery_authority_granted "
+            "AND NOT network_access_authority_granted "
+            "AND NOT readiness_probe_authority_granted "
+            "AND NOT publication_authority_granted "
+            "AND NOT delivery_authority_granted "
+            "AND NOT dispatch_authority_granted "
+            "AND NOT execution_authority_granted "
+            "AND NOT infrastructure_mutation_authority_granted",
+            name="ck_wf_tctx_open_attempt_authority",
+        ),
+        Index("ix_wf_tctx_open_attempt_org", "organization_id"),
+        Index("ix_wf_tctx_open_attempt_env", "environment_id"),
+        Index("ix_wf_tctx_open_attempt_site", "site_id"),
+        Index("ix_wf_tctx_open_attempt_binding", "target_context_binding_id"),
+        Index("ix_wf_tctx_open_attempt_subject", "accessor_subject_id"),
+        Index("ix_wf_tctx_open_attempt_started", "started_at"),
+    )
+
+    attempt_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    opening_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    consumption_claim_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "workflow_event_tctx_access_consumption_claims.claim_id",
+            name="fk_wf_tctx_open_attempt_claim",
+        ),
+        nullable=False,
+    )
+    authorization_lease_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "workflow_event_tctx_access_authorization_leases.authorization_lease_id",
+            name="fk_wf_tctx_open_attempt_lease",
+        ),
+        nullable=False,
+    )
+    authorization_lease_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_context_binding_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "workflow_event_transport_target_context_bindings.binding_id",
+            name="fk_wf_tctx_open_attempt_binding",
+        ),
+        nullable=False,
+    )
+    target_context_binding_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_context_commitment: Mapped[str] = mapped_column(String(64), nullable=False)
+    endpoint_materialization_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "workflow_event_endpoint_materialization_results.materialization_id",
+            name="fk_wf_tctx_open_attempt_endpoint",
+        ),
+        nullable=False,
+    )
+    endpoint_materialization_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    endpoint_protected_artifact_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    endpoint_protected_artifact_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    endpoint_status_attestation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    endpoint_status_attestation_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    credential_materialization_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "workflow_event_credential_materialization_results.materialization_id",
+            name="fk_wf_tctx_open_attempt_credential",
+        ),
+        nullable=False,
+    )
+    credential_materialization_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    credential_protected_artifact_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    credential_protected_artifact_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    credential_status_attestation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    credential_status_attestation_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_nonce_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    opener_contract_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    opener_attestor_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    policy_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    accessor_subject_id: Mapped[str] = mapped_column(String(240), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    lease_valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    joint_usable_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    evidence_valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    route_selection_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    route_binding_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    endpoint_resolution_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    protected_artifact_access_authority_granted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False
+    )
+    credential_selection_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_assignment_binding_authority_granted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False
+    )
+    credential_access_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_brokerage_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_resolution_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_delivery_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    network_access_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    readiness_probe_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    publication_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    delivery_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    dispatch_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    execution_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    infrastructure_mutation_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    endpoint_attestation_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    credential_attestation_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel(Base):
+    __tablename__ = "workflow_event_tctx_artifact_opening_results"
+    __table_args__ = (
+        UniqueConstraint("attempt_id", name="uq_wf_tctx_open_result_attempt"),
+        UniqueConstraint("consumption_claim_id", name="uq_wf_tctx_open_result_claim"),
+        UniqueConstraint("authorization_lease_id", name="uq_wf_tctx_open_result_lease"),
+        UniqueConstraint("canonical_digest", name="uq_wf_tctx_open_result_digest"),
+        ForeignKeyConstraint(
+            [
+                "attempt_id",
+                "consumption_claim_id",
+                "authorization_lease_id",
+                "opening_id",
+                "target_context_binding_id",
+                "organization_id",
+                "environment_id",
+                "site_id",
+            ],
+            [
+                "workflow_event_tctx_artifact_opening_attempts.attempt_id",
+                "workflow_event_tctx_artifact_opening_attempts.consumption_claim_id",
+                "workflow_event_tctx_artifact_opening_attempts.authorization_lease_id",
+                "workflow_event_tctx_artifact_opening_attempts.opening_id",
+                "workflow_event_tctx_artifact_opening_attempts.target_context_binding_id",
+                "workflow_event_tctx_artifact_opening_attempts.organization_id",
+                "workflow_event_tctx_artifact_opening_attempts.environment_id",
+                "workflow_event_tctx_artifact_opening_attempts.site_id",
+            ],
+            name="fk_wf_tctx_open_result_attempt_lineage",
+        ),
+        CheckConstraint(
+            "(state = 'opened_protected' AND failure_class IS NULL "
+            "AND sealed_capsule_id IS NOT NULL AND sealed_capsule_digest IS NOT NULL "
+            "AND usable_until IS NOT NULL AND completed_at < usable_until) OR "
+            "(state = 'opening_failed' AND failure_class IS NOT NULL "
+            "AND sealed_capsule_id IS NULL AND sealed_capsule_digest IS NULL "
+            "AND usable_until IS NULL)",
+            name="ck_wf_tctx_open_result_state",
+        ),
+        CheckConstraint(
+            "NOT capsule_is_bearer_capability AND protected_sources_closed AND cleanup_confirmed",
+            name="ck_wf_tctx_open_result_capsule",
+        ),
+        CheckConstraint(
+            "NOT route_selection_authority_granted "
+            "AND NOT route_binding_authority_granted "
+            "AND NOT endpoint_resolution_authority_granted "
+            "AND NOT protected_artifact_access_authority_granted "
+            "AND NOT credential_selection_authority_granted "
+            "AND NOT credential_assignment_binding_authority_granted "
+            "AND NOT credential_access_authority_granted "
+            "AND NOT credential_brokerage_authority_granted "
+            "AND NOT credential_resolution_authority_granted "
+            "AND NOT credential_delivery_authority_granted "
+            "AND NOT network_access_authority_granted "
+            "AND NOT readiness_probe_authority_granted "
+            "AND NOT publication_authority_granted "
+            "AND NOT delivery_authority_granted "
+            "AND NOT dispatch_authority_granted "
+            "AND NOT execution_authority_granted "
+            "AND NOT infrastructure_mutation_authority_granted",
+            name="ck_wf_tctx_open_result_authority",
+        ),
+        Index("ix_wf_tctx_open_result_org", "organization_id"),
+        Index("ix_wf_tctx_open_result_env", "environment_id"),
+        Index("ix_wf_tctx_open_result_site", "site_id"),
+        Index("ix_wf_tctx_open_result_binding", "target_context_binding_id"),
+        Index("ix_wf_tctx_open_result_subject", "accessor_subject_id"),
+        Index("ix_wf_tctx_open_result_completed", "completed_at"),
+        Index("ix_wf_tctx_open_result_state", "state"),
+    )
+
+    opening_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    attempt_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "workflow_event_tctx_artifact_opening_attempts.attempt_id",
+            name="fk_wf_tctx_open_result_attempt",
+        ),
+        nullable=False,
+    )
+    attempt_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    consumption_claim_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "workflow_event_tctx_access_consumption_claims.claim_id",
+            name="fk_wf_tctx_open_result_claim",
+        ),
+        nullable=False,
+    )
+    consumption_claim_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    authorization_lease_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "workflow_event_tctx_access_authorization_leases.authorization_lease_id",
+            name="fk_wf_tctx_open_result_lease",
+        ),
+        nullable=False,
+    )
+    authorization_lease_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_context_binding_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "workflow_event_transport_target_context_bindings.binding_id",
+            name="fk_wf_tctx_open_result_binding",
+        ),
+        nullable=False,
+    )
+    target_context_binding_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_context_commitment: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    opener_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    opener_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    opening_receipt_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    failure_class: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    sealed_capsule_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    sealed_capsule_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    capsule_is_bearer_capability: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    capsule_schema_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    capsule_schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    accessor_subject_id: Mapped[str] = mapped_column(String(240), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    usable_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    protected_sources_closed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    cleanup_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    route_selection_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    route_binding_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    endpoint_resolution_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    protected_artifact_access_authority_granted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False
+    )
+    credential_selection_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_assignment_binding_authority_granted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False
+    )
+    credential_access_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_brokerage_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_resolution_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_delivery_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    network_access_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    readiness_probe_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    publication_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    delivery_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    dispatch_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    execution_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    infrastructure_mutation_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
 class WorkflowDispatchIntentStagingClaimModel(Base):
     __tablename__ = "workflow_dispatch_intent_staging_claims"
     __table_args__ = (

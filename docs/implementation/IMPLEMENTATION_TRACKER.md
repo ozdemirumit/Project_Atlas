@@ -4,14 +4,86 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-209 |
-| Title | Bounded single-use workflow protected transport target-context access authorization lease without artifact opening or runtime authority |
-| Status | Delivery in progress; exact-head CI pending |
-| Branch | `agent/protected-target-context-access-lease` |
-| Pull Request | [#222](https://github.com/ozdemirumit/Project_Atlas/pull/222) |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-150, ADR-152, ADR-155, ADR-157, ADR-158, ADR-159 |
-| Last Updated | 2026-08-15 |
-| Next Action | Pass exact-head PR CI, merge with SHA lock and verify independent main CI |
+| Task ID | ATLAS-IMP-210 |
+| Title | Atomic single-use target-context access lease consumption and paired protected artifact opening without delivery or runtime authority |
+| Status | Pull request opened; exact-head CI pending |
+| Branch | `agent/protected-target-context-artifact-opening` |
+| Pull Request | [#223](https://github.com/ozdemirumit/Project_Atlas/pull/223) |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-152, ADR-157, ADR-158, ADR-159, ADR-160 |
+| Last Updated | 2026-08-16 |
+| Next Action | Pass exact-head PostgreSQL CI for PR #223, merge by SHA and verify independent `main` CI |
+
+### ATLAS-IMP-210 Scope Rationale
+
+- IMP-209 authorizes one exact dedicated workload to request protected-artifact access for five
+  seconds, but deliberately does not consume the lease or open either paired artifact.
+- The next smallest safe boundary must commit irreversible single-use consumption before any
+  protected-store opener call, then open the exact endpoint and credential pair only inside one
+  trusted boundary.
+- The only successful output is sealed, short-lived target-context capsule lineage. Endpoint
+  reveal, credential delivery, capsule handoff, network, readiness, publication, dispatch,
+  execution and mutation remain separate later boundaries.
+
+### ATLAS-IMP-210 Acceptance Criteria
+
+- Only `service.workflow-protected-transport-context-accessor` authenticated for
+  `audience.workflow-protected-transport-context-accessor` may request opening for its own lease.
+  The caller supplies only lease ID/digest, code-owned policy ID/version, two irreversible
+  acknowledgements and idempotency; every binding, artifact, attestation, opener, capsule,
+  endpoint, credential and runtime field is server-derived.
+- Atlas obtains fresh independently signed, nonce-bound metadata-only endpoint and credential
+  status/openability attestations before opening the transaction. Captured attestations are
+  verified offline again in the transaction, with no external I/O while locks are held.
+- PostgreSQL follows the established target-context lock/fence order and revalidates lease,
+  binding, both materialization chains, pending-outbox liveness, current route head/generation/
+  fence, current credential-assignment head/fence, source deadlines, attestations and database
+  time before atomically appending one unique consumption claim and one started opening attempt.
+- Claim commit is the irreversible point of no return and precedes the opener call. Pre-claim
+  failure leaves the lease unconsumed; post-claim crash, timeout or uncertainty permanently
+  consumes it and never automatically retries the opener.
+- The trusted opener opens endpoint first and credential second only for the exact pair, keeps raw
+  values inside the protected boundary, zeroizes partial outcomes and creates no capsule until
+  both commitments validate.
+- A successful result records only a signed receipt and opaque sealed short-lived capsule lineage.
+  Capsule identity is not a bearer capability, and its deadline cannot exceed the lease, either
+  artifact, either attestation or code-owned capsule bound.
+- The IMP-209 lease remains immutable and effective consumption is derived from the unique claim.
+  Claim, attempt and result are append-only, each has all 17 authority fields exactly false, and
+  `endpoint_opened` or `credential_opened` is outcome evidence only.
+- Exact terminal replay returns the same minimized result without reopening artifacts. Claim-only
+  replay returns `outcome_uncertain` without an external call. Changed or competing replay fails
+  closed; partial, late, invalid-receipt or cleanup-uncertain outcomes require zeroization and do
+  not restore authority.
+- Workload POST and normal-session human GET use minimized non-oracle `no-store` contracts. Human
+  UI is read-only through one username/password login, with no MFA, second prompt, sensitive
+  artifact/capsule/currentness data or open, retry, reveal, copy, download, connect or execute
+  control.
+- Full local suites, real PostgreSQL concurrency/migration CI, live desktop/mobile inspection,
+  exact-head PR CI, SHA-locked merge and independent main CI must pass.
+
+### ATLAS-IMP-210 Local Verification
+
+- Backend Ruff formatting/lint and MyPy passed. The complete backend suite passed with `2264`
+  tests and `20` environment-dependent skips; the two new live PostgreSQL cases are wired into CI
+  through `ATLAS_TEST_POSTGRES_DSN` together with migration downgrade/upgrade verification.
+- Frontend TypeScript and ESLint passed. All `95` test files and `708` tests passed, followed by a
+  successful production Vite build.
+- Live validation at `http://127.0.0.1:5173/` used one normal `atlas-demo` / `local-demo`
+  username/password session. The Target-context artifact openings region rendered as read-only on
+  desktop and mobile, exposed no buttons or links, required no MFA or second browser prompt, had no
+  horizontal overflow and produced no browser console warnings or errors.
+- Independent final review found no P0, P1 or P2 issue after full canonical audit replay checks,
+  nonce/opener identity binding, claim-attempt-result deadline validation and exact replay
+  no-reopen behavior were verified.
+
+### ATLAS-IMP-209 Delivery Evidence
+
+- PR [#222](https://github.com/ozdemirumit/Project_Atlas/pull/222) was SHA-locked at
+  `d26831d23a5977bce67a84215c96a3a21e77cfb2` and squash-merged as
+  `39207e1bb889ecef28304ecf60e49d99a34b77dc`.
+- Exact-head PR CI run `31905254619` completed successfully for backend and frontend, including
+  migration round-trip and real PostgreSQL target-context access-lease tests.
+- The merge commit independently passed `main` CI run `31905905256` before IMP-210 branched.
 
 ### ATLAS-IMP-209 Scope Rationale
 

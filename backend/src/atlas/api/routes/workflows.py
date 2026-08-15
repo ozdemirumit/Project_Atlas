@@ -20,6 +20,7 @@ from atlas.api.security import (
     authorize_workflow_physical_transport_route_binding_read,
     authorize_workflow_physical_transport_route_freshness_admission_read,
     authorize_workflow_physical_transport_target_context_access_authorization_lease_read,
+    authorize_workflow_physical_transport_target_context_artifact_opening_read,
     authorize_workflow_physical_transport_target_context_binding_read,
     authorize_workflow_plan_cancel,
     authorize_workflow_plan_create,
@@ -61,6 +62,7 @@ from atlas.api.workflow_schemas import (
     CreateWorkflowEventPhysicalTransportRouteBindingInput,
     CreateWorkflowEventPhysicalTransportRouteFreshnessAdmissionInput,
     CreateWorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseInput,
+    CreateWorkflowEventPhysicalTransportTargetContextArtifactOpeningInput,
     CreateWorkflowEventPhysicalTransportTargetContextBindingInput,
     CreateWorkflowEventTransportCompatibilityAdmissionInput,
     CreateWorkflowPlanInput,
@@ -145,6 +147,11 @@ from atlas.api.workflow_schemas import (
     WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseInventoryData,
     WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseInventoryResponse,
     WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseResponse,
+    WorkflowEventPhysicalTransportTargetContextArtifactOpeningData,
+    WorkflowEventPhysicalTransportTargetContextArtifactOpeningInventoryData,
+    WorkflowEventPhysicalTransportTargetContextArtifactOpeningInventoryItemData,
+    WorkflowEventPhysicalTransportTargetContextArtifactOpeningInventoryResponse,
+    WorkflowEventPhysicalTransportTargetContextArtifactOpeningResponse,
     WorkflowEventPhysicalTransportTargetContextBindingData,
     WorkflowEventPhysicalTransportTargetContextBindingInventoryData,
     WorkflowEventPhysicalTransportTargetContextBindingInventoryResponse,
@@ -282,6 +289,12 @@ from atlas.modules.workflows.application.physical_route_binding_ports import (
 from atlas.modules.workflows.application.target_context_access_authorization_lease_ports import (
     WorkflowTargetContextAccessAuthorizationLeaseError,
 )
+from atlas.modules.workflows.application.target_context_artifact_opening_ports import (
+    WorkflowEventPhysicalTransportTargetContextArtifactOpeningError,
+)
+from atlas.modules.workflows.application.target_context_artifact_openings import (
+    WorkflowEventPhysicalTransportTargetContextArtifactOpeningService,
+)
 from atlas.modules.workflows.application.transport_admission_ports import (
     WorkflowEventTransportAdmissionError,
 )
@@ -314,6 +327,7 @@ from atlas.modules.workflows.domain import (
     WorkflowEventPhysicalTransportRouteBinding,
     WorkflowEventPhysicalTransportRouteFreshnessAdmission,
     WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLease,
+    WorkflowEventPhysicalTransportTargetContextArtifactOpeningResult,
     WorkflowEventTransportAdmission,
     WorkflowEventTransportAdmissionPolicy,
     WorkflowEventTransportAdmissionState,
@@ -935,6 +949,18 @@ def _raise_physical_transport_target_context_access_authorization_lease(
         title=title,
         detail=detail,
         retryable=status == 503,
+    ) from error
+
+
+def _raise_physical_transport_target_context_artifact_opening(
+    error: WorkflowEventPhysicalTransportTargetContextArtifactOpeningError,
+) -> NoReturn:
+    raise AtlasError(
+        status=409,
+        code="workflow_target_context_artifact_opening_unavailable",
+        title="Workflow target-context artifact opening unavailable",
+        detail="The target-context artifact opening request cannot be completed.",
+        retryable=False,
     ) from error
 
 
@@ -1712,6 +1738,18 @@ def _physical_transport_target_context_access_authorization_lease_response(
                 evaluated_at=lease.issued_at,
             )
         ),
+        meta=_meta(request),
+    )
+
+
+def _physical_transport_target_context_artifact_opening_response(
+    result: WorkflowEventPhysicalTransportTargetContextArtifactOpeningResult,
+    request: Request,
+    response: Response,
+) -> WorkflowEventPhysicalTransportTargetContextArtifactOpeningResponse:
+    _no_store(response)
+    return WorkflowEventPhysicalTransportTargetContextArtifactOpeningResponse(
+        data=WorkflowEventPhysicalTransportTargetContextArtifactOpeningData.from_domain(result),
         meta=_meta(request),
     )
 
@@ -5348,6 +5386,138 @@ async def create_workflow_physical_transport_target_context_access_authorization
         _raise_physical_transport_target_context_access_authorization_lease(error)
     return _physical_transport_target_context_access_authorization_lease_response(
         lease,
+        request,
+        response,
+    )
+
+
+@router.get(
+    "/physical-transport-target-context-artifact-openings",
+    response_model=WorkflowEventPhysicalTransportTargetContextArtifactOpeningInventoryResponse,
+)
+async def list_workflow_physical_transport_target_context_artifact_openings(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_workflow_physical_transport_target_context_artifact_opening_read),
+    ],
+) -> WorkflowEventPhysicalTransportTargetContextArtifactOpeningInventoryResponse:
+    del decision
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    service = cast(
+        WorkflowEventPhysicalTransportTargetContextArtifactOpeningService,
+        request.app.state.workflow_target_context_artifact_opening_service,
+    )
+    try:
+        server_time = await service.repository.get_authoritative_time()
+        attempts = await service.list_attempts(scope=scope, limit=256)
+        results = await service.get_results_for_opening_ids(
+            scope=scope,
+            opening_ids=tuple(attempt.opening_id for attempt in attempts),
+        )
+        results_by_opening_id = {result.opening_id: result for result in results}
+        attempt_opening_ids = {attempt.opening_id for attempt in attempts}
+        if (
+            server_time.tzinfo is None
+            or len(attempt_opening_ids) != len(attempts)
+            or len(results_by_opening_id) != len(results)
+            or not set(results_by_opening_id).issubset(attempt_opening_ids)
+            or any(attempt.scope != scope for attempt in attempts)
+            or any(result.scope != scope for result in results)
+        ):
+            raise WorkflowEventPhysicalTransportTargetContextArtifactOpeningError(
+                "target_context_artifact_opening_repository_scope_violation"
+            )
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_target_context_artifact_opening_service_unavailable",
+            title="Workflow target-context artifact opening service unavailable",
+            detail="Target-context artifact opening metadata is temporarily unavailable.",
+            retryable=True,
+        ) from error
+    _no_store(response)
+    return WorkflowEventPhysicalTransportTargetContextArtifactOpeningInventoryResponse(
+        data=WorkflowEventPhysicalTransportTargetContextArtifactOpeningInventoryData(
+            physical_transport_target_context_artifact_openings=[
+                WorkflowEventPhysicalTransportTargetContextArtifactOpeningInventoryItemData.from_domain(
+                    attempt,
+                    results_by_opening_id.get(attempt.opening_id),
+                )
+                for attempt in sorted(attempts, key=lambda value: value.opening_id)
+            ],
+            server_time=server_time,
+            durable=service.durable,
+        ),
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    "/physical-transport-target-context-artifact-openings",
+    response_model=WorkflowEventPhysicalTransportTargetContextArtifactOpeningResponse,
+    status_code=201,
+)
+async def create_workflow_physical_transport_target_context_artifact_opening(
+    payload: CreateWorkflowEventPhysicalTransportTargetContextArtifactOpeningInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[
+        AuthenticatedSubject,
+        Depends(workflow_physical_transport_target_context_accessor_subject),
+    ],
+) -> WorkflowEventPhysicalTransportTargetContextArtifactOpeningResponse:
+    service = cast(
+        WorkflowEventPhysicalTransportTargetContextArtifactOpeningService,
+        request.app.state.workflow_target_context_artifact_opening_service,
+    )
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    try:
+        result = await service.open_artifacts(
+            authorization_lease_id=payload.authorization_lease_id,
+            authorization_lease_digest=payload.authorization_lease_digest,
+            policy_id=payload.policy_id,
+            policy_version=payload.policy_version,
+            irreversible_consumption_acknowledged=(payload.irreversible_consumption_acknowledged),
+            uncertain_outcome_requires_new_authorization_acknowledged=(
+                payload.uncertain_outcome_requires_new_authorization_acknowledged
+            ),
+            idempotency_key=payload.idempotency_key,
+            context=WorkflowPhysicalTransportTargetContextAccessorContext(
+                subject_id=subject.subject_id,
+                actor_type=subject.kind.value,
+                authentication_method=subject.authentication_method.value,
+                credential_audience=WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_ACCESSOR_AUDIENCE,
+                scope=scope,
+                correlation_id=str(request.state.correlation_id),
+                decision_id=(
+                    "decision.workflow-physical-transport-target-context-accessor-authenticated"
+                ),
+                requested_at=datetime.now(UTC),
+            ),
+        )
+    except WorkflowEventPhysicalTransportTargetContextArtifactOpeningError as error:
+        _raise_physical_transport_target_context_artifact_opening(error)
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_target_context_artifact_opening_service_unavailable",
+            title="Workflow target-context artifact opening service unavailable",
+            detail="The target-context artifact opening request cannot be completed.",
+            retryable=True,
+        ) from error
+    return _physical_transport_target_context_artifact_opening_response(
+        result,
         request,
         response,
     )

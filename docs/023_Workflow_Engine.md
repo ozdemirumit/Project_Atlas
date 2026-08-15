@@ -646,6 +646,14 @@ MVP workflows do not execute C3 through C5 capabilities.
   canonical lineage and the full window without depending on orchestration or publication leases.
   Only protected-artifact access is authorized; consumption, artifact opening, credential
   delivery, endpoint reveal and every network or runtime authority remain separate boundaries.
+- ADR-160 establishes irreversible single-use consumption of that exact lease before one trusted
+  paired-artifact opener is called. Fresh signed endpoint and credential status/openability
+  attestations are obtained outside the transaction; PostgreSQL then revalidates the complete
+  current chain and atomically commits one append-only claim and started attempt as the point of no
+  return. The trusted boundary opens only the exact pair and may produce one sealed, short-lived
+  target-context capsule lineage. Raw values never enter ordinary platform layers, claim-only
+  uncertainty is never retried, all 17 outcome authority fields are false, and capsule identity
+  grants no endpoint reveal, credential delivery, network or runtime authority.
 
 ## 39. Assumptions
 
@@ -681,3 +689,4 @@ This document is ready to enter Review when:
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial workflow types, requirements, and states |
 | 0.2.0 | 2026-08-03 | Workflow Platform Owner | Added durable workflow model, state machine, step contracts, retries, idempotency, cancellation, policy, approval, compensation, migration, and MVP workflows |
 | 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |
+| 1.1.0 | 2026-08-15 | Workflow Architecture | Added atomic single-use target-context artifact opening and sealed zero-authority capsule lineage |

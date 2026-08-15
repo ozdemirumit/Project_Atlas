@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from hashlib import sha256
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -31,6 +32,8 @@ from atlas.modules.workflows.domain import (
     WorkflowEventPhysicalTransportRouteBinding,
     WorkflowEventPhysicalTransportRouteFreshnessAdmission,
     WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLease,
+    WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttempt,
+    WorkflowEventPhysicalTransportTargetContextArtifactOpeningResult,
     WorkflowEventPhysicalTransportTargetContextBinding,
     WorkflowEventTransportAdmission,
     WorkflowEventTransportCompatibilityAdmission,
@@ -2276,6 +2279,148 @@ class WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseInvento
     BaseModel
 ):
     data: WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseInventoryData
+    meta: ResponseMeta
+
+
+class CreateWorkflowEventPhysicalTransportTargetContextArtifactOpeningInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    authorization_lease_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    authorization_lease_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    policy_id: Literal["policy.workflow-event-physical-transport-target-context-artifact-opening"]
+    policy_version: Literal["1.0"]
+    irreversible_consumption_acknowledged: Literal[True]
+    uncertain_outcome_requires_new_authorization_acknowledged: Literal[True]
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class WorkflowEventPhysicalTransportTargetContextArtifactOpeningAuthorityData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    route_selection_authorized: Literal[False]
+    route_binding_authorized: Literal[False]
+    endpoint_resolution_authorized: Literal[False]
+    protected_artifact_access_authorized: Literal[False]
+    credential_selection_authorized: Literal[False]
+    credential_assignment_binding_authorized: Literal[False]
+    credential_access_authorized: Literal[False]
+    credential_brokerage_authorized: Literal[False]
+    credential_resolution_authorized: Literal[False]
+    credential_delivery_authorized: Literal[False]
+    network_access_authorized: Literal[False]
+    readiness_probe_authorized: Literal[False]
+    publication_authorized: Literal[False]
+    delivery_authorized: Literal[False]
+    dispatch_authorized: Literal[False]
+    execution_authorized: Literal[False]
+    infrastructure_mutation_authorized: Literal[False]
+
+
+class WorkflowEventPhysicalTransportTargetContextArtifactOpeningData(BaseModel):
+    """Minimized opening outcome without protected material or bearer capability data."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    opening_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    result_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    state: Literal["opened_protected", "opening_failed"]
+    completed_at: datetime
+    usable_until: datetime | None
+    authority: WorkflowEventPhysicalTransportTargetContextArtifactOpeningAuthorityData
+
+    @classmethod
+    def from_domain(
+        cls,
+        result: WorkflowEventPhysicalTransportTargetContextArtifactOpeningResult,
+    ) -> WorkflowEventPhysicalTransportTargetContextArtifactOpeningData:
+        return cls(
+            opening_id=result.opening_id,
+            result_digest=result.canonical_digest,
+            state=result.state.value,
+            completed_at=result.completed_at,
+            usable_until=result.usable_until,
+            authority=(
+                WorkflowEventPhysicalTransportTargetContextArtifactOpeningAuthorityData.model_validate(
+                    result.authority.canonical_value()
+                )
+            ),
+        )
+
+
+class WorkflowEventPhysicalTransportTargetContextArtifactOpeningPolicyData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    policy_id: Literal["policy.workflow-event-physical-transport-target-context-artifact-opening"]
+    policy_version: Literal["1.0"]
+
+
+class WorkflowEventPhysicalTransportTargetContextArtifactOpeningInventoryItemData(BaseModel):
+    """Human-safe attempt and optional result presentation without protected lineage."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    opening_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    scope: WorkflowScopeData
+    attempt_state: Literal["started", "completed"]
+    result_state: Literal["pending", "opened_protected", "opening_failed", "outcome_uncertain"]
+    started_at: datetime
+    completed_at: datetime | None
+    policy: WorkflowEventPhysicalTransportTargetContextArtifactOpeningPolicyData
+    authority: WorkflowEventPhysicalTransportTargetContextArtifactOpeningAuthorityData
+    integrity_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+
+    @classmethod
+    def from_domain(
+        cls,
+        attempt: WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttempt,
+        result: WorkflowEventPhysicalTransportTargetContextArtifactOpeningResult | None,
+    ) -> WorkflowEventPhysicalTransportTargetContextArtifactOpeningInventoryItemData:
+        if result is not None and (
+            result.opening_id != attempt.opening_id
+            or result.attempt_id != attempt.attempt_id
+            or result.scope != attempt.scope
+        ):
+            raise ValueError("target context artifact opening presentation lineage mismatch")
+        return cls(
+            opening_id=attempt.opening_id,
+            scope=WorkflowScopeData.model_validate(attempt.scope.canonical_value()),
+            attempt_state="completed" if result is not None else "started",
+            result_state=result.state.value if result is not None else "outcome_uncertain",
+            started_at=attempt.started_at,
+            completed_at=result.completed_at if result is not None else None,
+            policy=WorkflowEventPhysicalTransportTargetContextArtifactOpeningPolicyData(
+                policy_id=attempt.policy_id,
+                policy_version=attempt.policy_version,
+            ),
+            authority=(
+                WorkflowEventPhysicalTransportTargetContextArtifactOpeningAuthorityData.model_validate(
+                    attempt.authority.canonical_value()
+                )
+            ),
+            integrity_reference=(
+                "integrity.workflow-target-context-opening."
+                f"{sha256(attempt.opening_id.encode('utf-8')).hexdigest()[:24]}"
+            ),
+        )
+
+
+class WorkflowEventPhysicalTransportTargetContextArtifactOpeningInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    physical_transport_target_context_artifact_openings: list[
+        WorkflowEventPhysicalTransportTargetContextArtifactOpeningInventoryItemData
+    ] = Field(max_length=256)
+    server_time: datetime
+    durable: bool
+
+
+class WorkflowEventPhysicalTransportTargetContextArtifactOpeningResponse(BaseModel):
+    data: WorkflowEventPhysicalTransportTargetContextArtifactOpeningData
+    meta: ResponseMeta
+
+
+class WorkflowEventPhysicalTransportTargetContextArtifactOpeningInventoryResponse(BaseModel):
+    data: WorkflowEventPhysicalTransportTargetContextArtifactOpeningInventoryData
     meta: ResponseMeta
 
 

@@ -230,6 +230,23 @@ class WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseEffecti
     EXPIRED = "expired"
 
 
+class WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptState(StrEnum):
+    OPENING_STARTED = "opening_started"
+
+
+class WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultState(StrEnum):
+    OPENED_PROTECTED = "opened_protected"
+    OPENING_FAILED = "opening_failed"
+
+
+class WorkflowEventPhysicalTransportTargetContextArtifactOpeningFailureClass(StrEnum):
+    DEADLINE_EXPIRED = "deadline_expired"
+    ENDPOINT_SOURCE_INVALID = "endpoint_source_invalid"
+    CREDENTIAL_SOURCE_INVALID = "credential_source_invalid"
+    PAIR_INTEGRITY_INVALID = "pair_integrity_invalid"
+    TRUSTED_OPENER_REJECTED = "trusted_opener_rejected"
+
+
 class WorkflowEventPhysicalTransportCredentialMaterializationFailureClass(StrEnum):
     SEALED_LINEAGE_REJECTED = "sealed_lineage_rejected"
     CREDENTIAL_SOURCE_INVALID = "credential_source_invalid"
@@ -7715,3 +7732,611 @@ def code_owned_workflow_registry() -> WorkflowDefinitionRegistry:
         ),
     )
     return WorkflowDefinitionRegistry(definitions)
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportTargetContextArtifactOpeningAuthority:
+    """Explicit zero-authority contract for every opening record."""
+
+    route_selection_authorized: bool = False
+    route_binding_authorized: bool = False
+    endpoint_resolution_authorized: bool = False
+    protected_artifact_access_authorized: bool = False
+    credential_selection_authorized: bool = False
+    credential_assignment_binding_authorized: bool = False
+    credential_access_authorized: bool = False
+    credential_brokerage_authorized: bool = False
+    credential_resolution_authorized: bool = False
+    credential_delivery_authorized: bool = False
+    network_access_authorized: bool = False
+    readiness_probe_authorized: bool = False
+    publication_authorized: bool = False
+    delivery_authorized: bool = False
+    dispatch_authorized: bool = False
+    execution_authorized: bool = False
+    infrastructure_mutation_authorized: bool = False
+
+    def __post_init__(self) -> None:
+        if any(self.canonical_value().values()):
+            raise ValueError("target context artifact opening records cannot grant authority")
+
+    def canonical_value(self) -> dict[str, bool]:
+        return {
+            "credential_access_authorized": self.credential_access_authorized,
+            "credential_assignment_binding_authorized": (
+                self.credential_assignment_binding_authorized
+            ),
+            "credential_brokerage_authorized": self.credential_brokerage_authorized,
+            "credential_delivery_authorized": self.credential_delivery_authorized,
+            "credential_resolution_authorized": self.credential_resolution_authorized,
+            "credential_selection_authorized": self.credential_selection_authorized,
+            "delivery_authorized": self.delivery_authorized,
+            "dispatch_authorized": self.dispatch_authorized,
+            "endpoint_resolution_authorized": self.endpoint_resolution_authorized,
+            "execution_authorized": self.execution_authorized,
+            "infrastructure_mutation_authorized": self.infrastructure_mutation_authorized,
+            "network_access_authorized": self.network_access_authorized,
+            "protected_artifact_access_authorized": self.protected_artifact_access_authorized,
+            "publication_authorized": self.publication_authorized,
+            "readiness_probe_authorized": self.readiness_probe_authorized,
+            "route_binding_authorized": self.route_binding_authorized,
+            "route_selection_authorized": self.route_selection_authorized,
+        }
+
+
+def _target_context_artifact_opening_payload(instance: object) -> dict[str, object]:
+    return {
+        name: (
+            value.isoformat()
+            if isinstance(value, datetime)
+            else value.value
+            if isinstance(value, StrEnum)
+            else value.canonical_value()
+            if isinstance(
+                value,
+                (
+                    WorkflowScope,
+                    WorkflowEventPhysicalTransportTargetContextArtifactOpeningAuthority,
+                ),
+            )
+            else value
+        )
+        for name, value in (
+            (field.name, getattr(instance, field.name)) for field in fields(cast(Any, instance))
+        )
+        if name != "canonical_digest"
+    }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportTargetContextArtifactOpeningPolicy:
+    policy_id: str
+    policy_version: str
+    required_opener_contract_id: str
+    required_opener_attestor_id: str
+    capsule_schema_id: str
+    capsule_schema_version: str
+    maximum_capsule_lifetime_seconds: int
+    paired_open_required: bool
+    raw_material_return_forbidden: bool
+    network_activity_forbidden: bool
+    delivery_forbidden: bool
+    runtime_use_forbidden: bool
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.policy_id, "target context artifact opening policy id"),
+            (self.policy_version, "target context artifact opening policy version"),
+            (self.required_opener_contract_id, "target context artifact opener contract id"),
+            (self.required_opener_attestor_id, "target context artifact opener attestor id"),
+            (self.capsule_schema_id, "target context capsule schema id"),
+            (self.capsule_schema_version, "target context capsule schema version"),
+        ):
+            _require_identifier(value, name=name)
+        if (
+            self.policy_id
+            != "policy.workflow-event-physical-transport-target-context-artifact-opening"
+            or self.policy_version != "1.0"
+            or self.required_opener_contract_id
+            != "contract.workflow-protected-target-context-artifact-opener.v1"
+            or self.required_opener_attestor_id
+            != "attestor.workflow-protected-target-context-artifact-opener"
+            or self.capsule_schema_id != "schema.workflow-sealed-target-context-capsule-lineage"
+            or self.capsule_schema_version != "1.0"
+            or self.maximum_capsule_lifetime_seconds != 3
+            or self.paired_open_required is not True
+            or self.raw_material_return_forbidden is not True
+            or self.network_activity_forbidden is not True
+            or self.delivery_forbidden is not True
+            or self.runtime_use_forbidden is not True
+        ):
+            raise ValueError("target context artifact opening policy is not code-owned")
+        _require_digest(self.canonical_digest, name="target context artifact opening policy digest")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("target context artifact opening policy canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return _target_context_artifact_opening_payload(self)
+
+
+def code_owned_workflow_event_physical_transport_target_context_artifact_opening_policy() -> (
+    WorkflowEventPhysicalTransportTargetContextArtifactOpeningPolicy
+):
+    values: dict[str, object] = {
+        "policy_id": "policy.workflow-event-physical-transport-target-context-artifact-opening",
+        "policy_version": "1.0",
+        "required_opener_contract_id": (
+            "contract.workflow-protected-target-context-artifact-opener.v1"
+        ),
+        "required_opener_attestor_id": (
+            "attestor.workflow-protected-target-context-artifact-opener"
+        ),
+        "capsule_schema_id": "schema.workflow-sealed-target-context-capsule-lineage",
+        "capsule_schema_version": "1.0",
+        "maximum_capsule_lifetime_seconds": 3,
+        "paired_open_required": True,
+        "raw_material_return_forbidden": True,
+        "network_activity_forbidden": True,
+        "delivery_forbidden": True,
+        "runtime_use_forbidden": True,
+    }
+    return WorkflowEventPhysicalTransportTargetContextArtifactOpeningPolicy(
+        **cast(Any, values), canonical_digest=canonical_digest(values)
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportTargetContextAccessLeaseConsumptionClaim:
+    claim_id: str
+    authorization_lease_id: str
+    authorization_lease_digest: str
+    target_context_binding_id: str
+    target_context_binding_digest: str
+    target_context_commitment: str
+    attempt_id: str
+    opening_id: str
+    scope: WorkflowScope
+    accessor_subject_id: str
+    claimed_at: datetime
+    request_fingerprint: str
+    idempotency_digest: str
+    authority: WorkflowEventPhysicalTransportTargetContextArtifactOpeningAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.claim_id, "target context access consumption claim id"),
+            (self.authorization_lease_id, "target context access authorization lease id"),
+            (self.target_context_binding_id, "target context binding id"),
+            (self.attempt_id, "target context artifact opening attempt id"),
+            (self.opening_id, "target context artifact opening id"),
+            (self.accessor_subject_id, "target context accessor subject id"),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (self.authorization_lease_digest, "target context access lease digest"),
+            (self.target_context_binding_digest, "target context binding digest"),
+            (self.target_context_commitment, "target context commitment"),
+            (self.request_fingerprint, "target context opening request fingerprint"),
+            (self.idempotency_digest, "target context opening idempotency digest"),
+            (self.canonical_digest, "target context access consumption claim digest"),
+        ):
+            _require_digest(value, name=name)
+        if self.claimed_at.tzinfo is None or any(self.authority.canonical_value().values()):
+            raise ValueError("target context access consumption claim is invalid")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("target context access consumption claim canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return _target_context_artifact_opening_payload(self)
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttempt:
+    attempt_id: str
+    opening_id: str
+    consumption_claim_id: str
+    authorization_lease_id: str
+    authorization_lease_digest: str
+    target_context_binding_id: str
+    target_context_binding_digest: str
+    target_context_commitment: str
+    endpoint_materialization_id: str
+    endpoint_materialization_digest: str
+    endpoint_protected_artifact_id: str
+    endpoint_protected_artifact_digest: str
+    endpoint_status_attestation_id: str
+    endpoint_status_attestation_digest: str
+    credential_materialization_id: str
+    credential_materialization_digest: str
+    credential_protected_artifact_id: str
+    credential_protected_artifact_digest: str
+    credential_status_attestation_id: str
+    credential_status_attestation_digest: str
+    request_nonce_digest: str
+    opener_contract_id: str
+    opener_attestor_id: str
+    scope: WorkflowScope
+    accessor_subject_id: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    started_at: datetime
+    lease_valid_until: datetime
+    joint_usable_until: datetime
+    evidence_valid_until: datetime
+    state: WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptState
+    authority: WorkflowEventPhysicalTransportTargetContextArtifactOpeningAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        identifiers = (
+            self.attempt_id,
+            self.opening_id,
+            self.consumption_claim_id,
+            self.authorization_lease_id,
+            self.target_context_binding_id,
+            self.endpoint_materialization_id,
+            self.endpoint_protected_artifact_id,
+            self.endpoint_status_attestation_id,
+            self.credential_materialization_id,
+            self.credential_protected_artifact_id,
+            self.credential_status_attestation_id,
+            self.opener_contract_id,
+            self.opener_attestor_id,
+            self.accessor_subject_id,
+            self.policy_id,
+            self.policy_version,
+        )
+        for value in identifiers:
+            _require_identifier(value, name="target context artifact opening attempt identifier")
+        digests = (
+            self.authorization_lease_digest,
+            self.target_context_binding_digest,
+            self.target_context_commitment,
+            self.endpoint_materialization_digest,
+            self.endpoint_protected_artifact_digest,
+            self.endpoint_status_attestation_digest,
+            self.credential_materialization_digest,
+            self.credential_protected_artifact_digest,
+            self.credential_status_attestation_digest,
+            self.request_nonce_digest,
+            self.policy_digest,
+            self.canonical_digest,
+        )
+        for value in digests:
+            _require_digest(value, name="target context artifact opening attempt digest")
+        deadlines = (
+            self.lease_valid_until,
+            self.joint_usable_until,
+            self.evidence_valid_until,
+        )
+        if (
+            self.started_at.tzinfo is None
+            or any(value.tzinfo is None for value in deadlines)
+            or not self.started_at < min(deadlines)
+            or self.state
+            is not (
+                WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptState
+            ).OPENING_STARTED
+            or any(self.authority.canonical_value().values())
+        ):
+            raise ValueError("target context artifact opening attempt is invalid")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("target context artifact opening attempt canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return _target_context_artifact_opening_payload(self)
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportTargetContextArtifactOpeningInstruction:
+    opening_id: str
+    attempt_id: str
+    consumption_claim_id: str
+    authorization_lease_id: str
+    authorization_lease_digest: str
+    target_context_binding_id: str
+    target_context_binding_digest: str
+    target_context_commitment: str
+    endpoint_materialization_id: str
+    endpoint_materialization_digest: str
+    endpoint_protected_artifact_id: str
+    endpoint_protected_artifact_digest: str
+    endpoint_status_attestation_digest: str
+    credential_materialization_id: str
+    credential_materialization_digest: str
+    credential_protected_artifact_id: str
+    credential_protected_artifact_digest: str
+    credential_status_attestation_digest: str
+    scope: WorkflowScope
+    accessor_subject_id: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    opener_contract_id: str
+    opener_attestor_id: str
+    capsule_schema_id: str
+    capsule_schema_version: str
+    started_at: datetime
+    lease_valid_until: datetime
+    joint_usable_until: datetime
+    evidence_valid_until: datetime
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.opening_id,
+            self.attempt_id,
+            self.consumption_claim_id,
+            self.authorization_lease_id,
+            self.target_context_binding_id,
+            self.endpoint_materialization_id,
+            self.endpoint_protected_artifact_id,
+            self.credential_materialization_id,
+            self.credential_protected_artifact_id,
+            self.accessor_subject_id,
+            self.policy_id,
+            self.policy_version,
+            self.opener_contract_id,
+            self.opener_attestor_id,
+            self.capsule_schema_id,
+            self.capsule_schema_version,
+        ):
+            _require_identifier(
+                value, name="target context artifact opening instruction identifier"
+            )
+        for value in (
+            self.authorization_lease_digest,
+            self.target_context_binding_digest,
+            self.target_context_commitment,
+            self.endpoint_materialization_digest,
+            self.endpoint_protected_artifact_digest,
+            self.endpoint_status_attestation_digest,
+            self.credential_materialization_digest,
+            self.credential_protected_artifact_digest,
+            self.credential_status_attestation_digest,
+            self.policy_digest,
+            self.canonical_digest,
+        ):
+            _require_digest(value, name="target context artifact opening instruction digest")
+        if (
+            self.started_at.tzinfo is None
+            or any(
+                value.tzinfo is None
+                for value in (
+                    self.lease_valid_until,
+                    self.joint_usable_until,
+                    self.evidence_valid_until,
+                )
+            )
+            or not self.started_at
+            < min(self.lease_valid_until, self.joint_usable_until, self.evidence_valid_until)
+        ):
+            raise ValueError("target context artifact opening instruction is outside its window")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError(
+                "target context artifact opening instruction canonical digest mismatch"
+            )
+
+    def digest_payload(self) -> dict[str, object]:
+        return _target_context_artifact_opening_payload(self)
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportTargetContextArtifactOpeningReceipt:
+    opening_id: str
+    attempt_id: str
+    consumption_claim_id: str
+    instruction_digest: str
+    opener_contract_id: str
+    opener_id: str
+    opener_version: str
+    attested_by: str
+    accessor_subject_id: str
+    state: WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultState
+    failure_class: WorkflowEventPhysicalTransportTargetContextArtifactOpeningFailureClass | None
+    sealed_capsule_id: str | None
+    sealed_capsule_digest: str | None
+    capsule_is_bearer_capability: bool
+    capsule_schema_id: str
+    capsule_schema_version: str
+    endpoint_opened: bool
+    credential_opened: bool
+    pair_commitment_verified: bool
+    raw_endpoint_returned: bool
+    raw_credential_returned: bool
+    network_activity_performed: bool
+    delivery_performed: bool
+    runtime_use_performed: bool
+    protected_sources_closed: bool
+    cleanup_confirmed: bool
+    completed_at: datetime
+    usable_until: datetime | None
+    signing_key_id: str
+    signature_algorithm: str
+    integrity_signature: str
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.opening_id,
+            self.attempt_id,
+            self.consumption_claim_id,
+            self.opener_contract_id,
+            self.opener_id,
+            self.opener_version,
+            self.attested_by,
+            self.accessor_subject_id,
+            self.capsule_schema_id,
+            self.capsule_schema_version,
+            self.signing_key_id,
+            self.signature_algorithm,
+        ):
+            _require_identifier(value, name="target context artifact opening receipt identifier")
+        for value in (self.instruction_digest, self.integrity_signature, self.canonical_digest):
+            _require_digest(value, name="target context artifact opening receipt digest")
+        if self.completed_at.tzinfo is None or any(
+            (
+                self.raw_endpoint_returned,
+                self.raw_credential_returned,
+                self.network_activity_performed,
+                self.delivery_performed,
+                self.runtime_use_performed,
+            )
+        ):
+            raise ValueError("target context artifact opening receipt violates zero-authority")
+        if self.capsule_is_bearer_capability is not False:
+            raise ValueError("sealed target context capsule is lineage, not a bearer capability")
+        if (
+            self.state
+            is (
+                WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultState
+            ).OPENED_PROTECTED
+        ):
+            if (
+                self.failure_class is not None
+                or self.sealed_capsule_id is None
+                or self.sealed_capsule_digest is None
+                or self.usable_until is None
+                or not self.completed_at < self.usable_until
+                or not self.endpoint_opened
+                or not self.credential_opened
+                or not self.pair_commitment_verified
+                or not self.protected_sources_closed
+                or not self.cleanup_confirmed
+            ):
+                raise ValueError("successful target context artifact opening receipt is invalid")
+            _require_identifier(self.sealed_capsule_id, name="sealed target context capsule id")
+            _require_digest(self.sealed_capsule_digest, name="sealed target context capsule digest")
+        elif (
+            self.state
+            is not (
+                WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultState
+            ).OPENING_FAILED
+            or self.failure_class is None
+            or self.sealed_capsule_id is not None
+            or self.sealed_capsule_digest is not None
+            or self.usable_until is not None
+            or not self.protected_sources_closed
+            or not self.cleanup_confirmed
+        ):
+            raise ValueError("failed target context artifact opening receipt is invalid")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("target context artifact opening receipt canonical digest mismatch")
+
+    def signature_payload(self) -> dict[str, object]:
+        return {
+            name: value
+            for name, value in self.digest_payload().items()
+            if name != "integrity_signature"
+        }
+
+    def digest_payload(self) -> dict[str, object]:
+        return _target_context_artifact_opening_payload(self)
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportTargetContextArtifactOpeningResult:
+    opening_id: str
+    attempt_id: str
+    attempt_digest: str
+    consumption_claim_id: str
+    consumption_claim_digest: str
+    authorization_lease_id: str
+    authorization_lease_digest: str
+    target_context_binding_id: str
+    target_context_binding_digest: str
+    target_context_commitment: str
+    scope: WorkflowScope
+    accessor_subject_id: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    opener_id: str
+    opener_version: str
+    opening_receipt_digest: str
+    state: WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultState
+    failure_class: WorkflowEventPhysicalTransportTargetContextArtifactOpeningFailureClass | None
+    sealed_capsule_id: str | None
+    sealed_capsule_digest: str | None
+    capsule_is_bearer_capability: bool
+    capsule_schema_id: str
+    capsule_schema_version: str
+    completed_at: datetime
+    usable_until: datetime | None
+    protected_sources_closed: bool
+    cleanup_confirmed: bool
+    authority: WorkflowEventPhysicalTransportTargetContextArtifactOpeningAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.opening_id,
+            self.attempt_id,
+            self.consumption_claim_id,
+            self.authorization_lease_id,
+            self.target_context_binding_id,
+            self.accessor_subject_id,
+            self.policy_id,
+            self.policy_version,
+            self.opener_id,
+            self.opener_version,
+            self.capsule_schema_id,
+            self.capsule_schema_version,
+        ):
+            _require_identifier(value, name="target context artifact opening result identifier")
+        for value in (
+            self.attempt_digest,
+            self.consumption_claim_digest,
+            self.authorization_lease_digest,
+            self.target_context_binding_digest,
+            self.target_context_commitment,
+            self.policy_digest,
+            self.opening_receipt_digest,
+            self.canonical_digest,
+        ):
+            _require_digest(value, name="target context artifact opening result digest")
+        if (
+            self.completed_at.tzinfo is None
+            or self.capsule_is_bearer_capability is not False
+            or any(self.authority.canonical_value().values())
+        ):
+            raise ValueError("target context artifact opening result is invalid")
+        if (
+            self.state
+            is (
+                WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultState
+            ).OPENED_PROTECTED
+        ):
+            if (
+                self.failure_class is not None
+                or self.sealed_capsule_id is None
+                or self.sealed_capsule_digest is None
+                or self.usable_until is None
+                or not self.completed_at < self.usable_until
+                or not self.protected_sources_closed
+                or not self.cleanup_confirmed
+            ):
+                raise ValueError("successful target context artifact opening result is invalid")
+            _require_identifier(self.sealed_capsule_id, name="sealed target context capsule id")
+            _require_digest(self.sealed_capsule_digest, name="sealed target context capsule digest")
+        elif (
+            self.state
+            is not (
+                WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultState
+            ).OPENING_FAILED
+            or self.failure_class is None
+            or self.sealed_capsule_id is not None
+            or self.sealed_capsule_digest is not None
+            or self.usable_until is not None
+            or not self.protected_sources_closed
+            or not self.cleanup_confirmed
+        ):
+            raise ValueError("failed target context artifact opening result is invalid")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("target context artifact opening result canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return _target_context_artifact_opening_payload(self)

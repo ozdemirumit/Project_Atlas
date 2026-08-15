@@ -10,13 +10,21 @@ from atlas.modules.workflows.adapters.target_context_access_status_attestors imp
     UnavailableWorkflowProtectedCredentialStatusAttestor,
     UnavailableWorkflowProtectedEndpointStatusAttestor,
 )
+from atlas.modules.workflows.adapters.target_context_artifact_opener_synthetic import (
+    SyntheticWorkflowPhysicalTransportTargetContextArtifactOpener,
+)
+from atlas.modules.workflows.adapters.target_context_artifact_opener_unavailable import (
+    UnavailableWorkflowPhysicalTransportTargetContextArtifactOpener,
+)
 from atlas.modules.workflows.adapters.unavailable import UnavailableWorkflowPlanRepository
 
 __all__ = [
     "DenyAllWorkflowProtectedArtifactStatusSignatureVerifier",
     "InMemoryWorkflowPlanRepository",
     "SyntheticWorkflowPhysicalTransportEndpointMaterializer",
+    "SyntheticWorkflowPhysicalTransportTargetContextArtifactOpener",
     "UnavailableWorkflowPhysicalTransportEndpointMaterializer",
+    "UnavailableWorkflowPhysicalTransportTargetContextArtifactOpener",
     "UnavailableWorkflowPlanRepository",
     "UnavailableWorkflowProtectedCredentialStatusAttestor",
     "UnavailableWorkflowProtectedEndpointStatusAttestor",

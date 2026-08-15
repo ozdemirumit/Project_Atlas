@@ -1073,6 +1073,49 @@ export type WorkflowPhysicalTransportTargetContextAccessAuthorizationLeaseInvent
   durable: boolean;
 };
 
+export type WorkflowPhysicalTransportTargetContextArtifactOpeningPolicy = {
+  policy_id: "policy.workflow-event-physical-transport-target-context-artifact-opening";
+  policy_version: "1.0";
+};
+
+export type WorkflowPhysicalTransportTargetContextArtifactOpeningAuthority = {
+  endpoint_resolution_authorized: false;
+  protected_artifact_access_authorized: false;
+  route_selection_authorized: false;
+  route_binding_authorized: false;
+  credential_selection_authorized: false;
+  credential_assignment_binding_authorized: false;
+  credential_access_authorized: false;
+  credential_brokerage_authorized: false;
+  credential_resolution_authorized: false;
+  credential_delivery_authorized: false;
+  network_access_authorized: false;
+  readiness_probe_authorized: false;
+  publication_authorized: false;
+  delivery_authorized: false;
+  dispatch_authorized: false;
+  execution_authorized: false;
+  infrastructure_mutation_authorized: false;
+};
+
+export type WorkflowPhysicalTransportTargetContextArtifactOpening = {
+  opening_id: string;
+  scope: WorkflowRunPlan["scope"];
+  attempt_state: "started" | "completed";
+  result_state: "pending" | "opened_protected" | "opening_failed" | "outcome_uncertain";
+  started_at: string;
+  completed_at: string | null;
+  policy: WorkflowPhysicalTransportTargetContextArtifactOpeningPolicy;
+  authority: WorkflowPhysicalTransportTargetContextArtifactOpeningAuthority;
+  integrity_reference: string;
+};
+
+export type WorkflowPhysicalTransportTargetContextArtifactOpeningInventory = {
+  physical_transport_target_context_artifact_openings: WorkflowPhysicalTransportTargetContextArtifactOpening[];
+  server_time: string;
+  durable: boolean;
+};
+
 export type WorkflowPhysicalTransportCredentialAssignmentSnapshotAuthority = {
   endpoint_resolution_authorized: false;
   protected_artifact_access_authorized: false;
@@ -2026,6 +2069,45 @@ const physicalTransportTargetContextAccessAuthorizationLeaseFields = [
 ] as const;
 const physicalTransportTargetContextAccessAuthorizationLeaseInventoryFields = [
   "physical_transport_target_context_access_authorization_leases",
+  "server_time",
+  "durable",
+] as const;
+const physicalTransportTargetContextArtifactOpeningPolicyFields = [
+  "policy_id",
+  "policy_version",
+] as const;
+const physicalTransportTargetContextArtifactOpeningAuthorityFields = [
+  "endpoint_resolution_authorized",
+  "protected_artifact_access_authorized",
+  "route_selection_authorized",
+  "route_binding_authorized",
+  "credential_selection_authorized",
+  "credential_assignment_binding_authorized",
+  "credential_access_authorized",
+  "credential_brokerage_authorized",
+  "credential_resolution_authorized",
+  "credential_delivery_authorized",
+  "network_access_authorized",
+  "readiness_probe_authorized",
+  "publication_authorized",
+  "delivery_authorized",
+  "dispatch_authorized",
+  "execution_authorized",
+  "infrastructure_mutation_authorized",
+] as const;
+const physicalTransportTargetContextArtifactOpeningFields = [
+  "opening_id",
+  "scope",
+  "attempt_state",
+  "result_state",
+  "started_at",
+  "completed_at",
+  "policy",
+  "authority",
+  "integrity_reference",
+] as const;
+const physicalTransportTargetContextArtifactOpeningInventoryFields = [
+  "physical_transport_target_context_artifact_openings",
   "server_time",
   "durable",
 ] as const;
@@ -3638,6 +3720,73 @@ function isPhysicalTransportTargetContextAccessAuthorizationLease(
   );
 }
 
+function hasZeroPhysicalTransportTargetContextArtifactOpeningAuthority(
+  value: unknown,
+): value is WorkflowPhysicalTransportTargetContextArtifactOpeningAuthority {
+  return (
+    isObject(value) &&
+    hasExactKeys(value, physicalTransportTargetContextArtifactOpeningAuthorityFields) &&
+    physicalTransportTargetContextArtifactOpeningAuthorityFields.every(
+      (field) => value[field] === false,
+    )
+  );
+}
+
+function isTargetContextArtifactOpeningPolicy(
+  value: unknown,
+): value is WorkflowPhysicalTransportTargetContextArtifactOpeningPolicy {
+  return (
+    isObject(value) &&
+    hasExactKeys(value, physicalTransportTargetContextArtifactOpeningPolicyFields) &&
+    value.policy_id ===
+      "policy.workflow-event-physical-transport-target-context-artifact-opening" &&
+    value.policy_version === "1.0"
+  );
+}
+
+function isPhysicalTransportTargetContextArtifactOpening(
+  value: unknown,
+  scope: WorkflowScope,
+  serverTime: string,
+): value is WorkflowPhysicalTransportTargetContextArtifactOpening {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, physicalTransportTargetContextArtifactOpeningFields) ||
+    !isExactScope(value.scope) ||
+    containsCredentialMaterial(value) ||
+    !isTimezoneAwareTimestamp(value.started_at) ||
+    (value.completed_at !== null && !isTimezoneAwareTimestamp(value.completed_at))
+  ) {
+    return false;
+  }
+  const openingScope = value.scope;
+  const startedAt = Date.parse(value.started_at);
+  const completedAt = value.completed_at === null ? null : Date.parse(value.completed_at);
+  const evaluatedAt = Date.parse(serverTime);
+  const stateIsConsistent =
+    (value.attempt_state === "started" &&
+      value.result_state === "pending" &&
+      completedAt === null) ||
+    (value.attempt_state === "started" &&
+      value.result_state === "outcome_uncertain" &&
+      completedAt === null) ||
+    (value.attempt_state === "completed" &&
+      (value.result_state === "opened_protected" || value.result_state === "opening_failed") &&
+      completedAt !== null);
+  return (
+    isStableIdentifier(value.opening_id) &&
+    openingScope.organization_id === scope.organizationId &&
+    openingScope.environment_id === scope.environmentId &&
+    openingScope.site_id === scope.siteId &&
+    startedAt <= evaluatedAt &&
+    (completedAt === null || (completedAt >= startedAt && completedAt <= evaluatedAt)) &&
+    stateIsConsistent &&
+    isTargetContextArtifactOpeningPolicy(value.policy) &&
+    hasZeroPhysicalTransportTargetContextArtifactOpeningAuthority(value.authority) &&
+    isStableIdentifier(value.integrity_reference)
+  );
+}
+
 function hasZeroPhysicalTransportCredentialAssignmentSnapshotAuthority(
   value: unknown,
 ): value is WorkflowPhysicalTransportCredentialAssignmentSnapshotAuthority {
@@ -4851,6 +5000,59 @@ export async function listWorkflowPhysicalTransportTargetContextAccessAuthorizat
     leaseIds.add(lease.authorization_lease_id);
   }
   return data as WorkflowPhysicalTransportTargetContextAccessAuthorizationLeaseInventory;
+}
+
+export async function listWorkflowPhysicalTransportTargetContextArtifactOpenings(input: {
+  scope: WorkflowScope;
+}): Promise<WorkflowPhysicalTransportTargetContextArtifactOpeningInventory> {
+  const response = await apiFetch(
+    "/api/v1/workflows/physical-transport-target-context-artifact-openings",
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(
+    response,
+    "Workflow physical transport target-context artifact opening retrieval failed",
+  );
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, physicalTransportTargetContextArtifactOpeningInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    !Array.isArray(data.physical_transport_target_context_artifact_openings) ||
+    data.physical_transport_target_context_artifact_openings.length > 256 ||
+    !isTimezoneAwareTimestamp(data.server_time) ||
+    typeof data.durable !== "boolean"
+  ) {
+    throw new ApiRequestError(
+      "Workflow physical transport target-context artifact opening response was unsafe",
+      response.status,
+    );
+  }
+  const serverTime = data.server_time;
+  if (
+    !data.physical_transport_target_context_artifact_openings.every((opening) =>
+      isPhysicalTransportTargetContextArtifactOpening(opening, input.scope, serverTime),
+    )
+  ) {
+    throw new ApiRequestError(
+      "Workflow physical transport target-context artifact opening response was unsafe",
+      response.status,
+    );
+  }
+  const openingIds = new Set<string>();
+  for (const opening of data.physical_transport_target_context_artifact_openings) {
+    if (
+      !isObject(opening) ||
+      typeof opening.opening_id !== "string" ||
+      openingIds.has(opening.opening_id)
+    ) {
+      throw new ApiRequestError(
+        "Workflow physical transport target-context artifact opening response was unsafe",
+        response.status,
+      );
+    }
+    openingIds.add(opening.opening_id);
+  }
+  return data as WorkflowPhysicalTransportTargetContextArtifactOpeningInventory;
 }
 
 export async function listWorkflowPhysicalTransportCredentialAssignmentSnapshots(): Promise<WorkflowPhysicalTransportCredentialAssignmentSnapshotInventory> {

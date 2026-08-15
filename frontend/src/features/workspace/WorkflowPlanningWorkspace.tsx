@@ -36,6 +36,7 @@ import {
   listWorkflowPhysicalTransportCredentialAccessAuthorizationLeases,
   listWorkflowPhysicalTransportCredentialMaterializations,
   listWorkflowPhysicalTransportTargetContextAccessAuthorizationLeases,
+  listWorkflowPhysicalTransportTargetContextArtifactOpenings,
   listWorkflowPhysicalTransportTargetContextBindings,
   listWorkflowPhysicalTransportCredentialAssignmentSnapshots,
   listWorkflowPhysicalTransportCredentialAssignmentFreshnessAdmissions,
@@ -232,6 +233,16 @@ export default function WorkflowPlanningWorkspace({
       siteId,
     ],
     queryFn: () => listWorkflowPhysicalTransportTargetContextAccessAuthorizationLeases({ scope }),
+    retry: false,
+  });
+  const targetContextArtifactOpeningQuery = useQuery({
+    queryKey: [
+      "workflow-physical-transport-target-context-artifact-openings",
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: () => listWorkflowPhysicalTransportTargetContextArtifactOpenings({ scope }),
     retry: false,
   });
   const targetQuery = useQuery({
@@ -697,6 +708,10 @@ export default function WorkflowPlanningWorkspace({
   const targetContextAccessAuthorizationLeaseErrorStatus =
     targetContextAccessAuthorizationLeaseQuery.error instanceof ApiRequestError
       ? targetContextAccessAuthorizationLeaseQuery.error.status
+      : undefined;
+  const targetContextArtifactOpeningErrorStatus =
+    targetContextArtifactOpeningQuery.error instanceof ApiRequestError
+      ? targetContextArtifactOpeningQuery.error.status
       : undefined;
   const eventEnvelopes = eventEnvelopesForAdmission;
   const transportAdmissions = transportAdmissionsForArtifacts;
@@ -2599,6 +2614,129 @@ export default function WorkflowPlanningWorkspace({
                           brokerage false | credential resolution false | credential delivery false |
                           network access false | readiness probe false | publication false | delivery
                           false | dispatch false | execution false | infrastructure mutation false
+                        </span>
+                      </div>
+                    </div>
+                  </li>
+                ),
+              )}
+            </ol>
+          )}
+      </section>
+
+      <section
+        className="workflow-physical-route-binding-band workflow-target-context-opening-band"
+        aria-labelledby="workflow-target-context-artifact-opening-title"
+      >
+        <div className="workflow-section-heading">
+          <div>
+            <p className="eyebrow">PROTECTED OPENING EVIDENCE</p>
+            <h2 id="workflow-target-context-artifact-opening-title">
+              Target-context artifact openings
+            </h2>
+          </div>
+          <span>Read only</span>
+        </div>
+        {targetContextArtifactOpeningQuery.isLoading && (
+          <div className="workflow-empty-state" role="status">
+            <RefreshCw className="spin" size={18} />
+            <span>Loading target-context artifact opening evidence...</span>
+          </div>
+        )}
+        {targetContextArtifactOpeningQuery.isError && (
+          <div className="workflow-inline-error" role="alert">
+            <AlertTriangle aria-hidden="true" size={18} />
+            <div>
+              <strong>
+                {targetContextArtifactOpeningErrorStatus === 401
+                  ? "Your session has expired"
+                  : targetContextArtifactOpeningErrorStatus === 403
+                    ? "Target-context artifact opening permission is missing"
+                    : "Target-context artifact openings are unavailable"}
+              </strong>
+              <span>
+                {targetContextArtifactOpeningErrorStatus === 401
+                  ? "Sign in again to continue."
+                  : targetContextArtifactOpeningErrorStatus === 403
+                    ? "Your current role or scope cannot inspect target-context artifact opening evidence."
+                    : "No opening result, protected-access authority, or operational state is inferred from this failed read."}
+              </span>
+            </div>
+          </div>
+        )}
+        {targetContextArtifactOpeningQuery.isSuccess &&
+          targetContextArtifactOpeningQuery.data
+            .physical_transport_target_context_artifact_openings.length === 0 && (
+            <div className="workflow-empty-state" role="status">
+              <Database size={19} />
+              <span>No target-context artifact openings are recorded in this scope.</span>
+            </div>
+          )}
+        {targetContextArtifactOpeningQuery.isSuccess &&
+          targetContextArtifactOpeningQuery.data
+            .physical_transport_target_context_artifact_openings.length > 0 && (
+            <ol
+              className="workflow-step-preview workflow-physical-route-binding-list workflow-target-context-opening-list"
+              aria-label="Target-context artifact openings"
+            >
+              {targetContextArtifactOpeningQuery.data.physical_transport_target_context_artifact_openings.map(
+                (opening) => (
+                  <li key={opening.opening_id}>
+                    {opening.result_state === "opened_protected" ? (
+                      <CheckCircle2 size={18} />
+                    ) : (
+                      <FileClock size={18} />
+                    )}
+                    <div>
+                      <strong>
+                        <code title={opening.opening_id}>
+                          {safeHolderIdentifier(opening.opening_id)}
+                        </code>
+                        <span
+                          className={`state-badge ${
+                            opening.result_state === "opened_protected"
+                              ? "neutral"
+                              : opening.result_state === "pending"
+                                ? ""
+                                : "warning"
+                          }`}
+                        >
+                          {readableKind(opening.result_state)}
+                        </span>
+                      </strong>
+                      <div className="workflow-physical-route-binding-grid">
+                        <span>
+                          Organization {opening.scope.organization_id} | environment{" "}
+                          {opening.scope.environment_id} | site {opening.scope.site_id}
+                        </span>
+                        <span>
+                          Attempt {readableKind(opening.attempt_state)} | result{" "}
+                          {readableKind(opening.result_state)}
+                        </span>
+                        <span>Started {formatTimestamp(opening.started_at)}</span>
+                        <span>
+                          Completed{" "}
+                          {opening.completed_at === null
+                            ? "Not recorded"
+                            : formatTimestamp(opening.completed_at)}
+                        </span>
+                        <span>
+                          Policy{" "}
+                          <code title={opening.policy.policy_id}>
+                            {safeHolderIdentifier(opening.policy.policy_id)}
+                          </code>{" "}
+                          v{opening.policy.policy_version}
+                        </span>
+                        <span>
+                          Integrity reference{" "}
+                          <code title={opening.integrity_reference}>
+                            {safeHolderIdentifier(opening.integrity_reference)}
+                          </code>
+                        </span>
+                        <span className="workflow-physical-route-binding-authority workflow-target-context-opening-zero-authority">
+                          Zero authority: this evidence grants no protected artifact access,
+                          endpoint or credential disclosure, delivery, network, readiness probe,
+                          publication, dispatch, execution, or infrastructure mutation authority.
                         </span>
                       </div>
                     </div>

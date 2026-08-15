@@ -1547,6 +1547,9 @@ from atlas.modules.workflows.adapters.target_context_access_status_attestors imp
     UnavailableWorkflowProtectedCredentialStatusAttestor,
     UnavailableWorkflowProtectedEndpointStatusAttestor,
 )
+from atlas.modules.workflows.adapters.target_context_artifact_opener_unavailable import (
+    UnavailableWorkflowPhysicalTransportTargetContextArtifactOpener,
+)
 from atlas.modules.workflows.adapters.unavailable import UnavailableWorkflowPlanRepository
 from atlas.modules.workflows.application import (
     DeploymentEventTransportProfileRegistry,
@@ -1602,6 +1605,12 @@ from atlas.modules.workflows.application import (
     WorkflowTransportRouteSnapshotRepository,
     WorkflowTransportRouteSnapshotService,
 )
+from atlas.modules.workflows.application.target_context_artifact_opening_ports import (
+    WorkflowTargetContextArtifactOpeningRepository,
+)
+from atlas.modules.workflows.application.target_context_artifact_openings import (
+    WorkflowEventPhysicalTransportTargetContextArtifactOpeningService,
+)
 from atlas.modules.workflows.domain import (
     DeploymentEventTransportProfile,
     DeploymentEventTransportRoute,
@@ -1620,6 +1629,7 @@ class _WorkflowCredentialAccessAuthorizationNoStoreMiddleware(BaseHTTPMiddleware
             "/api/v1/workflows/physical-transport-credential-materializations",
             "/api/v1/workflows/physical-transport-target-context-bindings",
             ("/api/v1/workflows/physical-transport-target-context-access-authorization-leases"),
+            "/api/v1/workflows/physical-transport-target-context-artifact-openings",
         }
     )
 
@@ -1638,6 +1648,17 @@ class _WorkflowCredentialAccessAuthorizationNoStoreMiddleware(BaseHTTPMiddleware
                 }
             )
         return response
+
+
+class _UnavailableWorkflowTargetContextArtifactOpeningRepository:
+    """Fail-closed composition placeholder; it never falls back to memory state."""
+
+    @property
+    def durable(self) -> bool:
+        return False
+
+    async def get_authoritative_time(self) -> datetime:
+        raise RuntimeError("target-context artifact opening repository is unavailable")
 
 
 class _ConfiguredDeploymentEventTransportProfileRegistry:
@@ -2047,6 +2068,9 @@ def create_app(
     ) = None,
     workflow_event_physical_transport_target_context_access_authorization_lease_service: (
         WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseService | None
+    ) = None,
+    workflow_event_physical_transport_target_context_artifact_opening_service: (
+        WorkflowEventPhysicalTransportTargetContextArtifactOpeningService | None
     ) = None,
     workflow_transport_profile_snapshot_service: WorkflowTransportProfileSnapshotService
     | None = None,
@@ -6628,6 +6652,49 @@ def create_app(
         resolved_target_context_access_authorization_lease_service = (
             workflow_event_physical_transport_target_context_access_authorization_lease_service
         )
+    if workflow_event_physical_transport_target_context_artifact_opening_service is None:
+        target_context_artifact_opening_repository_methods = (
+            "get_authoritative_time",
+            "get_target_context_access_authorization_lease_by_id",
+            "get_target_context_binding_by_id",
+            "get_endpoint_materialization_result_by_id",
+            "get_credential_materialization_result_by_id",
+            "lookup_target_context_artifact_opening_replay",
+            "claim_target_context_artifact_opening",
+            "record_target_context_artifact_opening_result",
+            "list_target_context_artifact_opening_attempts",
+            "get_target_context_artifact_opening_results_by_opening_ids",
+            "list_target_context_artifact_opening_results",
+        )
+        if all(
+            callable(getattr(workflow_repository, method_name, None))
+            for method_name in target_context_artifact_opening_repository_methods
+        ):
+            target_context_artifact_opening_repository = cast(
+                WorkflowTargetContextArtifactOpeningRepository,
+                workflow_repository,
+            )
+        else:
+            target_context_artifact_opening_repository = cast(
+                WorkflowTargetContextArtifactOpeningRepository,
+                _UnavailableWorkflowTargetContextArtifactOpeningRepository(),
+            )
+        resolved_target_context_artifact_opening_service = (
+            WorkflowEventPhysicalTransportTargetContextArtifactOpeningService(
+                repository=target_context_artifact_opening_repository,
+                endpoint_status_attestor=UnavailableWorkflowProtectedEndpointStatusAttestor(),
+                credential_status_attestor=(UnavailableWorkflowProtectedCredentialStatusAttestor()),
+                status_signature_verifier=(
+                    DenyAllWorkflowProtectedArtifactStatusSignatureVerifier()
+                ),
+                opener=UnavailableWorkflowPhysicalTransportTargetContextArtifactOpener(),
+                audit_sink=resolved_audit_sink,
+            )
+        )
+    else:
+        resolved_target_context_artifact_opening_service = (
+            workflow_event_physical_transport_target_context_artifact_opening_service
+        )
     configured_transport_route_selection_heads = (
         _deployment_event_transport_route_selection_heads(
             resolved_settings,
@@ -7039,6 +7106,12 @@ def create_app(
         )
         app.state.workflow_target_context_access_authorization_lease_repository = (
             resolved_target_context_access_authorization_lease_service.repository
+        )
+        app.state.workflow_target_context_artifact_opening_service = (
+            resolved_target_context_artifact_opening_service
+        )
+        app.state.workflow_target_context_artifact_opening_repository = (
+            resolved_target_context_artifact_opening_service.repository
         )
         app.state.workflow_transport_route_selection_heads = (
             configured_transport_route_selection_heads
