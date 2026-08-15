@@ -1550,6 +1550,7 @@ from atlas.modules.workflows.application import (
     WorkflowEventByteArtifactService,
     WorkflowEventLogicalChannelBindingRepository,
     WorkflowEventLogicalChannelBindingService,
+    WorkflowEventPhysicalTransportCredentialAssignmentBindingService,
     WorkflowEventPhysicalTransportEndpointMaterializationRepository,
     WorkflowEventPhysicalTransportEndpointMaterializationService,
     WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseRepository,
@@ -1570,6 +1571,7 @@ from atlas.modules.workflows.application import (
     WorkflowPlanRepository,
     WorkflowRunMaterializationRepository,
     WorkflowRunMaterializationService,
+    WorkflowTransportCredentialAssignmentBindingRepository,
     WorkflowTransportCredentialAssignmentSnapshotRepository,
     WorkflowTransportCredentialAssignmentSnapshotService,
     WorkflowTransportProfileSnapshotRepository,
@@ -1968,6 +1970,9 @@ def create_app(
     ) = None,
     workflow_event_physical_transport_route_binding_service: (
         WorkflowEventPhysicalTransportRouteBindingService | None
+    ) = None,
+    workflow_event_physical_transport_credential_assignment_binding_service: (
+        WorkflowEventPhysicalTransportCredentialAssignmentBindingService | None
     ) = None,
     workflow_event_physical_transport_route_freshness_admission_service: (
         WorkflowEventPhysicalTransportRouteFreshnessAdmissionService | None
@@ -6235,6 +6240,40 @@ def create_app(
         resolved_workflow_event_physical_transport_route_binding_service = (
             workflow_event_physical_transport_route_binding_service
         )
+    if workflow_event_physical_transport_credential_assignment_binding_service is None:
+        physical_transport_credential_assignment_binding_repository_methods = (
+            "get_physical_transport_route_binding_by_id",
+            "get_transport_route_snapshot_by_id",
+            "get_credential_assignment_snapshot_by_id",
+            "get_credential_assignment_binding",
+            "list_credential_assignment_bindings",
+            "get_credential_assignment_binding_request",
+            "bind_credential_assignment",
+        )
+        if not all(
+            callable(getattr(workflow_repository, method_name, None))
+            for method_name in physical_transport_credential_assignment_binding_repository_methods
+        ):
+            raise ValueError(
+                "workflow planning repository does not implement physical transport "
+                "credential-assignment bindings; inject "
+                "workflow_event_physical_transport_credential_assignment_binding_service "
+                "explicitly"
+            )
+        physical_transport_credential_assignment_binding_repository = cast(
+            WorkflowTransportCredentialAssignmentBindingRepository,
+            workflow_repository,
+        )
+        resolved_workflow_event_physical_transport_credential_assignment_binding_service = (
+            WorkflowEventPhysicalTransportCredentialAssignmentBindingService(
+                binding_repository=(physical_transport_credential_assignment_binding_repository),
+                audit_sink=resolved_audit_sink,
+            )
+        )
+    else:
+        resolved_workflow_event_physical_transport_credential_assignment_binding_service = (
+            workflow_event_physical_transport_credential_assignment_binding_service
+        )
     if workflow_event_physical_transport_route_freshness_admission_service is None:
         physical_transport_route_freshness_repository_methods = (
             "get_physical_transport_route_binding_by_id",
@@ -6695,6 +6734,20 @@ def create_app(
         app.state.workflow_event_physical_transport_route_binding_repository = (
             resolved_workflow_event_physical_transport_route_binding_service.repository
         )
+        credential_assignment_binding_service = (
+            resolved_workflow_event_physical_transport_credential_assignment_binding_service
+        )
+        for state_name, state_value in (
+            (
+                "workflow_event_physical_transport_credential_assignment_binding_service",
+                credential_assignment_binding_service,
+            ),
+            (
+                "workflow_event_physical_transport_credential_assignment_binding_repository",
+                credential_assignment_binding_service.repository,
+            ),
+        ):
+            setattr(app.state, state_name, state_value)
         app.state.workflow_event_physical_transport_route_freshness_admission_service = (
             resolved_workflow_event_physical_transport_route_freshness_admission_service
         )

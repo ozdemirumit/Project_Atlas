@@ -151,6 +151,10 @@ class WorkflowEventPhysicalTransportRouteBindingState(StrEnum):
     BOUND = "bound"
 
 
+class WorkflowEventPhysicalTransportCredentialAssignmentBindingState(StrEnum):
+    BOUND = "bound"
+
+
 class WorkflowEventPhysicalTransportRouteFreshnessAdmissionState(StrEnum):
     ADMITTED_CURRENT = "admitted_current"
 
@@ -3572,6 +3576,291 @@ class WorkflowEventPhysicalTransportRouteBinding:
 
     @property
     def grants_execution_authority(self) -> bool:
+        return False
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportCredentialAssignmentBindingPolicy:
+    """Code-owned compatibility rules for immutable credential-assignment binding."""
+
+    policy_id: str
+    policy_version: str
+    exact_route_snapshot_required: bool
+    exact_credential_requirement_required: bool
+    exact_authentication_mechanism_required: bool
+    exact_principal_class_required: bool
+    required_privilege_class: str
+    positive_credential_generation_required: bool
+    positive_rotation_epoch_required: bool
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        _require_identifier(
+            self.policy_id,
+            name="physical transport credential assignment binding policy_id",
+        )
+        _require_identifier(
+            self.policy_version,
+            name="physical transport credential assignment binding policy_version",
+        )
+        required_flags = (
+            self.exact_route_snapshot_required,
+            self.exact_credential_requirement_required,
+            self.exact_authentication_mechanism_required,
+            self.exact_principal_class_required,
+            self.positive_credential_generation_required,
+            self.positive_rotation_epoch_required,
+        )
+        if not all(value is True for value in required_flags):
+            raise ValueError("physical transport credential assignment binding policy is unsafe")
+        if self.required_privilege_class != "read-only":
+            raise ValueError(
+                "physical transport credential assignment binding policy must require read-only"
+            )
+        _require_digest(
+            self.canonical_digest,
+            name="physical transport credential assignment binding policy digest",
+        )
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError(
+                "physical transport credential assignment binding policy digest mismatch"
+            )
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "exact_authentication_mechanism_required": (
+                self.exact_authentication_mechanism_required
+            ),
+            "exact_credential_requirement_required": (self.exact_credential_requirement_required),
+            "exact_principal_class_required": self.exact_principal_class_required,
+            "exact_route_snapshot_required": self.exact_route_snapshot_required,
+            "policy_id": self.policy_id,
+            "policy_version": self.policy_version,
+            "positive_credential_generation_required": (
+                self.positive_credential_generation_required
+            ),
+            "positive_rotation_epoch_required": self.positive_rotation_epoch_required,
+            "required_privilege_class": self.required_privilege_class,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+
+def code_owned_workflow_event_physical_transport_credential_assignment_binding_policy() -> (
+    WorkflowEventPhysicalTransportCredentialAssignmentBindingPolicy
+):
+    values: dict[str, object] = {
+        "policy_id": ("policy.workflow-event-physical-transport-credential-assignment-binding"),
+        "policy_version": "1.0",
+        "exact_route_snapshot_required": True,
+        "exact_credential_requirement_required": True,
+        "exact_authentication_mechanism_required": True,
+        "exact_principal_class_required": True,
+        "required_privilege_class": "read-only",
+        "positive_credential_generation_required": True,
+        "positive_rotation_epoch_required": True,
+    }
+    return WorkflowEventPhysicalTransportCredentialAssignmentBindingPolicy(
+        **cast(Any, values), canonical_digest=canonical_digest(values)
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportCredentialAssignmentBindingAuthority:
+    endpoint_resolution_authorized: bool = False
+    protected_artifact_access_authorized: bool = False
+    route_selection_authorized: bool = False
+    route_binding_authorized: bool = False
+    credential_selection_authorized: bool = False
+    credential_assignment_binding_authorized: bool = False
+    credential_access_authorized: bool = False
+    credential_brokerage_authorized: bool = False
+    credential_resolution_authorized: bool = False
+    credential_delivery_authorized: bool = False
+    network_access_authorized: bool = False
+    readiness_probe_authorized: bool = False
+    publication_authorized: bool = False
+    delivery_authorized: bool = False
+    dispatch_authorized: bool = False
+    execution_authorized: bool = False
+    infrastructure_mutation_authorized: bool = False
+
+    def __post_init__(self) -> None:
+        if any(self.canonical_value().values()):
+            raise ValueError(
+                "physical transport credential assignment bindings cannot grant authority"
+            )
+
+    def canonical_value(self) -> dict[str, bool]:
+        return {
+            "credential_access_authorized": self.credential_access_authorized,
+            "credential_assignment_binding_authorized": (
+                self.credential_assignment_binding_authorized
+            ),
+            "credential_brokerage_authorized": self.credential_brokerage_authorized,
+            "credential_delivery_authorized": self.credential_delivery_authorized,
+            "credential_resolution_authorized": self.credential_resolution_authorized,
+            "credential_selection_authorized": self.credential_selection_authorized,
+            "delivery_authorized": self.delivery_authorized,
+            "dispatch_authorized": self.dispatch_authorized,
+            "endpoint_resolution_authorized": self.endpoint_resolution_authorized,
+            "execution_authorized": self.execution_authorized,
+            "infrastructure_mutation_authorized": self.infrastructure_mutation_authorized,
+            "network_access_authorized": self.network_access_authorized,
+            "protected_artifact_access_authorized": (self.protected_artifact_access_authorized),
+            "publication_authorized": self.publication_authorized,
+            "readiness_probe_authorized": self.readiness_probe_authorized,
+            "route_binding_authorized": self.route_binding_authorized,
+            "route_selection_authorized": self.route_selection_authorized,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportCredentialAssignmentBinding:
+    """Immutable historical selection without credential or network authority."""
+
+    binding_id: str
+    physical_transport_route_binding_id: str
+    physical_transport_route_binding_digest: str
+    transport_route_snapshot_id: str
+    transport_route_snapshot_digest: str
+    credential_assignment_snapshot_id: str
+    credential_assignment_snapshot_digest: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    scope: WorkflowScope
+    binder_subject_id: str
+    bound_at: datetime
+    state: WorkflowEventPhysicalTransportCredentialAssignmentBindingState
+    authority: WorkflowEventPhysicalTransportCredentialAssignmentBindingAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.binding_id, "credential assignment binding id"),
+            (self.physical_transport_route_binding_id, "physical route binding id"),
+            (self.transport_route_snapshot_id, "transport route snapshot id"),
+            (self.credential_assignment_snapshot_id, "credential assignment snapshot id"),
+            (self.policy_id, "credential assignment binding policy id"),
+            (self.policy_version, "credential assignment binding policy version"),
+            (self.binder_subject_id, "credential assignment binder subject id"),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (
+                self.physical_transport_route_binding_digest,
+                "physical route binding digest",
+            ),
+            (self.transport_route_snapshot_digest, "transport route snapshot digest"),
+            (
+                self.credential_assignment_snapshot_digest,
+                "credential assignment snapshot digest",
+            ),
+            (self.policy_digest, "credential assignment binding policy digest"),
+            (self.canonical_digest, "credential assignment binding canonical digest"),
+        ):
+            _require_digest(value, name=name)
+        if self.bound_at.tzinfo is None:
+            raise ValueError("credential assignment binding time must be timezone-aware")
+        if self.state is not WorkflowEventPhysicalTransportCredentialAssignmentBindingState.BOUND:
+            raise ValueError("credential assignment bindings must remain bound")
+        if any(self.authority.canonical_value().values()):
+            raise ValueError("credential assignment bindings cannot grant authority")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("credential assignment binding canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "authority": self.authority.canonical_value(),
+            "binder_subject_id": self.binder_subject_id,
+            "binding_id": self.binding_id,
+            "bound_at": self.bound_at.isoformat(),
+            "credential_assignment_snapshot_digest": (self.credential_assignment_snapshot_digest),
+            "credential_assignment_snapshot_id": self.credential_assignment_snapshot_id,
+            "physical_transport_route_binding_digest": (
+                self.physical_transport_route_binding_digest
+            ),
+            "physical_transport_route_binding_id": self.physical_transport_route_binding_id,
+            "policy_digest": self.policy_digest,
+            "policy_id": self.policy_id,
+            "policy_version": self.policy_version,
+            "scope": self.scope.canonical_value(),
+            "state": self.state.value,
+            "transport_route_snapshot_digest": self.transport_route_snapshot_digest,
+            "transport_route_snapshot_id": self.transport_route_snapshot_id,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+    @property
+    def grants_endpoint_resolution_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_protected_artifact_access_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_route_selection_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_route_binding_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_credential_selection_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_credential_assignment_binding_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_credential_access_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_credential_brokerage_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_credential_resolution_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_credential_delivery_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_network_access_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_readiness_probe_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_publication_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_delivery_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_dispatch_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_execution_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_infrastructure_mutation_authority(self) -> bool:
         return False
 
 

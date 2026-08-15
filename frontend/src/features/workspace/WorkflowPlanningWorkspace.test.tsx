@@ -22,6 +22,7 @@ import {
   type WorkflowExecutionRun,
   type WorkflowOrchestrationLease,
   type WorkflowPhysicalTransportCredentialAssignmentSnapshot,
+  type WorkflowPhysicalTransportCredentialAssignmentBinding,
   type WorkflowPhysicalTransportRouteBinding,
   type WorkflowPhysicalTransportEndpointMaterialization,
   type WorkflowPhysicalTransportRouteFreshnessAdmission,
@@ -650,6 +651,17 @@ const physicalTransportRouteBinding: WorkflowPhysicalTransportRouteBinding = {
   integrity_reference: "integrity-ref.workflow-physical-route-binding.1234567890abcdef",
 };
 
+const physicalTransportCredentialAssignmentBinding: WorkflowPhysicalTransportCredentialAssignmentBinding = {
+  binding_id: "workflow-physical-transport-credential-assignment-binding.1234567890abcdef",
+  physical_transport_route_binding_id: physicalTransportRouteBinding.binding_id,
+  credential_assignment_snapshot_id:
+    "workflow-credential-assignment-snapshot.1234567890abcdef",
+  state: "bound",
+  bound_at: "2026-08-14T10:08:00Z",
+  integrity_reference:
+    "integrity-ref.workflow-physical-transport-credential-assignment-binding.1234567890abcdef",
+};
+
 const physicalTransportRouteFreshnessAdmission: WorkflowPhysicalTransportRouteFreshnessAdmission = {
   freshness_admission_id: "workflow-physical-route-freshness-admission.1234567890abcdef",
   physical_transport_route_binding_id: physicalTransportRouteBinding.binding_id,
@@ -1057,6 +1069,28 @@ function physicalTransportRouteBindingResponse(bindings: unknown[], status = 200
   );
 }
 
+function physicalTransportCredentialAssignmentBindingResponse(
+  bindings: unknown[],
+  status = 200,
+): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: {
+            physical_transport_credential_assignment_bindings: bindings,
+            durable: false,
+          },
+          meta: {
+            correlation_id:
+              "correlation.workflow.physical-transport-credential-assignment-binding",
+            generated_at: "2026-08-14T10:08:00Z",
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function physicalTransportRouteFreshnessAdmissionResponse(
   admissions: unknown[],
   status = 200,
@@ -1181,6 +1215,7 @@ function mockReadResponses(input: {
   transportProfileSnapshots?: unknown[];
   transportRouteSnapshots?: unknown[];
   physicalTransportRouteBindings?: unknown[];
+  physicalTransportCredentialAssignmentBindings?: unknown[];
   physicalTransportRouteFreshnessAdmissions?: unknown[];
   endpointResolutionAuthorizationLeases?: unknown[];
   endpointResolutionAuthorizationLeaseServerTime?: string;
@@ -1194,6 +1229,7 @@ function mockReadResponses(input: {
   pendingTransportProfileResponse?: Promise<Response>;
   pendingTransportRouteSnapshotResponse?: Promise<Response>;
   pendingPhysicalTransportRouteBindingResponse?: Promise<Response>;
+  pendingPhysicalTransportCredentialAssignmentBindingResponse?: Promise<Response>;
   pendingPhysicalTransportRouteFreshnessAdmissionResponse?: Promise<Response>;
   pendingEndpointResolutionAuthorizationLeaseResponse?: Promise<Response>;
   pendingEndpointMaterializationResponse?: Promise<Response>;
@@ -1218,6 +1254,8 @@ function mockReadResponses(input: {
   transportRouteSnapshotStatuses?: number[];
   physicalTransportRouteBindingStatus?: number;
   physicalTransportRouteBindingStatuses?: number[];
+  physicalTransportCredentialAssignmentBindingStatus?: number;
+  physicalTransportCredentialAssignmentBindingStatuses?: number[];
   physicalTransportRouteFreshnessAdmissionStatus?: number;
   physicalTransportRouteFreshnessAdmissionStatuses?: number[];
   endpointResolutionAuthorizationLeaseStatus?: number;
@@ -1235,6 +1273,7 @@ function mockReadResponses(input: {
   let transportProfileReadCount = 0;
   let transportRouteSnapshotReadCount = 0;
   let physicalTransportRouteBindingReadCount = 0;
+  let physicalTransportCredentialAssignmentBindingReadCount = 0;
   let physicalTransportRouteFreshnessAdmissionReadCount = 0;
   let endpointResolutionAuthorizationLeaseReadCount = 0;
   let endpointMaterializationReadCount = 0;
@@ -1316,6 +1355,28 @@ function mockReadResponses(input: {
       return Promise.resolve(
         physicalTransportRouteFreshnessAdmissionResponse(
           input.physicalTransportRouteFreshnessAdmissions ?? [],
+          status,
+        ),
+      );
+    }
+    if (
+      url.endsWith(
+        "/api/v1/workflows/physical-transport-credential-assignment-bindings",
+      )
+    ) {
+      if (input.pendingPhysicalTransportCredentialAssignmentBindingResponse) {
+        return input.pendingPhysicalTransportCredentialAssignmentBindingResponse;
+      }
+      const status =
+        input.physicalTransportCredentialAssignmentBindingStatuses?.[
+          Math.min(
+            physicalTransportCredentialAssignmentBindingReadCount++,
+            input.physicalTransportCredentialAssignmentBindingStatuses.length - 1,
+          )
+        ] ?? input.physicalTransportCredentialAssignmentBindingStatus ?? 200;
+      return Promise.resolve(
+        physicalTransportCredentialAssignmentBindingResponse(
+          input.physicalTransportCredentialAssignmentBindings ?? [],
           status,
         ),
       );
@@ -2197,6 +2258,229 @@ describe("WorkflowPlanningWorkspace", () => {
     expect(
       within(section).queryByRole("list", { name: "Physical transport route bindings" }),
     ).toBeNull();
+  });
+
+  it("renders minimized credential-assignment bindings directly after physical route bindings", async () => {
+    mockReadResponses({
+      physicalTransportCredentialAssignmentBindings: [
+        physicalTransportCredentialAssignmentBinding,
+      ],
+    });
+    renderWorkspace();
+
+    const routeSection = (await screen.findByRole("heading", {
+      name: "Physical transport route bindings",
+    })).closest("section") as HTMLElement;
+    const section = (await screen.findByRole("heading", {
+      name: "Physical transport credential-assignment bindings",
+    })).closest("section") as HTMLElement;
+    const records = await within(section).findByRole("list", {
+      name: "Physical transport credential-assignment bindings",
+    });
+    expect(routeSection.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(
+      0,
+    );
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) =>
+        (request instanceof Request ? request.url : request.toString()).endsWith(
+          "/api/v1/workflows/physical-transport-credential-assignment-bindings",
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      within(section).getByTitle(physicalTransportCredentialAssignmentBinding.binding_id),
+    ).toBeVisible();
+    expect(
+      within(section).getByTitle(
+        physicalTransportCredentialAssignmentBinding.physical_transport_route_binding_id,
+      ),
+    ).toBeVisible();
+    expect(
+      within(section).getByTitle(
+        physicalTransportCredentialAssignmentBinding.credential_assignment_snapshot_id,
+      ),
+    ).toBeVisible();
+    expect(records).toHaveTextContent("bound");
+    expect(records).toHaveTextContent("Bound");
+    expect(
+      within(section).getByTitle(
+        physicalTransportCredentialAssignmentBinding.integrity_reference,
+      ),
+    ).toBeVisible();
+    expect(
+      within(section).queryByRole("button", {
+        name: /create|select|bind|rebind|reveal|refresh|authorize|resolve|copy|download|network|probe|publish|deliver|dispatch|execute/i,
+      }),
+    ).toBeNull();
+    expect(section).not.toHaveTextContent(
+      /digest-private|profile-private|requirement-private|target-private|broker-private|endpoint-private|artifact-private|secret-private|MFA|second login|authorized browser session/i,
+    );
+  });
+
+  it("renders an empty credential-assignment binding inventory as a healthy read-only state", async () => {
+    mockReadResponses({ physicalTransportCredentialAssignmentBindings: [] });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Physical transport credential-assignment bindings",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText(
+        "No physical transport credential-assignment bindings are recorded in this scope.",
+      ),
+    ).toBeVisible();
+    expect(within(section).queryByRole("alert")).toBeNull();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("shows loading while credential-assignment bindings are pending", async () => {
+    mockReadResponses({
+      pendingPhysicalTransportCredentialAssignmentBindingResponse: new Promise<Response>(
+        () => undefined,
+      ),
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Physical transport credential-assignment bindings",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText(
+        "Loading physical transport credential-assignment bindings...",
+      ),
+    ).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("retries an unavailable credential-assignment binding read without authority controls", async () => {
+    mockReadResponses({
+      physicalTransportCredentialAssignmentBindings: [
+        physicalTransportCredentialAssignmentBinding,
+      ],
+      physicalTransportCredentialAssignmentBindingStatuses: [500, 200],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Physical transport credential-assignment bindings",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText(
+        "Physical transport credential-assignment bindings are unavailable",
+      ),
+    ).toBeVisible();
+    expect(section).toHaveTextContent(
+      "No binding or operational state is inferred from this failed read.",
+    );
+    fireEvent.click(
+      within(section).getByRole("button", {
+        name: "Retry physical transport credential-assignment binding read",
+      }),
+    );
+    expect(
+      await within(section).findByTitle(physicalTransportCredentialAssignmentBinding.binding_id),
+    ).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it.each([
+    [401, "Your session has expired", "Sign in again to continue."],
+    [
+      403,
+      "Physical transport credential-assignment binding permission is missing",
+      "current role or scope cannot inspect credential-assignment binding evidence",
+    ],
+  ])(
+    "handles credential-assignment binding status %s with the normal browser session",
+    async (status, title, detail) => {
+      mockReadResponses({ physicalTransportCredentialAssignmentBindingStatus: status });
+      renderWorkspace();
+
+      const section = (await screen.findByRole("heading", {
+        name: "Physical transport credential-assignment bindings",
+      })).closest("section") as HTMLElement;
+      expect(await within(section).findByText(title)).toBeVisible();
+      expect(within(section).getByText(new RegExp(detail, "i"))).toBeVisible();
+      expect(within(section).queryByRole("button")).toBeNull();
+      if (status !== 401) expect(section).not.toHaveTextContent("Sign in again");
+      expect(section).not.toHaveTextContent(/MFA|second login|authorized browser session/i);
+    },
+  );
+
+  it.each([
+    ["a digest", { ...physicalTransportCredentialAssignmentBinding, canonical_digest: "digest-private" }],
+    ["a credential profile", { ...physicalTransportCredentialAssignmentBinding, credential_profile_id: "profile-private" }],
+    ["a credential requirement", { ...physicalTransportCredentialAssignmentBinding, credential_requirement_id: "requirement-private" }],
+    ["a target", { ...physicalTransportCredentialAssignmentBinding, target_commitment: "target-private" }],
+    ["a broker", { ...physicalTransportCredentialAssignmentBinding, broker_policy_id: "broker-private" }],
+    ["an endpoint", { ...physicalTransportCredentialAssignmentBinding, endpoint: "endpoint-private" }],
+    ["an artifact", { ...physicalTransportCredentialAssignmentBinding, protected_artifact: "artifact-private" }],
+    ["secret content", { ...physicalTransportCredentialAssignmentBinding, secret: "secret-private" }],
+    ["an unknown state", { ...physicalTransportCredentialAssignmentBinding, state: "pending" }],
+    ["an invalid timestamp", { ...physicalTransportCredentialAssignmentBinding, bound_at: "not-a-time" }],
+    ["an invalid binding ID", { ...physicalTransportCredentialAssignmentBinding, binding_id: "unsafe binding" }],
+  ])(
+    "fails closed when credential-assignment binding evidence contains %s",
+    async (_case, unsafeBinding) => {
+      mockReadResponses({
+        physicalTransportCredentialAssignmentBindings: [unsafeBinding],
+      });
+      renderWorkspace();
+
+      const section = (await screen.findByRole("heading", {
+        name: "Physical transport credential-assignment bindings",
+      })).closest("section") as HTMLElement;
+      expect(
+        await within(section).findByText(
+          "Physical transport credential-assignment bindings are unavailable",
+        ),
+      ).toBeVisible();
+      expect(
+        within(section).queryByRole("list", {
+          name: "Physical transport credential-assignment bindings",
+        }),
+      ).toBeNull();
+      expect(section).not.toHaveTextContent(
+        /digest-private|profile-private|requirement-private|target-private|broker-private|endpoint-private|artifact-private|secret-private|pending|unsafe binding/i,
+      );
+    },
+  );
+
+  it("fails closed for duplicate credential-assignment binding IDs or exact source pairs", async () => {
+    for (const duplicate of [
+      {
+        ...physicalTransportCredentialAssignmentBinding,
+        credential_assignment_snapshot_id:
+          "workflow-credential-assignment-snapshot.abcdef1234567890",
+      },
+      {
+        ...physicalTransportCredentialAssignmentBinding,
+        binding_id:
+          "workflow-physical-transport-credential-assignment-binding.abcdef1234567890",
+      },
+    ]) {
+      mockReadResponses({
+        physicalTransportCredentialAssignmentBindings: [
+          physicalTransportCredentialAssignmentBinding,
+          duplicate,
+        ],
+      });
+      const view = renderWorkspace();
+      const section = (await screen.findByRole("heading", {
+        name: "Physical transport credential-assignment bindings",
+      })).closest("section") as HTMLElement;
+      expect(
+        await within(section).findByText(
+          "Physical transport credential-assignment bindings are unavailable",
+        ),
+      ).toBeVisible();
+      expect(
+        within(section).queryByRole("list", {
+          name: "Physical transport credential-assignment bindings",
+        }),
+      ).toBeNull();
+      view.unmount();
+    }
   });
 
   it("loads read-only physical route freshness admissions without private route details or mutation controls", async () => {

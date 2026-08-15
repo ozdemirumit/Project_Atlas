@@ -339,6 +339,21 @@ generation is the current registry head; an inactive or revoked newer head preve
 revision from being treated as active. Production startup validates secret-free assignment
 configuration and synchronizes it into durable storage, while absent configuration fails closed.
 
+Workflow credential selection is represented by a separate immutable physical-transport
+credential-assignment binding. The binding joins one exact workflow physical-route binding, its
+exact route snapshot and one exact credential-assignment snapshot. It revalidates canonical
+integrity, scope, route lineage, credential-requirement compatibility, authentication mechanism,
+principal class, least privilege and zero source authority without consulting or opening mutable
+secret state. Different credential generations may be bound to the same route binding as
+append-only history; the exact route-binding/assignment-snapshot pair is unique.
+
+The credential-assignment binding is historical evidence, not a currentness decision or bearer
+capability. It contains no secret, retrievable secret reference, endpoint or protected-artifact
+handle and grants no credential, network, readiness, publication, delivery, dispatch, execution
+or mutation authority. A later independent freshness admission must compare one exact binding
+with the authoritative assignment head, expiry and revocation state before credential-access
+authorization can be considered.
+
 ### 10.2 Publication State
 
 Outbox records track:

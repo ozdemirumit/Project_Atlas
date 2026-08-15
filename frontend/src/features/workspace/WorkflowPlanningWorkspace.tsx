@@ -38,6 +38,7 @@ import {
   listWorkflowEventLogicalChannelBindings,
   listWorkflowEventTransportAdmissions,
   listWorkflowPlans,
+  listWorkflowPhysicalTransportCredentialAssignmentBindings,
   listWorkflowPhysicalTransportRouteBindings,
   listWorkflowPhysicalTransportRouteFreshnessAdmissions,
   listWorkflowRunAttempts,
@@ -129,6 +130,16 @@ export default function WorkflowPlanningWorkspace({
       siteId,
     ],
     queryFn: () => listWorkflowPhysicalTransportRouteBindings({ scope }),
+    retry: false,
+  });
+  const physicalTransportCredentialAssignmentBindingQuery = useQuery({
+    queryKey: [
+      "workflow-physical-transport-credential-assignment-bindings",
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: listWorkflowPhysicalTransportCredentialAssignmentBindings,
     retry: false,
   });
   const physicalTransportRouteFreshnessAdmissionQuery = useQuery({
@@ -588,6 +599,10 @@ export default function WorkflowPlanningWorkspace({
   const physicalTransportRouteBindingErrorStatus =
     physicalTransportRouteBindingQuery.error instanceof ApiRequestError
       ? physicalTransportRouteBindingQuery.error.status
+      : undefined;
+  const physicalTransportCredentialAssignmentBindingErrorStatus =
+    physicalTransportCredentialAssignmentBindingQuery.error instanceof ApiRequestError
+      ? physicalTransportCredentialAssignmentBindingQuery.error.status
       : undefined;
   const physicalTransportRouteFreshnessAdmissionErrorStatus =
     physicalTransportRouteFreshnessAdmissionQuery.error instanceof ApiRequestError
@@ -1201,6 +1216,114 @@ export default function WorkflowPlanningWorkspace({
             credential, network, readiness, publication, delivery, dispatch, or execution authority.
           </span>
         </div>
+      </section>
+
+      <section
+        className="workflow-physical-route-binding-band"
+        aria-labelledby="workflow-physical-transport-credential-assignment-binding-title"
+      >
+        <div className="workflow-section-heading">
+          <div>
+            <p className="eyebrow">IMMUTABLE CREDENTIAL-ASSIGNMENT BINDING EVIDENCE</p>
+            <h2 id="workflow-physical-transport-credential-assignment-binding-title">
+              Physical transport credential-assignment bindings
+            </h2>
+          </div>
+          <span>Read only</span>
+        </div>
+        {physicalTransportCredentialAssignmentBindingQuery.isLoading && (
+          <div className="workflow-empty-state" role="status">
+            <RefreshCw className="spin" size={18} />
+            <span>Loading physical transport credential-assignment bindings...</span>
+          </div>
+        )}
+        {physicalTransportCredentialAssignmentBindingQuery.isError && (
+          <div className="inline-error" role="alert">
+            <div>
+              <strong>
+                {physicalTransportCredentialAssignmentBindingErrorStatus === 401
+                  ? "Your session has expired"
+                  : physicalTransportCredentialAssignmentBindingErrorStatus === 403
+                    ? "Physical transport credential-assignment binding permission is missing"
+                    : "Physical transport credential-assignment bindings are unavailable"}
+              </strong>
+              <span>
+                {physicalTransportCredentialAssignmentBindingErrorStatus === 401
+                  ? "Sign in again to continue."
+                  : physicalTransportCredentialAssignmentBindingErrorStatus === 403
+                    ? "Your current role or scope cannot inspect credential-assignment binding evidence."
+                    : "No binding or operational state is inferred from this failed read."}
+              </span>
+            </div>
+            {physicalTransportCredentialAssignmentBindingErrorStatus !== 401 &&
+              physicalTransportCredentialAssignmentBindingErrorStatus !== 403 && (
+                <button
+                  className="secondary-action"
+                  type="button"
+                  aria-label="Retry physical transport credential-assignment binding read"
+                  onClick={() =>
+                    void physicalTransportCredentialAssignmentBindingQuery.refetch()
+                  }
+                >
+                  <RefreshCw size={16} />
+                  Retry
+                </button>
+              )}
+          </div>
+        )}
+        {physicalTransportCredentialAssignmentBindingQuery.isSuccess &&
+          physicalTransportCredentialAssignmentBindingQuery.data
+            .physical_transport_credential_assignment_bindings.length === 0 && (
+            <div className="workflow-empty-state" role="status">
+              <Link2 size={19} /> No physical transport credential-assignment bindings are recorded
+              in this scope.
+            </div>
+          )}
+        {physicalTransportCredentialAssignmentBindingQuery.isSuccess &&
+          physicalTransportCredentialAssignmentBindingQuery.data
+            .physical_transport_credential_assignment_bindings.length > 0 && (
+            <ol
+              className="workflow-step-preview workflow-physical-route-binding-list"
+              aria-label="Physical transport credential-assignment bindings"
+            >
+              {physicalTransportCredentialAssignmentBindingQuery.data.physical_transport_credential_assignment_bindings.map(
+                (binding) => (
+                  <li key={binding.binding_id}>
+                    <Link2 size={18} />
+                    <div>
+                      <strong>
+                        <code title={binding.binding_id}>
+                          {safeHolderIdentifier(binding.binding_id)}
+                        </code>
+                        <span className="state-badge neutral">{binding.state}</span>
+                      </strong>
+                      <div className="workflow-physical-route-binding-grid">
+                        <span>
+                          Route binding{" "}
+                          <code title={binding.physical_transport_route_binding_id}>
+                            {safeHolderIdentifier(binding.physical_transport_route_binding_id)}
+                          </code>
+                        </span>
+                        <span>
+                          Credential-assignment snapshot{" "}
+                          <code title={binding.credential_assignment_snapshot_id}>
+                            {safeHolderIdentifier(binding.credential_assignment_snapshot_id)}
+                          </code>
+                        </span>
+                        <span>Bound {formatTimestamp(binding.bound_at)}</span>
+                        <span>
+                          Integrity reference{" "}
+                          <code title={binding.integrity_reference}>
+                            {safeHolderIdentifier(binding.integrity_reference)}
+                          </code>
+                        </span>
+                      </div>
+                    </div>
+                  </li>
+                ),
+              )}
+            </ol>
+          )}
       </section>
 
       <section
