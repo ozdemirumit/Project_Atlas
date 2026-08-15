@@ -4,14 +4,84 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-207 |
-| Title | Atomic single-use workflow credential-access lease consumption and protected credential materialization |
-| Status | Review |
-| Branch | `agent/workflow-credential-materialization` |
-| Pull Request | [#220](https://github.com/ozdemirumit/Project_Atlas/pull/220) |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-153, ADR-154, ADR-155, ADR-156, ADR-157 |
+| Task ID | ATLAS-IMP-208 |
+| Title | Immutable workflow protected transport target-context binding without artifact access |
+| Status | Local validation complete; delivery in progress |
+| Branch | `agent/workflow-target-context-binding` |
+| Pull Request | Not opened |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-149, ADR-152, ADR-154, ADR-157, ADR-158 |
 | Last Updated | 2026-08-15 |
-| Next Action | Complete exact-head PR CI, SHA-locked merge and independent main CI |
+| Next Action | Open the exact-head PR, pass CI, merge with SHA lock and verify independent main CI |
+
+### ATLAS-IMP-208 Scope Rationale
+
+- IMP-204 and IMP-207 independently produce short-lived protected endpoint and credential
+  artifacts, but no committed evidence yet proves that the two outcomes belong to the same exact
+  physical route and credential-assignment lineage.
+- The next smallest boundary must prevent cross-route, cross-scope, stale-generation and confused-
+  deputy pairing without opening either artifact in ordinary application code.
+- Protected-artifact access, credential delivery, network establishment, readiness, publication,
+  dispatch and execution remain separate later authorization boundaries.
+
+### ATLAS-IMP-208 Acceptance Criteria
+
+- Only the exact dedicated target-context binder workload and audience may request creation using
+  endpoint-result ID/digest, credential-result ID/digest, code-owned policy and idempotency. The
+  caller cannot supply route, assignment, endpoint, credential, artifact, target, runtime or
+  operational fields.
+- One PostgreSQL transaction locks and validates both complete append-only materialization chains,
+  the shared physical route binding and route snapshot, credential-assignment binding and snapshot,
+  idempotency evidence and any prior pair binding in fixed order.
+- The credential-assignment binding must reference the exact physical route binding and route
+  snapshot proven by the endpoint chain. Both outcomes must be successful, cleanup-confirmed,
+  non-revoked, canonical and inside their overlap window at post-lock database time. A versioned,
+  code-owned target-context commitment must bind scope, route, destination, endpoint-set,
+  routing-contract, assignment and both materialization results without relying on the older opaque
+  assignment target commitment.
+- Binding plus idempotency commit atomically after required precommit audit. The exact endpoint/
+  credential result sources are independently unique, immutable and append-only; exact historical
+  replay is stable, while changed replay, competing identity and alternate pairing fail closed.
+- The binding records only opaque lineage, exact binder, policy, `bound_at` and derived
+  `joint_usable_until`. It is historical evidence, not a bearer capability or future validity
+  promise, and all 17 authority declarations are exactly false.
+- Human API/UI reads are minimized and read-only through the existing username/password session
+  with no MFA, second login or authorized-browser prompt. No artifact ID/digest, endpoint, route
+  coordinate, credential detail, secret locator, source/policy digest or operational control leaks.
+- Full local suites, real PostgreSQL concurrency/migration CI, live browser inspection, exact-head
+  PR CI, SHA-locked merge and independent main CI must pass.
+
+### ATLAS-IMP-208 Local Validation Evidence
+
+- Backend Ruff formatting and lint passed across source, tests and migrations; strict MyPy passed
+  across `1271` source files; Alembic reports the single head `20260815_0131`.
+- The complete backend suite passed `2189` tests with `17` expected environment skips in a
+  repository-local writable temp boundary. The complete frontend suite passed `681` tests across
+  `95` files; ESLint, TypeScript and the production Vite build also passed.
+- Focused domain, service, memory/unavailable adapter, authorization and API coverage passed.
+  PostgreSQL coverage additionally defines atomic success/replay, competing-pair concurrency,
+  precommit-audit rollback, database-time expiry and append-only enforcement; its one live case is
+  skipped locally because `ATLAS_TEST_POSTGRES_DSN` is supplied by CI.
+- Three independent implementation reviews closed the principal risks: the versioned target-
+  context commitment does not reuse the older opaque assignment commitment; the complete endpoint
+  and credential chains are locked and revalidated twice; exact workload authentication and
+  normal-session default-deny human reads remain separate; and external conflicts are non-oracle.
+- Live validation at `http://127.0.0.1:5265/#/workspace/workflows` against backend port `8015`
+  used the normal `atlas-demo` / `local-demo` username/password login. The Target context bindings
+  region rendered as an empty, read-only inventory with zero operation controls and no protected
+  artifact, endpoint, credential or digest fields. No MFA, second-login, authorized-browser prompt,
+  browser warning or console error appeared.
+- CI now performs the latest `0130 -> head` migration round trip and runs endpoint, credential and
+  target-context materialization/binding PostgreSQL integration tests against the service database.
+
+### ATLAS-IMP-207 Delivery Evidence
+
+- PR [#220](https://github.com/ozdemirumit/Project_Atlas/pull/220) was SHA-locked at
+  `6b7d873db69dfee49e31577a88274892f2417aec` and squash-merged as
+  `af5a0644e41833f502a165935ef98d9baaa55e46`.
+- Exact-head PR CI run `31873371173` completed successfully for backend and frontend, including
+  migration round-trip and real PostgreSQL credential-materialization tests.
+- The merge commit independently passed `main` CI run `31873973593`; local `main` was
+  fast-forwarded to the verified merge commit before IMP-208 branched.
 
 ### ATLAS-IMP-207 Scope Rationale
 

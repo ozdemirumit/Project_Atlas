@@ -23,6 +23,7 @@ import {
   type WorkflowOrchestrationLease,
   type WorkflowPhysicalTransportCredentialAccessAuthorizationLease,
   type WorkflowPhysicalTransportCredentialMaterialization,
+  type WorkflowPhysicalTransportTargetContextBinding,
   type WorkflowPhysicalTransportCredentialAssignmentSnapshot,
   type WorkflowPhysicalTransportCredentialAssignmentBinding,
   type WorkflowPhysicalTransportCredentialAssignmentFreshnessAdmission,
@@ -884,6 +885,41 @@ const credentialMaterialization: WorkflowPhysicalTransportCredentialMaterializat
   integrity_reference: "integrity.workflow-credential-materialization.1234567890abcdef",
 };
 
+const targetContextBindingAuthority = {
+  endpoint_resolution_authorized: false,
+  protected_artifact_access_authorized: false,
+  route_selection_authorized: false,
+  route_binding_authorized: false,
+  credential_selection_authorized: false,
+  credential_assignment_binding_authorized: false,
+  credential_access_authorized: false,
+  credential_brokerage_authorized: false,
+  credential_resolution_authorized: false,
+  credential_delivery_authorized: false,
+  network_access_authorized: false,
+  readiness_probe_authorized: false,
+  publication_authorized: false,
+  delivery_authorized: false,
+  dispatch_authorized: false,
+  execution_authorized: false,
+  infrastructure_mutation_authorized: false,
+} as const;
+
+const targetContextBinding: WorkflowPhysicalTransportTargetContextBinding = {
+  binding_id: "workflow-target-context-binding.1234567890abcdef",
+  endpoint_materialization_id: endpointMaterialization.materialization_id,
+  credential_materialization_id: credentialMaterialization.materialization_id,
+  state: "bound",
+  effective_state: "active",
+  scope: { ...plan.scope },
+  binder_subject_id: "workload.workflow-target-context-binder",
+  bound_at: "2026-08-14T10:08:09Z",
+  joint_usable_until: "2026-08-14T10:09:00Z",
+  policy_reference: "policy.workflow-event-physical-transport-target-context-binding:1.0",
+  target_context_schema_reference: "schema.workflow-physical-transport-target-context:1.0",
+  authority: targetContextBindingAuthority,
+};
+
 const credentialAssignmentSnapshot: WorkflowPhysicalTransportCredentialAssignmentSnapshot = {
   snapshot_id: "workflow-credential-assignment-snapshot.1234567890abcdef",
   assignment_id: "deployment-credential-assignment.1234567890abcdef",
@@ -1356,6 +1392,29 @@ function credentialMaterializationResponse(
   );
 }
 
+function targetContextBindingResponse(
+  bindings: unknown[],
+  status = 200,
+  serverTime = "2026-08-14T10:08:20Z",
+): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: {
+            physical_transport_target_context_bindings: bindings,
+            server_time: serverTime,
+            durable: false,
+          },
+          meta: {
+            correlation_id: "correlation.workflow.target-context-binding",
+            generated_at: serverTime,
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function credentialAssignmentSnapshotResponse(
   snapshots: unknown[],
   status = 200,
@@ -1424,6 +1483,8 @@ function mockReadResponses(input: {
   endpointMaterializationServerTime?: string;
   credentialMaterializations?: unknown[];
   credentialMaterializationServerTime?: string;
+  targetContextBindings?: unknown[];
+  targetContextBindingServerTime?: string;
   credentialAssignmentSnapshots?: unknown[];
   transportCompatibilityAdmissions?: unknown[];
   pendingTransportAdmissionResponse?: Promise<Response>;
@@ -1439,6 +1500,7 @@ function mockReadResponses(input: {
   pendingEndpointResolutionAuthorizationLeaseResponse?: Promise<Response>;
   pendingEndpointMaterializationResponse?: Promise<Response>;
   pendingCredentialMaterializationResponse?: Promise<Response>;
+  pendingTargetContextBindingResponse?: Promise<Response>;
   pendingCredentialAssignmentSnapshotResponse?: Promise<Response>;
   pendingTransportCompatibilityAdmissionResponse?: Promise<Response>;
   leaseStatus?: number;
@@ -1474,6 +1536,8 @@ function mockReadResponses(input: {
   endpointMaterializationStatuses?: number[];
   credentialMaterializationStatus?: number;
   credentialMaterializationStatuses?: number[];
+  targetContextBindingStatus?: number;
+  targetContextBindingStatuses?: number[];
   credentialAssignmentSnapshotStatus?: number;
   credentialAssignmentSnapshotStatuses?: number[];
   transportCompatibilityAdmissionStatus?: number;
@@ -1492,10 +1556,30 @@ function mockReadResponses(input: {
   let endpointResolutionAuthorizationLeaseReadCount = 0;
   let endpointMaterializationReadCount = 0;
   let credentialMaterializationReadCount = 0;
+  let targetContextBindingReadCount = 0;
   let credentialAssignmentSnapshotReadCount = 0;
   let transportCompatibilityAdmissionReadCount = 0;
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (url.endsWith("/api/v1/workflows/physical-transport-target-context-bindings")) {
+      if (input.pendingTargetContextBindingResponse) {
+        return input.pendingTargetContextBindingResponse;
+      }
+      const status =
+        input.targetContextBindingStatuses?.[
+          Math.min(
+            targetContextBindingReadCount++,
+            input.targetContextBindingStatuses.length - 1,
+          )
+        ] ?? input.targetContextBindingStatus ?? 200;
+      return Promise.resolve(
+        targetContextBindingResponse(
+          input.targetContextBindings ?? [],
+          status,
+          input.targetContextBindingServerTime,
+        ),
+      );
+    }
     if (url.endsWith("/api/v1/workflows/physical-transport-credential-materializations")) {
       if (input.pendingCredentialMaterializationResponse) {
         return input.pendingCredentialMaterializationResponse;
@@ -4477,6 +4561,193 @@ describe("WorkflowPlanningWorkspace", () => {
     expect(
       within(section).queryByRole("list", { name: "Credential materialization outcomes" }),
     ).toBeNull();
+  });
+
+  it("renders active and expired target context bindings without operational controls", async () => {
+    const expiredBinding: WorkflowPhysicalTransportTargetContextBinding = {
+      ...targetContextBinding,
+      binding_id: "workflow-target-context-binding.abcdef1234567890",
+      endpoint_materialization_id: "workflow-endpoint-materialization.abcdef1234567890",
+      credential_materialization_id: "workflow-credential-materialization.abcdef1234567890",
+      effective_state: "expired",
+      bound_at: "2026-08-14T10:07:00Z",
+      joint_usable_until: "2026-08-14T10:08:00Z",
+    };
+    mockReadResponses({
+      targetContextBindings: [targetContextBinding, expiredBinding],
+      targetContextBindingServerTime: "2026-08-14T10:08:20Z",
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Target context bindings",
+    })).closest("section") as HTMLElement;
+    const records = await within(section).findByRole("list", {
+      name: "Target context bindings",
+    });
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) =>
+        (request instanceof Request ? request.url : request.toString()).endsWith(
+          "/api/v1/workflows/physical-transport-target-context-bindings",
+        ),
+      ),
+    ).toBe(true);
+    expect(within(section).getByTitle(targetContextBinding.binding_id)).toBeVisible();
+    expect(
+      within(section).getByTitle(targetContextBinding.endpoint_materialization_id),
+    ).toBeVisible();
+    expect(
+      within(section).getByTitle(targetContextBinding.credential_materialization_id),
+    ).toBeVisible();
+    expect(records).toHaveTextContent("Same target verified");
+    expect(records).toHaveTextContent("Binding expired");
+    expect(records).toHaveTextContent(
+      /endpoint resolution false.*protected artifact access false.*route selection false.*route binding false.*credential selection false.*credential assignment binding false.*credential access false.*credential brokerage false.*credential resolution false.*credential delivery false.*network access false.*readiness probe false.*publication false.*delivery false.*dispatch false.*execution false.*infrastructure mutation false/i,
+    );
+    expect(
+      within(section).queryByRole("button", {
+        name: /bind|access|retry|reveal|copy|download|connect|publish|dispatch|execute/i,
+      }),
+    ).toBeNull();
+    expect(section).not.toHaveTextContent(
+      /artifact[-_ ]?(?:id|digest)|target commitment|canonical digest|source digest|policy digest|hostname|https?:\/\/|\bIP\b|\bport\b|credential detail|secret|provider detail|broker detail|broker\.internal/i,
+    );
+    expect(section).not.toHaveTextContent(/\bMFA\b|second login|authorized browser session/i);
+  });
+
+  it("renders an empty target context binding inventory as a healthy read-only state", async () => {
+    mockReadResponses({ targetContextBindings: [] });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Target context bindings",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("No target context bindings are recorded in this scope."),
+    ).toBeVisible();
+    expect(within(section).queryByRole("alert")).toBeNull();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("shows target context binding loading without an operation control", async () => {
+    mockReadResponses({
+      pendingTargetContextBindingResponse: new Promise<Response>(() => undefined),
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Target context bindings",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Loading target context binding evidence..."),
+    ).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it.each([
+    [401, "Your session has expired", "Sign in again to continue."],
+    [
+      403,
+      "Target context binding evidence permission is missing",
+      "current role or scope cannot inspect target context binding evidence",
+    ],
+    [
+      500,
+      "Target context binding evidence is unavailable",
+      "No target relationship or operational state is inferred",
+    ],
+  ])(
+    "handles target context binding read status %s in the normal browser session",
+    async (status, title, detail) => {
+      mockReadResponses({ targetContextBindingStatus: status });
+      renderWorkspace();
+
+      const section = (await screen.findByRole("heading", {
+        name: "Target context bindings",
+      })).closest("section") as HTMLElement;
+      expect(await within(section).findByText(title)).toBeVisible();
+      expect(within(section).getByText(new RegExp(detail, "i"))).toBeVisible();
+      expect(within(section).queryByRole("button")).toBeNull();
+      if (status !== 401) expect(section).not.toHaveTextContent("Sign in again");
+      expect(section).not.toHaveTextContent(/MFA|second login|authorized browser session/i);
+    },
+  );
+
+  it.each([
+    ["an artifact identifier", { ...targetContextBinding, artifact_id: "protected.artifact" }],
+    [
+      "a target commitment",
+      { ...targetContextBinding, target_context_commitment: "a".repeat(64) },
+    ],
+    ["an endpoint coordinate", { ...targetContextBinding, hostname: "broker.internal" }],
+    ["credential detail", { ...targetContextBinding, credential: "hidden-secret" }],
+    [
+      "authority",
+      {
+        ...targetContextBinding,
+        authority: { ...targetContextBinding.authority, network_access_authorized: true },
+      },
+    ],
+    [
+      "an extra authority field",
+      {
+        ...targetContextBinding,
+        authority: { ...targetContextBinding.authority, bind_authorized: false },
+      },
+    ],
+  ])("fails closed when a target context binding contains %s", async (_case, unsafe) => {
+    mockReadResponses({ targetContextBindings: [unsafe] });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Target context bindings",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Target context binding evidence is unavailable"),
+    ).toBeVisible();
+    expect(
+      within(section).queryByRole("list", { name: "Target context bindings" }),
+    ).toBeNull();
+    expect(section).not.toHaveTextContent(/protected\.artifact|broker\.internal|hidden-secret/i);
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("rejects the old internal target context binding shape", async () => {
+    const obsoleteResponse = new Response(
+      JSON.stringify({
+        data: {
+          target_context_bindings: [
+            {
+              ...targetContextBinding,
+              target_context_commitment: "a".repeat(64),
+              canonical_digest: "b".repeat(64),
+            },
+          ],
+          server_time: "2026-08-14T10:08:20Z",
+          durable: true,
+        },
+        meta: {
+          correlation_id: "correlation.workflow.target-context-binding",
+          generated_at: "2026-08-14T10:08:20Z",
+        },
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+    mockReadResponses({
+      pendingTargetContextBindingResponse: Promise.resolve(obsoleteResponse),
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Target context bindings",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Target context binding evidence is unavailable"),
+    ).toBeVisible();
+    expect(
+      within(section).queryByRole("list", { name: "Target context bindings" }),
+    ).toBeNull();
+    expect(section).not.toHaveTextContent(/target context commitment|canonical digest/i);
   });
 
   it("creates and presents a planned-only workflow without requesting another login", async () => {

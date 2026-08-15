@@ -11,6 +11,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
     LargeBinary,
     String,
@@ -7869,6 +7870,258 @@ class WorkflowEventPhysicalTransportEndpointMaterializationResultModel(Base):
     delivery_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
     dispatch_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
     execution_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class WorkflowEventPhysicalTransportTargetContextBindingModel(Base):
+    __tablename__ = "workflow_event_transport_target_context_bindings"
+    __table_args__ = (
+        UniqueConstraint(
+            "endpoint_materialization_id",
+            name="uq_wf_tctx_bind_endpoint",
+        ),
+        UniqueConstraint(
+            "credential_materialization_id",
+            name="uq_wf_tctx_bind_credential",
+        ),
+        UniqueConstraint(
+            "endpoint_materialization_id",
+            "credential_materialization_id",
+            name="uq_wf_tctx_bind_pair",
+        ),
+        UniqueConstraint("canonical_digest", name="uq_wf_tctx_bind_digest"),
+        CheckConstraint("state = 'bound'", name="ck_wf_tctx_bind_state"),
+        CheckConstraint(
+            "bound_at < joint_usable_until",
+            name="ck_wf_tctx_bind_window",
+        ),
+        CheckConstraint(
+            "NOT endpoint_resolution_authority_granted "
+            "AND NOT protected_artifact_access_authority_granted "
+            "AND NOT route_selection_authority_granted "
+            "AND NOT route_binding_authority_granted "
+            "AND NOT credential_selection_authority_granted "
+            "AND NOT credential_assignment_binding_authority_granted "
+            "AND NOT credential_access_authority_granted "
+            "AND NOT credential_brokerage_authority_granted "
+            "AND NOT credential_resolution_authority_granted "
+            "AND NOT credential_delivery_authority_granted "
+            "AND NOT network_access_authority_granted "
+            "AND NOT readiness_probe_authority_granted "
+            "AND NOT publication_authority_granted "
+            "AND NOT delivery_authority_granted "
+            "AND NOT dispatch_authority_granted "
+            "AND NOT execution_authority_granted "
+            "AND NOT infrastructure_mutation_authority_granted",
+            name="ck_wf_tctx_bind_zero_auth",
+        ),
+        Index("ix_wf_tctx_bind_route", "physical_transport_route_binding_id"),
+        Index("ix_wf_tctx_bind_snapshot", "transport_route_snapshot_id"),
+        Index("ix_wf_tctx_bind_endpoint", "endpoint_materialization_id"),
+        Index(
+            "ix_wf_tctx_bind_cred_binding",
+            "physical_transport_credential_assignment_binding_id",
+        ),
+        Index("ix_wf_tctx_bind_cred_snapshot", "credential_assignment_snapshot_id"),
+        Index("ix_wf_tctx_bind_cred_result", "credential_materialization_id"),
+        Index("ix_wf_tctx_bind_policy", "policy_digest"),
+        Index(
+            "ix_wf_tctx_bind_scope",
+            "organization_id",
+            "environment_id",
+            "site_id",
+        ),
+        Index("ix_wf_tctx_bind_binder", "binder_subject_id"),
+        Index("ix_wf_tctx_bind_joint_until", "joint_usable_until"),
+    )
+
+    binding_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    physical_transport_route_binding_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "workflow_event_physical_transport_route_bindings.binding_id",
+            name="fk_wf_tctx_bind_route_binding",
+        ),
+        nullable=False,
+    )
+    physical_transport_route_binding_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    transport_route_snapshot_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "event_transport_route_snapshots.snapshot_id",
+            name="fk_wf_tctx_bind_route_snapshot",
+        ),
+        nullable=False,
+    )
+    transport_route_snapshot_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    endpoint_materialization_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "workflow_event_endpoint_materialization_results.materialization_id",
+            name="fk_wf_tctx_bind_endpoint_result",
+        ),
+        nullable=False,
+    )
+    endpoint_materialization_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    physical_transport_credential_assignment_binding_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "workflow_event_physical_transport_credential_bindings.binding_id",
+            name="fk_wf_tctx_bind_cred_binding",
+        ),
+        nullable=False,
+    )
+    physical_transport_credential_assignment_binding_digest: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    credential_assignment_snapshot_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "event_transport_credential_assignment_snapshots.snapshot_id",
+            name="fk_wf_tctx_bind_cred_snapshot",
+        ),
+        nullable=False,
+    )
+    credential_assignment_snapshot_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    credential_materialization_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "workflow_event_credential_materialization_results.materialization_id",
+            name="fk_wf_tctx_bind_cred_result",
+        ),
+        nullable=False,
+    )
+    credential_materialization_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    resolver_subject_id: Mapped[str] = mapped_column(String(240), nullable=False)
+    accessor_subject_id: Mapped[str] = mapped_column(String(240), nullable=False)
+    target_context_schema_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    target_context_schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_context_commitment: Mapped[str] = mapped_column(String(64), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    binder_subject_id: Mapped[str] = mapped_column(String(240), nullable=False)
+    bound_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    joint_usable_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    policy_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    endpoint_resolution_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    protected_artifact_access_authority_granted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False
+    )
+    route_selection_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    route_binding_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_selection_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_assignment_binding_authority_granted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False
+    )
+    credential_access_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_brokerage_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_resolution_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_delivery_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    network_access_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    readiness_probe_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    publication_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    delivery_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    dispatch_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    execution_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    infrastructure_mutation_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class WorkflowEventPhysicalTransportTargetContextBindingClaimModel(Base):
+    __tablename__ = "workflow_event_transport_target_context_binding_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "idempotency_scope_id",
+            "idempotency_key",
+            name="uq_wf_tctx_claim_scope_idem",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "environment_id",
+            "site_id",
+            "binder_subject_id",
+            "idempotency_key",
+            name="uq_wf_tctx_claim_binder_idem",
+        ),
+        UniqueConstraint("binding_id", name="uq_wf_tctx_claim_binding"),
+        UniqueConstraint("canonical_digest", name="uq_wf_tctx_claim_digest"),
+        Index("ix_wf_tctx_claim_route", "physical_transport_route_binding_id"),
+        Index("ix_wf_tctx_claim_snapshot", "transport_route_snapshot_id"),
+        Index("ix_wf_tctx_claim_endpoint", "endpoint_materialization_id"),
+        Index(
+            "ix_wf_tctx_claim_cred_binding",
+            "physical_transport_credential_assignment_binding_id",
+        ),
+        Index("ix_wf_tctx_claim_cred_snapshot", "credential_assignment_snapshot_id"),
+        Index("ix_wf_tctx_claim_cred_result", "credential_materialization_id"),
+        Index("ix_wf_tctx_claim_policy", "policy_digest"),
+        Index("ix_wf_tctx_claim_created", "created_at"),
+    )
+
+    claim_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    idempotency_scope_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    result_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    binding_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "workflow_event_transport_target_context_bindings.binding_id",
+            name="fk_wf_tctx_claim_binding",
+        ),
+        nullable=False,
+    )
+    physical_transport_route_binding_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "workflow_event_physical_transport_route_bindings.binding_id",
+            name="fk_wf_tctx_claim_route_binding",
+        ),
+        nullable=False,
+    )
+    transport_route_snapshot_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "event_transport_route_snapshots.snapshot_id",
+            name="fk_wf_tctx_claim_route_snapshot",
+        ),
+        nullable=False,
+    )
+    endpoint_materialization_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "workflow_event_endpoint_materialization_results.materialization_id",
+            name="fk_wf_tctx_claim_endpoint_result",
+        ),
+        nullable=False,
+    )
+    physical_transport_credential_assignment_binding_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "workflow_event_physical_transport_credential_bindings.binding_id",
+            name="fk_wf_tctx_claim_cred_binding",
+        ),
+        nullable=False,
+    )
+    credential_assignment_snapshot_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "event_transport_credential_assignment_snapshots.snapshot_id",
+            name="fk_wf_tctx_claim_cred_snapshot",
+        ),
+        nullable=False,
+    )
+    credential_materialization_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "workflow_event_credential_materialization_results.materialization_id",
+            name="fk_wf_tctx_claim_cred_result",
+        ),
+        nullable=False,
+    )
+    target_context_schema_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    target_context_schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    binder_subject_id: Mapped[str] = mapped_column(String(240), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 

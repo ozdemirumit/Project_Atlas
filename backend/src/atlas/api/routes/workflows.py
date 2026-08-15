@@ -19,6 +19,7 @@ from atlas.api.security import (
     authorize_workflow_physical_transport_endpoint_resolution_authorization_lease_read,
     authorize_workflow_physical_transport_route_binding_read,
     authorize_workflow_physical_transport_route_freshness_admission_read,
+    authorize_workflow_physical_transport_target_context_binding_read,
     authorize_workflow_plan_cancel,
     authorize_workflow_plan_create,
     authorize_workflow_plan_read,
@@ -33,6 +34,7 @@ from atlas.api.security import (
     workflow_physical_transport_endpoint_resolver_subject,
     workflow_physical_transport_route_binder_subject,
     workflow_physical_transport_route_freshness_admitter_subject,
+    workflow_physical_transport_target_context_binder_subject,
     workflow_transport_compatibility_admitter_subject,
     workflow_transport_credential_assignment_registry_subject,
     workflow_transport_profile_registry_subject,
@@ -56,6 +58,7 @@ from atlas.api.workflow_schemas import (
     CreateWorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseInput,
     CreateWorkflowEventPhysicalTransportRouteBindingInput,
     CreateWorkflowEventPhysicalTransportRouteFreshnessAdmissionInput,
+    CreateWorkflowEventPhysicalTransportTargetContextBindingInput,
     CreateWorkflowEventTransportCompatibilityAdmissionInput,
     CreateWorkflowPlanInput,
     EventPhysicalTransportCredentialAssignmentSnapshotData,
@@ -135,6 +138,10 @@ from atlas.api.workflow_schemas import (
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionInventoryData,
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionInventoryResponse,
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionResponse,
+    WorkflowEventPhysicalTransportTargetContextBindingData,
+    WorkflowEventPhysicalTransportTargetContextBindingInventoryData,
+    WorkflowEventPhysicalTransportTargetContextBindingInventoryResponse,
+    WorkflowEventPhysicalTransportTargetContextBindingResponse,
     WorkflowEventTransportAdmissionData,
     WorkflowEventTransportAdmissionInventoryData,
     WorkflowEventTransportAdmissionInventoryResponse,
@@ -177,6 +184,7 @@ from atlas.modules.workflows.application import (
     WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_RESOLVER_AUDIENCE,
     WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_BINDER_AUDIENCE,
     WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMITTER_AUDIENCE,
+    WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_BINDER_AUDIENCE,
     WORKFLOW_TRANSPORT_COMPATIBILITY_ADMITTER_AUDIENCE,
     WORKFLOW_TRANSPORT_CREDENTIAL_ASSIGNMENT_REGISTRY_AUDIENCE,
     WORKFLOW_TRANSPORT_PROFILE_REGISTRY_AUDIENCE,
@@ -207,6 +215,8 @@ from atlas.modules.workflows.application import (
     WorkflowEventPhysicalTransportRouteBindingService,
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionError,
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionService,
+    WorkflowEventPhysicalTransportTargetContextBindingError,
+    WorkflowEventPhysicalTransportTargetContextBindingService,
     WorkflowEventTransportCompatibilityAdmissionService,
     WorkflowOrchestrationLeaseError,
     WorkflowOrchestrationLeaseRepository,
@@ -221,6 +231,7 @@ from atlas.modules.workflows.application import (
     WorkflowPhysicalTransportEndpointResolverContext,
     WorkflowPhysicalTransportRouteBinderContext,
     WorkflowPhysicalTransportRouteFreshnessAdmitterContext,
+    WorkflowPhysicalTransportTargetContextBinderContext,
     WorkflowPlanningError,
     WorkflowPlanningService,
     WorkflowRunMaterializationError,
@@ -950,6 +961,33 @@ def _raise_physical_transport_credential_materialization(
         title="Workflow credential materialization unavailable",
         detail="The credential materialization request cannot be completed.",
         retryable=False,
+    ) from error
+
+
+def _raise_physical_transport_target_context_binding(
+    error: WorkflowEventPhysicalTransportTargetContextBindingError,
+) -> NoReturn:
+    if error.code.endswith("_invalid") or error.code.endswith("_required"):
+        status = 422
+        code = "workflow_physical_transport_target_context_binding_request_invalid"
+        title = "Workflow target-context binding request invalid"
+        detail = "The target-context binding request is invalid."
+    elif any(marker in error.code for marker in ("repository", "persistence", "audit_unavailable")):
+        status = 503
+        code = "workflow_physical_transport_target_context_binding_service_unavailable"
+        title = "Workflow target-context binding service unavailable"
+        detail = "Target-context binding is temporarily unavailable."
+    else:
+        status = 409
+        code = "workflow_physical_transport_target_context_binding_unavailable"
+        title = "Workflow target-context binding unavailable"
+        detail = "The current evidence could not support a target-context binding."
+    raise AtlasError(
+        status=status,
+        code=code,
+        title=title,
+        detail=detail,
+        retryable=status == 503,
     ) from error
 
 
@@ -5013,6 +5051,123 @@ async def create_workflow_physical_transport_credential_materialization(
             claim=claim,
             attempt=attempt,
             result=result,
+        ),
+        meta=_meta(request),
+    )
+
+
+@router.get(
+    "/physical-transport-target-context-bindings",
+    response_model=WorkflowEventPhysicalTransportTargetContextBindingInventoryResponse,
+)
+async def list_workflow_physical_transport_target_context_bindings(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_workflow_physical_transport_target_context_binding_read),
+    ],
+) -> WorkflowEventPhysicalTransportTargetContextBindingInventoryResponse:
+    del decision
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    service: WorkflowEventPhysicalTransportTargetContextBindingService = (
+        request.app.state.workflow_target_context_binding_service
+    )
+    try:
+        bindings = await service.repository.list_target_context_bindings(
+            scope=scope,
+            limit=256,
+        )
+        if any(binding.scope != scope for binding in bindings):
+            raise WorkflowEventPhysicalTransportTargetContextBindingError(
+                "workflow_target_context_binding_repository_scope_violation",
+                "Stored target-context binding metadata escaped its query scope.",
+            )
+    except WorkflowEventPhysicalTransportTargetContextBindingError as error:
+        _raise_physical_transport_target_context_binding(error)
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_physical_transport_target_context_binding_service_unavailable",
+            title="Workflow target-context binding service unavailable",
+            detail="Target-context binding metadata is temporarily unavailable.",
+            retryable=True,
+        ) from error
+    server_time = datetime.now(UTC)
+    _no_store(response)
+    return WorkflowEventPhysicalTransportTargetContextBindingInventoryResponse(
+        data=WorkflowEventPhysicalTransportTargetContextBindingInventoryData(
+            physical_transport_target_context_bindings=[
+                WorkflowEventPhysicalTransportTargetContextBindingData.from_domain(
+                    binding,
+                    evaluated_at=server_time,
+                )
+                for binding in sorted(bindings, key=lambda value: value.binding_id)
+            ],
+            server_time=server_time,
+            durable=service.durable,
+        ),
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    "/physical-transport-target-context-bindings",
+    response_model=WorkflowEventPhysicalTransportTargetContextBindingResponse,
+    status_code=201,
+)
+async def create_workflow_physical_transport_target_context_binding(
+    payload: CreateWorkflowEventPhysicalTransportTargetContextBindingInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[
+        AuthenticatedSubject,
+        Depends(workflow_physical_transport_target_context_binder_subject),
+    ],
+) -> WorkflowEventPhysicalTransportTargetContextBindingResponse:
+    service: WorkflowEventPhysicalTransportTargetContextBindingService = (
+        request.app.state.workflow_target_context_binding_service
+    )
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    try:
+        binding = await service.bind(
+            endpoint_materialization_id=payload.endpoint_materialization_id,
+            endpoint_materialization_digest=payload.endpoint_materialization_digest,
+            credential_materialization_id=payload.credential_materialization_id,
+            credential_materialization_digest=payload.credential_materialization_digest,
+            policy_id=payload.policy_id,
+            policy_version=payload.policy_version,
+            policy_digest=service.policy.canonical_digest,
+            idempotency_key=payload.idempotency_key,
+            context=WorkflowPhysicalTransportTargetContextBinderContext(
+                subject_id=subject.subject_id,
+                actor_type=subject.kind.value,
+                authentication_method=subject.authentication_method.value,
+                credential_audience=WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_BINDER_AUDIENCE,
+                scope=scope,
+                correlation_id=str(request.state.correlation_id),
+                decision_id=(
+                    "decision.workflow-physical-transport-target-context-binder-authenticated"
+                ),
+                requested_at=datetime.now(UTC),
+            ),
+        )
+    except WorkflowEventPhysicalTransportTargetContextBindingError as error:
+        _raise_physical_transport_target_context_binding(error)
+    _no_store(response)
+    return WorkflowEventPhysicalTransportTargetContextBindingResponse(
+        data=WorkflowEventPhysicalTransportTargetContextBindingData.from_domain(
+            binding,
+            evaluated_at=datetime.now(UTC),
         ),
         meta=_meta(request),
     )

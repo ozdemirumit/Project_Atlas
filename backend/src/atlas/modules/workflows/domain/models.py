@@ -207,6 +207,15 @@ class WorkflowEventPhysicalTransportCredentialMaterializationResultState(StrEnum
     MATERIALIZATION_FAILED = "materialization_failed"
 
 
+class WorkflowEventPhysicalTransportTargetContextBindingState(StrEnum):
+    BOUND = "bound"
+
+
+class WorkflowEventPhysicalTransportTargetContextBindingEffectiveState(StrEnum):
+    ACTIVE = "active"
+    EXPIRED = "expired"
+
+
 class WorkflowEventPhysicalTransportCredentialMaterializationFailureClass(StrEnum):
     SEALED_LINEAGE_REJECTED = "sealed_lineage_rejected"
     CREDENTIAL_SOURCE_INVALID = "credential_source_invalid"
@@ -6594,6 +6603,265 @@ class WorkflowEventPhysicalTransportEndpointMaterializationResult:
             "transport_route_snapshot_id": self.transport_route_snapshot_id,
             "usable_until": None if self.usable_until is None else self.usable_until.isoformat(),
         }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportTargetContextBindingPolicy:
+    """Code-owned requirements for joining protected transport lineages."""
+
+    policy_id: str
+    policy_version: str
+    target_context_schema_id: str
+    target_context_schema_version: str
+    successful_endpoint_materialization_required: bool
+    successful_credential_materialization_required: bool
+    exact_route_lineage_required: bool
+    unexpired_overlap_required: bool
+    one_binding_per_source_required: bool
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.policy_id, "target context binding policy id"),
+            (self.policy_version, "target context binding policy version"),
+            (self.target_context_schema_id, "target context schema id"),
+            (self.target_context_schema_version, "target context schema version"),
+        ):
+            _require_identifier(value, name=name)
+        if any(
+            value is not True
+            for value in (
+                self.successful_endpoint_materialization_required,
+                self.successful_credential_materialization_required,
+                self.exact_route_lineage_required,
+                self.unexpired_overlap_required,
+                self.one_binding_per_source_required,
+            )
+        ):
+            raise ValueError("target context binding policy requirements must remain enabled")
+        _require_digest(self.canonical_digest, name="target context binding policy digest")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("target context binding policy canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "exact_route_lineage_required": self.exact_route_lineage_required,
+            "one_binding_per_source_required": self.one_binding_per_source_required,
+            "policy_id": self.policy_id,
+            "policy_version": self.policy_version,
+            "successful_credential_materialization_required": (
+                self.successful_credential_materialization_required
+            ),
+            "successful_endpoint_materialization_required": (
+                self.successful_endpoint_materialization_required
+            ),
+            "target_context_schema_id": self.target_context_schema_id,
+            "target_context_schema_version": self.target_context_schema_version,
+            "unexpired_overlap_required": self.unexpired_overlap_required,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+
+def code_owned_workflow_event_physical_transport_target_context_binding_policy() -> (
+    WorkflowEventPhysicalTransportTargetContextBindingPolicy
+):
+    values: dict[str, object] = {
+        "policy_id": "policy.workflow-event-physical-transport-target-context-binding",
+        "policy_version": "1.0",
+        "target_context_schema_id": "schema.workflow-physical-transport-target-context",
+        "target_context_schema_version": "1.0",
+        "successful_endpoint_materialization_required": True,
+        "successful_credential_materialization_required": True,
+        "exact_route_lineage_required": True,
+        "unexpired_overlap_required": True,
+        "one_binding_per_source_required": True,
+    }
+    return WorkflowEventPhysicalTransportTargetContextBindingPolicy(
+        **cast(Any, values), canonical_digest=canonical_digest(values)
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportTargetContextBindingAuthority:
+    endpoint_resolution_authorized: bool = False
+    protected_artifact_access_authorized: bool = False
+    route_selection_authorized: bool = False
+    route_binding_authorized: bool = False
+    credential_selection_authorized: bool = False
+    credential_assignment_binding_authorized: bool = False
+    credential_access_authorized: bool = False
+    credential_brokerage_authorized: bool = False
+    credential_resolution_authorized: bool = False
+    credential_delivery_authorized: bool = False
+    network_access_authorized: bool = False
+    readiness_probe_authorized: bool = False
+    publication_authorized: bool = False
+    delivery_authorized: bool = False
+    dispatch_authorized: bool = False
+    execution_authorized: bool = False
+    infrastructure_mutation_authorized: bool = False
+
+    def __post_init__(self) -> None:
+        if any(value is not False for value in self.canonical_value().values()):
+            raise ValueError("target context bindings cannot grant authority")
+
+    def canonical_value(self) -> dict[str, bool]:
+        return {
+            "credential_access_authorized": self.credential_access_authorized,
+            "credential_assignment_binding_authorized": (
+                self.credential_assignment_binding_authorized
+            ),
+            "credential_brokerage_authorized": self.credential_brokerage_authorized,
+            "credential_delivery_authorized": self.credential_delivery_authorized,
+            "credential_resolution_authorized": self.credential_resolution_authorized,
+            "credential_selection_authorized": self.credential_selection_authorized,
+            "delivery_authorized": self.delivery_authorized,
+            "dispatch_authorized": self.dispatch_authorized,
+            "endpoint_resolution_authorized": self.endpoint_resolution_authorized,
+            "execution_authorized": self.execution_authorized,
+            "infrastructure_mutation_authorized": self.infrastructure_mutation_authorized,
+            "network_access_authorized": self.network_access_authorized,
+            "protected_artifact_access_authorized": self.protected_artifact_access_authorized,
+            "publication_authorized": self.publication_authorized,
+            "readiness_probe_authorized": self.readiness_probe_authorized,
+            "route_binding_authorized": self.route_binding_authorized,
+            "route_selection_authorized": self.route_selection_authorized,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportTargetContextBinding:
+    """Immutable endpoint and credential target-context evidence with no authority."""
+
+    binding_id: str
+    physical_transport_route_binding_id: str
+    physical_transport_route_binding_digest: str
+    transport_route_snapshot_id: str
+    transport_route_snapshot_digest: str
+    endpoint_materialization_id: str
+    endpoint_materialization_digest: str
+    physical_transport_credential_assignment_binding_id: str
+    physical_transport_credential_assignment_binding_digest: str
+    credential_assignment_snapshot_id: str
+    credential_assignment_snapshot_digest: str
+    credential_materialization_id: str
+    credential_materialization_digest: str
+    resolver_subject_id: str
+    accessor_subject_id: str
+    target_context_schema_id: str
+    target_context_schema_version: str
+    target_context_commitment: str
+    scope: WorkflowScope
+    binder_subject_id: str
+    bound_at: datetime
+    joint_usable_until: datetime
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    state: WorkflowEventPhysicalTransportTargetContextBindingState
+    authority: WorkflowEventPhysicalTransportTargetContextBindingAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.binding_id, "target context binding id"),
+            (self.physical_transport_route_binding_id, "physical route binding id"),
+            (self.transport_route_snapshot_id, "transport route snapshot id"),
+            (self.endpoint_materialization_id, "endpoint materialization id"),
+            (
+                self.physical_transport_credential_assignment_binding_id,
+                "credential assignment binding id",
+            ),
+            (self.credential_assignment_snapshot_id, "credential assignment snapshot id"),
+            (self.credential_materialization_id, "credential materialization id"),
+            (self.resolver_subject_id, "endpoint resolver subject id"),
+            (self.accessor_subject_id, "credential accessor subject id"),
+            (self.target_context_schema_id, "target context schema id"),
+            (self.target_context_schema_version, "target context schema version"),
+            (self.binder_subject_id, "target context binder subject id"),
+            (self.policy_id, "target context binding policy id"),
+            (self.policy_version, "target context binding policy version"),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (self.physical_transport_route_binding_digest, "physical route binding digest"),
+            (self.transport_route_snapshot_digest, "transport route snapshot digest"),
+            (self.endpoint_materialization_digest, "endpoint materialization digest"),
+            (
+                self.physical_transport_credential_assignment_binding_digest,
+                "credential assignment binding digest",
+            ),
+            (
+                self.credential_assignment_snapshot_digest,
+                "credential assignment snapshot digest",
+            ),
+            (self.credential_materialization_digest, "credential materialization digest"),
+            (self.target_context_commitment, "target context commitment"),
+            (self.policy_digest, "target context binding policy digest"),
+            (self.canonical_digest, "target context binding canonical digest"),
+        ):
+            _require_digest(value, name=name)
+        if self.bound_at.tzinfo is None or self.joint_usable_until.tzinfo is None:
+            raise ValueError("target context binding times must be timezone-aware")
+        if self.bound_at >= self.joint_usable_until:
+            raise ValueError("target context binding requires an unexpired usable overlap")
+        if self.state is not WorkflowEventPhysicalTransportTargetContextBindingState.BOUND:
+            raise ValueError("target context bindings must remain bound")
+        if any(value is not False for value in self.authority.canonical_value().values()):
+            raise ValueError("target context bindings cannot grant authority")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("target context binding canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "accessor_subject_id": self.accessor_subject_id,
+            "authority": self.authority.canonical_value(),
+            "binder_subject_id": self.binder_subject_id,
+            "binding_id": self.binding_id,
+            "bound_at": self.bound_at.isoformat(),
+            "credential_assignment_snapshot_digest": (self.credential_assignment_snapshot_digest),
+            "credential_assignment_snapshot_id": self.credential_assignment_snapshot_id,
+            "credential_materialization_digest": self.credential_materialization_digest,
+            "credential_materialization_id": self.credential_materialization_id,
+            "endpoint_materialization_digest": self.endpoint_materialization_digest,
+            "endpoint_materialization_id": self.endpoint_materialization_id,
+            "joint_usable_until": self.joint_usable_until.isoformat(),
+            "physical_transport_credential_assignment_binding_digest": (
+                self.physical_transport_credential_assignment_binding_digest
+            ),
+            "physical_transport_credential_assignment_binding_id": (
+                self.physical_transport_credential_assignment_binding_id
+            ),
+            "physical_transport_route_binding_digest": (
+                self.physical_transport_route_binding_digest
+            ),
+            "physical_transport_route_binding_id": self.physical_transport_route_binding_id,
+            "policy_digest": self.policy_digest,
+            "policy_id": self.policy_id,
+            "policy_version": self.policy_version,
+            "resolver_subject_id": self.resolver_subject_id,
+            "scope": self.scope.canonical_value(),
+            "state": self.state.value,
+            "target_context_commitment": self.target_context_commitment,
+            "target_context_schema_id": self.target_context_schema_id,
+            "target_context_schema_version": self.target_context_schema_version,
+            "transport_route_snapshot_digest": self.transport_route_snapshot_digest,
+            "transport_route_snapshot_id": self.transport_route_snapshot_id,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+    def effective_state(
+        self, *, evaluated_at: datetime
+    ) -> WorkflowEventPhysicalTransportTargetContextBindingEffectiveState:
+        if evaluated_at.tzinfo is None:
+            raise ValueError("target context binding evaluation time must be aware")
+        if self.bound_at <= evaluated_at < self.joint_usable_until:
+            return WorkflowEventPhysicalTransportTargetContextBindingEffectiveState.ACTIVE
+        return WorkflowEventPhysicalTransportTargetContextBindingEffectiveState.EXPIRED
 
 
 @dataclass(frozen=True, slots=True)
