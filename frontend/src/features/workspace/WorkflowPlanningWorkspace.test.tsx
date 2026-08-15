@@ -22,6 +22,8 @@ import {
   type WorkflowExecutionRun,
   type WorkflowOrchestrationLease,
   type WorkflowPhysicalTransportCredentialAccessAuthorizationLease,
+  type WorkflowPhysicalTransportCredentialMaterializationAttempt,
+  type WorkflowPhysicalTransportCredentialMaterializationResult,
   type WorkflowPhysicalTransportCredentialAssignmentSnapshot,
   type WorkflowPhysicalTransportCredentialAssignmentBinding,
   type WorkflowPhysicalTransportCredentialAssignmentFreshnessAdmission,
@@ -839,6 +841,80 @@ const endpointMaterialization: WorkflowPhysicalTransportEndpointMaterialization 
   integrity_reference: "integrity.workflow-endpoint-materialization.1234567890abcdef",
 };
 
+const credentialMaterializationAuthority = {
+  endpoint_resolution_authorized: false,
+  protected_artifact_access_authorized: false,
+  route_selection_authorized: false,
+  route_binding_authorized: false,
+  credential_selection_authorized: false,
+  credential_assignment_binding_authorized: false,
+  credential_access_authorized: false,
+  credential_brokerage_authorized: false,
+  credential_resolution_authorized: false,
+  credential_delivery_authorized: false,
+  network_access_authorized: false,
+  readiness_probe_authorized: false,
+  publication_authorized: false,
+  delivery_authorized: false,
+  dispatch_authorized: false,
+  execution_authorized: false,
+  infrastructure_mutation_authorized: false,
+} as const;
+
+const credentialMaterializationAttempt: WorkflowPhysicalTransportCredentialMaterializationAttempt = {
+  attempt_id: "workflow-credential-materialization-attempt.1234567890abcdef",
+  materialization_id: "workflow-credential-materialization.1234567890abcdef",
+  consumption_claim_id: "workflow-credential-materialization-claim.1234567890abcdef",
+  authorization_lease_id: credentialAccessAuthorizationLease.lease_id,
+  freshness_admission_id:
+    physicalTransportCredentialAssignmentFreshnessAdmission.freshness_admission_id,
+  credential_assignment_snapshot_id: "workflow-credential-assignment-snapshot.1234567890abcdef",
+  assignment_id: physicalTransportCredentialAssignmentFreshnessAdmission.assignment_id,
+  assignment_revision:
+    physicalTransportCredentialAssignmentFreshnessAdmission.assignment_revision,
+  credential_generation:
+    physicalTransportCredentialAssignmentFreshnessAdmission.credential_generation,
+  rotation_epoch: physicalTransportCredentialAssignmentFreshnessAdmission.rotation_epoch,
+  scope: { ...plan.scope },
+  accessor_subject_id: credentialAccessAuthorizationLease.accessor_subject_id,
+  policy_id: "policy.workflow-event-physical-transport-credential-materialization",
+  policy_version: "1.0",
+  started_at: "2026-08-14T10:08:06Z",
+  freshness_valid_until: "2026-08-14T10:08:30Z",
+  lease_valid_until: credentialAccessAuthorizationLease.valid_until,
+  state: "materialization_started",
+  authority: credentialMaterializationAuthority,
+  integrity_reference: "integrity.workflow-credential-materialization-attempt.1234567890abcdef",
+};
+
+const credentialMaterializationResult: WorkflowPhysicalTransportCredentialMaterializationResult = {
+  materialization_id: credentialMaterializationAttempt.materialization_id,
+  attempt_id: credentialMaterializationAttempt.attempt_id,
+  consumption_claim_id: credentialMaterializationAttempt.consumption_claim_id,
+  authorization_lease_id: credentialMaterializationAttempt.authorization_lease_id,
+  freshness_admission_id: credentialMaterializationAttempt.freshness_admission_id,
+  credential_assignment_snapshot_id:
+    credentialMaterializationAttempt.credential_assignment_snapshot_id,
+  assignment_id: credentialMaterializationAttempt.assignment_id,
+  assignment_revision: credentialMaterializationAttempt.assignment_revision,
+  credential_generation: credentialMaterializationAttempt.credential_generation,
+  rotation_epoch: credentialMaterializationAttempt.rotation_epoch,
+  scope: { ...plan.scope },
+  accessor_subject_id: credentialMaterializationAttempt.accessor_subject_id,
+  policy_id: credentialMaterializationAttempt.policy_id,
+  policy_version: "1.0",
+  materializer_id: "materializer.workflow-credential.synthetic",
+  materializer_version: "1.0",
+  state: "materialized_protected",
+  failure_class: null,
+  completed_at: "2026-08-14T10:08:08Z",
+  usable_until: "2026-08-14T10:08:14Z",
+  protected_artifact_revoked: false,
+  cleanup_confirmed: true,
+  authority: credentialMaterializationAuthority,
+  integrity_reference: "integrity.workflow-credential-materialization-result.1234567890abcdef",
+};
+
 const credentialAssignmentSnapshot: WorkflowPhysicalTransportCredentialAssignmentSnapshot = {
   snapshot_id: "workflow-credential-assignment-snapshot.1234567890abcdef",
   assignment_id: "deployment-credential-assignment.1234567890abcdef",
@@ -1288,6 +1364,31 @@ function endpointMaterializationResponse(
   );
 }
 
+function credentialMaterializationResponse(
+  attempts: unknown[],
+  results: unknown[],
+  status = 200,
+  serverTime = "2026-08-14T10:08:20Z",
+): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: {
+            physical_transport_credential_materialization_attempts: attempts,
+            physical_transport_credential_materialization_results: results,
+            server_time: serverTime,
+            durable: false,
+          },
+          meta: {
+            correlation_id: "correlation.workflow.credential-materialization",
+            generated_at: serverTime,
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function credentialAssignmentSnapshotResponse(
   snapshots: unknown[],
   status = 200,
@@ -1354,6 +1455,9 @@ function mockReadResponses(input: {
   endpointResolutionAuthorizationLeaseServerTime?: string;
   endpointMaterializations?: unknown[];
   endpointMaterializationServerTime?: string;
+  credentialMaterializationAttempts?: unknown[];
+  credentialMaterializationResults?: unknown[];
+  credentialMaterializationServerTime?: string;
   credentialAssignmentSnapshots?: unknown[];
   transportCompatibilityAdmissions?: unknown[];
   pendingTransportAdmissionResponse?: Promise<Response>;
@@ -1368,6 +1472,7 @@ function mockReadResponses(input: {
   pendingPhysicalTransportRouteFreshnessAdmissionResponse?: Promise<Response>;
   pendingEndpointResolutionAuthorizationLeaseResponse?: Promise<Response>;
   pendingEndpointMaterializationResponse?: Promise<Response>;
+  pendingCredentialMaterializationResponse?: Promise<Response>;
   pendingCredentialAssignmentSnapshotResponse?: Promise<Response>;
   pendingTransportCompatibilityAdmissionResponse?: Promise<Response>;
   leaseStatus?: number;
@@ -1401,6 +1506,8 @@ function mockReadResponses(input: {
   endpointResolutionAuthorizationLeaseStatuses?: number[];
   endpointMaterializationStatus?: number;
   endpointMaterializationStatuses?: number[];
+  credentialMaterializationStatus?: number;
+  credentialMaterializationStatuses?: number[];
   credentialAssignmentSnapshotStatus?: number;
   credentialAssignmentSnapshotStatuses?: number[];
   transportCompatibilityAdmissionStatus?: number;
@@ -1418,10 +1525,31 @@ function mockReadResponses(input: {
   let physicalTransportRouteFreshnessAdmissionReadCount = 0;
   let endpointResolutionAuthorizationLeaseReadCount = 0;
   let endpointMaterializationReadCount = 0;
+  let credentialMaterializationReadCount = 0;
   let credentialAssignmentSnapshotReadCount = 0;
   let transportCompatibilityAdmissionReadCount = 0;
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (url.endsWith("/api/v1/workflows/physical-transport-credential-materializations")) {
+      if (input.pendingCredentialMaterializationResponse) {
+        return input.pendingCredentialMaterializationResponse;
+      }
+      const status =
+        input.credentialMaterializationStatuses?.[
+          Math.min(
+            credentialMaterializationReadCount++,
+            input.credentialMaterializationStatuses.length - 1,
+          )
+        ] ?? input.credentialMaterializationStatus ?? 200;
+      return Promise.resolve(
+        credentialMaterializationResponse(
+          input.credentialMaterializationAttempts ?? [],
+          input.credentialMaterializationResults ?? [],
+          status,
+          input.credentialMaterializationServerTime,
+        ),
+      );
+    }
     if (
       url.endsWith(
         "/api/v1/workflows/physical-transport-credential-access-authorization-leases",
@@ -4152,6 +4280,271 @@ describe("WorkflowPlanningWorkspace", () => {
       within(section).queryByRole("list", { name: "Endpoint materialization results" }),
     ).toBeNull();
   });
+
+  it("renders credential materialization attempt and result evidence without controls", async () => {
+    mockReadResponses({
+      credentialMaterializationAttempts: [credentialMaterializationAttempt],
+      credentialMaterializationResults: [credentialMaterializationResult],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Credential materialization attempts and results",
+    })).closest("section") as HTMLElement;
+    const records = await within(section).findByRole("list", {
+      name: "Credential materialization attempts and results",
+    });
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) =>
+        (request instanceof Request ? request.url : request.toString()).endsWith(
+          "/api/v1/workflows/physical-transport-credential-materializations",
+        ),
+      ),
+    ).toBe(true);
+    expect(within(section).getByTitle(credentialMaterializationAttempt.attempt_id)).toBeVisible();
+    expect(
+      within(section).getByTitle(credentialMaterializationAttempt.materialization_id),
+    ).toBeVisible();
+    expect(
+      within(section).getByTitle(credentialMaterializationAttempt.authorization_lease_id),
+    ).toBeVisible();
+    expect(
+      within(section).getByTitle(
+        credentialMaterializationAttempt.credential_assignment_snapshot_id,
+      ),
+    ).toBeVisible();
+    expect(records).toHaveTextContent("Protected result recorded");
+    expect(records).toHaveTextContent("cleanup confirmed true");
+    expect(records).toHaveTextContent(
+      /endpoint resolution false.*protected artifact access false.*route selection false.*route binding false.*credential selection false.*credential assignment binding false.*credential access false.*credential brokerage false.*credential resolution false.*credential delivery false.*network access false.*readiness probe false.*publication false.*delivery false.*dispatch false.*execution false.*infrastructure mutation false/i,
+    );
+    expect(
+      within(section).queryByRole("button", {
+        name: /consume|materialize|retry|reveal|copy|download|deliver|dispatch|execute/i,
+      }),
+    ).toBeNull();
+    expect(section).not.toHaveTextContent("hidden-secret");
+    expect(section).not.toHaveTextContent("vault/private");
+    expect(section).not.toHaveTextContent("broker.internal");
+    expect(section).not.toHaveTextContent("provider payload");
+    expect(section).not.toHaveTextContent(/\bMFA\b|second login|authorized browser session/i);
+  });
+
+  it("renders an attempt without a known result as non-retryable evidence", async () => {
+    mockReadResponses({
+      credentialMaterializationAttempts: [credentialMaterializationAttempt],
+      credentialMaterializationResults: [],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Credential materialization attempts and results",
+    })).closest("section") as HTMLElement;
+    expect(await within(section).findByText("No known result")).toBeVisible();
+    expect(section).toHaveTextContent("normal-session inventory is read-only");
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("renders a known credential materialization failure as consumed evidence", async () => {
+    mockReadResponses({
+      credentialMaterializationAttempts: [credentialMaterializationAttempt],
+      credentialMaterializationResults: [
+        {
+          ...credentialMaterializationResult,
+          state: "materialization_failed",
+          failure_class: "credential_source_invalid",
+          usable_until: null,
+          protected_artifact_revoked: true,
+        },
+      ],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Credential materialization attempts and results",
+    })).closest("section") as HTMLElement;
+    expect(await within(section).findByText("Materialization failed")).toBeVisible();
+    expect(section).toHaveTextContent("Failure class credential source invalid");
+    expect(section).toHaveTextContent("Protected artifact revoked true");
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("renders an empty credential materialization inventory as a healthy read-only state", async () => {
+    mockReadResponses({
+      credentialMaterializationAttempts: [],
+      credentialMaterializationResults: [],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Credential materialization attempts and results",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText(
+        "No credential materialization attempts are recorded in this scope.",
+      ),
+    ).toBeVisible();
+    expect(within(section).queryByRole("alert")).toBeNull();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("shows credential materialization loading without an operation control", async () => {
+    mockReadResponses({
+      pendingCredentialMaterializationResponse: new Promise<Response>(() => undefined),
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Credential materialization attempts and results",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Loading credential materialization evidence..."),
+    ).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("retries only a failed credential materialization evidence read", async () => {
+    mockReadResponses({
+      credentialMaterializationAttempts: [credentialMaterializationAttempt],
+      credentialMaterializationResults: [credentialMaterializationResult],
+      credentialMaterializationStatuses: [500, 200],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Credential materialization attempts and results",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Credential materialization evidence is unavailable"),
+    ).toBeVisible();
+    fireEvent.click(
+      within(section).getByRole("button", {
+        name: "Retry credential materialization evidence read",
+      }),
+    );
+    expect(
+      await within(section).findByTitle(credentialMaterializationAttempt.attempt_id),
+    ).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it.each([
+    [401, "Your session has expired", "Sign in again to continue."],
+    [
+      403,
+      "Credential materialization evidence permission is missing",
+      "current role or scope cannot inspect credential materialization evidence",
+    ],
+  ])(
+    "handles credential materialization read status %s in the normal browser session",
+    async (status, title, detail) => {
+      mockReadResponses({ credentialMaterializationStatus: status });
+      renderWorkspace();
+
+      const section = (await screen.findByRole("heading", {
+        name: "Credential materialization attempts and results",
+      })).closest("section") as HTMLElement;
+      expect(await within(section).findByText(title)).toBeVisible();
+      expect(within(section).getByText(new RegExp(detail, "i"))).toBeVisible();
+      expect(within(section).queryByRole("button")).toBeNull();
+      if (status !== 401) expect(section).not.toHaveTextContent("Sign in again");
+      expect(section).not.toHaveTextContent(/MFA|second login|authorized browser session/i);
+    },
+  );
+
+  it.each([
+    ["secret material", { ...credentialMaterializationAttempt, secret: "hidden-secret" }],
+    ["a vault locator", { ...credentialMaterializationAttempt, vault_path: "vault/private" }],
+    ["provider data", { ...credentialMaterializationAttempt, provider_payload: "private" }],
+    ["a future start", { ...credentialMaterializationAttempt, started_at: "2026-08-14T10:08:21Z" }],
+    [
+      "authority",
+      {
+        ...credentialMaterializationAttempt,
+        authority: {
+          ...credentialMaterializationAttempt.authority,
+          credential_access_authorized: true,
+        },
+      },
+    ],
+    [
+      "an extra authority field",
+      {
+        ...credentialMaterializationAttempt,
+        authority: { ...credentialMaterializationAttempt.authority, materialize_authorized: false },
+      },
+    ],
+  ])("fails closed when a credential materialization attempt contains %s", async (_case, unsafe) => {
+    mockReadResponses({ credentialMaterializationAttempts: [unsafe] });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Credential materialization attempts and results",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Credential materialization evidence is unavailable"),
+    ).toBeVisible();
+    expect(
+      within(section).queryByRole("list", {
+        name: "Credential materialization attempts and results",
+      }),
+    ).toBeNull();
+    expect(section).not.toHaveTextContent(/hidden-secret|vault\/private|provider payload/i);
+  });
+
+  it.each([
+    ["an orphan result", [], [credentialMaterializationResult]],
+    [
+      "a protected artifact identifier",
+      [credentialMaterializationAttempt],
+      [{ ...credentialMaterializationResult, protected_artifact_id: "artifact.protected" }],
+    ],
+    [
+      "provider detail",
+      [credentialMaterializationAttempt],
+      [{ ...credentialMaterializationResult, provider_message: "private detail" }],
+    ],
+    [
+      "success without a usable window",
+      [credentialMaterializationAttempt],
+      [{ ...credentialMaterializationResult, usable_until: null }],
+    ],
+    [
+      "failure without revocation",
+      [credentialMaterializationAttempt],
+      [
+        {
+          ...credentialMaterializationResult,
+          state: "materialization_failed",
+          failure_class: "credential_source_invalid",
+          usable_until: null,
+          protected_artifact_revoked: false,
+        },
+      ],
+    ],
+  ])(
+    "fails closed when credential materialization evidence contains %s",
+    async (_case, attempts, results) => {
+      mockReadResponses({
+        credentialMaterializationAttempts: attempts,
+        credentialMaterializationResults: results,
+      });
+      renderWorkspace();
+
+      const section = (await screen.findByRole("heading", {
+        name: "Credential materialization attempts and results",
+      })).closest("section") as HTMLElement;
+      expect(
+        await within(section).findByText("Credential materialization evidence is unavailable"),
+      ).toBeVisible();
+      expect(
+        within(section).queryByRole("list", {
+          name: "Credential materialization attempts and results",
+        }),
+      ).toBeNull();
+      expect(section).not.toHaveTextContent(/artifact\.protected|private detail/i);
+    },
+  );
 
   it("creates and presents a planned-only workflow without requesting another login", async () => {
     renderWorkspace();
