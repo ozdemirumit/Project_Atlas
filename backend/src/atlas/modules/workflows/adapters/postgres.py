@@ -13986,6 +13986,7 @@ class PostgreSQLWorkflowPlanRepository:
         cls, row: WorkflowEventPhysicalTransportEndpointMaterializationResultModel
     ) -> WorkflowEventPhysicalTransportEndpointMaterializationResult:
         raw = dict(row.payload)
+        raw["materialization_receipt_digest"] = raw.pop("canonical_materialization_receipt_digest")
         raw["scope"] = WorkflowScope(**cast(Any, raw["scope"]))
         raw["completed_at"] = datetime.fromisoformat(str(raw["completed_at"]))
         if raw["usable_until"] is not None:

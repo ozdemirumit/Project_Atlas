@@ -8,6 +8,7 @@ from typing import cast
 import pytest
 from sqlalchemy import Table, UniqueConstraint, text
 from sqlalchemy.ext.asyncio import create_async_engine
+from test_workflow_endpoint_materializations import fixture, materialize
 
 from atlas.core.persistence.models import (
     WorkflowEventPhysicalTransportEndpointMaterializationAttemptModel,
@@ -112,6 +113,16 @@ def test_result_insert_relocks_retimes_and_never_updates_evidence() -> None:
     assert "func.now" not in source
     assert "update(" not in source
     assert "delete(" not in source
+
+
+@pytest.mark.asyncio
+async def test_endpoint_materialization_result_round_trips_through_postgres_payload() -> None:
+    service, _, _, _, lease = await fixture()
+    result = await materialize(service, lease)
+
+    row = PostgreSQLWorkflowPlanRepository._endpoint_materialization_result_model(result)
+
+    assert PostgreSQLWorkflowPlanRepository._endpoint_materialization_result_from_row(row) == result
 
 
 def test_human_attempt_inventory_is_scope_bounded_and_does_not_join_results() -> None:
