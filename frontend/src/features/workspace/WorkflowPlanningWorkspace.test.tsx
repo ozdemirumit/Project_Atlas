@@ -21,6 +21,7 @@ import {
   type WorkflowExecutionAttempt,
   type WorkflowExecutionRun,
   type WorkflowOrchestrationLease,
+  type WorkflowPhysicalTransportCredentialAccessAuthorizationLease,
   type WorkflowPhysicalTransportCredentialAssignmentSnapshot,
   type WorkflowPhysicalTransportCredentialAssignmentBinding,
   type WorkflowPhysicalTransportCredentialAssignmentFreshnessAdmission,
@@ -767,6 +768,47 @@ const consumedEndpointResolutionAuthorizationLease: WorkflowEndpointResolutionAu
   effective_state: "consumed",
 };
 
+const credentialAccessAuthorizationLease: WorkflowPhysicalTransportCredentialAccessAuthorizationLease = {
+  lease_id: "workflow-credential-access-authorization-lease.1234567890abcdef",
+  freshness_admission_id:
+    physicalTransportCredentialAssignmentFreshnessAdmission.freshness_admission_id,
+  assignment_revision:
+    physicalTransportCredentialAssignmentFreshnessAdmission.assignment_revision,
+  credential_generation:
+    physicalTransportCredentialAssignmentFreshnessAdmission.credential_generation,
+  rotation_epoch: physicalTransportCredentialAssignmentFreshnessAdmission.rotation_epoch,
+  policy_id: "policy.workflow-event-credential-access-authorization.historical",
+  policy_version: "0.9",
+  scope: { ...plan.scope },
+  accessor_subject_id: "workload.workflow-physical-transport-credential-accessor",
+  issued_at: "2026-08-14T10:08:00Z",
+  valid_until: "2026-08-14T10:08:15Z",
+  state: "authorized_unconsumed",
+  effective_state: "active",
+  single_use: true,
+  renewable: false,
+  authority: {
+    endpoint_resolution_authorized: false,
+    protected_artifact_access_authorized: false,
+    route_selection_authorized: false,
+    route_binding_authorized: false,
+    credential_selection_authorized: false,
+    credential_assignment_binding_authorized: false,
+    credential_access_authorized: true,
+    credential_brokerage_authorized: false,
+    credential_resolution_authorized: false,
+    credential_delivery_authorized: false,
+    network_access_authorized: false,
+    readiness_probe_authorized: false,
+    publication_authorized: false,
+    delivery_authorized: false,
+    dispatch_authorized: false,
+    execution_authorized: false,
+    infrastructure_mutation_authorized: false,
+  },
+  integrity_reference: "integrity.workflow-credential-access-lease.1234567890abcdef",
+};
+
 const endpointMaterialization: WorkflowPhysicalTransportEndpointMaterialization = {
   materialization_id: "workflow-endpoint-materialization.1234567890abcdef",
   lease_id: endpointResolutionAuthorizationLease.lease_id,
@@ -1200,6 +1242,29 @@ function endpointResolutionAuthorizationLeaseResponse(
   );
 }
 
+function credentialAccessAuthorizationLeaseResponse(
+  leases: unknown[],
+  status = 200,
+  serverTime = "2026-08-14T10:08:05Z",
+): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: {
+            physical_transport_credential_access_authorization_leases: leases,
+            server_time: serverTime,
+            durable: false,
+          },
+          meta: {
+            correlation_id: "correlation.workflow.credential-access-authorization-lease",
+            generated_at: serverTime,
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function endpointMaterializationResponse(
   materializations: unknown[],
   status = 200,
@@ -1282,6 +1347,8 @@ function mockReadResponses(input: {
   physicalTransportRouteBindings?: unknown[];
   physicalTransportCredentialAssignmentBindings?: unknown[];
   physicalTransportCredentialAssignmentFreshnessAdmissions?: unknown[];
+  credentialAccessAuthorizationLeases?: unknown[];
+  credentialAccessAuthorizationLeaseServerTime?: string;
   physicalTransportRouteFreshnessAdmissions?: unknown[];
   endpointResolutionAuthorizationLeases?: unknown[];
   endpointResolutionAuthorizationLeaseServerTime?: string;
@@ -1297,6 +1364,7 @@ function mockReadResponses(input: {
   pendingPhysicalTransportRouteBindingResponse?: Promise<Response>;
   pendingPhysicalTransportCredentialAssignmentBindingResponse?: Promise<Response>;
   pendingPhysicalTransportCredentialAssignmentFreshnessAdmissionResponse?: Promise<Response>;
+  pendingCredentialAccessAuthorizationLeaseResponse?: Promise<Response>;
   pendingPhysicalTransportRouteFreshnessAdmissionResponse?: Promise<Response>;
   pendingEndpointResolutionAuthorizationLeaseResponse?: Promise<Response>;
   pendingEndpointMaterializationResponse?: Promise<Response>;
@@ -1325,6 +1393,8 @@ function mockReadResponses(input: {
   physicalTransportCredentialAssignmentBindingStatuses?: number[];
   physicalTransportCredentialAssignmentFreshnessAdmissionStatus?: number;
   physicalTransportCredentialAssignmentFreshnessAdmissionStatuses?: number[];
+  credentialAccessAuthorizationLeaseStatus?: number;
+  credentialAccessAuthorizationLeaseStatuses?: number[];
   physicalTransportRouteFreshnessAdmissionStatus?: number;
   physicalTransportRouteFreshnessAdmissionStatuses?: number[];
   endpointResolutionAuthorizationLeaseStatus?: number;
@@ -1344,6 +1414,7 @@ function mockReadResponses(input: {
   let physicalTransportRouteBindingReadCount = 0;
   let physicalTransportCredentialAssignmentBindingReadCount = 0;
   let physicalTransportCredentialAssignmentFreshnessAdmissionReadCount = 0;
+  let credentialAccessAuthorizationLeaseReadCount = 0;
   let physicalTransportRouteFreshnessAdmissionReadCount = 0;
   let endpointResolutionAuthorizationLeaseReadCount = 0;
   let endpointMaterializationReadCount = 0;
@@ -1351,6 +1422,29 @@ function mockReadResponses(input: {
   let transportCompatibilityAdmissionReadCount = 0;
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (
+      url.endsWith(
+        "/api/v1/workflows/physical-transport-credential-access-authorization-leases",
+      )
+    ) {
+      if (input.pendingCredentialAccessAuthorizationLeaseResponse) {
+        return input.pendingCredentialAccessAuthorizationLeaseResponse;
+      }
+      const status =
+        input.credentialAccessAuthorizationLeaseStatuses?.[
+          Math.min(
+            credentialAccessAuthorizationLeaseReadCount++,
+            input.credentialAccessAuthorizationLeaseStatuses.length - 1,
+          )
+        ] ?? input.credentialAccessAuthorizationLeaseStatus ?? 200;
+      return Promise.resolve(
+        credentialAccessAuthorizationLeaseResponse(
+          input.credentialAccessAuthorizationLeases ?? [],
+          status,
+          input.credentialAccessAuthorizationLeaseServerTime,
+        ),
+      );
+    }
     if (url.endsWith("/api/v1/workflows/transport-credential-assignment-snapshots")) {
       if (input.pendingCredentialAssignmentSnapshotResponse) {
         return input.pendingCredentialAssignmentSnapshotResponse;
@@ -3261,6 +3355,286 @@ describe("WorkflowPlanningWorkspace", () => {
         name: "Physical transport route freshness admissions",
       }),
     ).toBeNull();
+  });
+
+  it("renders one active credential-access authorization lease as minimized read-only historical evidence", async () => {
+    mockReadResponses({
+      credentialAccessAuthorizationLeases: [credentialAccessAuthorizationLease],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Credential-access authorization leases",
+    })).closest("section") as HTMLElement;
+    const records = await within(section).findByRole("list", {
+      name: "Credential-access authorization leases",
+    });
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) =>
+        (request instanceof Request ? request.url : request.toString()).endsWith(
+          "/api/v1/workflows/physical-transport-credential-access-authorization-leases",
+        ),
+      ),
+    ).toBe(true);
+    expect(within(section).getByTitle(credentialAccessAuthorizationLease.lease_id)).toBeVisible();
+    expect(
+      within(section).getByTitle(credentialAccessAuthorizationLease.freshness_admission_id),
+    ).toBeVisible();
+    expect(
+      within(section).getByTitle(credentialAccessAuthorizationLease.assignment_revision),
+    ).toBeVisible();
+    expect(within(section).getByTitle(credentialAccessAuthorizationLease.policy_id)).toBeVisible();
+    expect(
+      within(section).getByTitle(credentialAccessAuthorizationLease.accessor_subject_id),
+    ).toBeVisible();
+    expect(
+      within(section).getByTitle(credentialAccessAuthorizationLease.integrity_reference),
+    ).toBeVisible();
+    expect(records).toHaveTextContent("v0.9");
+    expect(records).toHaveTextContent("Credential generation 7 | rotation epoch 3");
+    expect(records).toHaveTextContent(
+      "Immutable state authorized unconsumed | effective state active",
+    );
+    expect(records).toHaveTextContent("Single use true | renewable false");
+    expect(records).toHaveTextContent(/credential access true.*endpoint resolution false/i);
+    expect(records).toHaveTextContent(/protected-artifact access false.*route selection false/i);
+    expect(records).toHaveTextContent(/credential-assignment binding false/i);
+    expect(records).toHaveTextContent(/infrastructure mutation false/i);
+    expect(
+      within(section).queryByRole("button", {
+        name: /issue|renew|transfer|consume|resolve|reveal|download|broker|deliver|dispatch|execute/i,
+      }),
+    ).toBeNull();
+    expect(section).not.toHaveTextContent(
+      /hidden-secret|broker\.internal|vault\/|https?:\/\/|10\.0\.0\.1|private-topic|source digest|policy digest|locator|MFA|second login|authorized browser session/i,
+    );
+  });
+
+  it("renders credential-access lease expiry from validated server time", async () => {
+    mockReadResponses({
+      credentialAccessAuthorizationLeases: [
+        { ...credentialAccessAuthorizationLease, effective_state: "expired" },
+      ],
+      credentialAccessAuthorizationLeaseServerTime: "2026-08-14T10:08:15Z",
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Credential-access authorization leases",
+    })).closest("section") as HTMLElement;
+    expect(await within(section).findByText("Expired")).toBeVisible();
+    expect(within(section).queryByText("Active")).toBeNull();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("shows the credential-access authorization lease empty state", async () => {
+    mockReadResponses({ credentialAccessAuthorizationLeases: [] });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Credential-access authorization leases",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText(
+        "No credential-access authorization leases are recorded in this scope.",
+      ),
+    ).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("shows a loading state while credential-access authorization leases are pending", async () => {
+    mockReadResponses({
+      pendingCredentialAccessAuthorizationLeaseResponse: new Promise<Response>(() => undefined),
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Credential-access authorization leases",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Loading credential-access authorization leases..."),
+    ).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("retries a generic credential-access lease read failure without mutation controls", async () => {
+    mockReadResponses({
+      credentialAccessAuthorizationLeases: [credentialAccessAuthorizationLease],
+      credentialAccessAuthorizationLeaseStatuses: [500, 200],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Credential-access authorization leases",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Credential-access authorization leases are unavailable"),
+    ).toBeVisible();
+    expect(section).toHaveTextContent(
+      "No authorization or operational state is inferred from this failed read.",
+    );
+    fireEvent.click(
+      within(section).getByRole("button", {
+        name: "Retry credential-access authorization lease read",
+      }),
+    );
+    expect(
+      await within(section).findByTitle(credentialAccessAuthorizationLease.lease_id),
+    ).toBeVisible();
+    expect(
+      within(section).queryByRole("button", {
+        name: /issue|renew|transfer|consume|resolve|reveal|download|deliver|dispatch|execute/i,
+      }),
+    ).toBeNull();
+  });
+
+  it.each([
+    [401, "Your session has expired", "Sign in again to continue."],
+    [
+      403,
+      "Credential-access lease permission is missing",
+      "current role or scope cannot inspect credential-access lease evidence",
+    ],
+  ])(
+    "handles credential-access lease read status %s with the normal browser session boundary",
+    async (status, title, detail) => {
+      mockReadResponses({ credentialAccessAuthorizationLeaseStatus: status });
+      renderWorkspace();
+
+      const section = (await screen.findByRole("heading", {
+        name: "Credential-access authorization leases",
+      })).closest("section") as HTMLElement;
+      expect(await within(section).findByText(title)).toBeVisible();
+      expect(within(section).getByText(new RegExp(detail, "i"))).toBeVisible();
+      expect(within(section).queryByRole("button")).toBeNull();
+      expect(section).not.toHaveTextContent(/MFA|second login|authorized browser session/i);
+    },
+  );
+
+  it.each([
+    [
+      "an extra source digest",
+      { ...credentialAccessAuthorizationLease, source_assignment_digest: "a".repeat(64) },
+    ],
+    ["secret material", { ...credentialAccessAuthorizationLease, secret: "hidden-secret" }],
+    [
+      "a changed scope",
+      {
+        ...credentialAccessAuthorizationLease,
+        scope: { ...credentialAccessAuthorizationLease.scope, site_id: "site.other" },
+      },
+    ],
+    [
+      "missing credential-access authority",
+      {
+        ...credentialAccessAuthorizationLease,
+        authority: {
+          ...credentialAccessAuthorizationLease.authority,
+          credential_access_authorized: false,
+        },
+      },
+    ],
+    [
+      "additional endpoint authority",
+      {
+        ...credentialAccessAuthorizationLease,
+        authority: {
+          ...credentialAccessAuthorizationLease.authority,
+          endpoint_resolution_authorized: true,
+        },
+      },
+    ],
+    [
+      "an extra authority field",
+      {
+        ...credentialAccessAuthorizationLease,
+        authority: { ...credentialAccessAuthorizationLease.authority, consume_authorized: false },
+      },
+    ],
+    [
+      "a non-v1 lease window",
+      { ...credentialAccessAuthorizationLease, valid_until: "2026-08-14T10:08:16Z" },
+    ],
+    ["a reusable lease", { ...credentialAccessAuthorizationLease, single_use: false }],
+    ["a renewable lease", { ...credentialAccessAuthorizationLease, renewable: true }],
+    [
+      "a non-positive generation",
+      { ...credentialAccessAuthorizationLease, credential_generation: 0 },
+    ],
+    ["a non-positive rotation epoch", { ...credentialAccessAuthorizationLease, rotation_epoch: 0 }],
+    ["a changed immutable state", { ...credentialAccessAuthorizationLease, state: "consumed" }],
+    [
+      "an effective-state mismatch",
+      { ...credentialAccessAuthorizationLease, effective_state: "expired" },
+    ],
+    [
+      "a locator-shaped identifier",
+      { ...credentialAccessAuthorizationLease, lease_id: "https://broker.internal" },
+    ],
+  ])(
+    "fails closed when credential-access authorization lease evidence contains %s",
+    async (_case, unsafeLease) => {
+      mockReadResponses({ credentialAccessAuthorizationLeases: [unsafeLease] });
+      renderWorkspace();
+
+      const section = (await screen.findByRole("heading", {
+        name: "Credential-access authorization leases",
+      })).closest("section") as HTMLElement;
+      expect(
+        await within(section).findByText(
+          "Credential-access authorization leases are unavailable",
+        ),
+      ).toBeVisible();
+      expect(
+        within(section).queryByRole("list", {
+          name: "Credential-access authorization leases",
+        }),
+      ).toBeNull();
+      expect(section).not.toHaveTextContent(/hidden-secret|broker\.internal|site\.other/i);
+    },
+  );
+
+  it("fails closed when credential-access leases duplicate a lease or freshness admission", async () => {
+    mockReadResponses({
+      credentialAccessAuthorizationLeases: [
+        credentialAccessAuthorizationLease,
+        {
+          ...credentialAccessAuthorizationLease,
+          accessor_subject_id: "workload.workflow-physical-transport-credential-accessor.other",
+        },
+      ],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Credential-access authorization leases",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Credential-access authorization leases are unavailable"),
+    ).toBeVisible();
+    expect(
+      within(section).queryByRole("list", {
+        name: "Credential-access authorization leases",
+      }),
+    ).toBeNull();
+  });
+
+  it("fails closed when credential-access lease inventory exceeds its bound", async () => {
+    mockReadResponses({
+      credentialAccessAuthorizationLeases: Array.from({ length: 257 }, (_, index) => ({
+        ...credentialAccessAuthorizationLease,
+        lease_id: `workflow-credential-access-authorization-lease.${index}`,
+        freshness_admission_id: `workflow-credential-assignment-freshness-admission.${index}`,
+      })),
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Credential-access authorization leases",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Credential-access authorization leases are unavailable"),
+    ).toBeVisible();
   });
 
   it("renders one active endpoint-resolution authorization lease as minimized read-only evidence", async () => {

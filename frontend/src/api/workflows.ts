@@ -782,6 +782,52 @@ export type WorkflowPhysicalTransportCredentialAssignmentFreshnessAdmissionInven
   durable: boolean;
 };
 
+export type WorkflowPhysicalTransportCredentialAccessAuthorizationLeaseAuthority = {
+  endpoint_resolution_authorized: false;
+  protected_artifact_access_authorized: false;
+  route_selection_authorized: false;
+  route_binding_authorized: false;
+  credential_selection_authorized: false;
+  credential_assignment_binding_authorized: false;
+  credential_access_authorized: true;
+  credential_brokerage_authorized: false;
+  credential_resolution_authorized: false;
+  credential_delivery_authorized: false;
+  network_access_authorized: false;
+  readiness_probe_authorized: false;
+  publication_authorized: false;
+  delivery_authorized: false;
+  dispatch_authorized: false;
+  execution_authorized: false;
+  infrastructure_mutation_authorized: false;
+};
+
+export type WorkflowPhysicalTransportCredentialAccessAuthorizationLease = {
+  lease_id: string;
+  freshness_admission_id: string;
+  assignment_revision: string;
+  credential_generation: number;
+  rotation_epoch: number;
+  policy_id: string;
+  policy_version: string;
+  scope: WorkflowRunPlan["scope"];
+  accessor_subject_id: string;
+  issued_at: string;
+  valid_until: string;
+  state: "authorized_unconsumed";
+  effective_state: "active" | "expired";
+  single_use: true;
+  renewable: false;
+  authority: WorkflowPhysicalTransportCredentialAccessAuthorizationLeaseAuthority;
+  integrity_reference: string;
+};
+
+export type WorkflowPhysicalTransportCredentialAccessAuthorizationLeaseInventory = {
+  physical_transport_credential_access_authorization_leases: WorkflowPhysicalTransportCredentialAccessAuthorizationLease[];
+  server_time: string;
+  durable: boolean;
+};
+
 export type WorkflowPhysicalTransportRouteFreshnessAdmissionAuthority = {
   route_selection_authorized: false;
   route_binding_authorized: false;
@@ -1577,6 +1623,49 @@ const physicalTransportCredentialAssignmentFreshnessAdmissionFields = [
 ] as const;
 const physicalTransportCredentialAssignmentFreshnessAdmissionInventoryFields = [
   "physical_transport_credential_assignment_freshness_admissions",
+  "durable",
+] as const;
+const physicalTransportCredentialAccessAuthorizationLeaseAuthorityFields = [
+  "endpoint_resolution_authorized",
+  "protected_artifact_access_authorized",
+  "route_selection_authorized",
+  "route_binding_authorized",
+  "credential_selection_authorized",
+  "credential_assignment_binding_authorized",
+  "credential_access_authorized",
+  "credential_brokerage_authorized",
+  "credential_resolution_authorized",
+  "credential_delivery_authorized",
+  "network_access_authorized",
+  "readiness_probe_authorized",
+  "publication_authorized",
+  "delivery_authorized",
+  "dispatch_authorized",
+  "execution_authorized",
+  "infrastructure_mutation_authorized",
+] as const;
+const physicalTransportCredentialAccessAuthorizationLeaseFields = [
+  "lease_id",
+  "freshness_admission_id",
+  "assignment_revision",
+  "credential_generation",
+  "rotation_epoch",
+  "policy_id",
+  "policy_version",
+  "scope",
+  "accessor_subject_id",
+  "issued_at",
+  "valid_until",
+  "state",
+  "effective_state",
+  "single_use",
+  "renewable",
+  "authority",
+  "integrity_reference",
+] as const;
+const physicalTransportCredentialAccessAuthorizationLeaseInventoryFields = [
+  "physical_transport_credential_access_authorization_leases",
+  "server_time",
   "durable",
 ] as const;
 const physicalTransportRouteFreshnessAdmissionAuthorityFields = [
@@ -2892,6 +2981,63 @@ function isPhysicalTransportCredentialAssignmentFreshnessAdmission(
   );
 }
 
+function hasCredentialAccessOnlyAuthority(
+  value: unknown,
+): value is WorkflowPhysicalTransportCredentialAccessAuthorizationLeaseAuthority {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, physicalTransportCredentialAccessAuthorizationLeaseAuthorityFields)
+  ) {
+    return false;
+  }
+  return physicalTransportCredentialAccessAuthorizationLeaseAuthorityFields.every((field) =>
+    field === "credential_access_authorized" ? value[field] === true : value[field] === false,
+  );
+}
+
+function isPhysicalTransportCredentialAccessAuthorizationLease(
+  value: unknown,
+  scope: WorkflowScope,
+  serverTime: string,
+): value is WorkflowPhysicalTransportCredentialAccessAuthorizationLease {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, physicalTransportCredentialAccessAuthorizationLeaseFields) ||
+    !isExactScope(value.scope) ||
+    containsCredentialMaterial(value) ||
+    !isTimezoneAwareTimestamp(value.issued_at) ||
+    !isTimezoneAwareTimestamp(value.valid_until)
+  ) {
+    return false;
+  }
+  const leaseScope = value.scope;
+  const issuedAt = Date.parse(value.issued_at);
+  const validUntil = Date.parse(value.valid_until);
+  const expectedEffectiveState = Date.parse(serverTime) >= validUntil ? "expired" : "active";
+  return (
+    isStableIdentifier(value.lease_id) &&
+    isStableIdentifier(value.freshness_admission_id) &&
+    isStableIdentifier(value.assignment_revision) &&
+    Number.isSafeInteger(value.credential_generation) &&
+    Number(value.credential_generation) >= 1 &&
+    Number.isSafeInteger(value.rotation_epoch) &&
+    Number(value.rotation_epoch) >= 1 &&
+    isStableIdentifier(value.policy_id) &&
+    isIdentifier(value.policy_version) &&
+    leaseScope.organization_id === scope.organizationId &&
+    leaseScope.environment_id === scope.environmentId &&
+    leaseScope.site_id === scope.siteId &&
+    isStableIdentifier(value.accessor_subject_id) &&
+    validUntil - issuedAt === 15_000 &&
+    value.state === "authorized_unconsumed" &&
+    value.effective_state === expectedEffectiveState &&
+    value.single_use === true &&
+    value.renewable === false &&
+    hasCredentialAccessOnlyAuthority(value.authority) &&
+    isStableIdentifier(value.integrity_reference)
+  );
+}
+
 function hasZeroPhysicalTransportRouteFreshnessAdmissionAuthority(
   value: unknown,
 ): value is WorkflowPhysicalTransportRouteFreshnessAdmissionAuthority {
@@ -3881,6 +4027,63 @@ export async function listWorkflowPhysicalTransportCredentialAssignmentFreshness
     );
   }
   return data as WorkflowPhysicalTransportCredentialAssignmentFreshnessAdmissionInventory;
+}
+
+export async function listWorkflowPhysicalTransportCredentialAccessAuthorizationLeases(input: {
+  scope: WorkflowScope;
+}): Promise<WorkflowPhysicalTransportCredentialAccessAuthorizationLeaseInventory> {
+  const response = await apiFetch(
+    "/api/v1/workflows/physical-transport-credential-access-authorization-leases",
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(
+    response,
+    "Workflow physical transport credential-access authorization lease retrieval failed",
+  );
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, physicalTransportCredentialAccessAuthorizationLeaseInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    !Array.isArray(data.physical_transport_credential_access_authorization_leases) ||
+    data.physical_transport_credential_access_authorization_leases.length > 256 ||
+    !isTimezoneAwareTimestamp(data.server_time) ||
+    typeof data.durable !== "boolean"
+  ) {
+    throw new ApiRequestError(
+      "Workflow physical transport credential-access authorization lease response was unsafe",
+      response.status,
+    );
+  }
+  const serverTime = data.server_time;
+  if (
+    !data.physical_transport_credential_access_authorization_leases.every((lease) =>
+      isPhysicalTransportCredentialAccessAuthorizationLease(lease, input.scope, serverTime),
+    )
+  ) {
+    throw new ApiRequestError(
+      "Workflow physical transport credential-access authorization lease response was unsafe",
+      response.status,
+    );
+  }
+  const leaseIds = new Set<string>();
+  const freshnessAdmissionIds = new Set<string>();
+  for (const lease of data.physical_transport_credential_access_authorization_leases) {
+    if (
+      !isObject(lease) ||
+      typeof lease.lease_id !== "string" ||
+      typeof lease.freshness_admission_id !== "string" ||
+      leaseIds.has(lease.lease_id) ||
+      freshnessAdmissionIds.has(lease.freshness_admission_id)
+    ) {
+      throw new ApiRequestError(
+        "Workflow physical transport credential-access authorization lease response was unsafe",
+        response.status,
+      );
+    }
+    leaseIds.add(lease.lease_id);
+    freshnessAdmissionIds.add(lease.freshness_admission_id);
+  }
+  return data as WorkflowPhysicalTransportCredentialAccessAuthorizationLeaseInventory;
 }
 
 export async function listWorkflowPhysicalTransportRouteFreshnessAdmissions(input: {

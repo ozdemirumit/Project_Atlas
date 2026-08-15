@@ -32,6 +32,7 @@ import {
   listWorkflowDispatchEventEnvelopes,
   listWorkflowDispatchOutboxPublicationLeases,
   listWorkflowEndpointResolutionAuthorizationLeases,
+  listWorkflowPhysicalTransportCredentialAccessAuthorizationLeases,
   listWorkflowPhysicalTransportCredentialAssignmentSnapshots,
   listWorkflowPhysicalTransportCredentialAssignmentFreshnessAdmissions,
   listWorkflowPhysicalTransportEndpointMaterializations,
@@ -156,6 +157,17 @@ export default function WorkflowPlanningWorkspace({
     ],
     queryFn: () =>
       listWorkflowPhysicalTransportCredentialAssignmentFreshnessAdmissions({ scope }),
+    retry: false,
+  });
+  const physicalTransportCredentialAccessAuthorizationLeaseQuery = useQuery({
+    queryKey: [
+      "workflow-physical-transport-credential-access-authorization-leases",
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: () =>
+      listWorkflowPhysicalTransportCredentialAccessAuthorizationLeases({ scope }),
     retry: false,
   });
   const physicalTransportRouteFreshnessAdmissionQuery = useQuery({
@@ -624,6 +636,10 @@ export default function WorkflowPlanningWorkspace({
     physicalTransportCredentialAssignmentFreshnessAdmissionQuery.error instanceof ApiRequestError
       ? physicalTransportCredentialAssignmentFreshnessAdmissionQuery.error.status
       : undefined;
+  const physicalTransportCredentialAccessAuthorizationLeaseErrorStatus =
+    physicalTransportCredentialAccessAuthorizationLeaseQuery.error instanceof ApiRequestError
+      ? physicalTransportCredentialAccessAuthorizationLeaseQuery.error.status
+      : undefined;
   const physicalTransportRouteFreshnessAdmissionErrorStatus =
     physicalTransportRouteFreshnessAdmissionQuery.error instanceof ApiRequestError
       ? physicalTransportRouteFreshnessAdmissionQuery.error.status
@@ -825,6 +841,158 @@ export default function WorkflowPlanningWorkspace({
           <span>
             These immutable records describe declared deployment capabilities only. They do not
             select or operate a transport.
+          </span>
+        </div>
+      </section>
+
+      <section
+        className="workflow-physical-route-binding-band"
+        aria-labelledby="workflow-credential-access-authorization-lease-title"
+      >
+        <div className="workflow-section-heading">
+          <div>
+            <p className="eyebrow">BOUNDED SINGLE-USE CREDENTIAL-ACCESS EVIDENCE</p>
+            <h2 id="workflow-credential-access-authorization-lease-title">
+              Credential-access authorization leases
+            </h2>
+          </div>
+          <span>Read only</span>
+        </div>
+        {physicalTransportCredentialAccessAuthorizationLeaseQuery.isLoading && (
+          <div className="workflow-empty-state" role="status">
+            <RefreshCw className="spin" size={18} />
+            <span>Loading credential-access authorization leases...</span>
+          </div>
+        )}
+        {physicalTransportCredentialAccessAuthorizationLeaseQuery.isError && (
+          <div className="inline-error" role="alert">
+            <div>
+              <strong>
+                {physicalTransportCredentialAccessAuthorizationLeaseErrorStatus === 401
+                  ? "Your session has expired"
+                  : physicalTransportCredentialAccessAuthorizationLeaseErrorStatus === 403
+                    ? "Credential-access lease permission is missing"
+                    : "Credential-access authorization leases are unavailable"}
+              </strong>
+              <span>
+                {physicalTransportCredentialAccessAuthorizationLeaseErrorStatus === 401
+                  ? "Sign in again to continue."
+                  : physicalTransportCredentialAccessAuthorizationLeaseErrorStatus === 403
+                    ? "Your current role or scope cannot inspect credential-access lease evidence."
+                    : "No authorization or operational state is inferred from this failed read."}
+              </span>
+            </div>
+            {physicalTransportCredentialAccessAuthorizationLeaseErrorStatus !== 401 &&
+              physicalTransportCredentialAccessAuthorizationLeaseErrorStatus !== 403 && (
+                <button
+                  className="secondary-action"
+                  type="button"
+                  aria-label="Retry credential-access authorization lease read"
+                  onClick={() =>
+                    void physicalTransportCredentialAccessAuthorizationLeaseQuery.refetch()
+                  }
+                >
+                  <RefreshCw size={16} />
+                  Retry
+                </button>
+              )}
+          </div>
+        )}
+        {physicalTransportCredentialAccessAuthorizationLeaseQuery.isSuccess &&
+          physicalTransportCredentialAccessAuthorizationLeaseQuery.data
+            .physical_transport_credential_access_authorization_leases.length === 0 && (
+            <div className="workflow-empty-state" role="status">
+              <CalendarClock size={19} />
+              <span>No credential-access authorization leases are recorded in this scope.</span>
+            </div>
+          )}
+        {physicalTransportCredentialAccessAuthorizationLeaseQuery.isSuccess &&
+          physicalTransportCredentialAccessAuthorizationLeaseQuery.data
+            .physical_transport_credential_access_authorization_leases.length > 0 && (
+            <ol
+              className="workflow-step-preview workflow-physical-route-binding-list"
+              aria-label="Credential-access authorization leases"
+            >
+              {physicalTransportCredentialAccessAuthorizationLeaseQuery.data.physical_transport_credential_access_authorization_leases.map(
+                (lease) => (
+                  <li key={lease.lease_id}>
+                    <ShieldCheck size={18} />
+                    <div>
+                      <strong>
+                        <code title={lease.lease_id}>{safeHolderIdentifier(lease.lease_id)}</code>
+                        <span
+                          className={`state-badge ${
+                            lease.effective_state === "active" ? "neutral" : "warning"
+                          }`}
+                        >
+                          {lease.effective_state === "active" ? "Active" : "Expired"}
+                        </span>
+                      </strong>
+                      <div className="workflow-physical-route-binding-grid">
+                        <span>
+                          Freshness admission{" "}
+                          <code title={lease.freshness_admission_id}>
+                            {safeHolderIdentifier(lease.freshness_admission_id)}
+                          </code>
+                        </span>
+                        <span>
+                          Assignment revision{" "}
+                          <code title={lease.assignment_revision}>
+                            {safeHolderIdentifier(lease.assignment_revision)}
+                          </code>
+                        </span>
+                        <span>
+                          Credential generation {lease.credential_generation} | rotation epoch{" "}
+                          {lease.rotation_epoch}
+                        </span>
+                        <span>
+                          Policy <code title={lease.policy_id}>{safeHolderIdentifier(lease.policy_id)}</code>{" "}
+                          v{lease.policy_version}
+                        </span>
+                        <span>
+                          Organization {lease.scope.organization_id} | environment{" "}
+                          {lease.scope.environment_id} | site {lease.scope.site_id}
+                        </span>
+                        <span>
+                          Accessor <code title={lease.accessor_subject_id}>{safeHolderIdentifier(lease.accessor_subject_id)}</code>
+                        </span>
+                        <span>
+                          Issued {formatTimestamp(lease.issued_at)} | valid until{" "}
+                          {formatTimestamp(lease.valid_until)}
+                        </span>
+                        <span>
+                          Immutable state {readableKind(lease.state)} | effective state{" "}
+                          {lease.effective_state}
+                        </span>
+                        <span>Single use true | renewable false</span>
+                        <span>
+                          Integrity reference{" "}
+                          <code title={lease.integrity_reference}>
+                            {safeHolderIdentifier(lease.integrity_reference)}
+                          </code>
+                        </span>
+                        <span className="workflow-physical-route-binding-authority">
+                          Authority credential access true | endpoint resolution false |
+                          protected-artifact access false | route selection false | route binding
+                          false | credential selection false | credential-assignment binding false |
+                          credential brokerage false | credential resolution false | credential
+                          delivery false | network access false | readiness probe false |
+                          publication false | delivery false | dispatch false | execution false |
+                          infrastructure mutation false
+                        </span>
+                      </div>
+                    </div>
+                  </li>
+                ),
+              )}
+            </ol>
+          )}
+        <div className="workflow-safety-boundary" role="note">
+          <LockKeyhole size={18} />
+          <span>
+            This immutable lease authorizes only one future access attempt by the named workload.
+            It does not resolve, expose, transfer, or deliver protected material and grants no
+            operational authority.
           </span>
         </div>
       </section>
