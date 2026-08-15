@@ -10,6 +10,7 @@ from atlas.api.schemas import ResponseMeta
 from atlas.api.security import (
     authenticated_subject,
     authorize_workflow_definition_read,
+    authorize_workflow_physical_transport_credential_access_authorization_lease_read,
     authorize_workflow_physical_transport_credential_assignment_binding_bind,
     authorize_workflow_physical_transport_credential_assignment_binding_read,
     authorize_workflow_physical_transport_credential_assignment_freshness_admission_read,
@@ -26,6 +27,7 @@ from atlas.api.security import (
     authorize_workflow_transport_route_snapshot_read,
     browser_session_subject,
     workflow_outbox_publisher_subject,
+    workflow_physical_transport_credential_accessor_subject,
     workflow_physical_transport_credential_assignment_freshness_admitter_subject,
     workflow_physical_transport_endpoint_resolver_subject,
     workflow_physical_transport_route_binder_subject,
@@ -45,6 +47,7 @@ from atlas.api.workflow_schemas import (
     CreateEventPhysicalTransportCredentialAssignmentSnapshotInput,
     CreateEventPhysicalTransportProfileSnapshotInput,
     CreateEventPhysicalTransportRouteSnapshotInput,
+    CreateWorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseInput,
     CreateWorkflowEventPhysicalTransportCredentialAssignmentBindingInput,
     CreateWorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionInput,
     CreateWorkflowEventPhysicalTransportEndpointMaterializationInput,
@@ -98,6 +101,10 @@ from atlas.api.workflow_schemas import (
     WorkflowEventLogicalChannelBindingInventoryData,
     WorkflowEventLogicalChannelBindingInventoryResponse,
     WorkflowEventLogicalChannelBindingResponse,
+    WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseData,
+    WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseInventoryData,
+    WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseInventoryResponse,
+    WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseResponse,
     WorkflowEventPhysicalTransportCredentialAssignmentBindingData,
     WorkflowEventPhysicalTransportCredentialAssignmentBindingInventoryData,
     WorkflowEventPhysicalTransportCredentialAssignmentBindingInventoryResponse,
@@ -158,6 +165,7 @@ from atlas.modules.conversations.domain.models import ConversationScope
 from atlas.modules.identity.domain.models import AuthenticatedSubject
 from atlas.modules.workflows.application import (
     WORKFLOW_OUTBOX_PUBLISHER_AUDIENCE,
+    WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_ACCESSOR_AUDIENCE,
     WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_ASSIGNMENT_FRESHNESS_ADMITTER_AUDIENCE,
     WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_BINDER_AUDIENCE,
     WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_RESOLVER_AUDIENCE,
@@ -179,6 +187,7 @@ from atlas.modules.workflows.application import (
     WorkflowEventByteArtifactService,
     WorkflowEventLogicalChannelBindingError,
     WorkflowEventLogicalChannelBindingService,
+    WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseService,
     WorkflowEventPhysicalTransportCredentialAssignmentBindingService,
     WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionService,
     WorkflowEventPhysicalTransportEndpointMaterializationError,
@@ -197,6 +206,7 @@ from atlas.modules.workflows.application import (
     WorkflowOutboxPublicationLeaseRepository,
     WorkflowOutboxPublicationLeaseService,
     WorkflowOutboxPublisherContext,
+    WorkflowPhysicalTransportCredentialAccessorContext,
     WorkflowPhysicalTransportCredentialAssignmentFreshnessAdmitterContext,
     WorkflowPhysicalTransportCredentialBinderContext,
     WorkflowPhysicalTransportEndpointResolverContext,
@@ -219,6 +229,9 @@ from atlas.modules.workflows.application import (
     WorkflowTransportRouteSnapshotService,
     WorkflowWorkerContext,
     validate_workflow_transport_credential_assignment_snapshot,
+)
+from atlas.modules.workflows.application.credential_access_authorization_lease_ports import (
+    WorkflowTransportCredentialAccessAuthorizationLeaseError,
 )
 from atlas.modules.workflows.application.credential_assignment_binding_ports import (
     WorkflowTransportCredentialAssignmentBindingError,
@@ -261,6 +274,7 @@ from atlas.modules.workflows.domain import (
     WorkflowEventLogicalChannelBinding,
     WorkflowEventLogicalChannelBindingState,
     WorkflowEventLogicalChannelPolicy,
+    WorkflowEventPhysicalTransportCredentialAccessAuthorizationLease,
     WorkflowEventPhysicalTransportCredentialAssignmentBinding,
     WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmission,
     WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease,
@@ -820,6 +834,38 @@ def _raise_physical_transport_credential_assignment_freshness_admission(
     raise AtlasError(
         status=status,
         code=error.code,
+        title=title,
+        detail=detail,
+        retryable=status == 503,
+    ) from error
+
+
+def _raise_physical_transport_credential_access_authorization_lease(
+    error: WorkflowTransportCredentialAccessAuthorizationLeaseError,
+) -> NoReturn:
+    if error.code.endswith("_invalid") or error.code.endswith("_required"):
+        status = 422
+        code = "workflow_physical_transport_credential_access_authorization_request_invalid"
+        title = "Workflow credential-access authorization request invalid"
+        detail = "The credential-access authorization request is invalid."
+    elif (
+        "repository" in error.code
+        or "audit" in error.code
+        or "persistence" in error.code
+        or "unavailable" in error.code
+    ):
+        status = 503
+        code = "workflow_physical_transport_credential_access_authorization_service_unavailable"
+        title = "Workflow credential-access authorization service unavailable"
+        detail = "Credential-access authorization is temporarily unavailable."
+    else:
+        status = 409
+        code = "workflow_physical_transport_credential_access_authorization_unavailable"
+        title = "Workflow credential-access authorization unavailable"
+        detail = "The current evidence could not support credential-access authorization."
+    raise AtlasError(
+        status=status,
+        code=code,
         title=title,
         detail=detail,
         retryable=status == 503,
@@ -1528,6 +1574,21 @@ def _physical_transport_credential_assignment_freshness_admission_response(
             WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionData.from_domain(
                 admission
             )
+        ),
+        meta=_meta(request),
+    )
+
+
+def _physical_transport_credential_access_authorization_lease_response(
+    lease: WorkflowEventPhysicalTransportCredentialAccessAuthorizationLease,
+    request: Request,
+    response: Response,
+) -> WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseResponse:
+    _no_store(response)
+    return WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseResponse(
+        data=WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseData.from_domain(
+            lease,
+            evaluated_at=lease.issued_at,
         ),
         meta=_meta(request),
     )
@@ -4269,6 +4330,124 @@ async def create_workflow_physical_transport_credential_assignment_freshness_adm
         _raise_physical_transport_credential_assignment_freshness_admission(error)
     return _physical_transport_credential_assignment_freshness_admission_response(
         admission,
+        request,
+        response,
+    )
+
+
+@router.get(
+    "/physical-transport-credential-access-authorization-leases",
+    response_model=(
+        WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseInventoryResponse
+    ),
+)
+async def list_workflow_physical_transport_credential_access_authorization_leases(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_workflow_physical_transport_credential_access_authorization_lease_read),
+    ],
+) -> WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseInventoryResponse:
+    del decision
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    service = cast(
+        WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseService,
+        request.app.state.workflow_credential_access_authorization_lease_service,
+    )
+    try:
+        server_time = await service.repository.get_authoritative_time()
+        leases = await service.list_leases(scope=scope, limit=256)
+        if server_time.tzinfo is None or any(lease.scope != scope for lease in leases):
+            raise WorkflowTransportCredentialAccessAuthorizationLeaseError(
+                "workflow_physical_transport_credential_access_authorization_repository_"
+                "scope_violation",
+                "Stored credential-access authorization metadata is invalid.",
+            )
+    except WorkflowTransportCredentialAccessAuthorizationLeaseError as error:
+        _raise_physical_transport_credential_access_authorization_lease(error)
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code=(
+                "workflow_physical_transport_credential_access_authorization_service_unavailable"
+            ),
+            title="Workflow credential-access authorization service unavailable",
+            detail="Credential-access authorization metadata is temporarily unavailable.",
+            retryable=True,
+        ) from error
+    _no_store(response)
+    return WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseInventoryResponse(
+        data=WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseInventoryData(
+            physical_transport_credential_access_authorization_leases=[
+                WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseData.from_domain(
+                    lease,
+                    evaluated_at=server_time,
+                )
+                for lease in sorted(
+                    leases,
+                    key=lambda value: value.authorization_lease_id,
+                )
+            ],
+            server_time=server_time,
+            durable=service.durable,
+        ),
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    "/physical-transport-credential-access-authorization-leases",
+    response_model=WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseResponse,
+    status_code=201,
+)
+async def create_workflow_physical_transport_credential_access_authorization_lease(
+    payload: CreateWorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[
+        AuthenticatedSubject,
+        Depends(workflow_physical_transport_credential_accessor_subject),
+    ],
+) -> WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseResponse:
+    service = cast(
+        WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseService,
+        request.app.state.workflow_credential_access_authorization_lease_service,
+    )
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    try:
+        lease = await service.authorize(
+            freshness_admission_id=payload.freshness_admission_id,
+            freshness_admission_digest=payload.freshness_admission_digest,
+            policy_id=payload.policy_id,
+            policy_version=payload.policy_version,
+            idempotency_key=payload.idempotency_key,
+            context=WorkflowPhysicalTransportCredentialAccessorContext(
+                subject_id=subject.subject_id,
+                actor_type=subject.kind.value,
+                authentication_method=subject.authentication_method.value,
+                credential_audience=WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_ACCESSOR_AUDIENCE,
+                scope=scope,
+                correlation_id=str(request.state.correlation_id),
+                decision_id=(
+                    "decision.workflow-physical-transport-credential-accessor-authenticated"
+                ),
+                requested_at=datetime.now(UTC),
+            ),
+        )
+    except WorkflowTransportCredentialAccessAuthorizationLeaseError as error:
+        _raise_physical_transport_credential_access_authorization_lease(error)
+    return _physical_transport_credential_access_authorization_lease_response(
+        lease,
         request,
         response,
     )

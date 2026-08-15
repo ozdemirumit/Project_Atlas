@@ -6,8 +6,10 @@ from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from typing import Any, cast
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.responses import Response
 
 from atlas import __version__
 from atlas.api.errors import register_error_handlers
@@ -1550,6 +1552,7 @@ from atlas.modules.workflows.application import (
     WorkflowEventByteArtifactService,
     WorkflowEventLogicalChannelBindingRepository,
     WorkflowEventLogicalChannelBindingService,
+    WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseService,
     WorkflowEventPhysicalTransportCredentialAssignmentBindingService,
     WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionService,
     WorkflowEventPhysicalTransportEndpointMaterializationRepository,
@@ -1572,6 +1575,7 @@ from atlas.modules.workflows.application import (
     WorkflowPlanRepository,
     WorkflowRunMaterializationRepository,
     WorkflowRunMaterializationService,
+    WorkflowTransportCredentialAccessAuthorizationLeaseRepository,
     WorkflowTransportCredentialAssignmentBindingRepository,
     WorkflowTransportCredentialAssignmentFreshnessAdmissionRepository,
     WorkflowTransportCredentialAssignmentSnapshotRepository,
@@ -1590,6 +1594,26 @@ from atlas.modules.workflows.domain import (
     canonical_digest,
     code_owned_workflow_registry,
 )
+
+
+class _WorkflowCredentialAccessAuthorizationNoStoreMiddleware(BaseHTTPMiddleware):
+    _PATH = "/api/v1/workflows/physical-transport-credential-access-authorization-leases"
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: RequestResponseEndpoint,
+    ) -> Response:
+        response = await call_next(request)
+        if request.url.path == self._PATH:
+            response.headers.update(
+                {
+                    "Cache-Control": "no-store, max-age=0",
+                    "Pragma": "no-cache",
+                    "Referrer-Policy": "no-referrer",
+                }
+            )
+        return response
 
 
 class _ConfiguredDeploymentEventTransportProfileRegistry:
@@ -1978,6 +2002,9 @@ def create_app(
     ) = None,
     workflow_event_physical_transport_credential_assignment_freshness_admission_service: (
         WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionService | None
+    ) = None,
+    workflow_event_physical_transport_credential_access_authorization_lease_service: (
+        WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseService | None
     ) = None,
     workflow_event_physical_transport_route_freshness_admission_service: (
         WorkflowEventPhysicalTransportRouteFreshnessAdmissionService | None
@@ -6312,6 +6339,40 @@ def create_app(
         resolved_credential_assignment_freshness_service = (
             workflow_event_physical_transport_credential_assignment_freshness_admission_service
         )
+    if workflow_event_physical_transport_credential_access_authorization_lease_service is None:
+        credential_access_authorization_repository_methods = (
+            "get_authoritative_time",
+            "get_credential_assignment_freshness_admission_by_id",
+            "get_credential_assignment_binding_by_id",
+            "get_credential_assignment_snapshot_by_id",
+            "get_current_credential_assignment_head",
+            "list_credential_access_authorization_leases",
+            "authorize_credential_access",
+        )
+        if not all(
+            callable(getattr(workflow_repository, method_name, None))
+            for method_name in credential_access_authorization_repository_methods
+        ):
+            raise ValueError(
+                "workflow planning repository does not implement physical transport "
+                "credential-access authorization leases; inject "
+                "workflow_event_physical_transport_credential_access_authorization_lease_"
+                "service explicitly"
+            )
+        credential_access_authorization_repository = cast(
+            WorkflowTransportCredentialAccessAuthorizationLeaseRepository,
+            workflow_repository,
+        )
+        resolved_credential_access_authorization_lease_service = (
+            WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseService(
+                authorization_repository=credential_access_authorization_repository,
+                audit_sink=resolved_audit_sink,
+            )
+        )
+    else:
+        resolved_credential_access_authorization_lease_service = (
+            workflow_event_physical_transport_credential_access_authorization_lease_service
+        )
     if workflow_event_physical_transport_route_freshness_admission_service is None:
         physical_transport_route_freshness_repository_methods = (
             "get_physical_transport_route_binding_by_id",
@@ -6798,6 +6859,12 @@ def create_app(
             ),
         ):
             setattr(app.state, freshness_state_name, freshness_state_value)
+        app.state.workflow_credential_access_authorization_lease_service = (
+            resolved_credential_access_authorization_lease_service
+        )
+        app.state.workflow_credential_access_authorization_lease_repository = (
+            resolved_credential_access_authorization_lease_service.repository
+        )
         app.state.workflow_event_physical_transport_route_freshness_admission_service = (
             resolved_workflow_event_physical_transport_route_freshness_admission_service
         )
@@ -6922,6 +6989,7 @@ def create_app(
     )
     app.add_middleware(CorrelationIdMiddleware)
     app.add_middleware(ApiCredentialNoStoreMiddleware)
+    app.add_middleware(_WorkflowCredentialAccessAuthorizationNoStoreMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[str(origin) for origin in resolved_settings.cors_origins],
@@ -6932,6 +7000,8 @@ def create_app(
             "Authorization",
             "Content-Type",
             "X-Correlation-ID",
+            "X-Atlas-Audience",
+            "X-Atlas-Environment",
             "Idempotency-Key",
             resolved_settings.csrf_header_name,
         ],
