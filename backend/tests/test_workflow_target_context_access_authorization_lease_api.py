@@ -506,7 +506,7 @@ def test_default_app_composes_only_fail_closed_status_dependencies() -> None:
     app = create_app(Settings(environment="test"), audit_sink=_AuditSink())
 
     with TestClient(app) as client:
-        service = client.app.state.workflow_target_context_access_authorization_lease_service
+        service = app.state.workflow_target_context_access_authorization_lease_service
         endpoint_attestor = service._endpoint_status_attestor
         credential_attestor = service._credential_status_attestor
         verifier = service._status_signature_verifier

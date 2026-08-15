@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from sqlalchemy import CheckConstraint, Table, UniqueConstraint, text
+from sqlalchemy import CheckConstraint, Constraint, Index, Table, UniqueConstraint, text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from atlas.core.persistence.models import (
@@ -92,8 +92,14 @@ def test_schema_preserves_internal_currentness_evidence_and_single_authority() -
         name == "protected_artifact_access_authority_granted" or f"NOT {name}" in checks
         for name in authority_columns
     )
-    for item in (*lease.constraints, *lease.indexes, *claim.constraints, *claim.indexes):
-        if item.name is not None:
+    schema_items: tuple[Constraint | Index, ...] = (
+        *lease.constraints,
+        *lease.indexes,
+        *claim.constraints,
+        *claim.indexes,
+    )
+    for item in schema_items:
+        if isinstance(item.name, str):
             assert len(item.name) <= 63
 
 
@@ -266,9 +272,7 @@ async def test_exact_replay_rejects_changed_transaction_time_evidence(
         async def get(self, model: object, key: str) -> object:
             return lease_row
 
-    repository = cast(
-        PostgreSQLWorkflowPlanRepository, object.__new__(PostgreSQLWorkflowPlanRepository)
-    )
+    repository = object.__new__(PostgreSQLWorkflowPlanRepository)
 
     async def load_claim(*args: object, **kwargs: object) -> object:
         return claim
