@@ -107,6 +107,11 @@ from atlas.modules.workflows.application.route_freshness_admission_ports import 
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionRequest,
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionResult,
 )
+from atlas.modules.workflows.application.target_context_binding_ports import (
+    WorkflowEventPhysicalTransportTargetContextBindingError,
+    WorkflowEventPhysicalTransportTargetContextBindingRequest,
+    WorkflowEventPhysicalTransportTargetContextBindingResult,
+)
 from atlas.modules.workflows.application.transport_admission_ports import (
     WorkflowEventTransportAdmissionError,
     WorkflowEventTransportAdmissionIdempotencyRecord,
@@ -154,6 +159,7 @@ from atlas.modules.workflows.domain import (
     WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaim,
     WorkflowEventPhysicalTransportRouteBinding,
     WorkflowEventPhysicalTransportRouteFreshnessAdmission,
+    WorkflowEventPhysicalTransportTargetContextBinding,
     WorkflowEventTransportAdmission,
     WorkflowEventTransportCompatibilityAdmission,
     WorkflowExecutionAttempt,
@@ -766,6 +772,20 @@ class UnavailableWorkflowPlanRepository:
     ) -> WorkflowEventPhysicalTransportEndpointMaterializationResultWrite:
         self._raise_endpoint_materialization()
 
+    async def bind_target_context(
+        self,
+        request: WorkflowEventPhysicalTransportTargetContextBindingRequest,
+    ) -> WorkflowEventPhysicalTransportTargetContextBindingResult:
+        self._raise_target_context_binding()
+
+    async def list_target_context_bindings(
+        self,
+        *,
+        scope: WorkflowScope,
+        limit: int = 256,
+    ) -> tuple[WorkflowEventPhysicalTransportTargetContextBinding, ...]:
+        self._raise_target_context_binding()
+
     async def acquire_publication_lease(
         self, request: WorkflowOutboxPublicationLeaseAcquireRequest
     ) -> WorkflowOutboxPublicationLeaseAcquireResult:
@@ -960,4 +980,11 @@ class UnavailableWorkflowPlanRepository:
         raise WorkflowEventPhysicalTransportCredentialMaterializationError(
             "workflow_credential_materialization_repository_unavailable",
             "Durable workflow credential materialization storage is not configured.",
+        )
+
+    @staticmethod
+    def _raise_target_context_binding() -> NoReturn:
+        raise WorkflowEventPhysicalTransportTargetContextBindingError(
+            "workflow_target_context_binding_repository_unavailable",
+            "Durable workflow target context binding storage is not configured.",
         )
