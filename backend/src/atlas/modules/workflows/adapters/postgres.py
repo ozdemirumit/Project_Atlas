@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from enum import Enum
 from hashlib import sha256
@@ -54,6 +54,8 @@ from atlas.core.persistence.models import (
     WorkflowEventPhysicalTransportRouteBindingModel,
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionClaimModel,
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionModel,
+    WorkflowEventPhysicalTransportTargetContextBindingClaimModel,
+    WorkflowEventPhysicalTransportTargetContextBindingModel,
     WorkflowEventTransportAdmissionClaimModel,
     WorkflowEventTransportAdmissionModel,
     WorkflowEventTransportCompatibilityAdmissionClaimModel,
@@ -205,6 +207,12 @@ from atlas.modules.workflows.application.route_freshness_admission_ports import 
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionResult,
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionStatus,
 )
+from atlas.modules.workflows.application.target_context_binding_ports import (
+    WorkflowEventPhysicalTransportTargetContextBindingError,
+    WorkflowEventPhysicalTransportTargetContextBindingRequest,
+    WorkflowEventPhysicalTransportTargetContextBindingResult,
+    WorkflowEventPhysicalTransportTargetContextBindingStatus,
+)
 from atlas.modules.workflows.application.transport_admission_ports import (
     WorkflowEventTransportAdmissionError,
     WorkflowEventTransportAdmissionIdempotencyRecord,
@@ -292,6 +300,9 @@ from atlas.modules.workflows.domain import (
     WorkflowEventPhysicalTransportRouteFreshnessAdmission,
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionAuthority,
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionState,
+    WorkflowEventPhysicalTransportTargetContextBinding,
+    WorkflowEventPhysicalTransportTargetContextBindingAuthority,
+    WorkflowEventPhysicalTransportTargetContextBindingState,
     WorkflowEventTransportAdmission,
     WorkflowEventTransportAdmissionAuthority,
     WorkflowEventTransportAdmissionState,
@@ -327,9 +338,30 @@ from atlas.modules.workflows.domain import (
     code_owned_workflow_event_physical_transport_endpoint_materialization_policy,
     code_owned_workflow_event_physical_transport_endpoint_resolution_authorization_policy,
     code_owned_workflow_event_physical_transport_route_freshness_policy,
+    code_owned_workflow_event_physical_transport_target_context_binding_policy,
     code_owned_workflow_event_transport_admission_policy,
     select_deployment_physical_transport_credential_assignment_head,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class _TargetContextLockedSources:
+    route_binding: WorkflowEventPhysicalTransportRouteBindingModel
+    route_snapshot: EventPhysicalTransportRouteSnapshotModel
+    endpoint_freshness: WorkflowEventPhysicalTransportRouteFreshnessAdmissionModel
+    endpoint_lease: WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel
+    endpoint_claim: WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaimModel
+    endpoint_attempt: WorkflowEventPhysicalTransportEndpointMaterializationAttemptModel
+    endpoint_result: WorkflowEventPhysicalTransportEndpointMaterializationResultModel
+    credential_binding: WorkflowEventPhysicalTransportCredentialAssignmentBindingModel
+    credential_snapshot: EventPhysicalTransportCredentialAssignmentSnapshotModel
+    credential_freshness: WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionModel
+    credential_lease: WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseModel
+    credential_claim: WorkflowEventPhysicalTransportCredentialAccessLeaseConsumptionClaimModel
+    credential_attempt: WorkflowEventPhysicalTransportCredentialMaterializationAttemptModel
+    credential_result: WorkflowEventPhysicalTransportCredentialMaterializationResultModel
+    existing_bindings: tuple[WorkflowEventPhysicalTransportTargetContextBindingModel, ...]
+    idempotency_claim: WorkflowEventPhysicalTransportTargetContextBindingClaimModel | None
 
 
 class PostgreSQLWorkflowPlanRepository:
@@ -4021,6 +4053,1184 @@ class PostgreSQLWorkflowPlanRepository:
         return WorkflowEventPhysicalTransportEndpointMaterializationResultWrite(
             WorkflowEventPhysicalTransportEndpointMaterializationResultStatus.CONFLICT,
             None,
+        )
+
+    async def bind_target_context(
+        self,
+        request: WorkflowEventPhysicalTransportTargetContextBindingRequest,
+    ) -> WorkflowEventPhysicalTransportTargetContextBindingResult:
+        self._validate_target_context_binding_request(request)
+        statuses = WorkflowEventPhysicalTransportTargetContextBindingStatus
+        async with self._sessions() as session:
+            locked = await self._lock_target_context_sources(session, request=request)
+            if locked is None:
+                await session.rollback()
+                return WorkflowEventPhysicalTransportTargetContextBindingResult(
+                    statuses.EVIDENCE_CONFLICT, None
+                )
+            observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+            replay = self._target_context_binding_replay(
+                locked, request=request, observed_at=observed_at
+            )
+            if replay is not None:
+                await session.rollback()
+                return replay
+            if locked.existing_bindings:
+                await session.rollback()
+                return WorkflowEventPhysicalTransportTargetContextBindingResult(
+                    statuses.ALREADY_BOUND, None
+                )
+            evidence = self._target_context_binding_evidence(
+                locked, request=request, observed_at=observed_at, require_live_overlap=True
+            )
+            if evidence is None:
+                await session.rollback()
+                return WorkflowEventPhysicalTransportTargetContextBindingResult(
+                    statuses.EVIDENCE_CONFLICT, None
+                )
+            try:
+                await request.required_precommit_audit()
+            except Exception:
+                await session.rollback()
+                return WorkflowEventPhysicalTransportTargetContextBindingResult(
+                    statuses.PRECOMMIT_AUDIT_FAILED, None
+                )
+
+            committed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+            evidence = self._target_context_binding_evidence(
+                locked, request=request, observed_at=committed_at, require_live_overlap=True
+            )
+            if evidence is None:
+                await session.rollback()
+                return WorkflowEventPhysicalTransportTargetContextBindingResult(
+                    statuses.EVIDENCE_CONFLICT, None
+                )
+            binding = self._target_context_binding(
+                request=request,
+                evidence=evidence,
+                bound_at=committed_at,
+            )
+            try:
+                session.add(self._target_context_binding_model(binding))
+                await session.flush()
+                session.add(self._target_context_binding_claim_model(request, binding=binding))
+                await session.commit()
+                return WorkflowEventPhysicalTransportTargetContextBindingResult(
+                    statuses.BOUND, binding
+                )
+            except IntegrityError:
+                await session.rollback()
+
+        async with self._sessions() as session:
+            locked = await self._lock_target_context_sources(session, request=request)
+            if locked is None:
+                await session.rollback()
+                return WorkflowEventPhysicalTransportTargetContextBindingResult(
+                    statuses.EVIDENCE_CONFLICT, None
+                )
+            observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+            replay = self._target_context_binding_replay(
+                locked, request=request, observed_at=observed_at
+            )
+            if replay is not None:
+                await session.rollback()
+                return replay
+            already_bound = bool(locked.existing_bindings)
+            await session.rollback()
+            return WorkflowEventPhysicalTransportTargetContextBindingResult(
+                statuses.ALREADY_BOUND if already_bound else statuses.EVIDENCE_CONFLICT,
+                None,
+            )
+
+    async def list_target_context_bindings(
+        self,
+        *,
+        scope: WorkflowScope,
+        limit: int = 256,
+    ) -> tuple[WorkflowEventPhysicalTransportTargetContextBinding, ...]:
+        capped = max(1, min(limit, 256))
+        async with self._sessions() as session:
+            rows = tuple(
+                (
+                    await session.scalars(
+                        select(WorkflowEventPhysicalTransportTargetContextBindingModel)
+                        .where(
+                            WorkflowEventPhysicalTransportTargetContextBindingModel.organization_id
+                            == scope.organization_id,
+                            WorkflowEventPhysicalTransportTargetContextBindingModel.environment_id
+                            == scope.environment_id,
+                            WorkflowEventPhysicalTransportTargetContextBindingModel.site_id
+                            == scope.site_id,
+                        )
+                        .order_by(
+                            WorkflowEventPhysicalTransportTargetContextBindingModel.bound_at.desc(),
+                            WorkflowEventPhysicalTransportTargetContextBindingModel.binding_id,
+                        )
+                        .limit(capped)
+                    )
+                ).all()
+            )
+        return tuple(self._target_context_binding_from_row(row) for row in rows)
+
+    async def _lock_target_context_sources(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowEventPhysicalTransportTargetContextBindingRequest,
+    ) -> _TargetContextLockedSources | None:
+        endpoint_result_seed = await session.get(
+            WorkflowEventPhysicalTransportEndpointMaterializationResultModel,
+            request.expected_endpoint_materialization_id,
+        )
+        credential_result_seed = await session.get(
+            WorkflowEventPhysicalTransportCredentialMaterializationResultModel,
+            request.expected_credential_materialization_id,
+        )
+        if endpoint_result_seed is None or credential_result_seed is None:
+            return None
+        endpoint_attempt_seed = await session.get(
+            WorkflowEventPhysicalTransportEndpointMaterializationAttemptModel,
+            endpoint_result_seed.attempt_id,
+        )
+        credential_attempt_seed = await session.get(
+            WorkflowEventPhysicalTransportCredentialMaterializationAttemptModel,
+            credential_result_seed.attempt_id,
+        )
+        if endpoint_attempt_seed is None or credential_attempt_seed is None:
+            return None
+        scope_id = self._target_context_binding_idempotency_scope(
+            request.scope, request.binder_subject_id
+        )
+        claim_seed = cast(
+            WorkflowEventPhysicalTransportTargetContextBindingClaimModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportTargetContextBindingClaimModel).where(
+                    WorkflowEventPhysicalTransportTargetContextBindingClaimModel.idempotency_scope_id
+                    == scope_id,
+                    WorkflowEventPhysicalTransportTargetContextBindingClaimModel.idempotency_key
+                    == request.idempotency_key,
+                )
+            ),
+        )
+
+        route_binding = cast(
+            WorkflowEventPhysicalTransportRouteBindingModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportRouteBindingModel)
+                .where(
+                    WorkflowEventPhysicalTransportRouteBindingModel.binding_id
+                    == endpoint_attempt_seed.physical_transport_route_binding_id
+                )
+                .with_for_update()
+            ),
+        )
+        route_snapshot = cast(
+            EventPhysicalTransportRouteSnapshotModel | None,
+            await session.scalar(
+                select(EventPhysicalTransportRouteSnapshotModel)
+                .where(
+                    EventPhysicalTransportRouteSnapshotModel.snapshot_id
+                    == endpoint_attempt_seed.transport_route_snapshot_id
+                )
+                .with_for_update()
+            ),
+        )
+        endpoint_freshness = cast(
+            WorkflowEventPhysicalTransportRouteFreshnessAdmissionModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportRouteFreshnessAdmissionModel)
+                .where(
+                    WorkflowEventPhysicalTransportRouteFreshnessAdmissionModel.freshness_admission_id
+                    == endpoint_result_seed.freshness_admission_id
+                )
+                .with_for_update()
+            ),
+        )
+        endpoint_lease = cast(
+            WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel)
+                .where(
+                    WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel.authorization_lease_id
+                    == endpoint_result_seed.authorization_lease_id
+                )
+                .with_for_update()
+            ),
+        )
+        endpoint_claim = cast(
+            WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaimModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaimModel)
+                .where(
+                    WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaimModel.claim_id
+                    == endpoint_result_seed.consumption_claim_id
+                )
+                .with_for_update()
+            ),
+        )
+        endpoint_attempt = cast(
+            WorkflowEventPhysicalTransportEndpointMaterializationAttemptModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportEndpointMaterializationAttemptModel)
+                .where(
+                    WorkflowEventPhysicalTransportEndpointMaterializationAttemptModel.attempt_id
+                    == endpoint_result_seed.attempt_id
+                )
+                .with_for_update()
+            ),
+        )
+        endpoint_result = cast(
+            WorkflowEventPhysicalTransportEndpointMaterializationResultModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportEndpointMaterializationResultModel)
+                .where(
+                    WorkflowEventPhysicalTransportEndpointMaterializationResultModel.materialization_id
+                    == request.expected_endpoint_materialization_id
+                )
+                .with_for_update()
+            ),
+        )
+        credential_binding = cast(
+            WorkflowEventPhysicalTransportCredentialAssignmentBindingModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportCredentialAssignmentBindingModel)
+                .where(
+                    WorkflowEventPhysicalTransportCredentialAssignmentBindingModel.binding_id
+                    == credential_attempt_seed.physical_transport_credential_assignment_binding_id
+                )
+                .with_for_update()
+            ),
+        )
+        credential_snapshot = cast(
+            EventPhysicalTransportCredentialAssignmentSnapshotModel | None,
+            await session.scalar(
+                select(EventPhysicalTransportCredentialAssignmentSnapshotModel)
+                .where(
+                    EventPhysicalTransportCredentialAssignmentSnapshotModel.snapshot_id
+                    == credential_attempt_seed.credential_assignment_snapshot_id
+                )
+                .with_for_update()
+            ),
+        )
+        credential_freshness = cast(
+            WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionModel)
+                .where(
+                    WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionModel.freshness_admission_id
+                    == credential_result_seed.freshness_admission_id
+                )
+                .with_for_update()
+            ),
+        )
+        credential_lease = cast(
+            WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseModel)
+                .where(
+                    WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseModel.authorization_lease_id
+                    == credential_result_seed.authorization_lease_id
+                )
+                .with_for_update()
+            ),
+        )
+        credential_claim = cast(
+            WorkflowEventPhysicalTransportCredentialAccessLeaseConsumptionClaimModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportCredentialAccessLeaseConsumptionClaimModel)
+                .where(
+                    WorkflowEventPhysicalTransportCredentialAccessLeaseConsumptionClaimModel.claim_id
+                    == credential_result_seed.consumption_claim_id
+                )
+                .with_for_update()
+            ),
+        )
+        credential_attempt = cast(
+            WorkflowEventPhysicalTransportCredentialMaterializationAttemptModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportCredentialMaterializationAttemptModel)
+                .where(
+                    WorkflowEventPhysicalTransportCredentialMaterializationAttemptModel.attempt_id
+                    == credential_result_seed.attempt_id
+                )
+                .with_for_update()
+            ),
+        )
+        credential_result = cast(
+            WorkflowEventPhysicalTransportCredentialMaterializationResultModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportCredentialMaterializationResultModel)
+                .where(
+                    WorkflowEventPhysicalTransportCredentialMaterializationResultModel.materialization_id
+                    == request.expected_credential_materialization_id
+                )
+                .with_for_update()
+            ),
+        )
+        required = (
+            route_binding,
+            route_snapshot,
+            endpoint_freshness,
+            endpoint_lease,
+            endpoint_claim,
+            endpoint_attempt,
+            endpoint_result,
+            credential_binding,
+            credential_snapshot,
+            credential_freshness,
+            credential_lease,
+            credential_claim,
+            credential_attempt,
+            credential_result,
+        )
+        if any(row is None for row in required):
+            return None
+
+        binding_conditions = [
+            WorkflowEventPhysicalTransportTargetContextBindingModel.endpoint_materialization_id
+            == request.expected_endpoint_materialization_id,
+            WorkflowEventPhysicalTransportTargetContextBindingModel.credential_materialization_id
+            == request.expected_credential_materialization_id,
+        ]
+        if claim_seed is not None:
+            binding_conditions.append(
+                WorkflowEventPhysicalTransportTargetContextBindingModel.binding_id
+                == claim_seed.binding_id
+            )
+        existing_bindings = tuple(
+            (
+                await session.scalars(
+                    select(WorkflowEventPhysicalTransportTargetContextBindingModel)
+                    .where(or_(*binding_conditions))
+                    .order_by(WorkflowEventPhysicalTransportTargetContextBindingModel.binding_id)
+                    .with_for_update()
+                )
+            ).all()
+        )
+        idempotency_claim = cast(
+            WorkflowEventPhysicalTransportTargetContextBindingClaimModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportTargetContextBindingClaimModel)
+                .where(
+                    WorkflowEventPhysicalTransportTargetContextBindingClaimModel.idempotency_scope_id
+                    == scope_id,
+                    WorkflowEventPhysicalTransportTargetContextBindingClaimModel.idempotency_key
+                    == request.idempotency_key,
+                )
+                .with_for_update()
+            ),
+        )
+        return _TargetContextLockedSources(
+            route_binding=cast(WorkflowEventPhysicalTransportRouteBindingModel, route_binding),
+            route_snapshot=cast(EventPhysicalTransportRouteSnapshotModel, route_snapshot),
+            endpoint_freshness=cast(
+                WorkflowEventPhysicalTransportRouteFreshnessAdmissionModel, endpoint_freshness
+            ),
+            endpoint_lease=cast(
+                WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseModel,
+                endpoint_lease,
+            ),
+            endpoint_claim=cast(
+                WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaimModel,
+                endpoint_claim,
+            ),
+            endpoint_attempt=cast(
+                WorkflowEventPhysicalTransportEndpointMaterializationAttemptModel,
+                endpoint_attempt,
+            ),
+            endpoint_result=cast(
+                WorkflowEventPhysicalTransportEndpointMaterializationResultModel, endpoint_result
+            ),
+            credential_binding=cast(
+                WorkflowEventPhysicalTransportCredentialAssignmentBindingModel,
+                credential_binding,
+            ),
+            credential_snapshot=cast(
+                EventPhysicalTransportCredentialAssignmentSnapshotModel, credential_snapshot
+            ),
+            credential_freshness=cast(
+                WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionModel,
+                credential_freshness,
+            ),
+            credential_lease=cast(
+                WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseModel,
+                credential_lease,
+            ),
+            credential_claim=cast(
+                WorkflowEventPhysicalTransportCredentialAccessLeaseConsumptionClaimModel,
+                credential_claim,
+            ),
+            credential_attempt=cast(
+                WorkflowEventPhysicalTransportCredentialMaterializationAttemptModel,
+                credential_attempt,
+            ),
+            credential_result=cast(
+                WorkflowEventPhysicalTransportCredentialMaterializationResultModel,
+                credential_result,
+            ),
+            existing_bindings=existing_bindings,
+            idempotency_claim=idempotency_claim,
+        )
+
+    def _target_context_binding_replay(
+        self,
+        locked: _TargetContextLockedSources,
+        *,
+        request: WorkflowEventPhysicalTransportTargetContextBindingRequest,
+        observed_at: datetime,
+    ) -> WorkflowEventPhysicalTransportTargetContextBindingResult | None:
+        claim = locked.idempotency_claim
+        if claim is None:
+            return None
+        binding_row = next(
+            (row for row in locked.existing_bindings if row.binding_id == claim.binding_id),
+            None,
+        )
+        if binding_row is None:
+            self._target_context_binding_contract_violation()
+        binding = self._target_context_binding_from_claim(claim, binding_row=binding_row)
+        exact = (
+            claim.request_fingerprint == request.request_fingerprint
+            and binding.endpoint_materialization_id == request.expected_endpoint_materialization_id
+            and binding.endpoint_materialization_digest
+            == request.expected_endpoint_materialization_digest
+            and binding.credential_materialization_id
+            == request.expected_credential_materialization_id
+            and binding.credential_materialization_digest
+            == request.expected_credential_materialization_digest
+            and binding.policy_id == request.expected_policy_id
+            and binding.policy_version == request.expected_policy_version
+            and binding.policy_digest == request.expected_policy_digest
+            and binding.scope == request.scope
+            and binding.binder_subject_id == request.binder_subject_id
+        )
+        if exact:
+            evidence = self._target_context_binding_evidence(
+                locked,
+                request=request,
+                observed_at=observed_at,
+                require_live_overlap=False,
+            )
+            if evidence is None:
+                self._target_context_binding_contract_violation()
+        status = (
+            WorkflowEventPhysicalTransportTargetContextBindingStatus.REPLAY
+            if exact
+            else WorkflowEventPhysicalTransportTargetContextBindingStatus.IDEMPOTENCY_CONFLICT
+        )
+        return WorkflowEventPhysicalTransportTargetContextBindingResult(
+            status, binding if exact else None
+        )
+
+    def _target_context_binding_evidence(
+        self,
+        locked: _TargetContextLockedSources,
+        *,
+        request: WorkflowEventPhysicalTransportTargetContextBindingRequest,
+        observed_at: datetime,
+        require_live_overlap: bool,
+    ) -> dict[str, Any] | None:
+        try:
+            route_binding = self._physical_transport_route_binding_from_row(locked.route_binding)
+            route_snapshot = self._transport_route_snapshot_from_row(locked.route_snapshot)
+            endpoint_freshness = self._route_freshness_admission_from_row(locked.endpoint_freshness)
+            endpoint_lease = self._endpoint_resolution_authorization_lease_from_row(
+                locked.endpoint_lease
+            )
+            endpoint_claim = self._endpoint_materialization_claim_from_row(locked.endpoint_claim)
+            endpoint_attempt = self._endpoint_materialization_attempt_from_row(
+                locked.endpoint_attempt
+            )
+            endpoint_result = self._endpoint_materialization_result_from_row(locked.endpoint_result)
+            credential_binding = self._credential_assignment_binding_from_row(
+                locked.credential_binding
+            )
+            credential_snapshot = self._credential_assignment_snapshot_from_row(
+                locked.credential_snapshot
+            )
+            credential_freshness = self._credential_assignment_freshness_admission_from_row(
+                locked.credential_freshness
+            )
+            credential_lease = self._credential_access_lease_from_row(locked.credential_lease)
+            credential_claim = self._credential_materialization_claim_from_row(
+                locked.credential_claim
+            )
+            credential_attempt = self._credential_materialization_attempt_from_row(
+                locked.credential_attempt
+            )
+            credential_result = self._credential_materialization_result_from_row(
+                locked.credential_result
+            )
+        except Exception as exc:
+            raise WorkflowEventPhysicalTransportTargetContextBindingError(
+                "workflow_target_context_binding_repository_contract_violation",
+                "Target-context source evidence is invalid.",
+            ) from exc
+
+        scope = request.scope
+        objects = (
+            route_binding,
+            route_snapshot,
+            endpoint_freshness,
+            endpoint_lease,
+            endpoint_claim,
+            endpoint_attempt,
+            endpoint_result,
+            credential_binding,
+            credential_snapshot,
+            credential_freshness,
+            credential_lease,
+            credential_claim,
+            credential_attempt,
+            credential_result,
+        )
+        if any(item.scope != scope for item in objects):
+            return None
+        zero_authority_objects = (
+            route_binding,
+            route_snapshot,
+            endpoint_freshness,
+            endpoint_claim,
+            endpoint_attempt,
+            endpoint_result,
+            credential_binding,
+            credential_snapshot,
+            credential_freshness,
+            credential_claim,
+            credential_attempt,
+            credential_result,
+        )
+        if any(any(item.authority.canonical_value().values()) for item in zero_authority_objects):
+            return None
+
+        if (
+            endpoint_result.materialization_id != request.expected_endpoint_materialization_id
+            or endpoint_result.canonical_digest != request.expected_endpoint_materialization_digest
+            or endpoint_result.state.value != "materialized_protected"
+            or endpoint_result.failure_class is not None
+            or endpoint_result.protected_artifact_id is None
+            or endpoint_result.protected_artifact_digest is None
+            or endpoint_result.usable_until is None
+            or endpoint_result.protected_artifact_revoked is not False
+            or endpoint_result.cleanup_confirmed is not True
+            or credential_result.materialization_id
+            != request.expected_credential_materialization_id
+            or credential_result.canonical_digest
+            != request.expected_credential_materialization_digest
+            or credential_result.state.value != "materialized_protected"
+            or credential_result.failure_class is not None
+            or credential_result.protected_artifact_id is None
+            or credential_result.protected_artifact_digest is None
+            or credential_result.usable_until is None
+            or credential_result.protected_artifact_revoked is not False
+            or credential_result.cleanup_confirmed is not True
+        ):
+            return None
+        if require_live_overlap and not (
+            observed_at < endpoint_result.usable_until
+            and observed_at < credential_result.usable_until
+        ):
+            return None
+
+        endpoint_chain_matches = (
+            route_binding.transport_route_snapshot_id == route_snapshot.snapshot_id
+            and route_binding.transport_route_snapshot_digest == route_snapshot.canonical_digest
+            and endpoint_freshness.physical_transport_route_binding_id == route_binding.binding_id
+            and endpoint_freshness.physical_transport_route_binding_digest
+            == route_binding.canonical_digest
+            and endpoint_freshness.transport_route_snapshot_id == route_snapshot.snapshot_id
+            and endpoint_freshness.transport_route_snapshot_digest
+            == route_snapshot.canonical_digest
+            and endpoint_lease.freshness_admission_id == endpoint_freshness.freshness_admission_id
+            and endpoint_lease.freshness_admission_digest == endpoint_freshness.canonical_digest
+            and endpoint_lease.physical_transport_route_binding_id == route_binding.binding_id
+            and endpoint_lease.physical_transport_route_binding_digest
+            == route_binding.canonical_digest
+            and endpoint_lease.transport_route_snapshot_id == route_snapshot.snapshot_id
+            and endpoint_lease.transport_route_snapshot_digest == route_snapshot.canonical_digest
+            and endpoint_claim.authorization_lease_id == endpoint_lease.authorization_lease_id
+            and endpoint_claim.authorization_lease_digest == endpoint_lease.canonical_digest
+            and endpoint_claim.freshness_admission_id == endpoint_freshness.freshness_admission_id
+            and endpoint_claim.freshness_admission_digest == endpoint_freshness.canonical_digest
+            and endpoint_attempt.consumption_claim_id == endpoint_claim.claim_id
+            and endpoint_attempt.authorization_lease_id == endpoint_lease.authorization_lease_id
+            and endpoint_attempt.authorization_lease_digest == endpoint_lease.canonical_digest
+            and endpoint_attempt.freshness_admission_id == endpoint_freshness.freshness_admission_id
+            and endpoint_attempt.freshness_admission_digest == endpoint_freshness.canonical_digest
+            and endpoint_attempt.physical_transport_route_binding_id == route_binding.binding_id
+            and endpoint_attempt.physical_transport_route_binding_digest
+            == route_binding.canonical_digest
+            and endpoint_attempt.transport_route_snapshot_id == route_snapshot.snapshot_id
+            and endpoint_attempt.transport_route_snapshot_digest == route_snapshot.canonical_digest
+            and endpoint_attempt.attempt_id == endpoint_claim.attempt_id
+            and endpoint_attempt.materialization_id == endpoint_claim.materialization_id
+            and endpoint_result.attempt_id == endpoint_attempt.attempt_id
+            and endpoint_result.attempt_digest == endpoint_attempt.canonical_digest
+            and endpoint_result.consumption_claim_id == endpoint_claim.claim_id
+            and endpoint_result.consumption_claim_digest == endpoint_claim.canonical_digest
+            and endpoint_result.authorization_lease_id == endpoint_lease.authorization_lease_id
+            and endpoint_result.authorization_lease_digest == endpoint_lease.canonical_digest
+            and endpoint_result.freshness_admission_id == endpoint_freshness.freshness_admission_id
+            and endpoint_result.freshness_admission_digest == endpoint_freshness.canonical_digest
+            and endpoint_result.transport_route_snapshot_id == route_snapshot.snapshot_id
+            and endpoint_result.transport_route_snapshot_digest == route_snapshot.canonical_digest
+            and endpoint_result.resolver_subject_id == endpoint_lease.resolver_subject_id
+        )
+        credential_chain_matches = (
+            credential_binding.physical_transport_route_binding_id == route_binding.binding_id
+            and credential_binding.physical_transport_route_binding_digest
+            == route_binding.canonical_digest
+            and credential_binding.transport_route_snapshot_id == route_snapshot.snapshot_id
+            and credential_binding.transport_route_snapshot_digest
+            == route_snapshot.canonical_digest
+            and credential_binding.credential_assignment_snapshot_id
+            == credential_snapshot.snapshot_id
+            and credential_binding.credential_assignment_snapshot_digest
+            == credential_snapshot.canonical_digest
+            and credential_snapshot.route_snapshot_id == route_snapshot.snapshot_id
+            and credential_snapshot.route_id == route_snapshot.route_id
+            and credential_snapshot.route_revision == route_snapshot.route_revision
+            and credential_snapshot.source_route_digest == route_snapshot.source_route_digest
+            and credential_snapshot.credential_requirement_profile_id
+            == route_snapshot.credential_requirement_profile_id
+            and credential_snapshot.credential_requirement_profile_version
+            == route_snapshot.credential_requirement_profile_version
+            and credential_snapshot.credential_requirement_profile_digest
+            == route_snapshot.credential_requirement_profile_digest
+            and credential_snapshot.authentication_mechanism_class
+            == route_snapshot.authentication_mechanism_class
+            and credential_snapshot.principal_class == route_snapshot.principal_class
+            and credential_freshness.physical_transport_credential_assignment_binding_id
+            == credential_binding.binding_id
+            and credential_freshness.physical_transport_credential_assignment_binding_digest
+            == credential_binding.canonical_digest
+            and credential_freshness.credential_assignment_snapshot_id
+            == credential_snapshot.snapshot_id
+            and credential_freshness.credential_assignment_snapshot_digest
+            == credential_snapshot.canonical_digest
+            and credential_lease.freshness_admission_id
+            == credential_freshness.freshness_admission_id
+            and credential_lease.freshness_admission_digest == credential_freshness.canonical_digest
+            and credential_lease.physical_transport_credential_assignment_binding_id
+            == credential_binding.binding_id
+            and credential_lease.physical_transport_credential_assignment_binding_digest
+            == credential_binding.canonical_digest
+            and credential_lease.credential_assignment_snapshot_id
+            == credential_snapshot.snapshot_id
+            and credential_lease.credential_assignment_snapshot_digest
+            == credential_snapshot.canonical_digest
+            and credential_claim.authorization_lease_id == credential_lease.authorization_lease_id
+            and credential_claim.authorization_lease_digest == credential_lease.canonical_digest
+            and credential_claim.freshness_admission_id
+            == credential_freshness.freshness_admission_id
+            and credential_claim.freshness_admission_digest == credential_freshness.canonical_digest
+            and credential_attempt.consumption_claim_id == credential_claim.claim_id
+            and credential_attempt.authorization_lease_id == credential_lease.authorization_lease_id
+            and credential_attempt.authorization_lease_digest == credential_lease.canonical_digest
+            and credential_attempt.freshness_admission_id
+            == credential_freshness.freshness_admission_id
+            and credential_attempt.freshness_admission_digest
+            == credential_freshness.canonical_digest
+            and credential_attempt.physical_transport_credential_assignment_binding_id
+            == credential_binding.binding_id
+            and credential_attempt.physical_transport_credential_assignment_binding_digest
+            == credential_binding.canonical_digest
+            and credential_attempt.credential_assignment_snapshot_id
+            == credential_snapshot.snapshot_id
+            and credential_attempt.credential_assignment_snapshot_digest
+            == credential_snapshot.canonical_digest
+            and credential_attempt.attempt_id == credential_claim.attempt_id
+            and credential_attempt.materialization_id == credential_claim.materialization_id
+            and credential_result.attempt_id == credential_attempt.attempt_id
+            and credential_result.attempt_digest == credential_attempt.canonical_digest
+            and credential_result.consumption_claim_id == credential_claim.claim_id
+            and credential_result.consumption_claim_digest == credential_claim.canonical_digest
+            and credential_result.authorization_lease_id == credential_lease.authorization_lease_id
+            and credential_result.authorization_lease_digest == credential_lease.canonical_digest
+            and credential_result.freshness_admission_id
+            == credential_freshness.freshness_admission_id
+            and credential_result.freshness_admission_digest
+            == credential_freshness.canonical_digest
+            and credential_result.credential_assignment_snapshot_id
+            == credential_snapshot.snapshot_id
+            and credential_result.credential_assignment_snapshot_digest
+            == credential_snapshot.canonical_digest
+            and credential_result.assignment_id == credential_snapshot.assignment_id
+            and credential_result.assignment_revision == credential_snapshot.assignment_revision
+            and credential_result.credential_generation == credential_snapshot.credential_generation
+            and credential_result.rotation_epoch == credential_snapshot.rotation_epoch
+            and credential_result.accessor_subject_id == credential_lease.accessor_subject_id
+        )
+        if not endpoint_chain_matches or not credential_chain_matches:
+            return None
+        return {
+            "route_binding": route_binding,
+            "route_snapshot": route_snapshot,
+            "endpoint_result": endpoint_result,
+            "credential_binding": credential_binding,
+            "credential_snapshot": credential_snapshot,
+            "credential_result": credential_result,
+        }
+
+    @classmethod
+    def _target_context_binding(
+        cls,
+        *,
+        request: WorkflowEventPhysicalTransportTargetContextBindingRequest,
+        evidence: dict[str, Any],
+        bound_at: datetime,
+    ) -> WorkflowEventPhysicalTransportTargetContextBinding:
+        policy = code_owned_workflow_event_physical_transport_target_context_binding_policy()
+        route_binding = evidence["route_binding"]
+        route_snapshot = evidence["route_snapshot"]
+        endpoint_result = evidence["endpoint_result"]
+        credential_binding = evidence["credential_binding"]
+        credential_snapshot = evidence["credential_snapshot"]
+        credential_result = evidence["credential_result"]
+        commitment = cls._target_context_commitment(evidence=evidence, policy=policy)
+        identity_digest = canonical_digest(
+            {
+                "binder_subject_id": request.binder_subject_id,
+                "request_fingerprint": request.request_fingerprint,
+                "target_context_commitment": commitment,
+            }
+        )
+        values: dict[str, object] = {
+            "binding_id": f"workflow-target-context-binding.{identity_digest[:48]}",
+            "physical_transport_route_binding_id": route_binding.binding_id,
+            "physical_transport_route_binding_digest": route_binding.canonical_digest,
+            "transport_route_snapshot_id": route_snapshot.snapshot_id,
+            "transport_route_snapshot_digest": route_snapshot.canonical_digest,
+            "endpoint_materialization_id": endpoint_result.materialization_id,
+            "endpoint_materialization_digest": endpoint_result.canonical_digest,
+            "physical_transport_credential_assignment_binding_id": credential_binding.binding_id,
+            "physical_transport_credential_assignment_binding_digest": (
+                credential_binding.canonical_digest
+            ),
+            "credential_assignment_snapshot_id": credential_snapshot.snapshot_id,
+            "credential_assignment_snapshot_digest": credential_snapshot.canonical_digest,
+            "credential_materialization_id": credential_result.materialization_id,
+            "credential_materialization_digest": credential_result.canonical_digest,
+            "resolver_subject_id": endpoint_result.resolver_subject_id,
+            "accessor_subject_id": credential_result.accessor_subject_id,
+            "target_context_schema_id": policy.target_context_schema_id,
+            "target_context_schema_version": policy.target_context_schema_version,
+            "target_context_commitment": commitment,
+            "scope": request.scope,
+            "binder_subject_id": request.binder_subject_id,
+            "bound_at": bound_at,
+            "joint_usable_until": min(endpoint_result.usable_until, credential_result.usable_until),
+            "policy_id": policy.policy_id,
+            "policy_version": policy.policy_version,
+            "policy_digest": policy.canonical_digest,
+            "state": WorkflowEventPhysicalTransportTargetContextBindingState.BOUND,
+            "authority": WorkflowEventPhysicalTransportTargetContextBindingAuthority(),
+        }
+        payload = cls._target_context_binding_payload_values(values)
+        return WorkflowEventPhysicalTransportTargetContextBinding(
+            **cast(Any, values), canonical_digest=canonical_digest(payload)
+        )
+
+    @staticmethod
+    def _target_context_commitment(*, evidence: dict[str, Any], policy: Any) -> str:
+        route_binding = evidence["route_binding"]
+        route_snapshot = evidence["route_snapshot"]
+        endpoint_result = evidence["endpoint_result"]
+        credential_binding = evidence["credential_binding"]
+        credential_snapshot = evidence["credential_snapshot"]
+        credential_result = evidence["credential_result"]
+        return canonical_digest(
+            {
+                "credential_assignment_binding": {
+                    "digest": credential_binding.canonical_digest,
+                    "id": credential_binding.binding_id,
+                },
+                "credential_assignment_snapshot": {
+                    "digest": credential_snapshot.canonical_digest,
+                    "id": credential_snapshot.snapshot_id,
+                    "target_scope_commitment": credential_snapshot.target_scope_commitment,
+                },
+                "credential_materialization": {
+                    "digest": credential_result.canonical_digest,
+                    "id": credential_result.materialization_id,
+                },
+                "destination": {
+                    "id": route_snapshot.destination_id,
+                    "revision": route_snapshot.destination_revision,
+                },
+                "endpoint_materialization": {
+                    "digest": endpoint_result.canonical_digest,
+                    "id": endpoint_result.materialization_id,
+                },
+                "endpoint_set": {
+                    "id": route_snapshot.endpoint_set_id,
+                    "revision": route_snapshot.endpoint_set_revision,
+                },
+                "physical_transport_route_binding": {
+                    "digest": route_binding.canonical_digest,
+                    "id": route_binding.binding_id,
+                },
+                "routing_contract": {
+                    "id": route_snapshot.routing_contract_id,
+                    "revision": route_snapshot.routing_contract_revision,
+                },
+                "schema_id": policy.target_context_schema_id,
+                "schema_version": policy.target_context_schema_version,
+                "scope": route_binding.scope.canonical_value(),
+                "transport_route_snapshot": {
+                    "digest": route_snapshot.canonical_digest,
+                    "id": route_snapshot.snapshot_id,
+                    "route_id": route_snapshot.route_id,
+                    "route_revision": route_snapshot.route_revision,
+                    "source_route_digest": route_snapshot.source_route_digest,
+                },
+            }
+        )
+
+    @staticmethod
+    def _target_context_binding_payload_values(values: dict[str, object]) -> dict[str, object]:
+        return {
+            key: (
+                value.canonical_value()
+                if isinstance(
+                    value,
+                    (
+                        WorkflowScope,
+                        WorkflowEventPhysicalTransportTargetContextBindingAuthority,
+                    ),
+                )
+                else value.isoformat()
+                if isinstance(value, datetime)
+                else value.value
+                if isinstance(value, Enum)
+                else value
+            )
+            for key, value in values.items()
+        }
+
+    @staticmethod
+    def _target_context_binding_payload(
+        binding: WorkflowEventPhysicalTransportTargetContextBinding,
+    ) -> dict[str, object]:
+        return binding.canonical_value()
+
+    @classmethod
+    def _target_context_binding_model(
+        cls, binding: WorkflowEventPhysicalTransportTargetContextBinding
+    ) -> WorkflowEventPhysicalTransportTargetContextBindingModel:
+        authority = binding.authority
+        return WorkflowEventPhysicalTransportTargetContextBindingModel(
+            binding_id=binding.binding_id,
+            physical_transport_route_binding_id=binding.physical_transport_route_binding_id,
+            physical_transport_route_binding_digest=(
+                binding.physical_transport_route_binding_digest
+            ),
+            transport_route_snapshot_id=binding.transport_route_snapshot_id,
+            transport_route_snapshot_digest=binding.transport_route_snapshot_digest,
+            endpoint_materialization_id=binding.endpoint_materialization_id,
+            endpoint_materialization_digest=binding.endpoint_materialization_digest,
+            physical_transport_credential_assignment_binding_id=(
+                binding.physical_transport_credential_assignment_binding_id
+            ),
+            physical_transport_credential_assignment_binding_digest=(
+                binding.physical_transport_credential_assignment_binding_digest
+            ),
+            credential_assignment_snapshot_id=binding.credential_assignment_snapshot_id,
+            credential_assignment_snapshot_digest=binding.credential_assignment_snapshot_digest,
+            credential_materialization_id=binding.credential_materialization_id,
+            credential_materialization_digest=binding.credential_materialization_digest,
+            resolver_subject_id=binding.resolver_subject_id,
+            accessor_subject_id=binding.accessor_subject_id,
+            target_context_schema_id=binding.target_context_schema_id,
+            target_context_schema_version=binding.target_context_schema_version,
+            target_context_commitment=binding.target_context_commitment,
+            organization_id=binding.scope.organization_id,
+            environment_id=binding.scope.environment_id,
+            site_id=binding.scope.site_id,
+            binder_subject_id=binding.binder_subject_id,
+            bound_at=binding.bound_at,
+            joint_usable_until=binding.joint_usable_until,
+            policy_id=binding.policy_id,
+            policy_version=binding.policy_version,
+            policy_digest=binding.policy_digest,
+            state=binding.state.value,
+            endpoint_resolution_authority_granted=authority.endpoint_resolution_authorized,
+            protected_artifact_access_authority_granted=(
+                authority.protected_artifact_access_authorized
+            ),
+            route_selection_authority_granted=authority.route_selection_authorized,
+            route_binding_authority_granted=authority.route_binding_authorized,
+            credential_selection_authority_granted=authority.credential_selection_authorized,
+            credential_assignment_binding_authority_granted=(
+                authority.credential_assignment_binding_authorized
+            ),
+            credential_access_authority_granted=authority.credential_access_authorized,
+            credential_brokerage_authority_granted=authority.credential_brokerage_authorized,
+            credential_resolution_authority_granted=authority.credential_resolution_authorized,
+            credential_delivery_authority_granted=authority.credential_delivery_authorized,
+            network_access_authority_granted=authority.network_access_authorized,
+            readiness_probe_authority_granted=authority.readiness_probe_authorized,
+            publication_authority_granted=authority.publication_authorized,
+            delivery_authority_granted=authority.delivery_authorized,
+            dispatch_authority_granted=authority.dispatch_authorized,
+            execution_authority_granted=authority.execution_authorized,
+            infrastructure_mutation_authority_granted=(
+                authority.infrastructure_mutation_authorized
+            ),
+            canonical_digest=binding.canonical_digest,
+            payload=cls._target_context_binding_payload(binding),
+        )
+
+    @classmethod
+    def _target_context_binding_from_row(
+        cls, row: WorkflowEventPhysicalTransportTargetContextBindingModel
+    ) -> WorkflowEventPhysicalTransportTargetContextBinding:
+        raw = dict(row.payload)
+        try:
+            raw["scope"] = WorkflowScope(**cast(Any, raw["scope"]))
+            raw["bound_at"] = datetime.fromisoformat(str(raw["bound_at"]))
+            raw["joint_usable_until"] = datetime.fromisoformat(str(raw["joint_usable_until"]))
+            raw["state"] = WorkflowEventPhysicalTransportTargetContextBindingState(
+                str(raw["state"])
+            )
+            raw["authority"] = WorkflowEventPhysicalTransportTargetContextBindingAuthority(
+                **cast(Any, raw["authority"])
+            )
+            binding = WorkflowEventPhysicalTransportTargetContextBinding(**cast(Any, raw))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowEventPhysicalTransportTargetContextBindingError(
+                "workflow_target_context_binding_repository_contract_violation",
+                "The target-context binding record is invalid.",
+            ) from exc
+        authority = binding.authority
+        if (
+            row.binding_id != binding.binding_id
+            or row.physical_transport_route_binding_id
+            != binding.physical_transport_route_binding_id
+            or row.physical_transport_route_binding_digest
+            != binding.physical_transport_route_binding_digest
+            or row.transport_route_snapshot_id != binding.transport_route_snapshot_id
+            or row.transport_route_snapshot_digest != binding.transport_route_snapshot_digest
+            or row.endpoint_materialization_id != binding.endpoint_materialization_id
+            or row.endpoint_materialization_digest != binding.endpoint_materialization_digest
+            or row.physical_transport_credential_assignment_binding_id
+            != binding.physical_transport_credential_assignment_binding_id
+            or row.physical_transport_credential_assignment_binding_digest
+            != binding.physical_transport_credential_assignment_binding_digest
+            or row.credential_assignment_snapshot_id != binding.credential_assignment_snapshot_id
+            or row.credential_assignment_snapshot_digest
+            != binding.credential_assignment_snapshot_digest
+            or row.credential_materialization_id != binding.credential_materialization_id
+            or row.credential_materialization_digest != binding.credential_materialization_digest
+            or row.resolver_subject_id != binding.resolver_subject_id
+            or row.accessor_subject_id != binding.accessor_subject_id
+            or row.target_context_schema_id != binding.target_context_schema_id
+            or row.target_context_schema_version != binding.target_context_schema_version
+            or row.target_context_commitment != binding.target_context_commitment
+            or row.organization_id != binding.scope.organization_id
+            or row.environment_id != binding.scope.environment_id
+            or row.site_id != binding.scope.site_id
+            or row.binder_subject_id != binding.binder_subject_id
+            or row.bound_at != binding.bound_at
+            or row.joint_usable_until != binding.joint_usable_until
+            or row.policy_id != binding.policy_id
+            or row.policy_version != binding.policy_version
+            or row.policy_digest != binding.policy_digest
+            or row.state != binding.state.value
+            or row.endpoint_resolution_authority_granted != authority.endpoint_resolution_authorized
+            or row.protected_artifact_access_authority_granted
+            != authority.protected_artifact_access_authorized
+            or row.route_selection_authority_granted != authority.route_selection_authorized
+            or row.route_binding_authority_granted != authority.route_binding_authorized
+            or row.credential_selection_authority_granted
+            != authority.credential_selection_authorized
+            or row.credential_assignment_binding_authority_granted
+            != authority.credential_assignment_binding_authorized
+            or row.credential_access_authority_granted != authority.credential_access_authorized
+            or row.credential_brokerage_authority_granted
+            != authority.credential_brokerage_authorized
+            or row.credential_resolution_authority_granted
+            != authority.credential_resolution_authorized
+            or row.credential_delivery_authority_granted != authority.credential_delivery_authorized
+            or row.network_access_authority_granted != authority.network_access_authorized
+            or row.readiness_probe_authority_granted != authority.readiness_probe_authorized
+            or row.publication_authority_granted != authority.publication_authorized
+            or row.delivery_authority_granted != authority.delivery_authorized
+            or row.dispatch_authority_granted != authority.dispatch_authorized
+            or row.execution_authority_granted != authority.execution_authorized
+            or row.infrastructure_mutation_authority_granted
+            != authority.infrastructure_mutation_authorized
+            or row.canonical_digest != binding.canonical_digest
+            or row.payload != cls._target_context_binding_payload(binding)
+            or any(authority.canonical_value().values())
+        ):
+            cls._target_context_binding_contract_violation()
+        return binding
+
+    @classmethod
+    def _target_context_binding_claim_model(
+        cls,
+        request: WorkflowEventPhysicalTransportTargetContextBindingRequest,
+        *,
+        binding: WorkflowEventPhysicalTransportTargetContextBinding,
+    ) -> WorkflowEventPhysicalTransportTargetContextBindingClaimModel:
+        scope_id = cls._target_context_binding_idempotency_scope(
+            request.scope, request.binder_subject_id
+        )
+        payload = cls._target_context_binding_claim_payload(
+            request=request, binding=binding, scope_id=scope_id
+        )
+        claim_digest = canonical_digest(payload)
+        return WorkflowEventPhysicalTransportTargetContextBindingClaimModel(
+            claim_id=f"workflow-target-context-binding-claim.{claim_digest[:48]}",
+            idempotency_scope_id=scope_id,
+            idempotency_key=request.idempotency_key,
+            request_fingerprint=request.request_fingerprint,
+            result_digest=binding.canonical_digest,
+            binding_id=binding.binding_id,
+            physical_transport_route_binding_id=binding.physical_transport_route_binding_id,
+            transport_route_snapshot_id=binding.transport_route_snapshot_id,
+            endpoint_materialization_id=binding.endpoint_materialization_id,
+            physical_transport_credential_assignment_binding_id=(
+                binding.physical_transport_credential_assignment_binding_id
+            ),
+            credential_assignment_snapshot_id=binding.credential_assignment_snapshot_id,
+            credential_materialization_id=binding.credential_materialization_id,
+            target_context_schema_id=binding.target_context_schema_id,
+            target_context_schema_version=binding.target_context_schema_version,
+            policy_id=binding.policy_id,
+            policy_version=binding.policy_version,
+            policy_digest=binding.policy_digest,
+            organization_id=binding.scope.organization_id,
+            environment_id=binding.scope.environment_id,
+            site_id=binding.scope.site_id,
+            binder_subject_id=binding.binder_subject_id,
+            created_at=binding.bound_at,
+            canonical_digest=claim_digest,
+            payload=payload,
+        )
+
+    @classmethod
+    def _target_context_binding_claim_payload(
+        cls,
+        *,
+        request: WorkflowEventPhysicalTransportTargetContextBindingRequest,
+        binding: WorkflowEventPhysicalTransportTargetContextBinding,
+        scope_id: str,
+    ) -> dict[str, object]:
+        return {
+            "idempotency_key": request.idempotency_key,
+            "idempotency_scope_id": scope_id,
+            "request_fingerprint": request.request_fingerprint,
+            "result_binding": cls._target_context_binding_payload(binding),
+            "result_digest": binding.canonical_digest,
+        }
+
+    @classmethod
+    def _target_context_binding_from_claim(
+        cls,
+        claim: WorkflowEventPhysicalTransportTargetContextBindingClaimModel,
+        *,
+        binding_row: WorkflowEventPhysicalTransportTargetContextBindingModel,
+    ) -> WorkflowEventPhysicalTransportTargetContextBinding:
+        binding = cls._target_context_binding_from_row(binding_row)
+        scope_id = cls._target_context_binding_idempotency_scope(
+            binding.scope, binding.binder_subject_id
+        )
+        request = WorkflowEventPhysicalTransportTargetContextBindingRequest(
+            expected_endpoint_materialization_id=binding.endpoint_materialization_id,
+            expected_endpoint_materialization_digest=binding.endpoint_materialization_digest,
+            expected_credential_materialization_id=binding.credential_materialization_id,
+            expected_credential_materialization_digest=binding.credential_materialization_digest,
+            expected_policy_id=binding.policy_id,
+            expected_policy_version=binding.policy_version,
+            expected_policy_digest=binding.policy_digest,
+            scope=binding.scope,
+            binder_subject_id=binding.binder_subject_id,
+            requested_at=binding.bound_at,
+            idempotency_key=claim.idempotency_key,
+            request_fingerprint=claim.request_fingerprint,
+            required_precommit_audit=cast(Any, None),
+        )
+        payload = cls._target_context_binding_claim_payload(
+            request=request, binding=binding, scope_id=scope_id
+        )
+        if (
+            claim.idempotency_scope_id != scope_id
+            or claim.result_digest != binding.canonical_digest
+            or claim.binding_id != binding.binding_id
+            or claim.physical_transport_route_binding_id
+            != binding.physical_transport_route_binding_id
+            or claim.transport_route_snapshot_id != binding.transport_route_snapshot_id
+            or claim.endpoint_materialization_id != binding.endpoint_materialization_id
+            or claim.physical_transport_credential_assignment_binding_id
+            != binding.physical_transport_credential_assignment_binding_id
+            or claim.credential_assignment_snapshot_id != binding.credential_assignment_snapshot_id
+            or claim.credential_materialization_id != binding.credential_materialization_id
+            or claim.target_context_schema_id != binding.target_context_schema_id
+            or claim.target_context_schema_version != binding.target_context_schema_version
+            or claim.policy_id != binding.policy_id
+            or claim.policy_version != binding.policy_version
+            or claim.policy_digest != binding.policy_digest
+            or claim.organization_id != binding.scope.organization_id
+            or claim.environment_id != binding.scope.environment_id
+            or claim.site_id != binding.scope.site_id
+            or claim.binder_subject_id != binding.binder_subject_id
+            or claim.created_at.tzinfo is None
+            or claim.created_at != binding.bound_at
+            or claim.payload != payload
+            or claim.canonical_digest != canonical_digest(payload)
+        ):
+            cls._target_context_binding_contract_violation()
+        return binding
+
+    @staticmethod
+    def _target_context_binding_idempotency_scope(
+        scope: WorkflowScope, binder_subject_id: str
+    ) -> str:
+        return canonical_digest(
+            {
+                "binder_subject_id": binder_subject_id,
+                "operation": "bind-workflow-physical-transport-target-context",
+                "scope": scope.canonical_value(),
+            }
+        )
+
+    @staticmethod
+    def _validate_target_context_binding_request(
+        request: WorkflowEventPhysicalTransportTargetContextBindingRequest,
+    ) -> None:
+        policy = code_owned_workflow_event_physical_transport_target_context_binding_policy()
+        identifiers = (
+            request.expected_endpoint_materialization_id,
+            request.expected_credential_materialization_id,
+            request.expected_policy_id,
+            request.expected_policy_version,
+            request.binder_subject_id,
+            request.idempotency_key,
+        )
+        digests = (
+            request.expected_endpoint_materialization_digest,
+            request.expected_credential_materialization_digest,
+            request.expected_policy_digest,
+            request.request_fingerprint,
+        )
+        if (
+            any(not value or value != value.strip() or len(value) > 240 for value in identifiers)
+            or len(request.idempotency_key) > 128
+            or any(len(value) != 64 for value in digests)
+            or request.requested_at.tzinfo is None
+            or request.expected_policy_id != policy.policy_id
+            or request.expected_policy_version != policy.policy_version
+            or request.expected_policy_digest != policy.canonical_digest
+        ):
+            raise ValueError("target-context binding request is invalid")
+
+    @staticmethod
+    def _target_context_binding_contract_violation() -> NoReturn:
+        raise WorkflowEventPhysicalTransportTargetContextBindingError(
+            "workflow_target_context_binding_repository_contract_violation",
+            "The target-context binding does not match durable evidence.",
         )
 
     async def get_dispatch_intent_staging_request(
