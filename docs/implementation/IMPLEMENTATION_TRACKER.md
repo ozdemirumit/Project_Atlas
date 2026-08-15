@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-209 |
 | Title | Bounded single-use workflow protected transport target-context access authorization lease without artifact opening or runtime authority |
-| Status | Local implementation and validation complete; delivery pending |
+| Status | Delivery in progress; exact-head CI pending |
 | Branch | `agent/protected-target-context-access-lease` |
-| Pull Request | Not opened |
+| Pull Request | [#222](https://github.com/ozdemirumit/Project_Atlas/pull/222) |
 | Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-150, ADR-152, ADR-155, ADR-157, ADR-158, ADR-159 |
 | Last Updated | 2026-08-15 |
-| Next Action | Complete live browser inspection, open an exact-head PR, pass CI, merge with SHA lock and verify independent main CI |
+| Next Action | Pass exact-head PR CI, merge with SHA lock and verify independent main CI |
 
 ### ATLAS-IMP-209 Scope Rationale
 
