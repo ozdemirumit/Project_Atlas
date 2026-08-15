@@ -159,6 +159,15 @@ class WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionState(
     ADMITTED_CURRENT = "admitted_current"
 
 
+class WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseState(StrEnum):
+    AUTHORIZED_UNCONSUMED = "authorized_unconsumed"
+
+
+class WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseEffectiveState(StrEnum):
+    ACTIVE = "active"
+    EXPIRED = "expired"
+
+
 class WorkflowEventPhysicalTransportRouteFreshnessAdmissionState(StrEnum):
     ADMITTED_CURRENT = "admitted_current"
 
@@ -4173,6 +4182,280 @@ class WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmission:
     @property
     def grants_infrastructure_mutation_authority(self) -> bool:
         return False
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportCredentialAccessAuthorizationPolicy:
+    """Code-owned requirements for one bounded credential-access authorization."""
+
+    policy_id: str
+    policy_version: str
+    validity_window_seconds: int
+    full_freshness_window_required: bool
+    accessor_subject_bound: bool
+    single_use_required: bool
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        _require_identifier(self.policy_id, name="credential access authorization policy id")
+        _require_identifier(
+            self.policy_version,
+            name="credential access authorization policy version",
+        )
+        if self.validity_window_seconds != 15:
+            raise ValueError(
+                "credential access authorization policy validity window must be 15 seconds"
+            )
+        if self.full_freshness_window_required is not True:
+            raise ValueError(
+                "credential access authorization policy must require the full freshness window"
+            )
+        if self.accessor_subject_bound is not True:
+            raise ValueError(
+                "credential access authorization policy must bind the accessor subject"
+            )
+        if self.single_use_required is not True:
+            raise ValueError("credential access authorization policy must require single use")
+        _require_digest(self.canonical_digest, name="credential access authorization policy digest")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("credential access authorization policy canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "accessor_subject_bound": self.accessor_subject_bound,
+            "full_freshness_window_required": self.full_freshness_window_required,
+            "policy_id": self.policy_id,
+            "policy_version": self.policy_version,
+            "single_use_required": self.single_use_required,
+            "validity_window_seconds": self.validity_window_seconds,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+
+def code_owned_workflow_event_physical_transport_credential_access_authorization_policy() -> (
+    WorkflowEventPhysicalTransportCredentialAccessAuthorizationPolicy
+):
+    values: dict[str, object] = {
+        "policy_id": "policy.workflow-event-physical-transport-credential-access-authorization",
+        "policy_version": "1.0",
+        "validity_window_seconds": 15,
+        "full_freshness_window_required": True,
+        "accessor_subject_bound": True,
+        "single_use_required": True,
+    }
+    return WorkflowEventPhysicalTransportCredentialAccessAuthorizationPolicy(
+        **cast(Any, values), canonical_digest=canonical_digest(values)
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseAuthority:
+    endpoint_resolution_authorized: bool = False
+    protected_artifact_access_authorized: bool = False
+    route_selection_authorized: bool = False
+    route_binding_authorized: bool = False
+    credential_selection_authorized: bool = False
+    credential_assignment_binding_authorized: bool = False
+    credential_access_authorized: bool = True
+    credential_brokerage_authorized: bool = False
+    credential_resolution_authorized: bool = False
+    credential_delivery_authorized: bool = False
+    network_access_authorized: bool = False
+    readiness_probe_authorized: bool = False
+    publication_authorized: bool = False
+    delivery_authorized: bool = False
+    dispatch_authorized: bool = False
+    execution_authorized: bool = False
+    infrastructure_mutation_authorized: bool = False
+
+    def __post_init__(self) -> None:
+        values = self.canonical_value()
+        if values["credential_access_authorized"] is not True or any(
+            value is not False
+            for name, value in values.items()
+            if name != "credential_access_authorized"
+        ):
+            raise ValueError(
+                "credential access authorization leases must grant only credential access"
+            )
+
+    def canonical_value(self) -> dict[str, bool]:
+        return {
+            "credential_access_authorized": self.credential_access_authorized,
+            "credential_assignment_binding_authorized": (
+                self.credential_assignment_binding_authorized
+            ),
+            "credential_brokerage_authorized": self.credential_brokerage_authorized,
+            "credential_delivery_authorized": self.credential_delivery_authorized,
+            "credential_resolution_authorized": self.credential_resolution_authorized,
+            "credential_selection_authorized": self.credential_selection_authorized,
+            "delivery_authorized": self.delivery_authorized,
+            "dispatch_authorized": self.dispatch_authorized,
+            "endpoint_resolution_authorized": self.endpoint_resolution_authorized,
+            "execution_authorized": self.execution_authorized,
+            "infrastructure_mutation_authorized": self.infrastructure_mutation_authorized,
+            "network_access_authorized": self.network_access_authorized,
+            "protected_artifact_access_authorized": self.protected_artifact_access_authorized,
+            "publication_authorized": self.publication_authorized,
+            "readiness_probe_authorized": self.readiness_probe_authorized,
+            "route_binding_authorized": self.route_binding_authorized,
+            "route_selection_authorized": self.route_selection_authorized,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportCredentialAccessAuthorizationLease:
+    """Single-use credential-access authority without secret resolution or delivery."""
+
+    authorization_lease_id: str
+    freshness_admission_id: str
+    freshness_admission_digest: str
+    physical_transport_credential_assignment_binding_id: str
+    physical_transport_credential_assignment_binding_digest: str
+    credential_assignment_snapshot_id: str
+    credential_assignment_snapshot_digest: str
+    assignment_id: str
+    assignment_revision: str
+    source_assignment_digest: str
+    credential_generation: int
+    rotation_epoch: int
+    assignment_activated_at: datetime
+    assignment_expires_at: datetime
+    assignment_active: bool
+    assignment_non_revoked: bool
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    scope: WorkflowScope
+    accessor_subject_id: str
+    issued_at: datetime
+    valid_until: datetime
+    state: WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseState
+    authority: WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.authorization_lease_id, "credential access authorization lease id"),
+            (self.freshness_admission_id, "credential assignment freshness admission id"),
+            (
+                self.physical_transport_credential_assignment_binding_id,
+                "credential assignment binding id",
+            ),
+            (self.credential_assignment_snapshot_id, "credential assignment snapshot id"),
+            (self.assignment_id, "credential assignment id"),
+            (self.assignment_revision, "credential assignment revision"),
+            (self.policy_id, "credential access authorization policy id"),
+            (self.policy_version, "credential access authorization policy version"),
+            (self.accessor_subject_id, "credential accessor subject id"),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (self.freshness_admission_digest, "credential assignment freshness digest"),
+            (
+                self.physical_transport_credential_assignment_binding_digest,
+                "credential assignment binding digest",
+            ),
+            (self.credential_assignment_snapshot_digest, "credential assignment snapshot digest"),
+            (self.source_assignment_digest, "credential assignment source digest"),
+            (self.policy_digest, "credential access authorization policy digest"),
+            (self.canonical_digest, "credential access authorization lease digest"),
+        ):
+            _require_digest(value, name=name)
+        if self.credential_generation < 1 or self.rotation_epoch < 1:
+            raise ValueError("credential access authorization assignment rank must be positive")
+        if any(
+            value.tzinfo is None
+            for value in (
+                self.assignment_activated_at,
+                self.assignment_expires_at,
+                self.issued_at,
+                self.valid_until,
+            )
+        ):
+            raise ValueError("credential access authorization times must be timezone-aware")
+        if self.valid_until - self.issued_at != timedelta(seconds=15):
+            raise ValueError(
+                "credential access authorization lease must have an exact 15-second window"
+            )
+        if (
+            not self.assignment_activated_at
+            <= self.issued_at
+            < self.valid_until
+            <= self.assignment_expires_at
+        ):
+            raise ValueError("credential access authorization window is outside assignment life")
+        if self.assignment_active is not True or self.assignment_non_revoked is not True:
+            raise ValueError("credential access authorization source state is inadmissible")
+        if (
+            self.state
+            is not (
+                WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseState
+            ).AUTHORIZED_UNCONSUMED
+        ):
+            raise ValueError(
+                "credential access authorization lease must remain authorized_unconsumed"
+            )
+        if (
+            self.authority
+            != WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseAuthority()
+        ):
+            raise ValueError(
+                "credential access authorization lease has invalid authority declarations"
+            )
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("credential access authorization lease canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "accessor_subject_id": self.accessor_subject_id,
+            "assignment_activated_at": self.assignment_activated_at.isoformat(),
+            "assignment_active": self.assignment_active,
+            "assignment_expires_at": self.assignment_expires_at.isoformat(),
+            "assignment_id": self.assignment_id,
+            "assignment_non_revoked": self.assignment_non_revoked,
+            "assignment_revision": self.assignment_revision,
+            "authority": self.authority.canonical_value(),
+            "authorization_lease_id": self.authorization_lease_id,
+            "credential_assignment_snapshot_digest": self.credential_assignment_snapshot_digest,
+            "credential_assignment_snapshot_id": self.credential_assignment_snapshot_id,
+            "credential_generation": self.credential_generation,
+            "freshness_admission_digest": self.freshness_admission_digest,
+            "freshness_admission_id": self.freshness_admission_id,
+            "issued_at": self.issued_at.isoformat(),
+            "physical_transport_credential_assignment_binding_digest": (
+                self.physical_transport_credential_assignment_binding_digest
+            ),
+            "physical_transport_credential_assignment_binding_id": (
+                self.physical_transport_credential_assignment_binding_id
+            ),
+            "policy_digest": self.policy_digest,
+            "policy_id": self.policy_id,
+            "policy_version": self.policy_version,
+            "rotation_epoch": self.rotation_epoch,
+            "scope": self.scope.canonical_value(),
+            "source_assignment_digest": self.source_assignment_digest,
+            "state": self.state.value,
+            "valid_until": self.valid_until.isoformat(),
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+    def effective_state(
+        self, *, evaluated_at: datetime
+    ) -> WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseEffectiveState:
+        if evaluated_at.tzinfo is None:
+            raise ValueError("credential access authorization evaluation time must be aware")
+        if evaluated_at < self.valid_until:
+            return (
+                WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseEffectiveState
+            ).ACTIVE
+        return (
+            WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseEffectiveState.EXPIRED
+        )
 
 
 @dataclass(frozen=True, slots=True)
