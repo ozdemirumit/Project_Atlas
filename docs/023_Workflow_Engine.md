@@ -605,6 +605,14 @@ MVP workflows do not execute C3 through C5 capabilities.
   endpoint-materialization attempt. Claim and attempt commit before the adapter call; success,
   known failure and uncertainty remain append-only, raw coordinates stay outside ordinary
   persistence and all post-materialization authority declarations are false.
+- ADR-153 establishes an independently immutable deployment-owned physical-transport credential-
+  assignment snapshot. It proves exact route requirement, credential profile, authentication,
+  principal, least-privilege and rotation lineage without workflow binding, secret access,
+  network calls or any operational authority. Scope-based immutable history survives source
+  rotation; exact replay resolves before current-source validation, while completion audit reports
+  creation only after the atomic snapshot and claim commit. The deployment registry treats the
+  highest unique rotation/generation revision as head, so a newer inactive or revoked record
+  supersedes earlier active history without mutable rows.
 
 ## 39. Assumptions
 

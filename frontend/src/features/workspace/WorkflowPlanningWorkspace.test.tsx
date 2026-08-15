@@ -21,6 +21,7 @@ import {
   type WorkflowExecutionAttempt,
   type WorkflowExecutionRun,
   type WorkflowOrchestrationLease,
+  type WorkflowPhysicalTransportCredentialAssignmentSnapshot,
   type WorkflowPhysicalTransportRouteBinding,
   type WorkflowPhysicalTransportEndpointMaterialization,
   type WorkflowPhysicalTransportRouteFreshnessAdmission,
@@ -741,6 +742,34 @@ const endpointMaterialization: WorkflowPhysicalTransportEndpointMaterialization 
   integrity_reference: "integrity.workflow-endpoint-materialization.1234567890abcdef",
 };
 
+const credentialAssignmentSnapshot: WorkflowPhysicalTransportCredentialAssignmentSnapshot = {
+  snapshot_id: "workflow-credential-assignment-snapshot.1234567890abcdef",
+  assignment_id: "deployment-credential-assignment.1234567890abcdef",
+  assignment_revision: "revision.9",
+  credential_generation: 12,
+  rotation_epoch: 4,
+  activated_at: "2026-08-14T08:00:00Z",
+  expires_at: "2026-09-14T08:00:00Z",
+  captured_at: "2026-08-14T10:07:20Z",
+  state: "snapshotted",
+  authority: {
+    endpoint_resolution_authorized: false,
+    protected_artifact_access_authorized: false,
+    credential_selection_authorized: false,
+    credential_access_authorized: false,
+    credential_brokerage_authorized: false,
+    credential_resolution_authorized: false,
+    credential_delivery_authorized: false,
+    network_access_authorized: false,
+    readiness_probe_authorized: false,
+    publication_authorized: false,
+    delivery_authorized: false,
+    dispatch_authorized: false,
+    execution_authorized: false,
+    infrastructure_mutation_authorized: false,
+  },
+};
+
 const transportCompatibilityAdmission: WorkflowTransportCompatibilityAdmission = {
   compatibility_admission_id:
     "workflow-transport-compatibility-admission.1234567890abcdef",
@@ -1095,6 +1124,27 @@ function endpointMaterializationResponse(
   );
 }
 
+function credentialAssignmentSnapshotResponse(
+  snapshots: unknown[],
+  status = 200,
+): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: {
+            transport_credential_assignment_snapshots: snapshots,
+            durable: false,
+          },
+          meta: {
+            correlation_id: "correlation.workflow.credential-assignment-snapshot",
+            generated_at: "2026-08-14T10:07:40Z",
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function transportCompatibilityAdmissionResponse(
   admissions: unknown[],
   status = 200,
@@ -1136,6 +1186,7 @@ function mockReadResponses(input: {
   endpointResolutionAuthorizationLeaseServerTime?: string;
   endpointMaterializations?: unknown[];
   endpointMaterializationServerTime?: string;
+  credentialAssignmentSnapshots?: unknown[];
   transportCompatibilityAdmissions?: unknown[];
   pendingTransportAdmissionResponse?: Promise<Response>;
   pendingByteArtifactResponse?: Promise<Response>;
@@ -1146,6 +1197,7 @@ function mockReadResponses(input: {
   pendingPhysicalTransportRouteFreshnessAdmissionResponse?: Promise<Response>;
   pendingEndpointResolutionAuthorizationLeaseResponse?: Promise<Response>;
   pendingEndpointMaterializationResponse?: Promise<Response>;
+  pendingCredentialAssignmentSnapshotResponse?: Promise<Response>;
   pendingTransportCompatibilityAdmissionResponse?: Promise<Response>;
   leaseStatus?: number;
   runStatus?: number;
@@ -1172,6 +1224,8 @@ function mockReadResponses(input: {
   endpointResolutionAuthorizationLeaseStatuses?: number[];
   endpointMaterializationStatus?: number;
   endpointMaterializationStatuses?: number[];
+  credentialAssignmentSnapshotStatus?: number;
+  credentialAssignmentSnapshotStatuses?: number[];
   transportCompatibilityAdmissionStatus?: number;
   transportCompatibilityAdmissionStatuses?: number[];
 }) {
@@ -1184,9 +1238,28 @@ function mockReadResponses(input: {
   let physicalTransportRouteFreshnessAdmissionReadCount = 0;
   let endpointResolutionAuthorizationLeaseReadCount = 0;
   let endpointMaterializationReadCount = 0;
+  let credentialAssignmentSnapshotReadCount = 0;
   let transportCompatibilityAdmissionReadCount = 0;
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (url.endsWith("/api/v1/workflows/transport-credential-assignment-snapshots")) {
+      if (input.pendingCredentialAssignmentSnapshotResponse) {
+        return input.pendingCredentialAssignmentSnapshotResponse;
+      }
+      const status =
+        input.credentialAssignmentSnapshotStatuses?.[
+          Math.min(
+            credentialAssignmentSnapshotReadCount++,
+            input.credentialAssignmentSnapshotStatuses.length - 1,
+          )
+        ] ?? input.credentialAssignmentSnapshotStatus ?? 200;
+      return Promise.resolve(
+        credentialAssignmentSnapshotResponse(
+          input.credentialAssignmentSnapshots ?? [],
+          status,
+        ),
+      );
+    }
     if (url.endsWith("/api/v1/workflows/physical-transport-endpoint-materializations")) {
       if (input.pendingEndpointMaterializationResponse) {
         return input.pendingEndpointMaterializationResponse;
@@ -1746,6 +1819,209 @@ describe("WorkflowPlanningWorkspace", () => {
     expect(section).not.toHaveTextContent(
       /broker\.internal|hidden-topic|hidden-credential|site\.other|tls-optional/i,
     );
+  });
+
+  it("renders credential-assignment snapshots as minimized read-only historical evidence", async () => {
+    mockReadResponses({ credentialAssignmentSnapshots: [credentialAssignmentSnapshot] });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Transport credential-assignment snapshots",
+    })).closest("section") as HTMLElement;
+    const records = await within(section).findByRole("list", {
+      name: "Transport credential-assignment snapshots",
+    });
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) =>
+        (request instanceof Request ? request.url : request.toString()).endsWith(
+          "/api/v1/workflows/transport-credential-assignment-snapshots",
+        ),
+      ),
+    ).toBe(true);
+    expect(within(section).getByTitle(credentialAssignmentSnapshot.snapshot_id)).toBeVisible();
+    expect(within(section).getByTitle(credentialAssignmentSnapshot.assignment_id)).toBeVisible();
+    expect(records).toHaveTextContent("revision.9");
+    expect(records).toHaveTextContent("Active when captured");
+    expect(records).toHaveTextContent("Historical record state snapshotted");
+    expect(records).toHaveTextContent("Generation 12 | rotation epoch 4");
+    expect(records).toHaveTextContent("Activated");
+    expect(records).toHaveTextContent("Expires");
+    expect(records).toHaveTextContent("Captured");
+    expect(records).toHaveTextContent(/credential access false.*execution false/i);
+    expect(
+      within(section).queryByRole("button", {
+        name: /create|select|authorize|resolve|reveal|copy|download|network|probe|publish|deliver|dispatch|execute/i,
+      }),
+    ).toBeNull();
+    expect(section).not.toHaveTextContent(
+      /profile-private|requirement-private|target-private|broker-private|digest-private|secret-private|certificate-private|endpoint-private|MFA|second login|authorized browser session/i,
+    );
+  });
+
+  it("renders an empty credential-assignment snapshot inventory as a healthy read-only state", async () => {
+    mockReadResponses({ credentialAssignmentSnapshots: [] });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Transport credential-assignment snapshots",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText(
+        "No transport credential-assignment snapshots are recorded in this scope.",
+      ),
+    ).toBeVisible();
+    expect(within(section).queryByRole("alert")).toBeNull();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("shows loading while credential-assignment snapshots are pending", async () => {
+    mockReadResponses({
+      pendingCredentialAssignmentSnapshotResponse: new Promise<Response>(() => undefined),
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Transport credential-assignment snapshots",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Loading transport credential-assignment snapshots..."),
+    ).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("retries a generic credential-assignment snapshot read without operational controls", async () => {
+    mockReadResponses({
+      credentialAssignmentSnapshots: [credentialAssignmentSnapshot],
+      credentialAssignmentSnapshotStatuses: [500, 200],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Transport credential-assignment snapshots",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText(
+        "Transport credential-assignment snapshots are unavailable",
+      ),
+    ).toBeVisible();
+    expect(section).toHaveTextContent(
+      "No assignment lifecycle or operational state is inferred from this failed read.",
+    );
+    fireEvent.click(
+      within(section).getByRole("button", {
+        name: "Retry transport credential-assignment snapshot read",
+      }),
+    );
+    expect(await within(section).findByTitle(credentialAssignmentSnapshot.snapshot_id)).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it.each([
+    [401, "Your session has expired", "Sign in again to continue."],
+    [
+      403,
+      "Credential-assignment snapshot permission is missing",
+      "current role or scope cannot inspect credential-assignment snapshot evidence",
+    ],
+  ])(
+    "handles credential-assignment snapshot status %s with the normal browser session",
+    async (status, title, detail) => {
+      mockReadResponses({ credentialAssignmentSnapshotStatus: status });
+      renderWorkspace();
+
+      const section = (await screen.findByRole("heading", {
+        name: "Transport credential-assignment snapshots",
+      })).closest("section") as HTMLElement;
+      expect(await within(section).findByText(title)).toBeVisible();
+      expect(within(section).getByText(new RegExp(detail, "i"))).toBeVisible();
+      expect(within(section).queryByRole("button")).toBeNull();
+      if (status !== 401) expect(section).not.toHaveTextContent("Sign in again");
+      expect(section).not.toHaveTextContent(/MFA|second login|authorized browser session/i);
+    },
+  );
+
+  it.each([
+    ["a credential profile", { ...credentialAssignmentSnapshot, credential_profile_id: "profile-private" }],
+    ["a credential requirement", { ...credentialAssignmentSnapshot, credential_requirement_id: "requirement-private" }],
+    ["a target commitment", { ...credentialAssignmentSnapshot, target_scope: "target-private" }],
+    ["a broker policy", { ...credentialAssignmentSnapshot, broker_policy_id: "broker-private" }],
+    ["a digest", { ...credentialAssignmentSnapshot, canonical_digest: "digest-private" }],
+    ["secret material", { ...credentialAssignmentSnapshot, secret: "secret-private" }],
+    ["a certificate", { ...credentialAssignmentSnapshot, certificate: "certificate-private" }],
+    ["an endpoint", { ...credentialAssignmentSnapshot, endpoint: "endpoint-private" }],
+    ["an unknown state", { ...credentialAssignmentSnapshot, state: "current" }],
+    ["a non-positive generation", { ...credentialAssignmentSnapshot, credential_generation: 0 }],
+    ["a non-positive rotation epoch", { ...credentialAssignmentSnapshot, rotation_epoch: 0 }],
+    ["an invalid activation timestamp", { ...credentialAssignmentSnapshot, activated_at: "not-a-time" }],
+    [
+      "capture before activation",
+      { ...credentialAssignmentSnapshot, captured_at: "2026-08-14T07:59:59Z" },
+    ],
+    [
+      "capture after expiry",
+      { ...credentialAssignmentSnapshot, captured_at: "2026-09-14T08:00:00Z" },
+    ],
+    [
+      "operational authority",
+      {
+        ...credentialAssignmentSnapshot,
+        authority: {
+          ...credentialAssignmentSnapshot.authority,
+          credential_access_authorized: true,
+        },
+      },
+    ],
+    [
+      "an extra authority field",
+      {
+        ...credentialAssignmentSnapshot,
+        authority: { ...credentialAssignmentSnapshot.authority, reveal_authorized: false },
+      },
+    ],
+  ])(
+    "fails closed when credential-assignment snapshot evidence contains %s",
+    async (_case, unsafeSnapshot) => {
+      mockReadResponses({ credentialAssignmentSnapshots: [unsafeSnapshot] });
+      renderWorkspace();
+
+      const section = (await screen.findByRole("heading", {
+        name: "Transport credential-assignment snapshots",
+      })).closest("section") as HTMLElement;
+      expect(
+        await within(section).findByText(
+          "Transport credential-assignment snapshots are unavailable",
+        ),
+      ).toBeVisible();
+      expect(
+        within(section).queryByRole("list", {
+          name: "Transport credential-assignment snapshots",
+        }),
+      ).toBeNull();
+      expect(section).not.toHaveTextContent(
+        /profile-private|requirement-private|target-private|broker-private|digest-private|secret-private|certificate-private|endpoint-private/i,
+      );
+    },
+  );
+
+  it("fails closed for duplicate snapshot IDs or assignment revisions", async () => {
+    for (const duplicate of [
+      { ...credentialAssignmentSnapshot, assignment_id: "deployment-credential-assignment.other" },
+      { ...credentialAssignmentSnapshot, snapshot_id: "workflow-credential-assignment-snapshot.other" },
+    ]) {
+      mockReadResponses({
+        credentialAssignmentSnapshots: [credentialAssignmentSnapshot, duplicate],
+      });
+      const view = renderWorkspace();
+      const section = (await screen.findByRole("heading", {
+        name: "Transport credential-assignment snapshots",
+      })).closest("section") as HTMLElement;
+      expect(
+        await within(section).findByText(
+          "Transport credential-assignment snapshots are unavailable",
+        ),
+      ).toBeVisible();
+      view.unmount();
+    }
   });
 
   it("loads immutable physical route bindings without digests, route details, or mutation controls", async () => {

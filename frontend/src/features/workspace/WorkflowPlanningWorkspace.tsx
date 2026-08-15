@@ -32,6 +32,7 @@ import {
   listWorkflowDispatchEventEnvelopes,
   listWorkflowDispatchOutboxPublicationLeases,
   listWorkflowEndpointResolutionAuthorizationLeases,
+  listWorkflowPhysicalTransportCredentialAssignmentSnapshots,
   listWorkflowPhysicalTransportEndpointMaterializations,
   listWorkflowEventByteArtifacts,
   listWorkflowEventLogicalChannelBindings,
@@ -108,6 +109,16 @@ export default function WorkflowPlanningWorkspace({
   const transportRouteSnapshotQuery = useQuery({
     queryKey: ["workflow-transport-route-snapshots", organizationId, environmentId, siteId],
     queryFn: () => listWorkflowTransportRouteSnapshots({ scope }),
+    retry: false,
+  });
+  const physicalTransportCredentialAssignmentSnapshotQuery = useQuery({
+    queryKey: [
+      "workflow-physical-transport-credential-assignment-snapshots",
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: listWorkflowPhysicalTransportCredentialAssignmentSnapshots,
     retry: false,
   });
   const physicalTransportRouteBindingQuery = useQuery({
@@ -570,6 +581,10 @@ export default function WorkflowPlanningWorkspace({
     transportRouteSnapshotQuery.error instanceof ApiRequestError
       ? transportRouteSnapshotQuery.error.status
       : undefined;
+  const physicalTransportCredentialAssignmentSnapshotErrorStatus =
+    physicalTransportCredentialAssignmentSnapshotQuery.error instanceof ApiRequestError
+      ? physicalTransportCredentialAssignmentSnapshotQuery.error.status
+      : undefined;
   const physicalTransportRouteBindingErrorStatus =
     physicalTransportRouteBindingQuery.error instanceof ApiRequestError
       ? physicalTransportRouteBindingQuery.error.status
@@ -928,6 +943,125 @@ export default function WorkflowPlanningWorkspace({
           <span>
             These immutable snapshots expose opaque deployment references only. They do not bind,
             resolve, probe, credential, publish, deliver, dispatch, or execute a route.
+          </span>
+        </div>
+      </section>
+
+      <section
+        className="workflow-physical-route-binding-band"
+        aria-labelledby="workflow-credential-assignment-snapshot-title"
+      >
+        <div className="workflow-section-heading">
+          <div>
+            <p className="eyebrow">HISTORICAL ASSIGNMENT EVIDENCE</p>
+            <h2 id="workflow-credential-assignment-snapshot-title">
+              Transport credential-assignment snapshots
+            </h2>
+          </div>
+          <span>Read only</span>
+        </div>
+        {physicalTransportCredentialAssignmentSnapshotQuery.isLoading && (
+          <div className="workflow-empty-state" role="status">
+            <RefreshCw className="spin" size={18} />
+            <span>Loading transport credential-assignment snapshots...</span>
+          </div>
+        )}
+        {physicalTransportCredentialAssignmentSnapshotQuery.isError && (
+          <div className="inline-error" role="alert">
+            <div>
+              <strong>
+                {physicalTransportCredentialAssignmentSnapshotErrorStatus === 401
+                  ? "Your session has expired"
+                  : physicalTransportCredentialAssignmentSnapshotErrorStatus === 403
+                    ? "Credential-assignment snapshot permission is missing"
+                    : "Transport credential-assignment snapshots are unavailable"}
+              </strong>
+              <span>
+                {physicalTransportCredentialAssignmentSnapshotErrorStatus === 401
+                  ? "Sign in again to continue."
+                  : physicalTransportCredentialAssignmentSnapshotErrorStatus === 403
+                    ? "Your current role or scope cannot inspect credential-assignment snapshot evidence."
+                    : "No assignment lifecycle or operational state is inferred from this failed read."}
+              </span>
+            </div>
+            {physicalTransportCredentialAssignmentSnapshotErrorStatus !== 401 &&
+              physicalTransportCredentialAssignmentSnapshotErrorStatus !== 403 && (
+                <button
+                  className="secondary-action"
+                  type="button"
+                  aria-label="Retry transport credential-assignment snapshot read"
+                  onClick={() => void physicalTransportCredentialAssignmentSnapshotQuery.refetch()}
+                >
+                  <RefreshCw size={16} />
+                  Retry
+                </button>
+              )}
+          </div>
+        )}
+        {physicalTransportCredentialAssignmentSnapshotQuery.isSuccess &&
+          physicalTransportCredentialAssignmentSnapshotQuery.data
+            .transport_credential_assignment_snapshots.length === 0 && (
+            <div className="workflow-empty-state" role="status">
+              <Database size={19} />
+              <span>No transport credential-assignment snapshots are recorded in this scope.</span>
+            </div>
+          )}
+        {physicalTransportCredentialAssignmentSnapshotQuery.isSuccess &&
+          physicalTransportCredentialAssignmentSnapshotQuery.data
+            .transport_credential_assignment_snapshots.length > 0 && (
+            <ol
+              className="workflow-step-preview workflow-physical-route-binding-list"
+              aria-label="Transport credential-assignment snapshots"
+            >
+              {physicalTransportCredentialAssignmentSnapshotQuery.data.transport_credential_assignment_snapshots.map(
+                (snapshot) => (
+                  <li key={snapshot.snapshot_id}>
+                    <ShieldCheck size={18} />
+                    <div>
+                      <strong>
+                        <code title={snapshot.assignment_id}>
+                          {safeHolderIdentifier(snapshot.assignment_id)}
+                        </code>
+                        <span className="state-badge neutral">Active when captured</span>
+                      </strong>
+                      <div className="workflow-physical-route-binding-grid">
+                        <span>
+                          Assignment revision <b>{snapshot.assignment_revision}</b>
+                        </span>
+                        <span>
+                          Snapshot{" "}
+                          <code title={snapshot.snapshot_id}>
+                            {safeHolderIdentifier(snapshot.snapshot_id)}
+                          </code>
+                        </span>
+                        <span>
+                          Generation {snapshot.credential_generation} | rotation epoch{" "}
+                          {snapshot.rotation_epoch}
+                        </span>
+                        <span>Activated {formatTimestamp(snapshot.activated_at)}</span>
+                        <span>Expires {formatTimestamp(snapshot.expires_at)}</span>
+                        <span>Captured {formatTimestamp(snapshot.captured_at)}</span>
+                        <span>Historical record state {snapshot.state}</span>
+                        <span className="workflow-physical-route-binding-authority">
+                          Authority endpoint resolution false | protected artifact access false |
+                          credential selection false | credential access false | credential
+                          brokerage false | credential resolution false | credential delivery false |
+                          network access false | readiness probe false | publication false | delivery
+                          false | dispatch false | execution false | infrastructure mutation false
+                        </span>
+                      </div>
+                    </div>
+                  </li>
+                ),
+              )}
+            </ol>
+          )}
+        <div className="workflow-safety-boundary" role="note">
+          <LockKeyhole size={18} />
+          <span>
+            These immutable records preserve historical assignment evidence only. The current
+            browser session can inspect them but cannot create, select, authorize, resolve, reveal,
+            probe, publish, deliver, dispatch, or execute anything.
           </span>
         </div>
       </section>

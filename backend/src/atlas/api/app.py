@@ -1538,6 +1538,8 @@ from atlas.modules.workflows.adapters.unavailable import UnavailableWorkflowPlan
 from atlas.modules.workflows.application import (
     DeploymentEventTransportProfileRegistry,
     DeploymentEventTransportRouteRegistry,
+    DeploymentPhysicalTransportCredentialAssignmentRegistry,
+    DeploymentPhysicalTransportCredentialAssignmentSynchronizer,
     WorkflowAttemptMaterializationRepository,
     WorkflowAttemptMaterializationService,
     WorkflowDispatchEventEnvelopeRepository,
@@ -1568,6 +1570,8 @@ from atlas.modules.workflows.application import (
     WorkflowPlanRepository,
     WorkflowRunMaterializationRepository,
     WorkflowRunMaterializationService,
+    WorkflowTransportCredentialAssignmentSnapshotRepository,
+    WorkflowTransportCredentialAssignmentSnapshotService,
     WorkflowTransportProfileSnapshotRepository,
     WorkflowTransportProfileSnapshotService,
     WorkflowTransportRouteSnapshotRepository,
@@ -1577,6 +1581,7 @@ from atlas.modules.workflows.domain import (
     DeploymentEventTransportProfile,
     DeploymentEventTransportRoute,
     DeploymentEventTransportRouteSelectionHead,
+    DeploymentPhysicalTransportCredentialAssignment,
     WorkflowScope,
     canonical_digest,
     code_owned_workflow_registry,
@@ -1781,6 +1786,94 @@ def _deployment_event_transport_routes(
     )
 
 
+def _deployment_physical_transport_credential_assignments(
+    settings: Settings,
+    routes: tuple[DeploymentEventTransportRoute, ...],
+) -> tuple[DeploymentPhysicalTransportCredentialAssignment, ...]:
+    if settings.workflow_transport_credential_assignments:
+        configured: list[DeploymentPhysicalTransportCredentialAssignment] = []
+        for item in settings.workflow_transport_credential_assignments:
+            raw = item.model_dump()
+            scope = WorkflowScope(
+                organization_id=cast(str, raw.pop("organization_id")),
+                environment_id=cast(str, raw.pop("environment_id")),
+                site_id=cast(str, raw.pop("site_id")),
+            )
+            configured_values: dict[str, Any] = {**raw, "scope": scope}
+            payload = {
+                key: value.canonical_value()
+                if isinstance(value, WorkflowScope)
+                else value.isoformat()
+                if isinstance(value, datetime)
+                else value
+                for key, value in configured_values.items()
+            }
+            configured.append(
+                DeploymentPhysicalTransportCredentialAssignment(
+                    **configured_values,
+                    canonical_digest=canonical_digest(payload),
+                )
+            )
+        return tuple(configured)
+    if settings.environment != "development":
+        return ()
+    assignments: list[DeploymentPhysicalTransportCredentialAssignment] = []
+    for route in routes:
+        if not route.active:
+            continue
+        values: dict[str, Any] = {
+            "assignment_id": "credential-assignment.workflow.internal.primary",
+            "assignment_revision": "revision.1",
+            "scope": route.scope,
+            "route_id": route.route_id,
+            "route_revision": route.route_revision,
+            "source_route_digest": route.canonical_digest,
+            "credential_requirement_profile_id": route.credential_requirement_profile_id,
+            "credential_requirement_profile_version": (
+                route.credential_requirement_profile_version
+            ),
+            "credential_requirement_profile_digest": (route.credential_requirement_profile_digest),
+            "credential_profile_id": "credential-profile.workflow-service.read-only",
+            "credential_profile_version": "version.1",
+            "credential_profile_digest": sha256(
+                b"credential-profile.workflow-service.read-only:version.1"
+            ).hexdigest(),
+            "authentication_mechanism_class": route.authentication_mechanism_class,
+            "principal_class": route.principal_class,
+            "privilege_class": "read-only",
+            "target_scope_commitment": sha256(
+                f"target-scope:{route.route_id}:{route.route_revision}".encode()
+            ).hexdigest(),
+            "credential_generation": 1,
+            "rotation_epoch": 1,
+            "activated_at": datetime(2026, 1, 1, tzinfo=UTC),
+            "expires_at": datetime(2099, 1, 1, tzinfo=UTC),
+            "revoked": False,
+            "active": True,
+            "broker_policy_id": "policy.credential-broker.workflow-service",
+            "broker_policy_version": "version.1",
+            "broker_policy_digest": sha256(
+                b"policy.credential-broker.workflow-service:version.1"
+            ).hexdigest(),
+        }
+        assignments.append(
+            DeploymentPhysicalTransportCredentialAssignment(
+                **values,
+                canonical_digest=canonical_digest(
+                    {
+                        key: value.canonical_value()
+                        if isinstance(value, WorkflowScope)
+                        else value.isoformat()
+                        if isinstance(value, datetime)
+                        else value
+                        for key, value in values.items()
+                    }
+                ),
+            )
+        )
+    return tuple(assignments)
+
+
 def _deployment_event_transport_route_selection_heads(
     settings: Settings,
     routes: tuple[DeploymentEventTransportRoute, ...],
@@ -1890,6 +1983,12 @@ def create_app(
     deployment_event_transport_profiles: tuple[DeploymentEventTransportProfile, ...] | None = None,
     workflow_transport_route_snapshot_service: WorkflowTransportRouteSnapshotService | None = None,
     deployment_event_transport_routes: tuple[DeploymentEventTransportRoute, ...] | None = None,
+    workflow_transport_credential_assignment_snapshot_service: (
+        WorkflowTransportCredentialAssignmentSnapshotService | None
+    ) = None,
+    deployment_physical_transport_credential_assignments: (
+        tuple[DeploymentPhysicalTransportCredentialAssignment, ...] | None
+    ) = None,
     deployment_event_transport_route_selection_heads: (
         tuple[DeploymentEventTransportRouteSelectionHead, ...] | None
     ) = None,
@@ -6004,6 +6103,73 @@ def create_app(
         resolved_workflow_transport_route_snapshot_service = (
             workflow_transport_route_snapshot_service
         )
+    configured_transport_credential_assignments = (
+        _deployment_physical_transport_credential_assignments(
+            resolved_settings,
+            configured_transport_routes,
+        )
+        if deployment_physical_transport_credential_assignments is None
+        else tuple(deployment_physical_transport_credential_assignments)
+    )
+    assignment_keys = tuple(
+        (assignment.assignment_id, assignment.assignment_revision)
+        for assignment in configured_transport_credential_assignments
+    )
+    if len(assignment_keys) != len(set(assignment_keys)):
+        raise ValueError("deployment credential assignment revisions must be unique")
+    assignment_head_ranks = tuple(
+        (assignment.assignment_id, assignment.rotation_epoch, assignment.credential_generation)
+        for assignment in configured_transport_credential_assignments
+    )
+    if len(assignment_head_ranks) != len(set(assignment_head_ranks)):
+        raise ValueError("deployment credential assignment head generations must be unique")
+    if any(
+        assignment.scope.environment_id != expected_route_environment
+        for assignment in configured_transport_credential_assignments
+    ):
+        raise ValueError("deployment credential assignment scope does not match the environment")
+    if workflow_transport_credential_assignment_snapshot_service is None:
+        credential_assignment_snapshot_repository_methods = (
+            "get_active_credential_assignment",
+            "get_credential_assignment_snapshot",
+            "get_credential_assignment_snapshot_request",
+            "list_credential_assignment_snapshots",
+            "snapshot_credential_assignment",
+            "synchronize_credential_assignments",
+        )
+        if not all(
+            callable(getattr(workflow_repository, method_name, None))
+            for method_name in credential_assignment_snapshot_repository_methods
+        ):
+            raise ValueError(
+                "workflow planning repository does not implement credential assignment snapshots; "
+                "inject workflow_transport_credential_assignment_snapshot_service explicitly"
+            )
+        credential_assignment_snapshot_repository = cast(
+            WorkflowTransportCredentialAssignmentSnapshotRepository,
+            workflow_repository,
+        )
+        credential_assignment_registry: DeploymentPhysicalTransportCredentialAssignmentRegistry = (
+            cast(DeploymentPhysicalTransportCredentialAssignmentRegistry, workflow_repository)
+        )
+        resolved_workflow_transport_credential_assignment_snapshot_service = (
+            WorkflowTransportCredentialAssignmentSnapshotService(
+                credential_assignment_registry=credential_assignment_registry,
+                route_snapshot_reader=(
+                    resolved_workflow_transport_route_snapshot_service.repository
+                ),
+                snapshot_repository=credential_assignment_snapshot_repository,
+                audit_sink=resolved_audit_sink,
+            )
+        )
+    else:
+        resolved_workflow_transport_credential_assignment_snapshot_service = (
+            workflow_transport_credential_assignment_snapshot_service
+        )
+    synchronize_transport_credential_assignments = (
+        workflow_transport_credential_assignment_snapshot_service is None
+        and bool(configured_transport_credential_assignments)
+    )
     if workflow_event_transport_compatibility_admission_service is None:
         transport_compatibility_admission_repository_methods = (
             "get_event_logical_channel_binding_by_id",
@@ -6222,6 +6388,14 @@ def create_app(
         if synchronize_transport_route_selection_heads:
             await route_freshness_repository.synchronize_route_selection_heads(
                 configured_transport_route_selection_heads
+            )
+        if synchronize_transport_credential_assignments:
+            assignment_synchronizer = cast(
+                DeploymentPhysicalTransportCredentialAssignmentSynchronizer,
+                resolved_workflow_transport_credential_assignment_snapshot_service.repository,
+            )
+            await assignment_synchronizer.synchronize_credential_assignments(
+                configured_transport_credential_assignments
             )
         app.state.settings = resolved_settings
         app.state.audit_sink = resolved_audit_sink
@@ -6505,6 +6679,15 @@ def create_app(
         )
         app.state.workflow_transport_route_snapshot_repository = (
             resolved_workflow_transport_route_snapshot_service.repository
+        )
+        app.state.workflow_transport_credential_assignment_snapshot_service = (
+            resolved_workflow_transport_credential_assignment_snapshot_service
+        )
+        app.state.workflow_transport_credential_assignment_snapshot_repository = (
+            resolved_workflow_transport_credential_assignment_snapshot_service.repository
+        )
+        app.state.workflow_transport_credential_assignment_source_assignments = (
+            configured_transport_credential_assignments
         )
         app.state.workflow_event_physical_transport_route_binding_service = (
             resolved_workflow_event_physical_transport_route_binding_service

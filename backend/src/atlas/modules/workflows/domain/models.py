@@ -143,6 +143,10 @@ class EventPhysicalTransportRouteSnapshotState(StrEnum):
     SNAPSHOTTED = "snapshotted"
 
 
+class EventPhysicalTransportCredentialAssignmentSnapshotState(StrEnum):
+    SNAPSHOTTED = "snapshotted"
+
+
 class WorkflowEventPhysicalTransportRouteBindingState(StrEnum):
     BOUND = "bound"
 
@@ -2710,6 +2714,351 @@ class EventPhysicalTransportRouteSnapshot:
 
     @property
     def grants_route_binding_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_credential_access_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_network_access_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_readiness_probe_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_publication_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_delivery_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_dispatch_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_execution_authority(self) -> bool:
+        return False
+
+
+@dataclass(frozen=True, slots=True)
+class DeploymentPhysicalTransportCredentialAssignment:
+    """Deployment-owned credential metadata without secret material or a secret locator."""
+
+    assignment_id: str
+    assignment_revision: str
+    scope: WorkflowScope
+    route_id: str
+    route_revision: str
+    source_route_digest: str
+    credential_requirement_profile_id: str
+    credential_requirement_profile_version: str
+    credential_requirement_profile_digest: str
+    credential_profile_id: str
+    credential_profile_version: str
+    credential_profile_digest: str
+    authentication_mechanism_class: str
+    principal_class: str
+    privilege_class: str
+    target_scope_commitment: str
+    credential_generation: int
+    rotation_epoch: int
+    activated_at: datetime
+    expires_at: datetime
+    revoked: bool
+    active: bool
+    broker_policy_id: str
+    broker_policy_version: str
+    broker_policy_digest: str
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.assignment_id, "credential assignment_id"),
+            (self.assignment_revision, "credential assignment_revision"),
+            (self.route_id, "credential assignment route_id"),
+            (self.route_revision, "credential assignment route_revision"),
+            (
+                self.credential_requirement_profile_id,
+                "credential assignment requirement profile_id",
+            ),
+            (
+                self.credential_requirement_profile_version,
+                "credential assignment requirement profile_version",
+            ),
+            (self.credential_profile_id, "credential assignment profile_id"),
+            (self.credential_profile_version, "credential assignment profile_version"),
+            (self.broker_policy_id, "credential assignment broker policy_id"),
+            (self.broker_policy_version, "credential assignment broker policy_version"),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (self.source_route_digest, "credential assignment source_route_digest"),
+            (
+                self.credential_requirement_profile_digest,
+                "credential assignment requirement profile_digest",
+            ),
+            (self.credential_profile_digest, "credential assignment profile_digest"),
+            (self.target_scope_commitment, "credential assignment target scope commitment"),
+            (self.broker_policy_digest, "credential assignment broker policy_digest"),
+            (self.canonical_digest, "credential assignment canonical_digest"),
+        ):
+            _require_digest(value, name=name)
+        if (
+            self.authentication_mechanism_class
+            not in _ALLOWED_TRANSPORT_AUTHENTICATION_MECHANISM_CLASSES
+        ):
+            raise ValueError("credential assignment authentication mechanism is unsupported")
+        if self.principal_class not in _ALLOWED_TRANSPORT_PRINCIPAL_CLASSES:
+            raise ValueError("credential assignment principal class is unsupported")
+        if self.privilege_class != "read-only":
+            raise ValueError("credential assignment must be least privilege")
+        if self.credential_generation < 1 or self.rotation_epoch < 1:
+            raise ValueError("credential assignment generation and rotation epoch must be positive")
+        if self.activated_at.tzinfo is None or self.expires_at.tzinfo is None:
+            raise ValueError("credential assignment lifecycle times must be timezone-aware")
+        if self.expires_at <= self.activated_at:
+            raise ValueError("credential assignment expiry must follow activation")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("credential assignment canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "activated_at": self.activated_at.isoformat(),
+            "active": self.active,
+            "assignment_id": self.assignment_id,
+            "assignment_revision": self.assignment_revision,
+            "authentication_mechanism_class": self.authentication_mechanism_class,
+            "broker_policy_digest": self.broker_policy_digest,
+            "broker_policy_id": self.broker_policy_id,
+            "broker_policy_version": self.broker_policy_version,
+            "credential_generation": self.credential_generation,
+            "credential_profile_digest": self.credential_profile_digest,
+            "credential_profile_id": self.credential_profile_id,
+            "credential_profile_version": self.credential_profile_version,
+            "credential_requirement_profile_digest": (self.credential_requirement_profile_digest),
+            "credential_requirement_profile_id": self.credential_requirement_profile_id,
+            "credential_requirement_profile_version": (self.credential_requirement_profile_version),
+            "expires_at": self.expires_at.isoformat(),
+            "principal_class": self.principal_class,
+            "privilege_class": self.privilege_class,
+            "revoked": self.revoked,
+            "rotation_epoch": self.rotation_epoch,
+            "route_id": self.route_id,
+            "route_revision": self.route_revision,
+            "scope": self.scope.canonical_value(),
+            "source_route_digest": self.source_route_digest,
+            "target_scope_commitment": self.target_scope_commitment,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+
+def select_deployment_physical_transport_credential_assignment_head(
+    assignments: tuple[DeploymentPhysicalTransportCredentialAssignment, ...],
+) -> DeploymentPhysicalTransportCredentialAssignment | None:
+    if not assignments:
+        return None
+    assignment_ids = {assignment.assignment_id for assignment in assignments}
+    if len(assignment_ids) != 1:
+        raise ValueError("credential assignment head candidates must share one assignment id")
+    ranks = [
+        (assignment.rotation_epoch, assignment.credential_generation) for assignment in assignments
+    ]
+    if len(ranks) != len(set(ranks)):
+        raise ValueError("credential assignment head generation is ambiguous")
+    return max(
+        assignments,
+        key=lambda assignment: (assignment.rotation_epoch, assignment.credential_generation),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class EventPhysicalTransportCredentialAssignmentSnapshotAuthority:
+    endpoint_resolution_authorized: bool = False
+    protected_artifact_access_authorized: bool = False
+    credential_selection_authorized: bool = False
+    credential_access_authorized: bool = False
+    credential_brokerage_authorized: bool = False
+    credential_resolution_authorized: bool = False
+    credential_delivery_authorized: bool = False
+    network_access_authorized: bool = False
+    readiness_probe_authorized: bool = False
+    publication_authorized: bool = False
+    delivery_authorized: bool = False
+    dispatch_authorized: bool = False
+    execution_authorized: bool = False
+    infrastructure_mutation_authorized: bool = False
+
+    def __post_init__(self) -> None:
+        if any(self.canonical_value().values()):
+            raise ValueError("credential assignment snapshots cannot grant operational authority")
+
+    def canonical_value(self) -> dict[str, bool]:
+        return {
+            "credential_access_authorized": self.credential_access_authorized,
+            "credential_brokerage_authorized": self.credential_brokerage_authorized,
+            "credential_delivery_authorized": self.credential_delivery_authorized,
+            "credential_resolution_authorized": self.credential_resolution_authorized,
+            "credential_selection_authorized": self.credential_selection_authorized,
+            "delivery_authorized": self.delivery_authorized,
+            "dispatch_authorized": self.dispatch_authorized,
+            "endpoint_resolution_authorized": self.endpoint_resolution_authorized,
+            "execution_authorized": self.execution_authorized,
+            "infrastructure_mutation_authorized": self.infrastructure_mutation_authorized,
+            "network_access_authorized": self.network_access_authorized,
+            "protected_artifact_access_authorized": self.protected_artifact_access_authorized,
+            "publication_authorized": self.publication_authorized,
+            "readiness_probe_authorized": self.readiness_probe_authorized,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class EventPhysicalTransportCredentialAssignmentSnapshot:
+    """Historical assignment evidence without workflow binding or credential access."""
+
+    snapshot_id: str
+    assignment_id: str
+    assignment_revision: str
+    source_assignment_digest: str
+    scope: WorkflowScope
+    route_snapshot_id: str
+    route_id: str
+    route_revision: str
+    source_route_digest: str
+    credential_requirement_profile_id: str
+    credential_requirement_profile_version: str
+    credential_requirement_profile_digest: str
+    credential_profile_id: str
+    credential_profile_version: str
+    credential_profile_digest: str
+    authentication_mechanism_class: str
+    principal_class: str
+    privilege_class: str
+    target_scope_commitment: str
+    credential_generation: int
+    rotation_epoch: int
+    activated_at: datetime
+    expires_at: datetime
+    source_non_revoked: bool
+    broker_policy_id: str
+    broker_policy_version: str
+    broker_policy_digest: str
+    snapshotter_subject_id: str
+    captured_at: datetime
+    state: EventPhysicalTransportCredentialAssignmentSnapshotState
+    authority: EventPhysicalTransportCredentialAssignmentSnapshotAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.snapshot_id, "credential assignment snapshot_id"),
+            (self.assignment_id, "credential assignment snapshot assignment_id"),
+            (self.assignment_revision, "credential assignment snapshot assignment_revision"),
+            (self.route_snapshot_id, "credential assignment snapshot route_snapshot_id"),
+            (self.route_id, "credential assignment snapshot route_id"),
+            (self.route_revision, "credential assignment snapshot route_revision"),
+            (
+                self.credential_requirement_profile_id,
+                "credential assignment snapshot requirement profile_id",
+            ),
+            (
+                self.credential_requirement_profile_version,
+                "credential assignment snapshot requirement profile_version",
+            ),
+            (self.credential_profile_id, "credential assignment snapshot profile_id"),
+            (self.credential_profile_version, "credential assignment snapshot profile_version"),
+            (self.broker_policy_id, "credential assignment snapshot broker policy_id"),
+            (self.broker_policy_version, "credential assignment snapshot broker policy_version"),
+            (self.snapshotter_subject_id, "credential assignment snapshotter_subject_id"),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (self.source_assignment_digest, "credential assignment snapshot source digest"),
+            (self.source_route_digest, "credential assignment snapshot route digest"),
+            (
+                self.credential_requirement_profile_digest,
+                "credential assignment snapshot requirement profile digest",
+            ),
+            (self.credential_profile_digest, "credential assignment snapshot profile digest"),
+            (self.target_scope_commitment, "credential assignment snapshot target commitment"),
+            (self.broker_policy_digest, "credential assignment snapshot broker policy digest"),
+            (self.canonical_digest, "credential assignment snapshot canonical digest"),
+        ):
+            _require_digest(value, name=name)
+        if (
+            self.authentication_mechanism_class
+            not in _ALLOWED_TRANSPORT_AUTHENTICATION_MECHANISM_CLASSES
+        ):
+            raise ValueError("credential assignment snapshot mechanism is unsupported")
+        if self.principal_class not in _ALLOWED_TRANSPORT_PRINCIPAL_CLASSES:
+            raise ValueError("credential assignment snapshot principal is unsupported")
+        if self.privilege_class != "read-only":
+            raise ValueError("credential assignment snapshot must remain least privilege")
+        if self.credential_generation < 1 or self.rotation_epoch < 1:
+            raise ValueError("credential assignment snapshot epochs must be positive")
+        if (
+            self.activated_at.tzinfo is None
+            or self.expires_at.tzinfo is None
+            or self.captured_at.tzinfo is None
+        ):
+            raise ValueError("credential assignment snapshot times must be timezone-aware")
+        if not self.activated_at <= self.captured_at < self.expires_at:
+            raise ValueError("credential assignment snapshot must be captured while active")
+        if self.source_non_revoked is not True:
+            raise ValueError("credential assignment snapshot source must be non-revoked")
+        if self.state is not EventPhysicalTransportCredentialAssignmentSnapshotState.SNAPSHOTTED:
+            raise ValueError("credential assignment snapshots must remain snapshotted")
+        if any(self.authority.canonical_value().values()):
+            raise ValueError("credential assignment snapshots cannot grant operational authority")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("credential assignment snapshot canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "activated_at": self.activated_at.isoformat(),
+            "assignment_id": self.assignment_id,
+            "assignment_revision": self.assignment_revision,
+            "authentication_mechanism_class": self.authentication_mechanism_class,
+            "authority": self.authority.canonical_value(),
+            "broker_policy_digest": self.broker_policy_digest,
+            "broker_policy_id": self.broker_policy_id,
+            "broker_policy_version": self.broker_policy_version,
+            "captured_at": self.captured_at.isoformat(),
+            "credential_generation": self.credential_generation,
+            "credential_profile_digest": self.credential_profile_digest,
+            "credential_profile_id": self.credential_profile_id,
+            "credential_profile_version": self.credential_profile_version,
+            "credential_requirement_profile_digest": (self.credential_requirement_profile_digest),
+            "credential_requirement_profile_id": self.credential_requirement_profile_id,
+            "credential_requirement_profile_version": (self.credential_requirement_profile_version),
+            "expires_at": self.expires_at.isoformat(),
+            "principal_class": self.principal_class,
+            "privilege_class": self.privilege_class,
+            "rotation_epoch": self.rotation_epoch,
+            "route_id": self.route_id,
+            "route_revision": self.route_revision,
+            "route_snapshot_id": self.route_snapshot_id,
+            "scope": self.scope.canonical_value(),
+            "snapshot_id": self.snapshot_id,
+            "snapshotter_subject_id": self.snapshotter_subject_id,
+            "source_assignment_digest": self.source_assignment_digest,
+            "source_non_revoked": self.source_non_revoked,
+            "source_route_digest": self.source_route_digest,
+            "state": self.state.value,
+            "target_scope_commitment": self.target_scope_commitment,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+    @property
+    def grants_endpoint_resolution_authority(self) -> bool:
         return False
 
     @property

@@ -3,6 +3,10 @@ from atlas.modules.workflows.domain.models import (
     DeploymentEventTransportProfile,
     DeploymentEventTransportRoute,
     DeploymentEventTransportRouteSelectionHead,
+    DeploymentPhysicalTransportCredentialAssignment,
+    EventPhysicalTransportCredentialAssignmentSnapshot,
+    EventPhysicalTransportCredentialAssignmentSnapshotAuthority,
+    EventPhysicalTransportCredentialAssignmentSnapshotState,
     EventPhysicalTransportProfileSnapshot,
     EventPhysicalTransportProfileSnapshotAuthority,
     EventPhysicalTransportProfileSnapshotState,
@@ -90,6 +94,7 @@ from atlas.modules.workflows.domain.models import (
     code_owned_workflow_event_transport_admission_policy,
     code_owned_workflow_event_transport_compatibility_policy,
     code_owned_workflow_registry,
+    select_deployment_physical_transport_credential_assignment_head,
 )
 
 __all__ = [
@@ -97,6 +102,10 @@ __all__ = [
     "DeploymentEventTransportProfile",
     "DeploymentEventTransportRoute",
     "DeploymentEventTransportRouteSelectionHead",
+    "DeploymentPhysicalTransportCredentialAssignment",
+    "EventPhysicalTransportCredentialAssignmentSnapshot",
+    "EventPhysicalTransportCredentialAssignmentSnapshotAuthority",
+    "EventPhysicalTransportCredentialAssignmentSnapshotState",
     "EventPhysicalTransportProfileSnapshot",
     "EventPhysicalTransportProfileSnapshotAuthority",
     "EventPhysicalTransportProfileSnapshotState",
@@ -184,4 +193,5 @@ __all__ = [
     "code_owned_workflow_event_transport_admission_policy",
     "code_owned_workflow_event_transport_compatibility_policy",
     "code_owned_workflow_registry",
+    "select_deployment_physical_transport_credential_assignment_head",
 ]
