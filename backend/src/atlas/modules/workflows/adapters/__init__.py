@@ -5,11 +5,19 @@ from atlas.modules.workflows.adapters.endpoint_materialization_unavailable impor
     UnavailableWorkflowPhysicalTransportEndpointMaterializer,
 )
 from atlas.modules.workflows.adapters.memory import InMemoryWorkflowPlanRepository
+from atlas.modules.workflows.adapters.target_context_access_status_attestors import (
+    DenyAllWorkflowProtectedArtifactStatusSignatureVerifier,
+    UnavailableWorkflowProtectedCredentialStatusAttestor,
+    UnavailableWorkflowProtectedEndpointStatusAttestor,
+)
 from atlas.modules.workflows.adapters.unavailable import UnavailableWorkflowPlanRepository
 
 __all__ = [
+    "DenyAllWorkflowProtectedArtifactStatusSignatureVerifier",
     "InMemoryWorkflowPlanRepository",
     "SyntheticWorkflowPhysicalTransportEndpointMaterializer",
     "UnavailableWorkflowPhysicalTransportEndpointMaterializer",
     "UnavailableWorkflowPlanRepository",
+    "UnavailableWorkflowProtectedCredentialStatusAttestor",
+    "UnavailableWorkflowProtectedEndpointStatusAttestor",
 ]
