@@ -23,6 +23,7 @@ import {
   type WorkflowOrchestrationLease,
   type WorkflowPhysicalTransportCredentialAccessAuthorizationLease,
   type WorkflowPhysicalTransportCredentialMaterialization,
+  type WorkflowPhysicalTransportTargetContextAccessAuthorizationLease,
   type WorkflowPhysicalTransportTargetContextBinding,
   type WorkflowPhysicalTransportCredentialAssignmentSnapshot,
   type WorkflowPhysicalTransportCredentialAssignmentBinding,
@@ -920,6 +921,44 @@ const targetContextBinding: WorkflowPhysicalTransportTargetContextBinding = {
   authority: targetContextBindingAuthority,
 };
 
+const targetContextAccessAuthorizationLease: WorkflowPhysicalTransportTargetContextAccessAuthorizationLease = {
+  authorization_lease_id:
+    "workflow-physical-transport-target-context-access-authorization-lease.1234567890abcdef",
+  scope: { ...plan.scope },
+  accessor_subject_id: "service.workflow-protected-transport-context-accessor",
+  state: "authorized_unconsumed",
+  effective_state: "active",
+  issued_at: "2026-08-14T10:08:20Z",
+  valid_until: "2026-08-14T10:08:25Z",
+  single_use: true,
+  renewable: false,
+  transferable: false,
+  policy: {
+    policy_id: "policy.workflow-event-physical-transport-target-context-access-authorization",
+    policy_version: "1.0",
+  },
+  authority: {
+    endpoint_resolution_authorized: false,
+    protected_artifact_access_authorized: true,
+    route_selection_authorized: false,
+    route_binding_authorized: false,
+    credential_selection_authorized: false,
+    credential_assignment_binding_authorized: false,
+    credential_access_authorized: false,
+    credential_brokerage_authorized: false,
+    credential_resolution_authorized: false,
+    credential_delivery_authorized: false,
+    network_access_authorized: false,
+    readiness_probe_authorized: false,
+    publication_authorized: false,
+    delivery_authorized: false,
+    dispatch_authorized: false,
+    execution_authorized: false,
+    infrastructure_mutation_authorized: false,
+  },
+  integrity_reference: "integrity.workflow-target-context-access-lease.1234567890abcdef",
+};
+
 const credentialAssignmentSnapshot: WorkflowPhysicalTransportCredentialAssignmentSnapshot = {
   snapshot_id: "workflow-credential-assignment-snapshot.1234567890abcdef",
   assignment_id: "deployment-credential-assignment.1234567890abcdef",
@@ -1415,6 +1454,29 @@ function targetContextBindingResponse(
   );
 }
 
+function targetContextAccessAuthorizationLeaseResponse(
+  leases: unknown[],
+  status = 200,
+  serverTime = "2026-08-14T10:08:22Z",
+): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: {
+            physical_transport_target_context_access_authorization_leases: leases,
+            server_time: serverTime,
+            durable: false,
+          },
+          meta: {
+            correlation_id: "correlation.workflow.target-context-access-authorization-lease",
+            generated_at: serverTime,
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function credentialAssignmentSnapshotResponse(
   snapshots: unknown[],
   status = 200,
@@ -1485,6 +1547,8 @@ function mockReadResponses(input: {
   credentialMaterializationServerTime?: string;
   targetContextBindings?: unknown[];
   targetContextBindingServerTime?: string;
+  targetContextAccessAuthorizationLeases?: unknown[];
+  targetContextAccessAuthorizationLeaseServerTime?: string;
   credentialAssignmentSnapshots?: unknown[];
   transportCompatibilityAdmissions?: unknown[];
   pendingTransportAdmissionResponse?: Promise<Response>;
@@ -1501,6 +1565,7 @@ function mockReadResponses(input: {
   pendingEndpointMaterializationResponse?: Promise<Response>;
   pendingCredentialMaterializationResponse?: Promise<Response>;
   pendingTargetContextBindingResponse?: Promise<Response>;
+  pendingTargetContextAccessAuthorizationLeaseResponse?: Promise<Response>;
   pendingCredentialAssignmentSnapshotResponse?: Promise<Response>;
   pendingTransportCompatibilityAdmissionResponse?: Promise<Response>;
   leaseStatus?: number;
@@ -1538,6 +1603,8 @@ function mockReadResponses(input: {
   credentialMaterializationStatuses?: number[];
   targetContextBindingStatus?: number;
   targetContextBindingStatuses?: number[];
+  targetContextAccessAuthorizationLeaseStatus?: number;
+  targetContextAccessAuthorizationLeaseStatuses?: number[];
   credentialAssignmentSnapshotStatus?: number;
   credentialAssignmentSnapshotStatuses?: number[];
   transportCompatibilityAdmissionStatus?: number;
@@ -1557,10 +1624,34 @@ function mockReadResponses(input: {
   let endpointMaterializationReadCount = 0;
   let credentialMaterializationReadCount = 0;
   let targetContextBindingReadCount = 0;
+  let targetContextAccessAuthorizationLeaseReadCount = 0;
   let credentialAssignmentSnapshotReadCount = 0;
   let transportCompatibilityAdmissionReadCount = 0;
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (
+      url.endsWith(
+        "/api/v1/workflows/physical-transport-target-context-access-authorization-leases",
+      )
+    ) {
+      if (input.pendingTargetContextAccessAuthorizationLeaseResponse) {
+        return input.pendingTargetContextAccessAuthorizationLeaseResponse;
+      }
+      const status =
+        input.targetContextAccessAuthorizationLeaseStatuses?.[
+          Math.min(
+            targetContextAccessAuthorizationLeaseReadCount++,
+            input.targetContextAccessAuthorizationLeaseStatuses.length - 1,
+          )
+        ] ?? input.targetContextAccessAuthorizationLeaseStatus ?? 200;
+      return Promise.resolve(
+        targetContextAccessAuthorizationLeaseResponse(
+          input.targetContextAccessAuthorizationLeases ?? [],
+          status,
+          input.targetContextAccessAuthorizationLeaseServerTime,
+        ),
+      );
+    }
     if (url.endsWith("/api/v1/workflows/physical-transport-target-context-bindings")) {
       if (input.pendingTargetContextBindingResponse) {
         return input.pendingTargetContextBindingResponse;
@@ -4748,6 +4839,164 @@ describe("WorkflowPlanningWorkspace", () => {
       within(section).queryByRole("list", { name: "Target context bindings" }),
     ).toBeNull();
     expect(section).not.toHaveTextContent(/target context commitment|canonical digest/i);
+  });
+
+  it("renders target-context access authorization leases as minimized read-only evidence", async () => {
+    const expiredLease: WorkflowPhysicalTransportTargetContextAccessAuthorizationLease = {
+      ...targetContextAccessAuthorizationLease,
+      authorization_lease_id:
+        "workflow-physical-transport-target-context-access-authorization-lease.abcdef1234567890",
+      issued_at: "2026-08-14T10:08:10Z",
+      valid_until: "2026-08-14T10:08:15Z",
+      effective_state: "expired",
+    };
+    mockReadResponses({
+      targetContextAccessAuthorizationLeases: [
+        targetContextAccessAuthorizationLease,
+        expiredLease,
+      ],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Target-context access authorization leases",
+    })).closest("section") as HTMLElement;
+    const records = await within(section).findByRole("list", {
+      name: "Target-context access authorization leases",
+    });
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) =>
+        (request instanceof Request ? request.url : request.toString()).endsWith(
+          "/api/v1/workflows/physical-transport-target-context-access-authorization-leases",
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      within(section).getByTitle(targetContextAccessAuthorizationLease.authorization_lease_id),
+    ).toBeVisible();
+    expect(
+      within(section).getAllByTitle(targetContextAccessAuthorizationLease.policy.policy_id),
+    ).toHaveLength(2);
+    expect(
+      within(section).getAllByTitle(targetContextAccessAuthorizationLease.integrity_reference),
+    ).toHaveLength(2);
+    expect(records).toHaveTextContent("Active");
+    expect(records).toHaveTextContent("Expired");
+    expect(records).toHaveTextContent("Single use true | renewable false | transferable false");
+    expect(records).toHaveTextContent(
+      /endpoint resolution false.*protected artifact access true.*route selection false.*route binding false.*credential selection false.*credential assignment binding false.*credential access false.*credential brokerage false.*credential resolution false.*credential delivery false.*network access false.*readiness probe false.*publication false.*delivery false.*dispatch false.*execution false.*infrastructure mutation false/i,
+    );
+    expect(
+      within(section).queryByRole("button", {
+        name: /create|consume|access|reveal|copy|download|deliver|connect|probe|publish|retry|dispatch|execute|mutate/i,
+      }),
+    ).toBeNull();
+    expect(section).not.toHaveTextContent(
+      /binding[-_ ]?(?:id|digest|commitment)|materialization[-_ ]?(?:id|digest)|artifact[-_ ]?(?:id|digest)|attestation|store locator|endpoint coordinate|credential detail|provider|fence|request fingerprint|idempotency|canonical digest|policy digest/i,
+    );
+    expect(section).not.toHaveTextContent(/\bMFA\b|second login|authorized browser session/i);
+  });
+
+  it("renders empty and loading target-context access lease states without controls", async () => {
+    mockReadResponses({ targetContextAccessAuthorizationLeases: [] });
+    const view = renderWorkspace();
+    let section = (await screen.findByRole("heading", {
+      name: "Target-context access authorization leases",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText(
+        "No target-context access authorization leases are recorded in this scope.",
+      ),
+    ).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+
+    view.unmount();
+    mockReadResponses({
+      pendingTargetContextAccessAuthorizationLeaseResponse: new Promise<Response>(() => undefined),
+    });
+    renderWorkspace();
+    section = (await screen.findByRole("heading", {
+      name: "Target-context access authorization leases",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Loading target-context access authorization leases..."),
+    ).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it.each([
+    [401, "Your session has expired", "Sign in again to continue."],
+    [
+      403,
+      "Target-context access authorization lease permission is missing",
+      "current role or scope cannot inspect target-context access authorization leases",
+    ],
+    [
+      500,
+      "Target-context access authorization leases are unavailable",
+      "No protected-access authority or operational state is inferred",
+    ],
+  ])(
+    "handles target-context access lease read status %s in the normal browser session",
+    async (status, title, detail) => {
+      mockReadResponses({ targetContextAccessAuthorizationLeaseStatus: status });
+      renderWorkspace();
+      const section = (await screen.findByRole("heading", {
+        name: "Target-context access authorization leases",
+      })).closest("section") as HTMLElement;
+      expect(await within(section).findByText(title)).toBeVisible();
+      expect(within(section).getByText(new RegExp(detail, "i"))).toBeVisible();
+      expect(within(section).queryByRole("button")).toBeNull();
+      expect(section).not.toHaveTextContent(/MFA|second login|authorized browser session/i);
+    },
+  );
+
+  it.each([
+    ["a binding identifier", { ...targetContextAccessAuthorizationLease, binding_id: "binding.hidden" }],
+    [
+      "an attestation",
+      { ...targetContextAccessAuthorizationLease, attestation_id: "attestation.hidden" },
+    ],
+    [
+      "an extra policy field",
+      {
+        ...targetContextAccessAuthorizationLease,
+        policy: { ...targetContextAccessAuthorizationLease.policy, policy_digest: "a".repeat(64) },
+      },
+    ],
+    [
+      "an extra authority",
+      {
+        ...targetContextAccessAuthorizationLease,
+        authority: { ...targetContextAccessAuthorizationLease.authority, consume_authorized: false },
+      },
+    ],
+    [
+      "runtime authority",
+      {
+        ...targetContextAccessAuthorizationLease,
+        authority: {
+          ...targetContextAccessAuthorizationLease.authority,
+          execution_authorized: true,
+        },
+      },
+    ],
+  ])("fails closed when a target-context access lease contains %s", async (_case, unsafe) => {
+    mockReadResponses({ targetContextAccessAuthorizationLeases: [unsafe] });
+    renderWorkspace();
+    const section = (await screen.findByRole("heading", {
+      name: "Target-context access authorization leases",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Target-context access authorization leases are unavailable"),
+    ).toBeVisible();
+    expect(
+      within(section).queryByRole("list", {
+        name: "Target-context access authorization leases",
+      }),
+    ).toBeNull();
+    expect(section).not.toHaveTextContent(/binding\.hidden|attestation\.hidden/i);
+    expect(within(section).queryByRole("button")).toBeNull();
   });
 
   it("creates and presents a planned-only workflow without requesting another login", async () => {
