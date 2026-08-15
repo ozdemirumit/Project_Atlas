@@ -834,6 +834,41 @@ export type WorkflowPhysicalTransportEndpointMaterializationInventory = {
   durable: boolean;
 };
 
+export type WorkflowPhysicalTransportCredentialAssignmentSnapshotAuthority = {
+  endpoint_resolution_authorized: false;
+  protected_artifact_access_authorized: false;
+  credential_selection_authorized: false;
+  credential_access_authorized: false;
+  credential_brokerage_authorized: false;
+  credential_resolution_authorized: false;
+  credential_delivery_authorized: false;
+  network_access_authorized: false;
+  readiness_probe_authorized: false;
+  publication_authorized: false;
+  delivery_authorized: false;
+  dispatch_authorized: false;
+  execution_authorized: false;
+  infrastructure_mutation_authorized: false;
+};
+
+export type WorkflowPhysicalTransportCredentialAssignmentSnapshot = {
+  snapshot_id: string;
+  assignment_id: string;
+  assignment_revision: string;
+  credential_generation: number;
+  rotation_epoch: number;
+  activated_at: string;
+  expires_at: string;
+  captured_at: string;
+  state: "snapshotted";
+  authority: WorkflowPhysicalTransportCredentialAssignmentSnapshotAuthority;
+};
+
+export type WorkflowPhysicalTransportCredentialAssignmentSnapshotInventory = {
+  transport_credential_assignment_snapshots: WorkflowPhysicalTransportCredentialAssignmentSnapshot[];
+  durable: boolean;
+};
+
 export type WorkflowTransportCompatibilityAuthority = {
   route_selection_authorized: false;
   route_binding_authorized: false;
@@ -1532,6 +1567,38 @@ const physicalTransportEndpointMaterializationFields = [
 const physicalTransportEndpointMaterializationInventoryFields = [
   "physical_transport_endpoint_materializations",
   "server_time",
+  "durable",
+] as const;
+const physicalTransportCredentialAssignmentSnapshotAuthorityFields = [
+  "endpoint_resolution_authorized",
+  "protected_artifact_access_authorized",
+  "credential_selection_authorized",
+  "credential_access_authorized",
+  "credential_brokerage_authorized",
+  "credential_resolution_authorized",
+  "credential_delivery_authorized",
+  "network_access_authorized",
+  "readiness_probe_authorized",
+  "publication_authorized",
+  "delivery_authorized",
+  "dispatch_authorized",
+  "execution_authorized",
+  "infrastructure_mutation_authorized",
+] as const;
+const physicalTransportCredentialAssignmentSnapshotFields = [
+  "snapshot_id",
+  "assignment_id",
+  "assignment_revision",
+  "credential_generation",
+  "rotation_epoch",
+  "activated_at",
+  "expires_at",
+  "captured_at",
+  "state",
+  "authority",
+] as const;
+const physicalTransportCredentialAssignmentSnapshotInventoryFields = [
+  "transport_credential_assignment_snapshots",
   "durable",
 ] as const;
 const transportCompatibilityAuthorityFields = [
@@ -2800,6 +2867,49 @@ function isPhysicalTransportEndpointMaterialization(
   );
 }
 
+function hasZeroPhysicalTransportCredentialAssignmentSnapshotAuthority(
+  value: unknown,
+): value is WorkflowPhysicalTransportCredentialAssignmentSnapshotAuthority {
+  return (
+    isObject(value) &&
+    hasExactKeys(value, physicalTransportCredentialAssignmentSnapshotAuthorityFields) &&
+    physicalTransportCredentialAssignmentSnapshotAuthorityFields.every(
+      (field) => value[field] === false,
+    )
+  );
+}
+
+function isPhysicalTransportCredentialAssignmentSnapshot(
+  value: unknown,
+): value is WorkflowPhysicalTransportCredentialAssignmentSnapshot {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, physicalTransportCredentialAssignmentSnapshotFields) ||
+    containsCredentialMaterial(value) ||
+    !isTimestamp(value.activated_at) ||
+    !isTimestamp(value.expires_at) ||
+    !isTimestamp(value.captured_at)
+  ) {
+    return false;
+  }
+  const activatedAt = Date.parse(value.activated_at);
+  const expiresAt = Date.parse(value.expires_at);
+  const capturedAt = Date.parse(value.captured_at);
+  return (
+    isStableIdentifier(value.snapshot_id) &&
+    isStableIdentifier(value.assignment_id) &&
+    isStableIdentifier(value.assignment_revision) &&
+    Number.isSafeInteger(value.credential_generation) &&
+    Number(value.credential_generation) >= 1 &&
+    Number.isSafeInteger(value.rotation_epoch) &&
+    Number(value.rotation_epoch) >= 1 &&
+    activatedAt <= capturedAt &&
+    capturedAt < expiresAt &&
+    value.state === "snapshotted" &&
+    hasZeroPhysicalTransportCredentialAssignmentSnapshotAuthority(value.authority)
+  );
+}
+
 function hasZeroTransportCompatibilityAuthority(
   value: unknown,
 ): value is WorkflowTransportCompatibilityAuthority {
@@ -3640,6 +3750,58 @@ export async function listWorkflowPhysicalTransportEndpointMaterializations(inpu
     leaseIds.add(materialization.lease_id);
   }
   return data as WorkflowPhysicalTransportEndpointMaterializationInventory;
+}
+
+export async function listWorkflowPhysicalTransportCredentialAssignmentSnapshots(): Promise<WorkflowPhysicalTransportCredentialAssignmentSnapshotInventory> {
+  const response = await apiFetch(
+    "/api/v1/workflows/transport-credential-assignment-snapshots",
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(
+    response,
+    "Workflow physical transport credential-assignment snapshot retrieval failed",
+  );
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, physicalTransportCredentialAssignmentSnapshotInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    !Array.isArray(data.transport_credential_assignment_snapshots) ||
+    data.transport_credential_assignment_snapshots.length > 256 ||
+    typeof data.durable !== "boolean" ||
+    !data.transport_credential_assignment_snapshots.every((snapshot) =>
+      isPhysicalTransportCredentialAssignmentSnapshot(snapshot),
+    )
+  ) {
+    throw new ApiRequestError(
+      "Workflow physical transport credential-assignment snapshot response was unsafe",
+      response.status,
+    );
+  }
+  const snapshotIds = new Set<string>();
+  const assignmentRevisions = new Set<string>();
+  for (const snapshot of data.transport_credential_assignment_snapshots) {
+    if (
+      !isObject(snapshot) ||
+      typeof snapshot.snapshot_id !== "string" ||
+      typeof snapshot.assignment_id !== "string" ||
+      typeof snapshot.assignment_revision !== "string"
+    ) {
+      throw new ApiRequestError(
+        "Workflow physical transport credential-assignment snapshot response was unsafe",
+        response.status,
+      );
+    }
+    const assignmentRevision = `${snapshot.assignment_id}\u0000${snapshot.assignment_revision}`;
+    if (snapshotIds.has(snapshot.snapshot_id) || assignmentRevisions.has(assignmentRevision)) {
+      throw new ApiRequestError(
+        "Workflow physical transport credential-assignment snapshot response was unsafe",
+        response.status,
+      );
+    }
+    snapshotIds.add(snapshot.snapshot_id);
+    assignmentRevisions.add(assignmentRevision);
+  }
+  return data as WorkflowPhysicalTransportCredentialAssignmentSnapshotInventory;
 }
 
 export async function listWorkflowTransportCompatibilityAdmissions(input: {

@@ -317,6 +317,28 @@ outcome-uncertain and never retried automatically. Ordinary events, APIs, audit 
 minimized metadata and no endpoint, artifact access, credential, network, readiness, publication,
 delivery, dispatch or execution authority.
 
+Credential requirements do not identify an authoritative credential assignment. Before any
+workflow credential binding or access authorization, a dedicated deployment-control workload
+therefore snapshots one exact active physical-transport credential-assignment revision. The
+immutable snapshot proves route, credential-requirement, authentication-mechanism, principal,
+least-privilege, rotation and broker-policy lineage without storing a username, retrievable secret
+reference or credential material. It is historical deployment evidence only: it binds no workflow
+or protected endpoint artifact, performs no secret-store or network operation and grants no
+credential, readiness, publication, delivery, dispatch or execution authority. A later boundary
+must independently bind the exact snapshot to workflow lineage and revalidate current rotation,
+expiry and revocation state before considering credential-access authorization.
+
+Snapshot history is queried directly by exact scope and remains visible after deployment source
+rotation or removal. Exact idempotent replay validates committed history before consulting current
+source state. Intent and commit-authorization audit precede the atomic snapshot/claim commit;
+creation completion audit follows commit so it cannot falsely report a snapshot that was never
+stored. Failure of that post-commit audit is outcome-uncertain and recovered by exact replay.
+
+Deployment assignment revisions are append-only. The highest unique rotation epoch and credential
+generation is the current registry head; an inactive or revoked newer head prevents any older
+revision from being treated as active. Production startup validates secret-free assignment
+configuration and synchronizes it into durable storage, while absent configuration fails closed.
+
 ### 10.2 Publication State
 
 Outbox records track:

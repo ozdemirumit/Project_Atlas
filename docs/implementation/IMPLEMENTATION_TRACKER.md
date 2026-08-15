@@ -4,14 +4,79 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-202 |
-| Title | Atomic single-use endpoint-resolution lease consumption and protected endpoint materialization without credential or network authority |
-| Status | Implementation and local validation complete; PR pending |
-| Branch | `agent/workflow-endpoint-materialization-consumption` |
-| Pull Request | Not opened |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-148, ADR-149, ADR-150, ADR-151, ADR-152 |
+| Task ID | ATLAS-IMP-203 |
+| Title | Immutable deployment physical-transport credential-assignment snapshot without workflow binding, secret access or network authority |
+| Status | Implementation complete; PR verification passed |
+| Branch | `agent/workflow-transport-credential-assignment-snapshots` |
+| Pull Request | [#216](https://github.com/ozdemirumit/Project_Atlas/pull/216) |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-148, ADR-149, ADR-150, ADR-151, ADR-152, ADR-153 |
 | Last Updated | 2026-08-15 |
-| Next Action | Open the pull request, require PostgreSQL-backed PR CI, then SHA-lock and merge only the exact green head |
+| Next Action | Merge the SHA-locked PR, verify main CI and begin the next bounded slice |
+
+### ATLAS-IMP-203 Scope Rationale
+
+- IMP-202 produces a protected endpoint artifact without credential or network authority. The
+  route snapshot identifies only a credential requirement and cannot safely authorize access to
+  an actual deployment credential.
+- The next smallest boundary snapshots one exact active deployment-owned credential-assignment
+  revision and proves compatibility with the existing physical route snapshot. It remains
+  historical, secrets-free evidence and does not bind the assignment to workflow lineage.
+- Workflow credential binding, assignment freshness admission, credential-access authorization,
+  brokerage, secret delivery, network readiness, publication, delivery, dispatch and execution
+  remain deferred.
+
+### ATLAS-IMP-203 Acceptance Criteria
+
+- Only the exact dedicated credential-assignment registry workload may request a snapshot using
+  assignment ID, revision, source digest and idempotency. Callers cannot choose a route, credential
+  profile, secret, store, broker, endpoint, principal, privilege, lifetime or authority.
+- Atlas loads one exact active server-owned assignment, verifies its digest, scope, lifetime,
+  non-revocation, credential generation, rotation epoch and exact compatibility with the immutable
+  physical route snapshot's route, requirement, authentication mechanism and principal class.
+- The durable append-only registry selects the highest unique rotation/generation head. A newer
+  active revision supersedes older rows; a newer inactive or revoked head blocks them. Production
+  can provision secret-free revisions through validated
+  `ATLAS_WORKFLOW_TRANSPORT_CREDENTIAL_ASSIGNMENTS`; empty configuration remains fail-closed.
+- The immutable append-only snapshot records deployment lineage and integrity evidence but no
+  password, token, key, certificate, username, vault path, retrievable secret reference or raw
+  endpoint. Production requires durable registry and persistence with no memory fallback.
+- Required intent and commit-authorization audit precede atomic persistence; completion audit
+  reports success only after commit. Exact idempotent replay returns immutable history even after
+  source rotation or removal. Conflicting replay, stale/revoked/expired source on a new request,
+  route mismatch, precommit audit failure or ambiguous source fails closed. Post-commit audit
+  failure is outcome-uncertain and recoverable through exact replay.
+- Every endpoint, credential, secret, network, readiness, publication, delivery, dispatch,
+  execution and mutation authority declaration remains false. The snapshot is not a bearer token.
+- Authorized humans receive minimized read-only evidence through the existing username/password
+  session without MFA or a second login. API/UI expose no credential profile or requirement,
+  target commitment, broker policy, digest, secret, certificate, endpoint or operational control.
+
+### ATLAS-IMP-203 Local Validation Evidence
+
+- Ruff formatting/checks and MyPy passed; Alembic reports one head at `20260815_0126`.
+- The complete backend suite passed with `2020 passed` and `9 skipped`; the skipped PostgreSQL
+  integration cases require the CI-only `ATLAS_TEST_POSTGRES_DSN` or unavailable Windows symlinks.
+- The complete frontend suite passed with `95` files and `585` tests; ESLint, TypeScript checking
+  and the production Vite build also passed.
+- Live validation on the IMP-203 branch used one normal `atlas-demo` / `local-demo`
+  username/password login. The same session opened Connector Inventory and the read-only
+  credential-assignment snapshot inventory without MFA, a second login or an authorized-browser
+  prompt; no credential or operational authority was exposed.
+- CI now performs a latest-revision downgrade/upgrade round trip and runs the credential-assignment
+  snapshot PostgreSQL concurrency and immutability tests against the service database.
+- Exact-head commit `b797bf347051f3c54aedad3a2263986e203e94da` passed PR CI run
+  `31853442682`; backend and frontend completed successfully, including the real PostgreSQL
+  migration round trip and concurrent snapshot/replay test.
+
+### ATLAS-IMP-202 Delivery Evidence
+
+- Exact-head commit `bbc72cf33a5557fc9a3b2b5c3e3b63d35fafb573` passed PR CI run
+  `31844682013`; both backend and frontend completed successfully.
+- PR [#215](https://github.com/ozdemirumit/Project_Atlas/pull/215) was SHA-locked and squash-merged
+  as `d570e5e35752788b37092fe6ff63749a404f9a15`.
+- The exact merged commit independently passed `main` CI run `31845501792`; the run completed at
+  `2026-08-14T22:20:25Z` with both backend and frontend successful. Local `main` was
+  fast-forwarded to the same verified commit before IMP-203 branched.
 
 ### ATLAS-IMP-202 Scope Rationale
 

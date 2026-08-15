@@ -18,6 +18,7 @@ from atlas.api.security import (
     authorize_workflow_plan_create,
     authorize_workflow_plan_read,
     authorize_workflow_transport_compatibility_admission_read,
+    authorize_workflow_transport_credential_assignment_snapshot_read,
     authorize_workflow_transport_profile_read,
     authorize_workflow_transport_route_snapshot_read,
     browser_session_subject,
@@ -26,6 +27,7 @@ from atlas.api.security import (
     workflow_physical_transport_route_binder_subject,
     workflow_physical_transport_route_freshness_admitter_subject,
     workflow_transport_compatibility_admitter_subject,
+    workflow_transport_credential_assignment_registry_subject,
     workflow_transport_profile_registry_subject,
     workflow_transport_route_registry_subject,
     workflow_worker_subject,
@@ -36,6 +38,7 @@ from atlas.api.workflow_schemas import (
     AdmitWorkflowEventTransportInput,
     BindWorkflowEventLogicalChannelInput,
     CancelWorkflowPlanInput,
+    CreateEventPhysicalTransportCredentialAssignmentSnapshotInput,
     CreateEventPhysicalTransportProfileSnapshotInput,
     CreateEventPhysicalTransportRouteSnapshotInput,
     CreateWorkflowEventPhysicalTransportEndpointMaterializationInput,
@@ -44,6 +47,10 @@ from atlas.api.workflow_schemas import (
     CreateWorkflowEventPhysicalTransportRouteFreshnessAdmissionInput,
     CreateWorkflowEventTransportCompatibilityAdmissionInput,
     CreateWorkflowPlanInput,
+    EventPhysicalTransportCredentialAssignmentSnapshotData,
+    EventPhysicalTransportCredentialAssignmentSnapshotInventoryData,
+    EventPhysicalTransportCredentialAssignmentSnapshotInventoryResponse,
+    EventPhysicalTransportCredentialAssignmentSnapshotResponse,
     EventPhysicalTransportProfileSnapshotData,
     EventPhysicalTransportProfileSnapshotInventoryData,
     EventPhysicalTransportProfileSnapshotInventoryResponse,
@@ -141,6 +148,7 @@ from atlas.modules.workflows.application import (
     WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_BINDER_AUDIENCE,
     WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMITTER_AUDIENCE,
     WORKFLOW_TRANSPORT_COMPATIBILITY_ADMITTER_AUDIENCE,
+    WORKFLOW_TRANSPORT_CREDENTIAL_ASSIGNMENT_REGISTRY_AUDIENCE,
     WORKFLOW_TRANSPORT_PROFILE_REGISTRY_AUDIENCE,
     WORKFLOW_TRANSPORT_ROUTE_REGISTRY_AUDIENCE,
     WORKFLOW_WORKER_AUDIENCE,
@@ -180,6 +188,9 @@ from atlas.modules.workflows.application import (
     WorkflowRunMaterializationRepository,
     WorkflowRunMaterializationService,
     WorkflowTransportCompatibilityAdmitterContext,
+    WorkflowTransportCredentialAssignmentRegistryContext,
+    WorkflowTransportCredentialAssignmentSnapshotError,
+    WorkflowTransportCredentialAssignmentSnapshotService,
     WorkflowTransportProfileRegistryContext,
     WorkflowTransportProfileSnapshotError,
     WorkflowTransportProfileSnapshotService,
@@ -187,6 +198,7 @@ from atlas.modules.workflows.application import (
     WorkflowTransportRouteSnapshotError,
     WorkflowTransportRouteSnapshotService,
     WorkflowWorkerContext,
+    validate_workflow_transport_credential_assignment_snapshot,
 )
 from atlas.modules.workflows.application.event_envelope_ports import (
     WorkflowDispatchEventEnvelopeError,
@@ -210,6 +222,7 @@ from atlas.modules.workflows.application.transport_compatibility_admission_ports
 from atlas.modules.workflows.domain import (
     DeploymentEventTransportProfile,
     DeploymentEventTransportRoute,
+    EventPhysicalTransportCredentialAssignmentSnapshot,
     EventPhysicalTransportProfileSnapshot,
     EventPhysicalTransportRouteSnapshot,
     WorkflowDispatchEventEnvelope,
@@ -694,6 +707,26 @@ def _raise_transport_route_snapshot(error: WorkflowTransportRouteSnapshotError) 
         status, title = 404, "Workflow transport route source unavailable"
     else:
         status, title = 409, "Workflow transport route snapshot unavailable"
+    raise AtlasError(
+        status=status,
+        code=error.code,
+        title=title,
+        detail=error.detail,
+        retryable=status == 503,
+    ) from error
+
+
+def _raise_transport_credential_assignment_snapshot(
+    error: WorkflowTransportCredentialAssignmentSnapshotError,
+) -> NoReturn:
+    if error.code.endswith("_invalid") or error.code.endswith("_required"):
+        status, title = 422, "Workflow transport credential snapshot request invalid"
+    elif "repository" in error.code or "audit" in error.code:
+        status, title = 503, "Workflow transport credential snapshot service unavailable"
+    elif error.code.endswith("_source_not_active"):
+        status, title = 404, "Workflow transport credential assignment unavailable"
+    else:
+        status, title = 409, "Workflow transport credential snapshot unavailable"
     raise AtlasError(
         status=status,
         code=error.code,
@@ -1374,6 +1407,18 @@ def _transport_route_snapshot_response(
     _no_store(response)
     return EventPhysicalTransportRouteSnapshotResponse(
         data=EventPhysicalTransportRouteSnapshotData.from_domain(snapshot),
+        meta=_meta(request),
+    )
+
+
+def _transport_credential_assignment_snapshot_response(
+    snapshot: EventPhysicalTransportCredentialAssignmentSnapshot,
+    request: Request,
+    response: Response,
+) -> EventPhysicalTransportCredentialAssignmentSnapshotResponse:
+    _no_store(response)
+    return EventPhysicalTransportCredentialAssignmentSnapshotResponse(
+        data=EventPhysicalTransportCredentialAssignmentSnapshotData.from_domain(snapshot),
         meta=_meta(request),
     )
 
@@ -3689,6 +3734,104 @@ async def create_workflow_transport_route_snapshot(
     except WorkflowTransportRouteSnapshotError as error:
         _raise_transport_route_snapshot(error)
     return _transport_route_snapshot_response(snapshot, request, response)
+
+
+@router.get(
+    "/transport-credential-assignment-snapshots",
+    response_model=EventPhysicalTransportCredentialAssignmentSnapshotInventoryResponse,
+)
+async def list_workflow_transport_credential_assignment_snapshots(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_workflow_transport_credential_assignment_snapshot_read),
+    ],
+) -> EventPhysicalTransportCredentialAssignmentSnapshotInventoryResponse:
+    del decision
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    service: WorkflowTransportCredentialAssignmentSnapshotService = (
+        request.app.state.workflow_transport_credential_assignment_snapshot_service
+    )
+    try:
+        snapshots = await service.repository.list_credential_assignment_snapshots(
+            scope=scope,
+            limit=256,
+        )
+        for snapshot in snapshots:
+            validate_workflow_transport_credential_assignment_snapshot(snapshot, scope=scope)
+    except WorkflowTransportCredentialAssignmentSnapshotError as error:
+        _raise_transport_credential_assignment_snapshot(error)
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_transport_credential_assignment_snapshot_repository_unavailable",
+            title="Workflow transport credential snapshot service unavailable",
+            detail="Transport credential assignment snapshot metadata is unavailable.",
+            retryable=True,
+        ) from error
+    _no_store(response)
+    return EventPhysicalTransportCredentialAssignmentSnapshotInventoryResponse(
+        data=EventPhysicalTransportCredentialAssignmentSnapshotInventoryData(
+            transport_credential_assignment_snapshots=[
+                EventPhysicalTransportCredentialAssignmentSnapshotData.from_domain(snapshot)
+                for snapshot in snapshots
+            ],
+            durable=service.durable,
+        ),
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    "/transport-credential-assignment-snapshots",
+    response_model=EventPhysicalTransportCredentialAssignmentSnapshotResponse,
+    status_code=201,
+)
+async def create_workflow_transport_credential_assignment_snapshot(
+    payload: CreateEventPhysicalTransportCredentialAssignmentSnapshotInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[
+        AuthenticatedSubject,
+        Depends(workflow_transport_credential_assignment_registry_subject),
+    ],
+) -> EventPhysicalTransportCredentialAssignmentSnapshotResponse:
+    service: WorkflowTransportCredentialAssignmentSnapshotService = (
+        request.app.state.workflow_transport_credential_assignment_snapshot_service
+    )
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    try:
+        snapshot = await service.register(
+            assignment_id=payload.assignment_id,
+            assignment_revision=payload.assignment_revision,
+            source_assignment_digest=payload.source_assignment_digest,
+            idempotency_key=payload.idempotency_key,
+            context=WorkflowTransportCredentialAssignmentRegistryContext(
+                subject_id=subject.subject_id,
+                actor_type=subject.kind.value,
+                authentication_method=subject.authentication_method.value,
+                credential_audience=(WORKFLOW_TRANSPORT_CREDENTIAL_ASSIGNMENT_REGISTRY_AUDIENCE),
+                scope=scope,
+                correlation_id=str(request.state.correlation_id),
+                decision_id=(
+                    "decision.workflow-transport-credential-assignment-registry-authenticated"
+                ),
+                requested_at=datetime.now(UTC),
+            ),
+        )
+    except WorkflowTransportCredentialAssignmentSnapshotError as error:
+        _raise_transport_credential_assignment_snapshot(error)
+    return _transport_credential_assignment_snapshot_response(snapshot, request, response)
 
 
 @router.get(

@@ -18,7 +18,10 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from atlas.core.persistence.models import (
+    DeploymentEventTransportCredentialAssignmentModel,
     DeploymentEventTransportRouteSelectionHeadModel,
+    EventPhysicalTransportCredentialAssignmentSnapshotClaimModel,
+    EventPhysicalTransportCredentialAssignmentSnapshotModel,
     EventPhysicalTransportProfileSnapshotClaimModel,
     EventPhysicalTransportProfileSnapshotModel,
     EventPhysicalTransportRouteSnapshotClaimModel,
@@ -91,6 +94,14 @@ from atlas.modules.workflows.application.byte_artifact_ports import (
     WorkflowEventByteArtifactRequest,
     WorkflowEventByteArtifactResult,
     WorkflowEventByteArtifactStatus,
+)
+from atlas.modules.workflows.application.credential_assignment_snapshot_ports import (
+    WorkflowTransportCredentialAssignmentSnapshotError,
+    WorkflowTransportCredentialAssignmentSnapshotIdempotencyRecord,
+    WorkflowTransportCredentialAssignmentSnapshotRequest,
+    WorkflowTransportCredentialAssignmentSnapshotResult,
+    WorkflowTransportCredentialAssignmentSnapshotStatus,
+    validate_workflow_transport_credential_assignment_snapshot_request,
 )
 from atlas.modules.workflows.application.dispatch_intent_ports import (
     WorkflowDispatchIntentStagingError,
@@ -183,6 +194,10 @@ from atlas.modules.workflows.application.transport_route_snapshot_ports import (
 )
 from atlas.modules.workflows.domain import (
     DeploymentEventTransportRouteSelectionHead,
+    DeploymentPhysicalTransportCredentialAssignment,
+    EventPhysicalTransportCredentialAssignmentSnapshot,
+    EventPhysicalTransportCredentialAssignmentSnapshotAuthority,
+    EventPhysicalTransportCredentialAssignmentSnapshotState,
     EventPhysicalTransportProfileSnapshot,
     EventPhysicalTransportProfileSnapshotAuthority,
     EventPhysicalTransportProfileSnapshotState,
@@ -254,6 +269,7 @@ from atlas.modules.workflows.domain import (
     code_owned_workflow_event_physical_transport_endpoint_resolution_authorization_policy,
     code_owned_workflow_event_physical_transport_route_freshness_policy,
     code_owned_workflow_event_transport_admission_policy,
+    select_deployment_physical_transport_credential_assignment_head,
 )
 
 
@@ -1750,6 +1766,289 @@ class PostgreSQLWorkflowPlanRepository:
                 )
         return WorkflowTransportRouteSnapshotResult(
             WorkflowTransportRouteSnapshotStatus.SOURCE_CONFLICT, None
+        )
+
+    async def synchronize_credential_assignments(
+        self, assignments: tuple[DeploymentPhysicalTransportCredentialAssignment, ...]
+    ) -> None:
+        """Append exact deployment-owned revisions without replacing history."""
+
+        if not assignments:
+            return
+        async with self._sessions() as session:
+            for assignment_id in sorted({assignment.assignment_id for assignment in assignments}):
+                await session.scalar(
+                    select(
+                        func.pg_advisory_xact_lock(
+                            self._credential_assignment_registry_lock_id(assignment_id)
+                        )
+                    )
+                )
+            for assignment in assignments:
+                existing = await session.get(
+                    DeploymentEventTransportCredentialAssignmentModel,
+                    (assignment.assignment_id, assignment.assignment_revision),
+                )
+                if existing is not None:
+                    if self._credential_assignment_from_row(existing) != assignment:
+                        await session.rollback()
+                        self._credential_assignment_contract_violation()
+                    continue
+                session.add(self._credential_assignment_model(assignment))
+            try:
+                await session.commit()
+            except IntegrityError as exc:
+                await session.rollback()
+                raise WorkflowTransportCredentialAssignmentSnapshotError(
+                    "workflow_transport_credential_assignment_registry_conflict",
+                    "Credential-assignment registry evidence conflicts with durable history.",
+                ) from exc
+
+    async def get_active_credential_assignment(
+        self,
+        *,
+        assignment_id: str,
+        assignment_revision: str,
+    ) -> DeploymentPhysicalTransportCredentialAssignment | None:
+        async with self._sessions() as session:
+            rows = tuple(
+                (
+                    await session.scalars(
+                        select(DeploymentEventTransportCredentialAssignmentModel).where(
+                            DeploymentEventTransportCredentialAssignmentModel.assignment_id
+                            == assignment_id
+                        )
+                    )
+                ).all()
+            )
+            try:
+                assignment = select_deployment_physical_transport_credential_assignment_head(
+                    tuple(self._credential_assignment_from_row(row) for row in rows)
+                )
+            except ValueError:
+                self._credential_assignment_contract_violation()
+            now = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+            if (
+                assignment is None
+                or assignment.assignment_revision != assignment_revision
+                or not assignment.active
+                or assignment.revoked
+                or not assignment.activated_at <= now < assignment.expires_at
+            ):
+                return None
+            return assignment
+
+    async def get_credential_assignment_snapshot(
+        self,
+        *,
+        assignment_id: str,
+        assignment_revision: str,
+    ) -> EventPhysicalTransportCredentialAssignmentSnapshot | None:
+        async with self._sessions() as session:
+            row = cast(
+                EventPhysicalTransportCredentialAssignmentSnapshotModel | None,
+                await session.scalar(
+                    select(EventPhysicalTransportCredentialAssignmentSnapshotModel).where(
+                        EventPhysicalTransportCredentialAssignmentSnapshotModel.assignment_id
+                        == assignment_id,
+                        EventPhysicalTransportCredentialAssignmentSnapshotModel.assignment_revision
+                        == assignment_revision,
+                    )
+                ),
+            )
+            return None if row is None else self._credential_assignment_snapshot_from_row(row)
+
+    async def list_credential_assignment_snapshots(
+        self,
+        *,
+        scope: WorkflowScope,
+        limit: int = 256,
+    ) -> tuple[EventPhysicalTransportCredentialAssignmentSnapshot, ...]:
+        if not 1 <= limit <= 256:
+            raise ValueError("credential-assignment snapshot limit is invalid")
+        async with self._sessions() as session:
+            rows = tuple(
+                (
+                    await session.scalars(
+                        select(EventPhysicalTransportCredentialAssignmentSnapshotModel)
+                        .where(
+                            EventPhysicalTransportCredentialAssignmentSnapshotModel.organization_id
+                            == scope.organization_id,
+                            EventPhysicalTransportCredentialAssignmentSnapshotModel.environment_id
+                            == scope.environment_id,
+                            EventPhysicalTransportCredentialAssignmentSnapshotModel.site_id
+                            == scope.site_id,
+                        )
+                        .order_by(
+                            EventPhysicalTransportCredentialAssignmentSnapshotModel.assignment_id,
+                            EventPhysicalTransportCredentialAssignmentSnapshotModel.assignment_revision,
+                        )
+                        .limit(limit)
+                    )
+                ).all()
+            )
+            return tuple(self._credential_assignment_snapshot_from_row(row) for row in rows)
+
+    async def get_credential_assignment_snapshot_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        snapshotter_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowTransportCredentialAssignmentSnapshotIdempotencyRecord | None:
+        async with self._sessions() as session:
+            claim = await self._load_credential_assignment_snapshot_claim(
+                session,
+                scope=scope,
+                snapshotter_subject_id=snapshotter_subject_id,
+                idempotency_key=idempotency_key,
+            )
+            if claim is None:
+                return None
+            snapshot_row = await session.get(
+                EventPhysicalTransportCredentialAssignmentSnapshotModel,
+                claim.snapshot_id,
+            )
+            return self._credential_assignment_snapshot_record_from_claim(claim, snapshot_row)
+
+    async def snapshot_credential_assignment(
+        self,
+        request: WorkflowTransportCredentialAssignmentSnapshotRequest,
+    ) -> WorkflowTransportCredentialAssignmentSnapshotResult:
+        validate_workflow_transport_credential_assignment_snapshot_request(request)
+        candidate = request.candidate
+        async with self._sessions() as session:
+            replay = await self._credential_assignment_snapshot_replay(session, request=request)
+            if replay is not None:
+                return replay
+
+            await session.scalar(
+                select(
+                    func.pg_advisory_xact_lock(
+                        self._credential_assignment_registry_lock_id(
+                            request.expected_source_assignment_id
+                        )
+                    )
+                )
+            )
+            source_rows = tuple(
+                (
+                    await session.scalars(
+                        select(DeploymentEventTransportCredentialAssignmentModel)
+                        .where(
+                            DeploymentEventTransportCredentialAssignmentModel.assignment_id
+                            == request.expected_source_assignment_id
+                        )
+                        .with_for_update()
+                    )
+                ).all()
+            )
+            try:
+                source_head = select_deployment_physical_transport_credential_assignment_head(
+                    tuple(self._credential_assignment_from_row(row) for row in source_rows)
+                )
+            except ValueError:
+                self._credential_assignment_contract_violation()
+            source_row = next(
+                (
+                    row
+                    for row in source_rows
+                    if source_head is not None
+                    and source_head.assignment_revision
+                    == request.expected_source_assignment_revision
+                    and row.assignment_revision == source_head.assignment_revision
+                ),
+                None,
+            )
+            route_row = cast(
+                EventPhysicalTransportRouteSnapshotModel | None,
+                await session.scalar(
+                    select(EventPhysicalTransportRouteSnapshotModel)
+                    .where(
+                        EventPhysicalTransportRouteSnapshotModel.snapshot_id
+                        == candidate.route_snapshot_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            replay = await self._credential_assignment_snapshot_replay(session, request=request)
+            if replay is not None:
+                await session.rollback()
+                return replay
+            captured_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+            if not self._credential_assignment_snapshot_evidence_matches(
+                request=request,
+                source_row=source_row,
+                route_row=route_row,
+                captured_at=captured_at,
+            ):
+                await session.rollback()
+                return WorkflowTransportCredentialAssignmentSnapshotResult(
+                    WorkflowTransportCredentialAssignmentSnapshotStatus.SOURCE_CONFLICT,
+                    None,
+                )
+
+            existing = cast(
+                EventPhysicalTransportCredentialAssignmentSnapshotModel | None,
+                await session.scalar(
+                    select(EventPhysicalTransportCredentialAssignmentSnapshotModel).where(
+                        EventPhysicalTransportCredentialAssignmentSnapshotModel.assignment_id
+                        == candidate.assignment_id,
+                        EventPhysicalTransportCredentialAssignmentSnapshotModel.assignment_revision
+                        == candidate.assignment_revision,
+                    )
+                ),
+            )
+            if existing is not None:
+                await session.rollback()
+                return WorkflowTransportCredentialAssignmentSnapshotResult(
+                    WorkflowTransportCredentialAssignmentSnapshotStatus.ALREADY_SNAPSHOTTED,
+                    self._credential_assignment_snapshot_from_row(existing),
+                )
+
+            try:
+                await request.required_precommit_audit()
+            except Exception:
+                await session.rollback()
+                return WorkflowTransportCredentialAssignmentSnapshotResult(
+                    WorkflowTransportCredentialAssignmentSnapshotStatus.PRECOMMIT_AUDIT_FAILED,
+                    None,
+                )
+            try:
+                session.add(self._credential_assignment_snapshot_model(candidate))
+                await session.flush()
+                session.add(self._credential_assignment_snapshot_claim_model(request))
+                await session.commit()
+                return WorkflowTransportCredentialAssignmentSnapshotResult(
+                    WorkflowTransportCredentialAssignmentSnapshotStatus.SNAPSHOTTED,
+                    candidate,
+                )
+            except IntegrityError:
+                await session.rollback()
+
+        async with self._sessions() as session:
+            replay = await self._credential_assignment_snapshot_replay(session, request=request)
+            if replay is not None:
+                return replay
+            existing = cast(
+                EventPhysicalTransportCredentialAssignmentSnapshotModel | None,
+                await session.scalar(
+                    select(EventPhysicalTransportCredentialAssignmentSnapshotModel).where(
+                        EventPhysicalTransportCredentialAssignmentSnapshotModel.assignment_id
+                        == candidate.assignment_id,
+                        EventPhysicalTransportCredentialAssignmentSnapshotModel.assignment_revision
+                        == candidate.assignment_revision,
+                    )
+                ),
+            )
+            if existing is not None:
+                return WorkflowTransportCredentialAssignmentSnapshotResult(
+                    WorkflowTransportCredentialAssignmentSnapshotStatus.ALREADY_SNAPSHOTTED,
+                    self._credential_assignment_snapshot_from_row(existing),
+                )
+        return WorkflowTransportCredentialAssignmentSnapshotResult(
+            WorkflowTransportCredentialAssignmentSnapshotStatus.SOURCE_CONFLICT,
+            None,
         )
 
     async def get_event_logical_channel_binding_by_id(
@@ -6995,6 +7294,493 @@ class PostgreSQLWorkflowPlanRepository:
         raise WorkflowTransportRouteSnapshotError(
             "workflow_transport_route_snapshot_repository_contract_violation",
             "The event transport route snapshot does not match its durable evidence.",
+        )
+
+    @classmethod
+    def _credential_assignment_model(
+        cls, assignment: DeploymentPhysicalTransportCredentialAssignment
+    ) -> DeploymentEventTransportCredentialAssignmentModel:
+        payload = cast(dict[str, Any], assignment.canonical_value())
+        return DeploymentEventTransportCredentialAssignmentModel(
+            assignment_id=assignment.assignment_id,
+            assignment_revision=assignment.assignment_revision,
+            source_assignment_digest=assignment.canonical_digest,
+            organization_id=assignment.scope.organization_id,
+            environment_id=assignment.scope.environment_id,
+            site_id=assignment.scope.site_id,
+            route_id=assignment.route_id,
+            route_revision=assignment.route_revision,
+            source_route_digest=assignment.source_route_digest,
+            credential_requirement_profile_id=assignment.credential_requirement_profile_id,
+            credential_requirement_profile_version=(
+                assignment.credential_requirement_profile_version
+            ),
+            credential_requirement_profile_digest=(
+                assignment.credential_requirement_profile_digest
+            ),
+            credential_profile_id=assignment.credential_profile_id,
+            credential_profile_version=assignment.credential_profile_version,
+            credential_profile_digest=assignment.credential_profile_digest,
+            authentication_mechanism_class=assignment.authentication_mechanism_class,
+            principal_class=assignment.principal_class,
+            privilege_class=assignment.privilege_class,
+            target_scope_commitment=assignment.target_scope_commitment,
+            credential_generation=assignment.credential_generation,
+            rotation_epoch=assignment.rotation_epoch,
+            activated_at=assignment.activated_at,
+            expires_at=assignment.expires_at,
+            revoked=assignment.revoked,
+            broker_policy_id=assignment.broker_policy_id,
+            broker_policy_version=assignment.broker_policy_version,
+            broker_policy_digest=assignment.broker_policy_digest,
+            active=assignment.active,
+            canonical_digest=assignment.canonical_digest,
+            payload=payload,
+        )
+
+    @classmethod
+    def _credential_assignment_from_row(
+        cls, row: DeploymentEventTransportCredentialAssignmentModel
+    ) -> DeploymentPhysicalTransportCredentialAssignment:
+        try:
+            assignment = cls._credential_assignment_to_domain(row.payload)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowTransportCredentialAssignmentSnapshotError(
+                "workflow_transport_credential_assignment_registry_contract_violation",
+                "Credential-assignment registry evidence is invalid.",
+            ) from exc
+        if (
+            row.assignment_id != assignment.assignment_id
+            or row.assignment_revision != assignment.assignment_revision
+            or row.source_assignment_digest != assignment.canonical_digest
+            or row.organization_id != assignment.scope.organization_id
+            or row.environment_id != assignment.scope.environment_id
+            or row.site_id != assignment.scope.site_id
+            or row.route_id != assignment.route_id
+            or row.route_revision != assignment.route_revision
+            or row.source_route_digest != assignment.source_route_digest
+            or row.credential_requirement_profile_id != assignment.credential_requirement_profile_id
+            or row.credential_requirement_profile_version
+            != assignment.credential_requirement_profile_version
+            or row.credential_requirement_profile_digest
+            != assignment.credential_requirement_profile_digest
+            or row.credential_profile_id != assignment.credential_profile_id
+            or row.credential_profile_version != assignment.credential_profile_version
+            or row.credential_profile_digest != assignment.credential_profile_digest
+            or row.authentication_mechanism_class != assignment.authentication_mechanism_class
+            or row.principal_class != assignment.principal_class
+            or row.privilege_class != assignment.privilege_class
+            or row.target_scope_commitment != assignment.target_scope_commitment
+            or row.credential_generation != assignment.credential_generation
+            or row.rotation_epoch != assignment.rotation_epoch
+            or row.activated_at != assignment.activated_at
+            or row.expires_at != assignment.expires_at
+            or row.revoked != assignment.revoked
+            or row.active != assignment.active
+            or row.broker_policy_id != assignment.broker_policy_id
+            or row.broker_policy_version != assignment.broker_policy_version
+            or row.broker_policy_digest != assignment.broker_policy_digest
+            or row.canonical_digest != assignment.canonical_digest
+            or row.payload != cast(dict[str, Any], assignment.canonical_value())
+        ):
+            cls._credential_assignment_contract_violation()
+        return assignment
+
+    @staticmethod
+    def _credential_assignment_to_domain(
+        raw: dict[str, Any],
+    ) -> DeploymentPhysicalTransportCredentialAssignment:
+        values = dict(raw)
+        values["scope"] = WorkflowScope(**cast(Any, values["scope"]))
+        values["activated_at"] = datetime.fromisoformat(str(values["activated_at"]))
+        values["expires_at"] = datetime.fromisoformat(str(values["expires_at"]))
+        return DeploymentPhysicalTransportCredentialAssignment(**cast(Any, values))
+
+    async def _credential_assignment_snapshot_replay(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowTransportCredentialAssignmentSnapshotRequest,
+    ) -> WorkflowTransportCredentialAssignmentSnapshotResult | None:
+        claim = await self._load_credential_assignment_snapshot_claim(
+            session,
+            scope=request.scope,
+            snapshotter_subject_id=request.snapshotter_subject_id,
+            idempotency_key=request.idempotency_key,
+        )
+        if claim is None:
+            return None
+        snapshot_row = await session.get(
+            EventPhysicalTransportCredentialAssignmentSnapshotModel,
+            claim.snapshot_id,
+        )
+        record = self._credential_assignment_snapshot_record_from_claim(claim, snapshot_row)
+        status = (
+            WorkflowTransportCredentialAssignmentSnapshotStatus.REPLAY
+            if record.request_fingerprint == request.request_fingerprint
+            else WorkflowTransportCredentialAssignmentSnapshotStatus.IDEMPOTENCY_CONFLICT
+        )
+        return WorkflowTransportCredentialAssignmentSnapshotResult(status, record.snapshot)
+
+    @classmethod
+    async def _load_credential_assignment_snapshot_claim(
+        cls,
+        session: AsyncSession,
+        *,
+        scope: WorkflowScope,
+        snapshotter_subject_id: str,
+        idempotency_key: str,
+    ) -> EventPhysicalTransportCredentialAssignmentSnapshotClaimModel | None:
+        scope_id = cls._credential_assignment_snapshot_idempotency_scope(
+            scope, snapshotter_subject_id
+        )
+        return cast(
+            EventPhysicalTransportCredentialAssignmentSnapshotClaimModel | None,
+            await session.scalar(
+                select(EventPhysicalTransportCredentialAssignmentSnapshotClaimModel).where(
+                    EventPhysicalTransportCredentialAssignmentSnapshotClaimModel.idempotency_scope_id
+                    == scope_id,
+                    EventPhysicalTransportCredentialAssignmentSnapshotClaimModel.idempotency_key
+                    == idempotency_key,
+                    EventPhysicalTransportCredentialAssignmentSnapshotClaimModel.organization_id
+                    == scope.organization_id,
+                    EventPhysicalTransportCredentialAssignmentSnapshotClaimModel.environment_id
+                    == scope.environment_id,
+                    EventPhysicalTransportCredentialAssignmentSnapshotClaimModel.site_id
+                    == scope.site_id,
+                    EventPhysicalTransportCredentialAssignmentSnapshotClaimModel.snapshotter_subject_id
+                    == snapshotter_subject_id,
+                )
+            ),
+        )
+
+    @classmethod
+    def _credential_assignment_snapshot_record_from_claim(
+        cls,
+        claim: EventPhysicalTransportCredentialAssignmentSnapshotClaimModel,
+        snapshot_row: EventPhysicalTransportCredentialAssignmentSnapshotModel | None,
+    ) -> WorkflowTransportCredentialAssignmentSnapshotIdempotencyRecord:
+        if snapshot_row is None:
+            cls._credential_assignment_snapshot_contract_violation()
+        snapshot = cls._credential_assignment_snapshot_from_row(snapshot_row)
+        scope_id = cls._credential_assignment_snapshot_idempotency_scope(
+            snapshot.scope, snapshot.snapshotter_subject_id
+        )
+        payload: dict[str, Any] = {
+            "idempotency_key": claim.idempotency_key,
+            "idempotency_scope_id": scope_id,
+            "request_fingerprint": claim.request_fingerprint,
+            "result_digest": snapshot.canonical_digest,
+            "result_snapshot": cls._credential_assignment_snapshot_payload(snapshot),
+        }
+        if (
+            claim.idempotency_scope_id != scope_id
+            or claim.result_digest != snapshot.canonical_digest
+            or claim.snapshot_id != snapshot.snapshot_id
+            or claim.assignment_id != snapshot.assignment_id
+            or claim.assignment_revision != snapshot.assignment_revision
+            or claim.source_assignment_digest != snapshot.source_assignment_digest
+            or claim.organization_id != snapshot.scope.organization_id
+            or claim.environment_id != snapshot.scope.environment_id
+            or claim.site_id != snapshot.scope.site_id
+            or claim.snapshotter_subject_id != snapshot.snapshotter_subject_id
+            or claim.canonical_digest != canonical_digest(payload)
+            or claim.payload != payload
+        ):
+            cls._credential_assignment_snapshot_contract_violation()
+        return WorkflowTransportCredentialAssignmentSnapshotIdempotencyRecord(
+            request_fingerprint=claim.request_fingerprint,
+            snapshot=snapshot,
+        )
+
+    @classmethod
+    def _credential_assignment_snapshot_from_row(
+        cls, row: EventPhysicalTransportCredentialAssignmentSnapshotModel
+    ) -> EventPhysicalTransportCredentialAssignmentSnapshot:
+        try:
+            snapshot = cls._credential_assignment_snapshot_to_domain(row.payload)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowTransportCredentialAssignmentSnapshotError(
+                "workflow_transport_credential_assignment_snapshot_repository_contract_violation",
+                "Credential-assignment snapshot evidence is invalid.",
+            ) from exc
+        authority = snapshot.authority
+        if (
+            row.snapshot_id != snapshot.snapshot_id
+            or row.assignment_id != snapshot.assignment_id
+            or row.assignment_revision != snapshot.assignment_revision
+            or row.source_assignment_digest != snapshot.source_assignment_digest
+            or row.organization_id != snapshot.scope.organization_id
+            or row.environment_id != snapshot.scope.environment_id
+            or row.site_id != snapshot.scope.site_id
+            or row.route_snapshot_id != snapshot.route_snapshot_id
+            or row.route_id != snapshot.route_id
+            or row.route_revision != snapshot.route_revision
+            or row.source_route_digest != snapshot.source_route_digest
+            or row.credential_requirement_profile_id != snapshot.credential_requirement_profile_id
+            or row.credential_requirement_profile_version
+            != snapshot.credential_requirement_profile_version
+            or row.credential_requirement_profile_digest
+            != snapshot.credential_requirement_profile_digest
+            or row.credential_profile_id != snapshot.credential_profile_id
+            or row.credential_profile_version != snapshot.credential_profile_version
+            or row.credential_profile_digest != snapshot.credential_profile_digest
+            or row.authentication_mechanism_class != snapshot.authentication_mechanism_class
+            or row.principal_class != snapshot.principal_class
+            or row.privilege_class != snapshot.privilege_class
+            or row.target_scope_commitment != snapshot.target_scope_commitment
+            or row.credential_generation != snapshot.credential_generation
+            or row.rotation_epoch != snapshot.rotation_epoch
+            or row.activated_at != snapshot.activated_at
+            or row.expires_at != snapshot.expires_at
+            or row.source_non_revoked != snapshot.source_non_revoked
+            or row.broker_policy_id != snapshot.broker_policy_id
+            or row.broker_policy_version != snapshot.broker_policy_version
+            or row.broker_policy_digest != snapshot.broker_policy_digest
+            or row.snapshotter_subject_id != snapshot.snapshotter_subject_id
+            or row.captured_at != snapshot.captured_at
+            or row.state != snapshot.state.value
+            or row.endpoint_resolution_authority_granted != authority.endpoint_resolution_authorized
+            or row.protected_artifact_access_authority_granted
+            != authority.protected_artifact_access_authorized
+            or row.credential_selection_authority_granted
+            != authority.credential_selection_authorized
+            or row.credential_access_authority_granted != authority.credential_access_authorized
+            or row.credential_brokerage_authority_granted
+            != authority.credential_brokerage_authorized
+            or row.credential_resolution_authority_granted
+            != authority.credential_resolution_authorized
+            or row.credential_delivery_authority_granted != authority.credential_delivery_authorized
+            or row.network_access_authority_granted != authority.network_access_authorized
+            or row.readiness_probe_authority_granted != authority.readiness_probe_authorized
+            or row.publication_authority_granted != authority.publication_authorized
+            or row.delivery_authority_granted != authority.delivery_authorized
+            or row.dispatch_authority_granted != authority.dispatch_authorized
+            or row.execution_authority_granted != authority.execution_authorized
+            or row.infrastructure_mutation_authority_granted
+            != authority.infrastructure_mutation_authorized
+            or row.canonical_digest != snapshot.canonical_digest
+            or row.payload != cls._credential_assignment_snapshot_payload(snapshot)
+        ):
+            cls._credential_assignment_snapshot_contract_violation()
+        return snapshot
+
+    @classmethod
+    def _credential_assignment_snapshot_model(
+        cls, snapshot: EventPhysicalTransportCredentialAssignmentSnapshot
+    ) -> EventPhysicalTransportCredentialAssignmentSnapshotModel:
+        authority = snapshot.authority
+        return EventPhysicalTransportCredentialAssignmentSnapshotModel(
+            snapshot_id=snapshot.snapshot_id,
+            assignment_id=snapshot.assignment_id,
+            assignment_revision=snapshot.assignment_revision,
+            source_assignment_digest=snapshot.source_assignment_digest,
+            organization_id=snapshot.scope.organization_id,
+            environment_id=snapshot.scope.environment_id,
+            site_id=snapshot.scope.site_id,
+            route_snapshot_id=snapshot.route_snapshot_id,
+            route_id=snapshot.route_id,
+            route_revision=snapshot.route_revision,
+            source_route_digest=snapshot.source_route_digest,
+            credential_requirement_profile_id=snapshot.credential_requirement_profile_id,
+            credential_requirement_profile_version=(
+                snapshot.credential_requirement_profile_version
+            ),
+            credential_requirement_profile_digest=(snapshot.credential_requirement_profile_digest),
+            credential_profile_id=snapshot.credential_profile_id,
+            credential_profile_version=snapshot.credential_profile_version,
+            credential_profile_digest=snapshot.credential_profile_digest,
+            authentication_mechanism_class=snapshot.authentication_mechanism_class,
+            principal_class=snapshot.principal_class,
+            privilege_class=snapshot.privilege_class,
+            target_scope_commitment=snapshot.target_scope_commitment,
+            credential_generation=snapshot.credential_generation,
+            rotation_epoch=snapshot.rotation_epoch,
+            activated_at=snapshot.activated_at,
+            expires_at=snapshot.expires_at,
+            source_non_revoked=snapshot.source_non_revoked,
+            broker_policy_id=snapshot.broker_policy_id,
+            broker_policy_version=snapshot.broker_policy_version,
+            broker_policy_digest=snapshot.broker_policy_digest,
+            snapshotter_subject_id=snapshot.snapshotter_subject_id,
+            captured_at=snapshot.captured_at,
+            state=snapshot.state.value,
+            endpoint_resolution_authority_granted=authority.endpoint_resolution_authorized,
+            protected_artifact_access_authority_granted=(
+                authority.protected_artifact_access_authorized
+            ),
+            credential_selection_authority_granted=authority.credential_selection_authorized,
+            credential_access_authority_granted=authority.credential_access_authorized,
+            credential_brokerage_authority_granted=authority.credential_brokerage_authorized,
+            credential_resolution_authority_granted=authority.credential_resolution_authorized,
+            credential_delivery_authority_granted=authority.credential_delivery_authorized,
+            network_access_authority_granted=authority.network_access_authorized,
+            readiness_probe_authority_granted=authority.readiness_probe_authorized,
+            publication_authority_granted=authority.publication_authorized,
+            delivery_authority_granted=authority.delivery_authorized,
+            dispatch_authority_granted=authority.dispatch_authorized,
+            execution_authority_granted=authority.execution_authorized,
+            infrastructure_mutation_authority_granted=(
+                authority.infrastructure_mutation_authorized
+            ),
+            canonical_digest=snapshot.canonical_digest,
+            payload=cls._credential_assignment_snapshot_payload(snapshot),
+        )
+
+    @classmethod
+    def _credential_assignment_snapshot_claim_model(
+        cls, request: WorkflowTransportCredentialAssignmentSnapshotRequest
+    ) -> EventPhysicalTransportCredentialAssignmentSnapshotClaimModel:
+        snapshot = request.candidate
+        scope_id = cls._credential_assignment_snapshot_idempotency_scope(
+            snapshot.scope, snapshot.snapshotter_subject_id
+        )
+        payload: dict[str, Any] = {
+            "idempotency_key": request.idempotency_key,
+            "idempotency_scope_id": scope_id,
+            "request_fingerprint": request.request_fingerprint,
+            "result_digest": snapshot.canonical_digest,
+            "result_snapshot": cls._credential_assignment_snapshot_payload(snapshot),
+        }
+        digest = canonical_digest(payload)
+        return EventPhysicalTransportCredentialAssignmentSnapshotClaimModel(
+            claim_id=f"event_transport_credential_claim_{sha256(digest.encode()).hexdigest()[:32]}",
+            idempotency_scope_id=scope_id,
+            idempotency_key=request.idempotency_key,
+            request_fingerprint=request.request_fingerprint,
+            result_digest=snapshot.canonical_digest,
+            snapshot_id=snapshot.snapshot_id,
+            assignment_id=snapshot.assignment_id,
+            assignment_revision=snapshot.assignment_revision,
+            source_assignment_digest=snapshot.source_assignment_digest,
+            organization_id=snapshot.scope.organization_id,
+            environment_id=snapshot.scope.environment_id,
+            site_id=snapshot.scope.site_id,
+            snapshotter_subject_id=snapshot.snapshotter_subject_id,
+            created_at=request.requested_at,
+            canonical_digest=digest,
+            payload=payload,
+        )
+
+    @classmethod
+    def _credential_assignment_snapshot_evidence_matches(
+        cls,
+        *,
+        request: WorkflowTransportCredentialAssignmentSnapshotRequest,
+        source_row: DeploymentEventTransportCredentialAssignmentModel | None,
+        route_row: EventPhysicalTransportRouteSnapshotModel | None,
+        captured_at: datetime,
+    ) -> bool:
+        if source_row is None or route_row is None:
+            return False
+        source = cls._credential_assignment_from_row(source_row)
+        route = cls._transport_route_snapshot_from_row(route_row)
+        candidate = request.candidate
+        return bool(
+            candidate.assignment_id == request.expected_source_assignment_id
+            and candidate.assignment_revision == request.expected_source_assignment_revision
+            and candidate.source_assignment_digest
+            == request.expected_source_assignment_digest
+            == source.canonical_digest
+            and candidate.scope == request.scope == source.scope == route.scope
+            and candidate.snapshotter_subject_id == request.snapshotter_subject_id
+            and candidate.captured_at == request.requested_at
+            and source.active
+            and not source.revoked
+            and source.activated_at <= captured_at < source.expires_at
+            and candidate.activated_at == source.activated_at
+            and candidate.expires_at == source.expires_at
+            and candidate.source_non_revoked
+            and candidate.route_snapshot_id == route.snapshot_id
+            and candidate.route_id == source.route_id == route.route_id
+            and candidate.route_revision == source.route_revision == route.route_revision
+            and candidate.source_route_digest
+            == source.source_route_digest
+            == route.source_route_digest
+            and candidate.credential_requirement_profile_id
+            == source.credential_requirement_profile_id
+            == route.credential_requirement_profile_id
+            and candidate.credential_requirement_profile_version
+            == source.credential_requirement_profile_version
+            == route.credential_requirement_profile_version
+            and candidate.credential_requirement_profile_digest
+            == source.credential_requirement_profile_digest
+            == route.credential_requirement_profile_digest
+            and candidate.credential_profile_id == source.credential_profile_id
+            and candidate.credential_profile_version == source.credential_profile_version
+            and candidate.credential_profile_digest == source.credential_profile_digest
+            and candidate.authentication_mechanism_class
+            == source.authentication_mechanism_class
+            == route.authentication_mechanism_class
+            and candidate.principal_class == source.principal_class == route.principal_class
+            and candidate.privilege_class == source.privilege_class == "read-only"
+            and candidate.target_scope_commitment == source.target_scope_commitment
+            and candidate.credential_generation == source.credential_generation
+            and candidate.rotation_epoch == source.rotation_epoch
+            and candidate.broker_policy_id == source.broker_policy_id
+            and candidate.broker_policy_version == source.broker_policy_version
+            and candidate.broker_policy_digest == source.broker_policy_digest
+            and candidate.state
+            is EventPhysicalTransportCredentialAssignmentSnapshotState.SNAPSHOTTED
+            and not any(candidate.authority.canonical_value().values())
+        )
+
+    @staticmethod
+    def _credential_assignment_snapshot_idempotency_scope(
+        scope: WorkflowScope, snapshotter_subject_id: str
+    ) -> str:
+        return canonical_digest(
+            {
+                "scope": scope.canonical_value(),
+                "snapshotter_subject_id": snapshotter_subject_id,
+            }
+        )
+
+    @staticmethod
+    def _credential_assignment_snapshot_payload(
+        snapshot: EventPhysicalTransportCredentialAssignmentSnapshot,
+    ) -> dict[str, Any]:
+        return cast(dict[str, Any], snapshot.canonical_value())
+
+    @staticmethod
+    def _credential_assignment_registry_lock_id(assignment_id: str) -> int:
+        return int.from_bytes(
+            sha256(f"workflow-transport-credential-assignment:{assignment_id}".encode()).digest()[
+                :8
+            ],
+            byteorder="big",
+            signed=True,
+        )
+
+    @staticmethod
+    def _credential_assignment_snapshot_to_domain(
+        raw: dict[str, Any],
+    ) -> EventPhysicalTransportCredentialAssignmentSnapshot:
+        values = dict(raw)
+        values["scope"] = WorkflowScope(**cast(Any, values["scope"]))
+        values["activated_at"] = datetime.fromisoformat(str(values["activated_at"]))
+        values["expires_at"] = datetime.fromisoformat(str(values["expires_at"]))
+        values["captured_at"] = datetime.fromisoformat(str(values["captured_at"]))
+        values["state"] = EventPhysicalTransportCredentialAssignmentSnapshotState(
+            str(values["state"])
+        )
+        values["authority"] = EventPhysicalTransportCredentialAssignmentSnapshotAuthority(
+            **cast(Any, values["authority"])
+        )
+        return EventPhysicalTransportCredentialAssignmentSnapshot(**cast(Any, values))
+
+    @staticmethod
+    def _credential_assignment_contract_violation() -> NoReturn:
+        raise WorkflowTransportCredentialAssignmentSnapshotError(
+            "workflow_transport_credential_assignment_registry_contract_violation",
+            "Credential-assignment registry evidence conflicts with durable history.",
+        )
+
+    @staticmethod
+    def _credential_assignment_snapshot_contract_violation() -> NoReturn:
+        raise WorkflowTransportCredentialAssignmentSnapshotError(
+            "workflow_transport_credential_assignment_snapshot_repository_contract_violation",
+            "Credential-assignment snapshot does not match its durable evidence.",
         )
 
     async def _transport_compatibility_admission_replay(

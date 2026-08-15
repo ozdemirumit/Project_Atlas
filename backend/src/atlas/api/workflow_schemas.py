@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from atlas.api.schemas import ResponseMeta
 from atlas.modules.workflows.domain import (
+    EventPhysicalTransportCredentialAssignmentSnapshot,
     EventPhysicalTransportProfileSnapshot,
     EventPhysicalTransportRouteSnapshot,
     WorkflowDefinition,
@@ -1131,6 +1132,90 @@ class EventPhysicalTransportRouteSnapshotResponse(BaseModel):
 
 class EventPhysicalTransportRouteSnapshotInventoryResponse(BaseModel):
     data: EventPhysicalTransportRouteSnapshotInventoryData
+    meta: ResponseMeta
+
+
+class CreateEventPhysicalTransportCredentialAssignmentSnapshotInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    assignment_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    assignment_revision: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    source_assignment_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class EventPhysicalTransportCredentialAssignmentSnapshotAuthorityData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    endpoint_resolution_authorized: Literal[False]
+    protected_artifact_access_authorized: Literal[False]
+    credential_selection_authorized: Literal[False]
+    credential_access_authorized: Literal[False]
+    credential_brokerage_authorized: Literal[False]
+    credential_resolution_authorized: Literal[False]
+    credential_delivery_authorized: Literal[False]
+    network_access_authorized: Literal[False]
+    readiness_probe_authorized: Literal[False]
+    publication_authorized: Literal[False]
+    delivery_authorized: Literal[False]
+    dispatch_authorized: Literal[False]
+    execution_authorized: Literal[False]
+    infrastructure_mutation_authorized: Literal[False]
+
+
+class EventPhysicalTransportCredentialAssignmentSnapshotData(BaseModel):
+    """Minimized assignment evidence without credential or target identity."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    snapshot_id: str
+    assignment_id: str
+    assignment_revision: str
+    state: Literal["snapshotted"]
+    credential_generation: int = Field(ge=1)
+    rotation_epoch: int = Field(ge=1)
+    activated_at: datetime
+    expires_at: datetime
+    captured_at: datetime
+    authority: EventPhysicalTransportCredentialAssignmentSnapshotAuthorityData
+
+    @classmethod
+    def from_domain(
+        cls,
+        snapshot: EventPhysicalTransportCredentialAssignmentSnapshot,
+    ) -> EventPhysicalTransportCredentialAssignmentSnapshotData:
+        return cls.model_validate(
+            {
+                "snapshot_id": snapshot.snapshot_id,
+                "assignment_id": snapshot.assignment_id,
+                "assignment_revision": snapshot.assignment_revision,
+                "state": snapshot.state.value,
+                "credential_generation": snapshot.credential_generation,
+                "rotation_epoch": snapshot.rotation_epoch,
+                "activated_at": snapshot.activated_at,
+                "expires_at": snapshot.expires_at,
+                "captured_at": snapshot.captured_at,
+                "authority": snapshot.authority.canonical_value(),
+            }
+        )
+
+
+class EventPhysicalTransportCredentialAssignmentSnapshotInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    transport_credential_assignment_snapshots: list[
+        EventPhysicalTransportCredentialAssignmentSnapshotData
+    ] = Field(max_length=256)
+    durable: bool
+
+
+class EventPhysicalTransportCredentialAssignmentSnapshotResponse(BaseModel):
+    data: EventPhysicalTransportCredentialAssignmentSnapshotData
+    meta: ResponseMeta
+
+
+class EventPhysicalTransportCredentialAssignmentSnapshotInventoryResponse(BaseModel):
+    data: EventPhysicalTransportCredentialAssignmentSnapshotInventoryData
     meta: ResponseMeta
 
 

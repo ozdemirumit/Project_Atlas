@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Self
@@ -11,6 +12,7 @@ from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, SecretStr, model_
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 STABLE_CONFIG_IDENTIFIER = r"^[a-z][a-z0-9_.:-]{2,127}$"
+OPAQUE_CONFIG_IDENTIFIER = r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
 
 
 class DirectoryGroupMappingSetting(BaseModel):
@@ -28,6 +30,48 @@ class DirectoryGroupMappingSetting(BaseModel):
             re.fullmatch(STABLE_CONFIG_IDENTIFIER, item) is None for item in self.role_ids
         ):
             raise ValueError("directory group mapping role identifiers are invalid")
+        return self
+
+
+class WorkflowTransportCredentialAssignmentSetting(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    assignment_id: str = Field(pattern=STABLE_CONFIG_IDENTIFIER)
+    assignment_revision: str = Field(pattern=OPAQUE_CONFIG_IDENTIFIER)
+    organization_id: str = Field(pattern=STABLE_CONFIG_IDENTIFIER)
+    environment_id: str = Field(pattern=STABLE_CONFIG_IDENTIFIER)
+    site_id: str = Field(pattern=STABLE_CONFIG_IDENTIFIER)
+    route_id: str = Field(pattern=STABLE_CONFIG_IDENTIFIER)
+    route_revision: str = Field(pattern=OPAQUE_CONFIG_IDENTIFIER)
+    source_route_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    credential_requirement_profile_id: str = Field(pattern=STABLE_CONFIG_IDENTIFIER)
+    credential_requirement_profile_version: str = Field(pattern=OPAQUE_CONFIG_IDENTIFIER)
+    credential_requirement_profile_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    credential_profile_id: str = Field(pattern=STABLE_CONFIG_IDENTIFIER)
+    credential_profile_version: str = Field(pattern=OPAQUE_CONFIG_IDENTIFIER)
+    credential_profile_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    authentication_mechanism_class: str = Field(min_length=1, max_length=64)
+    principal_class: str = Field(min_length=1, max_length=64)
+    privilege_class: Literal["read-only"] = "read-only"
+    target_scope_commitment: str = Field(pattern=r"^[0-9a-f]{64}$")
+    credential_generation: int = Field(ge=1)
+    rotation_epoch: int = Field(ge=1)
+    activated_at: datetime
+    expires_at: datetime
+    revoked: bool = False
+    active: bool = True
+    broker_policy_id: str = Field(pattern=STABLE_CONFIG_IDENTIFIER)
+    broker_policy_version: str = Field(pattern=OPAQUE_CONFIG_IDENTIFIER)
+    broker_policy_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def validate_assignment(self) -> Self:
+        if self.activated_at.tzinfo is None or self.expires_at.tzinfo is None:
+            raise ValueError("workflow transport credential lifecycle times must be aware")
+        if self.expires_at <= self.activated_at:
+            raise ValueError("workflow transport credential expiry must follow activation")
+        if self.active and self.revoked:
+            raise ValueError("an active workflow transport credential cannot be revoked")
         return self
 
 
@@ -122,6 +166,9 @@ class Settings(BaseSettings):
     directory_display_name_attribute: str = "displayName"
     directory_group_attribute: str = "memberOf"
     directory_group_mappings: tuple[DirectoryGroupMappingSetting, ...] = ()
+    workflow_transport_credential_assignments: tuple[
+        WorkflowTransportCredentialAssignmentSetting, ...
+    ] = ()
     directory_max_groups: int = Field(default=100, ge=1, le=500)
     directory_nested_group_depth: int = Field(default=0, ge=0, le=5)
     directory_connect_timeout_seconds: float = Field(default=3.0, ge=0.1, le=15)
