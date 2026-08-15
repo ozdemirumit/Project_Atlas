@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-208 |
 | Title | Immutable workflow protected transport target-context binding without artifact access |
-| Status | In progress |
+| Status | Local validation complete; delivery in progress |
 | Branch | `agent/workflow-target-context-binding` |
 | Pull Request | Not opened |
 | Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-149, ADR-152, ADR-154, ADR-157, ADR-158 |
 | Last Updated | 2026-08-15 |
-| Next Action | Implement ADR-158 domain, persistence, API, minimized UI and validation boundaries |
+| Next Action | Open the exact-head PR, pass CI, merge with SHA lock and verify independent main CI |
 
 ### ATLAS-IMP-208 Scope Rationale
 
@@ -49,6 +49,29 @@
   coordinate, credential detail, secret locator, source/policy digest or operational control leaks.
 - Full local suites, real PostgreSQL concurrency/migration CI, live browser inspection, exact-head
   PR CI, SHA-locked merge and independent main CI must pass.
+
+### ATLAS-IMP-208 Local Validation Evidence
+
+- Backend Ruff formatting and lint passed across source, tests and migrations; strict MyPy passed
+  across `1271` source files; Alembic reports the single head `20260815_0131`.
+- The complete backend suite passed `2189` tests with `17` expected environment skips in a
+  repository-local writable temp boundary. The complete frontend suite passed `681` tests across
+  `95` files; ESLint, TypeScript and the production Vite build also passed.
+- Focused domain, service, memory/unavailable adapter, authorization and API coverage passed.
+  PostgreSQL coverage additionally defines atomic success/replay, competing-pair concurrency,
+  precommit-audit rollback, database-time expiry and append-only enforcement; its one live case is
+  skipped locally because `ATLAS_TEST_POSTGRES_DSN` is supplied by CI.
+- Three independent implementation reviews closed the principal risks: the versioned target-
+  context commitment does not reuse the older opaque assignment commitment; the complete endpoint
+  and credential chains are locked and revalidated twice; exact workload authentication and
+  normal-session default-deny human reads remain separate; and external conflicts are non-oracle.
+- Live validation at `http://127.0.0.1:5265/#/workspace/workflows` against backend port `8015`
+  used the normal `atlas-demo` / `local-demo` username/password login. The Target context bindings
+  region rendered as an empty, read-only inventory with zero operation controls and no protected
+  artifact, endpoint, credential or digest fields. No MFA, second-login, authorized-browser prompt,
+  browser warning or console error appeared.
+- CI now performs the latest `0130 -> head` migration round trip and runs endpoint, credential and
+  target-context materialization/binding PostgreSQL integration tests against the service database.
 
 ### ATLAS-IMP-207 Delivery Evidence
 
