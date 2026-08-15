@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-209 |
 | Title | Bounded single-use workflow protected transport target-context access authorization lease without artifact opening or runtime authority |
-| Status | Documentation complete; implementation pending |
+| Status | Local implementation and validation complete; delivery pending |
 | Branch | `agent/protected-target-context-access-lease` |
 | Pull Request | Not opened |
 | Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-150, ADR-152, ADR-155, ADR-157, ADR-158, ADR-159 |
 | Last Updated | 2026-08-15 |
-| Next Action | Implement the ADR-159 domain, application, persistence, security, API and minimized read-only UI contracts with focused tests |
+| Next Action | Complete live browser inspection, open an exact-head PR, pass CI, merge with SHA lock and verify independent main CI |
 
 ### ATLAS-IMP-209 Scope Rationale
 
@@ -62,13 +62,26 @@
 
 ### ATLAS-IMP-209 Local Status
 
-- ADR-159 is accepted and the ATLAS-016/ATLAS-023 implementation traces define the approved
-  authorization boundary. No backend, frontend, migration or test implementation has started in
-  this documentation slice.
-- The next implementation slice must begin with focused domain/application contracts and trusted
-  metadata-only status-attestation ports, then add durable PostgreSQL persistence, exact workload
-  security, minimized human API/UI presentation and the required test matrix without widening the
-  authority boundary.
+- ADR-159, the ATLAS-016/ATLAS-023 traces, domain and application contracts, trusted signed
+  metadata-only attestation ports, durable append-only PostgreSQL persistence, exact workload
+  security, minimized API responses and the read-only browser presentation are implemented.
+- Issuance persists a separate canonical internal evidence record for the exact pending outbox,
+  route-selection head ID/digest/generation/fence and credential-assignment head. These internals
+  are omitted from the human API/UI, and route generation or fence drift invalidates replay even
+  when the selected route remains unchanged.
+- Ruff format/check, MyPy over all 1,065 source files and Alembic single-head validation at
+  `20260815_0132` pass. The focused integrated backend matrix passes with 37 tests and one local
+  PostgreSQL skip.
+- The full backend suite passes with 2,224 tests and 18 environment skips; the full frontend suite
+  passes with 691 tests across 95 files. The skips are limited to Windows symlink support and live
+  PostgreSQL tests that CI runs with `ATLAS_TEST_POSTGRES_DSN`.
+- Live validation used backend port 8000 and frontend port 5173. One normal
+  `atlas-demo` / `local-demo` username/password login opened the workflow workspace without MFA,
+  a second login or an authorized-browser prompt.
+- The target-context access authorization panel rendered as a compact read-only surface with zero
+  operation controls at desktop and 390-pixel mobile widths. The local non-durable repository and
+  unavailable protected-store attestors produced the expected fail-closed unavailable state; the
+  browser console contained no warning or error.
 
 ### ATLAS-IMP-208 Delivery Evidence
 

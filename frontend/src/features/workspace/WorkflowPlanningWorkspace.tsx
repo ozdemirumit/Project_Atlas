@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  AlertTriangle,
   ArrowLeft,
   Ban,
   CalendarClock,
@@ -2502,7 +2503,8 @@ export default function WorkflowPlanningWorkspace({
           </div>
         )}
         {targetContextAccessAuthorizationLeaseQuery.isError && (
-          <div className="inline-error" role="alert">
+          <div className="workflow-inline-error" role="alert">
+            <AlertTriangle aria-hidden="true" size={18} />
             <div>
               <strong>
                 {targetContextAccessAuthorizationLeaseErrorStatus === 401
