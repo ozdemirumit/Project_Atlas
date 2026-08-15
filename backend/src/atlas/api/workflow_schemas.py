@@ -16,6 +16,7 @@ from atlas.modules.workflows.domain import (
     WorkflowDispatchOutboxEntry,
     WorkflowEventByteArtifact,
     WorkflowEventLogicalChannelBinding,
+    WorkflowEventPhysicalTransportCredentialAssignmentBinding,
     WorkflowEventPhysicalTransportEndpointMaterializationAttempt,
     WorkflowEventPhysicalTransportEndpointMaterializationResult,
     WorkflowEventPhysicalTransportEndpointMaterializationResultState,
@@ -1317,6 +1318,68 @@ class WorkflowEventPhysicalTransportRouteBindingResponse(BaseModel):
 
 class WorkflowEventPhysicalTransportRouteBindingInventoryResponse(BaseModel):
     data: WorkflowEventPhysicalTransportRouteBindingInventoryData
+    meta: ResponseMeta
+
+
+class CreateWorkflowEventPhysicalTransportCredentialAssignmentBindingInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    physical_transport_route_binding_id: str = Field(
+        min_length=3, max_length=128, pattern=STABLE_ID
+    )
+    physical_transport_route_binding_digest: str = Field(
+        min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$"
+    )
+    credential_assignment_snapshot_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    credential_assignment_snapshot_digest: str = Field(
+        min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$"
+    )
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class WorkflowEventPhysicalTransportCredentialAssignmentBindingData(BaseModel):
+    """Minimized immutable relationship without credential or route details."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    binding_id: str
+    physical_transport_route_binding_id: str
+    credential_assignment_snapshot_id: str
+    state: Literal["bound"]
+    bound_at: datetime
+    integrity_reference: str = Field(min_length=3, max_length=256, pattern=STABLE_ID)
+
+    @classmethod
+    def from_domain(
+        cls,
+        binding: WorkflowEventPhysicalTransportCredentialAssignmentBinding,
+    ) -> WorkflowEventPhysicalTransportCredentialAssignmentBindingData:
+        return cls(
+            binding_id=binding.binding_id,
+            physical_transport_route_binding_id=(binding.physical_transport_route_binding_id),
+            credential_assignment_snapshot_id=(binding.credential_assignment_snapshot_id),
+            state="bound",
+            bound_at=binding.bound_at,
+            integrity_reference=f"integrity.{binding.binding_id}",
+        )
+
+
+class WorkflowEventPhysicalTransportCredentialAssignmentBindingInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    physical_transport_credential_assignment_bindings: list[
+        WorkflowEventPhysicalTransportCredentialAssignmentBindingData
+    ] = Field(max_length=256)
+    durable: bool
+
+
+class WorkflowEventPhysicalTransportCredentialAssignmentBindingResponse(BaseModel):
+    data: WorkflowEventPhysicalTransportCredentialAssignmentBindingData
+    meta: ResponseMeta
+
+
+class WorkflowEventPhysicalTransportCredentialAssignmentBindingInventoryResponse(BaseModel):
+    data: WorkflowEventPhysicalTransportCredentialAssignmentBindingInventoryData
     meta: ResponseMeta
 
 

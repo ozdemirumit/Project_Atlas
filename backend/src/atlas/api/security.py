@@ -247,6 +247,8 @@ from atlas.modules.authorization.application.bootstrap import (
     UPGRADE_READINESS_PREVIEW,
     UPGRADE_ROLLBACK_SIMULATE,
     WORKFLOW_DEFINITION_READ,
+    WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_ASSIGNMENT_BINDING_BIND,
+    WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_ASSIGNMENT_BINDING_READ,
     WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_MATERIALIZATION_READ,
     WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_RESOLUTION_AUTHORIZATION_LEASE_READ,
     WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_BINDING_READ,
@@ -362,6 +364,7 @@ from atlas.modules.authorization.application.bootstrap import (
     upgrade_completion_receipt_scope,
     upgrade_human_review_scope,
     upgrade_simulation_scope,
+    workflow_physical_transport_credential_assignment_binding_scope,
     workflow_physical_transport_endpoint_materialization_scope,
     workflow_physical_transport_endpoint_resolution_authorization_lease_scope,
     workflow_physical_transport_route_binding_scope,
@@ -394,6 +397,7 @@ from atlas.modules.identity.domain.models import (
 from atlas.modules.identity.domain.sessions import CredentialKind
 from atlas.modules.workflows.application import (
     WORKFLOW_OUTBOX_PUBLISHER_AUDIENCE,
+    WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_BINDER_AUDIENCE,
     WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_RESOLVER_AUDIENCE,
     WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_BINDER_AUDIENCE,
     WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMITTER_AUDIENCE,
@@ -958,6 +962,92 @@ async def workflow_physical_transport_route_binder_subject(
             detail="The workload credential is invalid or unavailable for this operation.",
         )
     request.state.authenticated_subject = subject
+    return subject
+
+
+async def workflow_physical_transport_credential_assignment_binder_subject(
+    request: Request,
+    authorization: Annotated[
+        str | None, Header(alias="Authorization", min_length=1, max_length=8192)
+    ] = None,
+    audience: Annotated[
+        str | None,
+        Header(
+            alias="X-Atlas-Audience",
+            min_length=3,
+            max_length=127,
+            pattern=r"^[a-z][a-z0-9_.:-]{2,126}$",
+        ),
+    ] = None,
+    environment_id: Annotated[
+        str | None,
+        Header(
+            alias="X-Atlas-Environment",
+            min_length=3,
+            max_length=127,
+            pattern=r"^[a-z][a-z0-9_.:-]{2,126}$",
+        ),
+    ] = None,
+) -> AuthenticatedSubject:
+    """Authenticate the one workload audience mapped to binding permission."""
+
+    expected_environment = f"environment.{request.app.state.settings.environment}"
+    scheme, separator, token = (authorization or "").partition(" ")
+    valid_envelope = (
+        separator == " "
+        and scheme.lower() == "workload"
+        and bool(token)
+        and audience == WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_BINDER_AUDIENCE
+        and environment_id == expected_environment
+    )
+    service: WorkloadIdentityService = request.app.state.workload_identity_service
+    try:
+        subject = await service.authenticate(
+            token if valid_envelope else "",
+            audience=WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_BINDER_AUDIENCE,
+            environment_id=expected_environment,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except WorkloadIdentityError as exc:
+        raise AtlasError(
+            status=401,
+            code="workload_authentication_failed",
+            title="Workload authentication failed",
+            detail="The workload credential is invalid or unavailable for this operation.",
+        ) from exc
+    if (
+        subject.kind is not SubjectKind.SERVICE
+        or subject.authentication_method is not AuthenticationMethod.WORKLOAD_TOKEN
+    ):
+        raise AtlasError(
+            status=401,
+            code="workload_authentication_failed",
+            title="Workload authentication failed",
+            detail="The workload credential is invalid or unavailable for this operation.",
+        )
+    request.state.authenticated_subject = subject
+    request.state.authorization_permission_id = (
+        WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_ASSIGNMENT_BINDING_BIND
+    )
+    return subject
+
+
+async def authorize_workflow_physical_transport_credential_assignment_binding_bind(
+    request: Request,
+    subject: Annotated[
+        AuthenticatedSubject,
+        Depends(workflow_physical_transport_credential_assignment_binder_subject),
+    ],
+) -> AuthenticatedSubject:
+    if getattr(request.state, "authorization_permission_id", None) != (
+        WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_ASSIGNMENT_BINDING_BIND
+    ):
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current workload is not authorized for this operation.",
+        )
     return subject
 
 
@@ -2737,6 +2827,36 @@ async def authorize_workflow_physical_transport_route_binding_read(
             permission_id=WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_BINDING_READ,
             resource_type="resource.workflow.physical-transport-route-binding",
             scope=workflow_physical_transport_route_binding_scope(
+                subject.organization_id,
+                settings.environment,
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_workflow_physical_transport_credential_assignment_binding_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_ASSIGNMENT_BINDING_READ,
+            resource_type=("resource.workflow.physical-transport-credential-assignment-binding"),
+            scope=workflow_physical_transport_credential_assignment_binding_scope(
                 subject.organization_id,
                 settings.environment,
             ),

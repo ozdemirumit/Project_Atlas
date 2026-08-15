@@ -4,14 +4,82 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-203 |
-| Title | Immutable deployment physical-transport credential-assignment snapshot without workflow binding, secret access or network authority |
-| Status | Implementation complete; PR verification passed |
-| Branch | `agent/workflow-transport-credential-assignment-snapshots` |
-| Pull Request | [#216](https://github.com/ozdemirumit/Project_Atlas/pull/216) |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-148, ADR-149, ADR-150, ADR-151, ADR-152, ADR-153 |
+| Task ID | ATLAS-IMP-204 |
+| Title | Immutable workflow physical-transport credential-assignment binding without access authority |
+| Status | Implemented and locally validated; PR pending |
+| Branch | `agent/workflow-credential-assignment-bindings` |
+| Pull Request | Not opened |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-149, ADR-150, ADR-151, ADR-152, ADR-153, ADR-154 |
 | Last Updated | 2026-08-15 |
-| Next Action | Merge the SHA-locked PR, verify main CI and begin the next bounded slice |
+| Next Action | Publish the verified PR, pass exact-head CI, merge and verify independent main CI |
+
+### ATLAS-IMP-204 Scope Rationale
+
+- IMP-203 captures an exact deployment-owned credential-assignment revision but deliberately does
+  not associate that evidence with workflow lineage.
+- The next smallest boundary binds one exact assignment snapshot to one exact workflow physical
+  route binding and its route snapshot. It records historical selection without checking mutable
+  assignment freshness or granting credential access.
+- Multiple credential generations may be bound historically to the same route binding; a later
+  freshness admission decides whether one exact generation is still current, active, unexpired
+  and unrevoked.
+- Credential freshness, protected-artifact access, credential-access authorization, brokerage,
+  secret delivery, network readiness, publication, delivery, dispatch and execution remain
+  deferred.
+
+### ATLAS-IMP-204 Acceptance Criteria
+
+- Only the exact dedicated credential binder workload may create a binding using route-binding
+  ID/digest, assignment-snapshot ID/digest, code-owned policy and idempotency. Callers cannot
+  provide credential, secret, endpoint, artifact, target, broker, privilege or authority data.
+- Atlas revalidates the immutable route binding, its exact route snapshot and the assignment
+  snapshot, including canonical digests, scope, route lineage, requirement/mechanism/principal
+  compatibility, read-only privilege and zero source authority.
+- The immutable record stores minimized source lineage, policy evidence, scope, binder, time,
+  state and zero authority only. The exact route-binding/assignment-snapshot pair is unique while
+  different assignment generations remain append-only history.
+- Exact replay resolves from immutable history before sources. Changed replay, competing identity,
+  malformed or cross-scope evidence, chain mismatch, duplicate exact pair, audit failure and
+  repository contract drift fail closed.
+- Production requires PostgreSQL with fixed lock order and atomic binding/claim persistence;
+  append-only triggers reject mutation and production never falls back to memory.
+- Intent and commit-authorization audit precede persistence; completion audit follows commit and
+  post-commit failure is outcome-uncertain with exact replay recovery.
+- Human API/UI reads are minimized and read-only through the normal username/password session,
+  with no MFA, second login, authorized-browser prompt, secret data or operational control.
+- Full local suites, real PostgreSQL concurrency/migration CI, live browser inspection, exact-head
+  PR CI, SHA-locked merge and independent main CI must pass.
+
+### ATLAS-IMP-204 Local Validation Evidence
+
+- Ruff formatting and lint checks passed across `1373` files; MyPy passed across `1245` source
+  files and Alembic reports the single head `20260815_0127`.
+- The complete backend suite passed with `2051 passed` and `13 skipped`. Skips are limited to
+  unavailable Windows symlink support and PostgreSQL cases that require the CI-only
+  `ATLAS_TEST_POSTGRES_DSN`.
+- PostgreSQL integration coverage now proves atomic precommit-audit rollback, durable source
+  tamper rejection, unique-claim conflict rollback, concurrent exact replay, append-only
+  enforcement and multiple historical assignment generations. CI runs these against its service
+  database and performs the latest migration downgrade/upgrade round trip.
+- Frontend lint and TypeScript checks passed. The complete frontend suite passed `95` files and
+  `603` tests; the Workflow Planning workspace also passed all `314` focused tests after review
+  fixes, and the production Vite build completed successfully.
+- Independent review findings were closed: idempotent replay survives code-owned policy rotation,
+  required audit outages return controlled fail-closed errors, replay audit preserves exact source
+  identifiers, ORM/migration indexes match and memory/PostgreSQL tie ordering is deterministic.
+- Live validation at `http://127.0.0.1:5261/` used one `atlas-demo` / `local-demo`
+  username/password login against the IMP-204 backend on port `8011`. The same session opened
+  Workflow Planning and Connector Inventory; the credential-assignment binding region rendered
+  read-only and no MFA, second login or authorized-browser-session prompt appeared. Browser
+  console inspection found no warnings or errors.
+
+### ATLAS-IMP-203 Delivery Evidence
+
+- PR [#216](https://github.com/ozdemirumit/Project_Atlas/pull/216) was SHA-locked and squash-merged
+  as `7bb43eacbeeaa95861bef57e67da40fab2be3b87`.
+- The exact merged commit independently passed `main` CI run `31854680360`; backend and frontend
+  completed successfully, including migration round-trip and real PostgreSQL integration tests.
+- Local `main` was fast-forwarded to the same verified merge commit before IMP-204 branched.
 
 ### ATLAS-IMP-203 Scope Rationale
 

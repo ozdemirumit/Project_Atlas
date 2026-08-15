@@ -10,6 +10,8 @@ from atlas.api.schemas import ResponseMeta
 from atlas.api.security import (
     authenticated_subject,
     authorize_workflow_definition_read,
+    authorize_workflow_physical_transport_credential_assignment_binding_bind,
+    authorize_workflow_physical_transport_credential_assignment_binding_read,
     authorize_workflow_physical_transport_endpoint_materialization_read,
     authorize_workflow_physical_transport_endpoint_resolution_authorization_lease_read,
     authorize_workflow_physical_transport_route_binding_read,
@@ -41,6 +43,7 @@ from atlas.api.workflow_schemas import (
     CreateEventPhysicalTransportCredentialAssignmentSnapshotInput,
     CreateEventPhysicalTransportProfileSnapshotInput,
     CreateEventPhysicalTransportRouteSnapshotInput,
+    CreateWorkflowEventPhysicalTransportCredentialAssignmentBindingInput,
     CreateWorkflowEventPhysicalTransportEndpointMaterializationInput,
     CreateWorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseInput,
     CreateWorkflowEventPhysicalTransportRouteBindingInput,
@@ -92,6 +95,10 @@ from atlas.api.workflow_schemas import (
     WorkflowEventLogicalChannelBindingInventoryData,
     WorkflowEventLogicalChannelBindingInventoryResponse,
     WorkflowEventLogicalChannelBindingResponse,
+    WorkflowEventPhysicalTransportCredentialAssignmentBindingData,
+    WorkflowEventPhysicalTransportCredentialAssignmentBindingInventoryData,
+    WorkflowEventPhysicalTransportCredentialAssignmentBindingInventoryResponse,
+    WorkflowEventPhysicalTransportCredentialAssignmentBindingResponse,
     WorkflowEventPhysicalTransportEndpointMaterializationData,
     WorkflowEventPhysicalTransportEndpointMaterializationInventoryData,
     WorkflowEventPhysicalTransportEndpointMaterializationInventoryResponse,
@@ -144,6 +151,7 @@ from atlas.modules.conversations.domain.models import ConversationScope
 from atlas.modules.identity.domain.models import AuthenticatedSubject
 from atlas.modules.workflows.application import (
     WORKFLOW_OUTBOX_PUBLISHER_AUDIENCE,
+    WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_BINDER_AUDIENCE,
     WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_RESOLVER_AUDIENCE,
     WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_BINDER_AUDIENCE,
     WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMITTER_AUDIENCE,
@@ -163,6 +171,7 @@ from atlas.modules.workflows.application import (
     WorkflowEventByteArtifactService,
     WorkflowEventLogicalChannelBindingError,
     WorkflowEventLogicalChannelBindingService,
+    WorkflowEventPhysicalTransportCredentialAssignmentBindingService,
     WorkflowEventPhysicalTransportEndpointMaterializationError,
     WorkflowEventPhysicalTransportEndpointMaterializationService,
     WorkflowEventPhysicalTransportEndpointMaterializationUncertainError,
@@ -179,6 +188,7 @@ from atlas.modules.workflows.application import (
     WorkflowOutboxPublicationLeaseRepository,
     WorkflowOutboxPublicationLeaseService,
     WorkflowOutboxPublisherContext,
+    WorkflowPhysicalTransportCredentialBinderContext,
     WorkflowPhysicalTransportEndpointResolverContext,
     WorkflowPhysicalTransportRouteBinderContext,
     WorkflowPhysicalTransportRouteFreshnessAdmitterContext,
@@ -199,6 +209,9 @@ from atlas.modules.workflows.application import (
     WorkflowTransportRouteSnapshotService,
     WorkflowWorkerContext,
     validate_workflow_transport_credential_assignment_snapshot,
+)
+from atlas.modules.workflows.application.credential_assignment_binding_ports import (
+    WorkflowTransportCredentialAssignmentBindingError,
 )
 from atlas.modules.workflows.application.event_envelope_ports import (
     WorkflowDispatchEventEnvelopeError,
@@ -235,6 +248,7 @@ from atlas.modules.workflows.domain import (
     WorkflowEventLogicalChannelBinding,
     WorkflowEventLogicalChannelBindingState,
     WorkflowEventLogicalChannelPolicy,
+    WorkflowEventPhysicalTransportCredentialAssignmentBinding,
     WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease,
     WorkflowEventPhysicalTransportRouteBinding,
     WorkflowEventPhysicalTransportRouteFreshnessAdmission,
@@ -747,6 +761,26 @@ def _raise_physical_transport_route_binding(
         status, title = 404, "Workflow physical transport route binding evidence unavailable"
     else:
         status, title = 409, "Workflow physical transport route binding unavailable"
+    raise AtlasError(
+        status=status,
+        code=error.code,
+        title=title,
+        detail=error.detail,
+        retryable=status == 503,
+    ) from error
+
+
+def _raise_physical_transport_credential_assignment_binding(
+    error: WorkflowTransportCredentialAssignmentBindingError,
+) -> NoReturn:
+    if error.code.endswith("_invalid") or error.code.endswith("_required"):
+        status, title = 422, "Workflow transport credential binding request invalid"
+    elif "repository" in error.code or "audit" in error.code:
+        status, title = 503, "Workflow transport credential binding service unavailable"
+    elif error.code.endswith("_not_found"):
+        status, title = 404, "Workflow transport credential binding evidence unavailable"
+    else:
+        status, title = 409, "Workflow transport credential binding unavailable"
     raise AtlasError(
         status=status,
         code=error.code,
@@ -1431,6 +1465,18 @@ def _physical_transport_route_binding_response(
     _no_store(response)
     return WorkflowEventPhysicalTransportRouteBindingResponse(
         data=WorkflowEventPhysicalTransportRouteBindingData.from_domain(binding),
+        meta=_meta(request),
+    )
+
+
+def _physical_transport_credential_assignment_binding_response(
+    binding: WorkflowEventPhysicalTransportCredentialAssignmentBinding,
+    request: Request,
+    response: Response,
+) -> WorkflowEventPhysicalTransportCredentialAssignmentBindingResponse:
+    _no_store(response)
+    return WorkflowEventPhysicalTransportCredentialAssignmentBindingResponse(
+        data=WorkflowEventPhysicalTransportCredentialAssignmentBindingData.from_domain(binding),
         meta=_meta(request),
     )
 
@@ -3939,6 +3985,114 @@ async def create_workflow_physical_transport_route_binding(
     except WorkflowEventPhysicalTransportRouteBindingError as error:
         _raise_physical_transport_route_binding(error)
     return _physical_transport_route_binding_response(binding, request, response)
+
+
+@router.get(
+    "/physical-transport-credential-assignment-bindings",
+    response_model=WorkflowEventPhysicalTransportCredentialAssignmentBindingInventoryResponse,
+)
+async def list_workflow_physical_transport_credential_assignment_bindings(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_workflow_physical_transport_credential_assignment_binding_read),
+    ],
+) -> WorkflowEventPhysicalTransportCredentialAssignmentBindingInventoryResponse:
+    del decision
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    service: WorkflowEventPhysicalTransportCredentialAssignmentBindingService = (
+        request.app.state.workflow_event_physical_transport_credential_assignment_binding_service
+    )
+    try:
+        bindings = await service.repository.list_credential_assignment_bindings(
+            scope=scope,
+            limit=256,
+        )
+        if any(binding.scope != scope for binding in bindings):
+            raise WorkflowTransportCredentialAssignmentBindingError(
+                "workflow_transport_credential_assignment_binding_repository_scope_violation",
+                "Stored credential-assignment binding metadata escaped its query scope.",
+            )
+    except WorkflowTransportCredentialAssignmentBindingError as error:
+        _raise_physical_transport_credential_assignment_binding(error)
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code=("workflow_transport_credential_assignment_binding_repository_unavailable"),
+            title="Workflow transport credential binding service unavailable",
+            detail="Physical transport credential-assignment binding metadata is unavailable.",
+            retryable=True,
+        ) from error
+    _no_store(response)
+    return WorkflowEventPhysicalTransportCredentialAssignmentBindingInventoryResponse(
+        data=WorkflowEventPhysicalTransportCredentialAssignmentBindingInventoryData(
+            physical_transport_credential_assignment_bindings=[
+                WorkflowEventPhysicalTransportCredentialAssignmentBindingData.from_domain(binding)
+                for binding in sorted(bindings, key=lambda value: value.binding_id)
+            ],
+            durable=service.durable,
+        ),
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    "/physical-transport-credential-assignment-bindings",
+    response_model=WorkflowEventPhysicalTransportCredentialAssignmentBindingResponse,
+    status_code=201,
+)
+async def create_workflow_physical_transport_credential_assignment_binding(
+    payload: CreateWorkflowEventPhysicalTransportCredentialAssignmentBindingInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[
+        AuthenticatedSubject,
+        Depends(authorize_workflow_physical_transport_credential_assignment_binding_bind),
+    ],
+) -> WorkflowEventPhysicalTransportCredentialAssignmentBindingResponse:
+    service: WorkflowEventPhysicalTransportCredentialAssignmentBindingService = (
+        request.app.state.workflow_event_physical_transport_credential_assignment_binding_service
+    )
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    policy = service.policy
+    try:
+        binding = await service.bind(
+            physical_transport_route_binding_id=(payload.physical_transport_route_binding_id),
+            physical_transport_route_binding_digest=(
+                payload.physical_transport_route_binding_digest
+            ),
+            credential_assignment_snapshot_id=payload.credential_assignment_snapshot_id,
+            credential_assignment_snapshot_digest=(payload.credential_assignment_snapshot_digest),
+            policy_id=policy.policy_id,
+            policy_version=policy.policy_version,
+            policy_digest=policy.canonical_digest,
+            idempotency_key=payload.idempotency_key,
+            context=WorkflowPhysicalTransportCredentialBinderContext(
+                subject_id=subject.subject_id,
+                actor_type=subject.kind.value,
+                authentication_method=subject.authentication_method.value,
+                credential_audience=(WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_BINDER_AUDIENCE),
+                scope=scope,
+                correlation_id=str(request.state.correlation_id),
+                decision_id=(
+                    "decision.workflow-physical-transport-credential-assignment-binding-bind"
+                ),
+                requested_at=datetime.now(UTC),
+            ),
+        )
+    except WorkflowTransportCredentialAssignmentBindingError as error:
+        _raise_physical_transport_credential_assignment_binding(error)
+    return _physical_transport_credential_assignment_binding_response(binding, request, response)
 
 
 @router.get(

@@ -724,6 +724,20 @@ export type WorkflowPhysicalTransportRouteBindingInventory = {
   durable: boolean;
 };
 
+export type WorkflowPhysicalTransportCredentialAssignmentBinding = {
+  binding_id: string;
+  physical_transport_route_binding_id: string;
+  credential_assignment_snapshot_id: string;
+  state: "bound";
+  bound_at: string;
+  integrity_reference: string;
+};
+
+export type WorkflowPhysicalTransportCredentialAssignmentBindingInventory = {
+  physical_transport_credential_assignment_bindings: WorkflowPhysicalTransportCredentialAssignmentBinding[];
+  durable: boolean;
+};
+
 export type WorkflowPhysicalTransportRouteFreshnessAdmissionAuthority = {
   route_selection_authorized: false;
   route_binding_authorized: false;
@@ -1466,6 +1480,18 @@ const physicalTransportRouteBindingFields = [
 ] as const;
 const physicalTransportRouteBindingInventoryFields = [
   "physical_transport_route_bindings",
+  "durable",
+] as const;
+const physicalTransportCredentialAssignmentBindingFields = [
+  "binding_id",
+  "physical_transport_route_binding_id",
+  "credential_assignment_snapshot_id",
+  "state",
+  "bound_at",
+  "integrity_reference",
+] as const;
+const physicalTransportCredentialAssignmentBindingInventoryFields = [
+  "physical_transport_credential_assignment_bindings",
   "durable",
 ] as const;
 const physicalTransportRouteFreshnessAdmissionAuthorityFields = [
@@ -2705,6 +2731,22 @@ function isPhysicalTransportRouteBinding(
   );
 }
 
+function isPhysicalTransportCredentialAssignmentBinding(
+  value: unknown,
+): value is WorkflowPhysicalTransportCredentialAssignmentBinding {
+  return (
+    isObject(value) &&
+    hasExactKeys(value, physicalTransportCredentialAssignmentBindingFields) &&
+    !containsCredentialMaterial(value) &&
+    isStableIdentifier(value.binding_id) &&
+    isStableIdentifier(value.physical_transport_route_binding_id) &&
+    isStableIdentifier(value.credential_assignment_snapshot_id) &&
+    value.state === "bound" &&
+    isTimestamp(value.bound_at) &&
+    isStableIdentifier(value.integrity_reference)
+  );
+}
+
 function hasZeroPhysicalTransportRouteFreshnessAdmissionAuthority(
   value: unknown,
 ): value is WorkflowPhysicalTransportRouteFreshnessAdmissionAuthority {
@@ -3595,6 +3637,58 @@ export async function listWorkflowPhysicalTransportRouteBindings(input: {
     );
   }
   return data as WorkflowPhysicalTransportRouteBindingInventory;
+}
+
+export async function listWorkflowPhysicalTransportCredentialAssignmentBindings(): Promise<WorkflowPhysicalTransportCredentialAssignmentBindingInventory> {
+  const response = await apiFetch(
+    "/api/v1/workflows/physical-transport-credential-assignment-bindings",
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(
+    response,
+    "Workflow physical transport credential-assignment binding retrieval failed",
+  );
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, physicalTransportCredentialAssignmentBindingInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    !Array.isArray(data.physical_transport_credential_assignment_bindings) ||
+    data.physical_transport_credential_assignment_bindings.length > 256 ||
+    typeof data.durable !== "boolean" ||
+    !data.physical_transport_credential_assignment_bindings.every((binding) =>
+      isPhysicalTransportCredentialAssignmentBinding(binding),
+    )
+  ) {
+    throw new ApiRequestError(
+      "Workflow physical transport credential-assignment binding response was unsafe",
+      response.status,
+    );
+  }
+  const bindingIds = new Set<string>();
+  const sourcePairs = new Set<string>();
+  for (const binding of data.physical_transport_credential_assignment_bindings) {
+    if (
+      !isObject(binding) ||
+      typeof binding.binding_id !== "string" ||
+      typeof binding.physical_transport_route_binding_id !== "string" ||
+      typeof binding.credential_assignment_snapshot_id !== "string"
+    ) {
+      throw new ApiRequestError(
+        "Workflow physical transport credential-assignment binding response was unsafe",
+        response.status,
+      );
+    }
+    const sourcePair = `${binding.physical_transport_route_binding_id}\u0000${binding.credential_assignment_snapshot_id}`;
+    if (bindingIds.has(binding.binding_id) || sourcePairs.has(sourcePair)) {
+      throw new ApiRequestError(
+        "Workflow physical transport credential-assignment binding response was unsafe",
+        response.status,
+      );
+    }
+    bindingIds.add(binding.binding_id);
+    sourcePairs.add(sourcePair);
+  }
+  return data as WorkflowPhysicalTransportCredentialAssignmentBindingInventory;
 }
 
 export async function listWorkflowPhysicalTransportRouteFreshnessAdmissions(input: {

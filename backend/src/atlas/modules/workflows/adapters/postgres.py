@@ -36,6 +36,8 @@ from atlas.core.persistence.models import (
     WorkflowEventByteArtifactModel,
     WorkflowEventLogicalChannelBindingClaimModel,
     WorkflowEventLogicalChannelBindingModel,
+    WorkflowEventPhysicalTransportCredentialAssignmentBindingClaimModel,
+    WorkflowEventPhysicalTransportCredentialAssignmentBindingModel,
     WorkflowEventPhysicalTransportEndpointMaterializationAttemptModel,
     WorkflowEventPhysicalTransportEndpointMaterializationResultModel,
     WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseClaimModel,
@@ -94,6 +96,13 @@ from atlas.modules.workflows.application.byte_artifact_ports import (
     WorkflowEventByteArtifactRequest,
     WorkflowEventByteArtifactResult,
     WorkflowEventByteArtifactStatus,
+)
+from atlas.modules.workflows.application.credential_assignment_binding_ports import (
+    WorkflowTransportCredentialAssignmentBindingError,
+    WorkflowTransportCredentialAssignmentBindingIdempotencyRecord,
+    WorkflowTransportCredentialAssignmentBindingRequest,
+    WorkflowTransportCredentialAssignmentBindingResult,
+    WorkflowTransportCredentialAssignmentBindingStatus,
 )
 from atlas.modules.workflows.application.credential_assignment_snapshot_ports import (
     WorkflowTransportCredentialAssignmentSnapshotError,
@@ -219,6 +228,9 @@ from atlas.modules.workflows.domain import (
     WorkflowEventLogicalChannelBinding,
     WorkflowEventLogicalChannelBindingAuthority,
     WorkflowEventLogicalChannelBindingState,
+    WorkflowEventPhysicalTransportCredentialAssignmentBinding,
+    WorkflowEventPhysicalTransportCredentialAssignmentBindingAuthority,
+    WorkflowEventPhysicalTransportCredentialAssignmentBindingState,
     WorkflowEventPhysicalTransportEndpointMaterializationAttempt,
     WorkflowEventPhysicalTransportEndpointMaterializationAttemptState,
     WorkflowEventPhysicalTransportEndpointMaterializationAuthority,
@@ -265,6 +277,7 @@ from atlas.modules.workflows.domain import (
     canonical_json_byte_count,
     canonical_json_bytes,
     code_owned_workflow_event_logical_channel_policy,
+    code_owned_workflow_event_physical_transport_credential_assignment_binding_policy,
     code_owned_workflow_event_physical_transport_endpoint_materialization_policy,
     code_owned_workflow_event_physical_transport_endpoint_resolution_authorization_policy,
     code_owned_workflow_event_physical_transport_route_freshness_policy,
@@ -1858,6 +1871,15 @@ class PostgreSQLWorkflowPlanRepository:
             )
             return None if row is None else self._credential_assignment_snapshot_from_row(row)
 
+    async def get_credential_assignment_snapshot_by_id(
+        self, *, snapshot_id: str
+    ) -> EventPhysicalTransportCredentialAssignmentSnapshot | None:
+        async with self._sessions() as session:
+            row = await session.get(
+                EventPhysicalTransportCredentialAssignmentSnapshotModel, snapshot_id
+            )
+            return None if row is None else self._credential_assignment_snapshot_from_row(row)
+
     async def list_credential_assignment_snapshots(
         self,
         *,
@@ -2439,6 +2461,203 @@ class PostgreSQLWorkflowPlanRepository:
         async with self._sessions() as session:
             row = await session.get(WorkflowEventPhysicalTransportRouteBindingModel, binding_id)
             return None if row is None else self._physical_transport_route_binding_from_row(row)
+
+    async def get_credential_assignment_binding(
+        self,
+        *,
+        physical_transport_route_binding_id: str,
+        credential_assignment_snapshot_id: str,
+    ) -> WorkflowEventPhysicalTransportCredentialAssignmentBinding | None:
+        async with self._sessions() as session:
+            row = cast(
+                WorkflowEventPhysicalTransportCredentialAssignmentBindingModel | None,
+                await session.scalar(
+                    select(WorkflowEventPhysicalTransportCredentialAssignmentBindingModel).where(
+                        WorkflowEventPhysicalTransportCredentialAssignmentBindingModel.physical_transport_route_binding_id
+                        == physical_transport_route_binding_id,
+                        WorkflowEventPhysicalTransportCredentialAssignmentBindingModel.credential_assignment_snapshot_id
+                        == credential_assignment_snapshot_id,
+                    )
+                ),
+            )
+            return None if row is None else self._credential_assignment_binding_from_row(row)
+
+    async def list_credential_assignment_bindings(
+        self, *, scope: WorkflowScope, limit: int = 256
+    ) -> tuple[WorkflowEventPhysicalTransportCredentialAssignmentBinding, ...]:
+        if not 1 <= limit <= 256:
+            raise ValueError("credential-assignment binding limit is invalid")
+        async with self._sessions() as session:
+            rows = tuple(
+                (
+                    await session.scalars(
+                        select(WorkflowEventPhysicalTransportCredentialAssignmentBindingModel)
+                        .where(
+                            WorkflowEventPhysicalTransportCredentialAssignmentBindingModel.organization_id
+                            == scope.organization_id,
+                            WorkflowEventPhysicalTransportCredentialAssignmentBindingModel.environment_id
+                            == scope.environment_id,
+                            WorkflowEventPhysicalTransportCredentialAssignmentBindingModel.site_id
+                            == scope.site_id,
+                        )
+                        .order_by(
+                            WorkflowEventPhysicalTransportCredentialAssignmentBindingModel.bound_at.desc(),
+                            WorkflowEventPhysicalTransportCredentialAssignmentBindingModel.binding_id,
+                        )
+                        .limit(limit)
+                    )
+                ).all()
+            )
+            return tuple(self._credential_assignment_binding_from_row(row) for row in rows)
+
+    async def get_credential_assignment_binding_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        binder_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowTransportCredentialAssignmentBindingIdempotencyRecord | None:
+        async with self._sessions() as session:
+            claim = await self._load_credential_assignment_binding_claim(
+                session,
+                scope=scope,
+                binder_subject_id=binder_subject_id,
+                idempotency_key=idempotency_key,
+            )
+            if claim is None:
+                return None
+            binding_row = await session.get(
+                WorkflowEventPhysicalTransportCredentialAssignmentBindingModel,
+                claim.binding_id,
+            )
+            return self._credential_assignment_binding_record_from_claim(claim, binding_row)
+
+    async def bind_credential_assignment(
+        self,
+        request: WorkflowTransportCredentialAssignmentBindingRequest,
+    ) -> WorkflowTransportCredentialAssignmentBindingResult:
+        self._validate_credential_assignment_binding_request(request)
+        candidate = request.candidate
+        async with self._sessions() as session:
+            replay = await self._credential_assignment_binding_replay(session, request=request)
+            if replay is not None:
+                return replay
+
+            # Fixed order: workflow route binding, its exact route snapshot,
+            # then the exact credential-assignment snapshot.
+            route_binding_row = cast(
+                WorkflowEventPhysicalTransportRouteBindingModel | None,
+                await session.scalar(
+                    select(WorkflowEventPhysicalTransportRouteBindingModel)
+                    .where(
+                        WorkflowEventPhysicalTransportRouteBindingModel.binding_id
+                        == candidate.physical_transport_route_binding_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            route_snapshot_row = cast(
+                EventPhysicalTransportRouteSnapshotModel | None,
+                await session.scalar(
+                    select(EventPhysicalTransportRouteSnapshotModel)
+                    .where(
+                        EventPhysicalTransportRouteSnapshotModel.snapshot_id
+                        == candidate.transport_route_snapshot_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            assignment_snapshot_row = cast(
+                EventPhysicalTransportCredentialAssignmentSnapshotModel | None,
+                await session.scalar(
+                    select(EventPhysicalTransportCredentialAssignmentSnapshotModel)
+                    .where(
+                        EventPhysicalTransportCredentialAssignmentSnapshotModel.snapshot_id
+                        == candidate.credential_assignment_snapshot_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            if not self._credential_assignment_binding_evidence_matches(
+                route_binding_row=route_binding_row,
+                route_snapshot_row=route_snapshot_row,
+                assignment_snapshot_row=assignment_snapshot_row,
+                request=request,
+            ):
+                await session.rollback()
+                return WorkflowTransportCredentialAssignmentBindingResult(
+                    WorkflowTransportCredentialAssignmentBindingStatus.EVIDENCE_CONFLICT,
+                    None,
+                )
+
+            replay = await self._credential_assignment_binding_replay(session, request=request)
+            if replay is not None:
+                await session.rollback()
+                return replay
+
+            existing = cast(
+                WorkflowEventPhysicalTransportCredentialAssignmentBindingModel | None,
+                await session.scalar(
+                    select(WorkflowEventPhysicalTransportCredentialAssignmentBindingModel).where(
+                        WorkflowEventPhysicalTransportCredentialAssignmentBindingModel.physical_transport_route_binding_id
+                        == candidate.physical_transport_route_binding_id,
+                        WorkflowEventPhysicalTransportCredentialAssignmentBindingModel.credential_assignment_snapshot_id
+                        == candidate.credential_assignment_snapshot_id,
+                    )
+                ),
+            )
+            if existing is not None:
+                await session.rollback()
+                return WorkflowTransportCredentialAssignmentBindingResult(
+                    WorkflowTransportCredentialAssignmentBindingStatus.ALREADY_BOUND,
+                    self._credential_assignment_binding_from_row(existing),
+                )
+
+            try:
+                await request.required_precommit_audit()
+            except Exception:
+                await session.rollback()
+                return WorkflowTransportCredentialAssignmentBindingResult(
+                    WorkflowTransportCredentialAssignmentBindingStatus.PRECOMMIT_AUDIT_FAILED,
+                    None,
+                )
+
+            try:
+                session.add(self._credential_assignment_binding_model(candidate))
+                await session.flush()
+                session.add(self._credential_assignment_binding_claim_model(request))
+                await session.commit()
+                return WorkflowTransportCredentialAssignmentBindingResult(
+                    WorkflowTransportCredentialAssignmentBindingStatus.BOUND,
+                    candidate,
+                )
+            except IntegrityError:
+                await session.rollback()
+
+        async with self._sessions() as session:
+            replay = await self._credential_assignment_binding_replay(session, request=request)
+            if replay is not None:
+                return replay
+            existing = cast(
+                WorkflowEventPhysicalTransportCredentialAssignmentBindingModel | None,
+                await session.scalar(
+                    select(WorkflowEventPhysicalTransportCredentialAssignmentBindingModel).where(
+                        WorkflowEventPhysicalTransportCredentialAssignmentBindingModel.physical_transport_route_binding_id
+                        == candidate.physical_transport_route_binding_id,
+                        WorkflowEventPhysicalTransportCredentialAssignmentBindingModel.credential_assignment_snapshot_id
+                        == candidate.credential_assignment_snapshot_id,
+                    )
+                ),
+            )
+            if existing is not None:
+                return WorkflowTransportCredentialAssignmentBindingResult(
+                    WorkflowTransportCredentialAssignmentBindingStatus.ALREADY_BOUND,
+                    self._credential_assignment_binding_from_row(existing),
+                )
+        return WorkflowTransportCredentialAssignmentBindingResult(
+            WorkflowTransportCredentialAssignmentBindingStatus.EVIDENCE_CONFLICT,
+            None,
+        )
 
     async def synchronize_route_selection_heads(
         self, heads: tuple[DeploymentEventTransportRouteSelectionHead, ...]
@@ -8141,6 +8360,424 @@ class PostgreSQLWorkflowPlanRepository:
         raise WorkflowEventTransportCompatibilityAdmissionError(
             "workflow_transport_compatibility_admission_repository_contract_violation",
             "The workflow transport compatibility admission does not match its durable evidence.",
+        )
+
+    async def _credential_assignment_binding_replay(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowTransportCredentialAssignmentBindingRequest,
+    ) -> WorkflowTransportCredentialAssignmentBindingResult | None:
+        claim = await self._load_credential_assignment_binding_claim(
+            session,
+            scope=request.scope,
+            binder_subject_id=request.binder_subject_id,
+            idempotency_key=request.idempotency_key,
+        )
+        if claim is None:
+            return None
+        binding_row = await session.get(
+            WorkflowEventPhysicalTransportCredentialAssignmentBindingModel,
+            claim.binding_id,
+        )
+        record = self._credential_assignment_binding_record_from_claim(claim, binding_row)
+        status = (
+            WorkflowTransportCredentialAssignmentBindingStatus.REPLAY
+            if claim.request_fingerprint == request.request_fingerprint
+            else WorkflowTransportCredentialAssignmentBindingStatus.IDEMPOTENCY_CONFLICT
+        )
+        return WorkflowTransportCredentialAssignmentBindingResult(status, record.binding)
+
+    @classmethod
+    async def _load_credential_assignment_binding_claim(
+        cls,
+        session: AsyncSession,
+        *,
+        scope: WorkflowScope,
+        binder_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowEventPhysicalTransportCredentialAssignmentBindingClaimModel | None:
+        return cast(
+            WorkflowEventPhysicalTransportCredentialAssignmentBindingClaimModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportCredentialAssignmentBindingClaimModel).where(
+                    WorkflowEventPhysicalTransportCredentialAssignmentBindingClaimModel.idempotency_scope_id
+                    == cls._credential_assignment_binding_idempotency_scope(
+                        scope, binder_subject_id
+                    ),
+                    WorkflowEventPhysicalTransportCredentialAssignmentBindingClaimModel.idempotency_key
+                    == idempotency_key,
+                    WorkflowEventPhysicalTransportCredentialAssignmentBindingClaimModel.organization_id
+                    == scope.organization_id,
+                    WorkflowEventPhysicalTransportCredentialAssignmentBindingClaimModel.environment_id
+                    == scope.environment_id,
+                    WorkflowEventPhysicalTransportCredentialAssignmentBindingClaimModel.site_id
+                    == scope.site_id,
+                    WorkflowEventPhysicalTransportCredentialAssignmentBindingClaimModel.binder_subject_id
+                    == binder_subject_id,
+                )
+            ),
+        )
+
+    @classmethod
+    def _credential_assignment_binding_record_from_claim(
+        cls,
+        claim: WorkflowEventPhysicalTransportCredentialAssignmentBindingClaimModel,
+        binding_row: WorkflowEventPhysicalTransportCredentialAssignmentBindingModel | None,
+    ) -> WorkflowTransportCredentialAssignmentBindingIdempotencyRecord:
+        if binding_row is None:
+            cls._credential_assignment_binding_contract_violation()
+        assert binding_row is not None
+        binding = cls._credential_assignment_binding_from_row(binding_row)
+        scope_id = cls._credential_assignment_binding_idempotency_scope(
+            binding.scope, binding.binder_subject_id
+        )
+        payload: dict[str, Any] = {
+            "idempotency_key": claim.idempotency_key,
+            "idempotency_scope_id": scope_id,
+            "request_fingerprint": claim.request_fingerprint,
+            "result_binding": cls._credential_assignment_binding_payload(binding),
+            "result_digest": binding.canonical_digest,
+        }
+        if (
+            claim.idempotency_scope_id != scope_id
+            or claim.result_digest != binding.canonical_digest
+            or claim.binding_id != binding.binding_id
+            or claim.physical_transport_route_binding_id
+            != binding.physical_transport_route_binding_id
+            or claim.transport_route_snapshot_id != binding.transport_route_snapshot_id
+            or claim.credential_assignment_snapshot_id != binding.credential_assignment_snapshot_id
+            or claim.policy_digest != binding.policy_digest
+            or claim.organization_id != binding.scope.organization_id
+            or claim.environment_id != binding.scope.environment_id
+            or claim.site_id != binding.scope.site_id
+            or claim.binder_subject_id != binding.binder_subject_id
+            or claim.created_at.tzinfo is None
+            or claim.created_at != binding.bound_at
+            or claim.payload != payload
+            or claim.canonical_digest != canonical_digest(payload)
+        ):
+            cls._credential_assignment_binding_contract_violation()
+        return WorkflowTransportCredentialAssignmentBindingIdempotencyRecord(
+            request_fingerprint=claim.request_fingerprint,
+            binding=binding,
+        )
+
+    @classmethod
+    def _credential_assignment_binding_from_row(
+        cls,
+        row: WorkflowEventPhysicalTransportCredentialAssignmentBindingModel,
+    ) -> WorkflowEventPhysicalTransportCredentialAssignmentBinding:
+        try:
+            binding = cls._credential_assignment_binding_to_domain(row.payload)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowTransportCredentialAssignmentBindingError(
+                "workflow_transport_credential_assignment_binding_repository_contract_violation",
+                "The workflow credential-assignment binding record is invalid.",
+            ) from exc
+        authority = binding.authority
+        if (
+            row.binding_id != binding.binding_id
+            or row.physical_transport_route_binding_id
+            != binding.physical_transport_route_binding_id
+            or row.physical_transport_route_binding_digest
+            != binding.physical_transport_route_binding_digest
+            or row.transport_route_snapshot_id != binding.transport_route_snapshot_id
+            or row.transport_route_snapshot_digest != binding.transport_route_snapshot_digest
+            or row.credential_assignment_snapshot_id != binding.credential_assignment_snapshot_id
+            or row.credential_assignment_snapshot_digest
+            != binding.credential_assignment_snapshot_digest
+            or row.policy_id != binding.policy_id
+            or row.policy_version != binding.policy_version
+            or row.policy_digest != binding.policy_digest
+            or row.organization_id != binding.scope.organization_id
+            or row.environment_id != binding.scope.environment_id
+            or row.site_id != binding.scope.site_id
+            or row.binder_subject_id != binding.binder_subject_id
+            or row.bound_at != binding.bound_at
+            or row.state != binding.state.value
+            or row.route_selection_authority_granted != authority.route_selection_authorized
+            or row.route_binding_authority_granted != authority.route_binding_authorized
+            or row.endpoint_resolution_authority_granted != authority.endpoint_resolution_authorized
+            or row.protected_artifact_access_authority_granted
+            != authority.protected_artifact_access_authorized
+            or row.credential_selection_authority_granted
+            != authority.credential_selection_authorized
+            or row.credential_assignment_binding_authority_granted
+            != authority.credential_assignment_binding_authorized
+            or row.credential_access_authority_granted != authority.credential_access_authorized
+            or row.credential_brokerage_authority_granted
+            != authority.credential_brokerage_authorized
+            or row.credential_resolution_authority_granted
+            != authority.credential_resolution_authorized
+            or row.credential_delivery_authority_granted != authority.credential_delivery_authorized
+            or row.network_access_authority_granted != authority.network_access_authorized
+            or row.readiness_probe_authority_granted != authority.readiness_probe_authorized
+            or row.publication_authority_granted != authority.publication_authorized
+            or row.delivery_authority_granted != authority.delivery_authorized
+            or row.dispatch_authority_granted != authority.dispatch_authorized
+            or row.execution_authority_granted != authority.execution_authorized
+            or row.infrastructure_mutation_authority_granted
+            != authority.infrastructure_mutation_authorized
+            or row.canonical_digest != binding.canonical_digest
+            or row.payload != cls._credential_assignment_binding_payload(binding)
+        ):
+            cls._credential_assignment_binding_contract_violation()
+        return binding
+
+    @classmethod
+    def _credential_assignment_binding_model(
+        cls,
+        binding: WorkflowEventPhysicalTransportCredentialAssignmentBinding,
+    ) -> WorkflowEventPhysicalTransportCredentialAssignmentBindingModel:
+        authority = binding.authority
+        return WorkflowEventPhysicalTransportCredentialAssignmentBindingModel(
+            binding_id=binding.binding_id,
+            physical_transport_route_binding_id=binding.physical_transport_route_binding_id,
+            physical_transport_route_binding_digest=(
+                binding.physical_transport_route_binding_digest
+            ),
+            transport_route_snapshot_id=binding.transport_route_snapshot_id,
+            transport_route_snapshot_digest=binding.transport_route_snapshot_digest,
+            credential_assignment_snapshot_id=binding.credential_assignment_snapshot_id,
+            credential_assignment_snapshot_digest=(binding.credential_assignment_snapshot_digest),
+            policy_id=binding.policy_id,
+            policy_version=binding.policy_version,
+            policy_digest=binding.policy_digest,
+            organization_id=binding.scope.organization_id,
+            environment_id=binding.scope.environment_id,
+            site_id=binding.scope.site_id,
+            binder_subject_id=binding.binder_subject_id,
+            bound_at=binding.bound_at,
+            state=binding.state.value,
+            route_selection_authority_granted=authority.route_selection_authorized,
+            route_binding_authority_granted=authority.route_binding_authorized,
+            endpoint_resolution_authority_granted=authority.endpoint_resolution_authorized,
+            protected_artifact_access_authority_granted=(
+                authority.protected_artifact_access_authorized
+            ),
+            credential_selection_authority_granted=authority.credential_selection_authorized,
+            credential_assignment_binding_authority_granted=(
+                authority.credential_assignment_binding_authorized
+            ),
+            credential_access_authority_granted=authority.credential_access_authorized,
+            credential_brokerage_authority_granted=authority.credential_brokerage_authorized,
+            credential_resolution_authority_granted=authority.credential_resolution_authorized,
+            credential_delivery_authority_granted=authority.credential_delivery_authorized,
+            network_access_authority_granted=authority.network_access_authorized,
+            readiness_probe_authority_granted=authority.readiness_probe_authorized,
+            publication_authority_granted=authority.publication_authorized,
+            delivery_authority_granted=authority.delivery_authorized,
+            dispatch_authority_granted=authority.dispatch_authorized,
+            execution_authority_granted=authority.execution_authorized,
+            infrastructure_mutation_authority_granted=(
+                authority.infrastructure_mutation_authorized
+            ),
+            canonical_digest=binding.canonical_digest,
+            payload=cls._credential_assignment_binding_payload(binding),
+        )
+
+    @classmethod
+    def _credential_assignment_binding_claim_model(
+        cls,
+        request: WorkflowTransportCredentialAssignmentBindingRequest,
+    ) -> WorkflowEventPhysicalTransportCredentialAssignmentBindingClaimModel:
+        binding = request.candidate
+        scope_id = cls._credential_assignment_binding_idempotency_scope(
+            binding.scope, binding.binder_subject_id
+        )
+        payload: dict[str, Any] = {
+            "idempotency_key": request.idempotency_key,
+            "idempotency_scope_id": scope_id,
+            "request_fingerprint": request.request_fingerprint,
+            "result_binding": cls._credential_assignment_binding_payload(binding),
+            "result_digest": binding.canonical_digest,
+        }
+        digest = canonical_digest(payload)
+        return WorkflowEventPhysicalTransportCredentialAssignmentBindingClaimModel(
+            claim_id=f"wf_transport_credential_claim_{sha256(digest.encode()).hexdigest()[:32]}",
+            idempotency_scope_id=scope_id,
+            idempotency_key=request.idempotency_key,
+            request_fingerprint=request.request_fingerprint,
+            result_digest=binding.canonical_digest,
+            binding_id=binding.binding_id,
+            physical_transport_route_binding_id=binding.physical_transport_route_binding_id,
+            transport_route_snapshot_id=binding.transport_route_snapshot_id,
+            credential_assignment_snapshot_id=binding.credential_assignment_snapshot_id,
+            policy_digest=binding.policy_digest,
+            organization_id=binding.scope.organization_id,
+            environment_id=binding.scope.environment_id,
+            site_id=binding.scope.site_id,
+            binder_subject_id=binding.binder_subject_id,
+            created_at=request.requested_at,
+            canonical_digest=digest,
+            payload=payload,
+        )
+
+    @classmethod
+    def _credential_assignment_binding_evidence_matches(
+        cls,
+        *,
+        route_binding_row: WorkflowEventPhysicalTransportRouteBindingModel | None,
+        route_snapshot_row: EventPhysicalTransportRouteSnapshotModel | None,
+        assignment_snapshot_row: EventPhysicalTransportCredentialAssignmentSnapshotModel | None,
+        request: WorkflowTransportCredentialAssignmentBindingRequest,
+    ) -> bool:
+        if (
+            route_binding_row is None
+            or route_snapshot_row is None
+            or assignment_snapshot_row is None
+        ):
+            return False
+        try:
+            route_binding = cls._physical_transport_route_binding_from_row(route_binding_row)
+            route_snapshot = cls._transport_route_snapshot_from_row(route_snapshot_row)
+            assignment_snapshot = cls._credential_assignment_snapshot_from_row(
+                assignment_snapshot_row
+            )
+        except (
+            WorkflowEventPhysicalTransportRouteBindingError,
+            WorkflowTransportRouteSnapshotError,
+            WorkflowTransportCredentialAssignmentSnapshotError,
+        ):
+            return False
+        candidate = request.candidate
+        policy = code_owned_workflow_event_physical_transport_credential_assignment_binding_policy()
+        sources = (route_binding, route_snapshot, assignment_snapshot)
+        return bool(
+            all(
+                canonical_digest(source.digest_payload()) == source.canonical_digest
+                and source.scope == request.scope
+                and not any(source.authority.canonical_value().values())
+                for source in sources
+            )
+            and route_binding.state is WorkflowEventPhysicalTransportRouteBindingState.BOUND
+            and route_binding.binding_id
+            == request.expected_physical_transport_route_binding_id
+            == candidate.physical_transport_route_binding_id
+            and route_binding.canonical_digest
+            == request.expected_physical_transport_route_binding_digest
+            == candidate.physical_transport_route_binding_digest
+            and route_binding.transport_route_snapshot_id
+            == route_snapshot.snapshot_id
+            == request.expected_transport_route_snapshot_id
+            == candidate.transport_route_snapshot_id
+            and route_binding.transport_route_snapshot_digest
+            == route_snapshot.canonical_digest
+            == request.expected_transport_route_snapshot_digest
+            == candidate.transport_route_snapshot_digest
+            and route_snapshot.state is EventPhysicalTransportRouteSnapshotState.SNAPSHOTTED
+            and assignment_snapshot.state
+            is EventPhysicalTransportCredentialAssignmentSnapshotState.SNAPSHOTTED
+            and assignment_snapshot.snapshot_id
+            == request.expected_credential_assignment_snapshot_id
+            == candidate.credential_assignment_snapshot_id
+            and assignment_snapshot.canonical_digest
+            == request.expected_credential_assignment_snapshot_digest
+            == candidate.credential_assignment_snapshot_digest
+            and assignment_snapshot.route_snapshot_id == route_snapshot.snapshot_id
+            and assignment_snapshot.route_id == route_snapshot.route_id
+            and assignment_snapshot.route_revision == route_snapshot.route_revision
+            and assignment_snapshot.source_route_digest == route_snapshot.source_route_digest
+            and assignment_snapshot.credential_requirement_profile_id
+            == route_snapshot.credential_requirement_profile_id
+            and assignment_snapshot.credential_requirement_profile_version
+            == route_snapshot.credential_requirement_profile_version
+            and assignment_snapshot.credential_requirement_profile_digest
+            == route_snapshot.credential_requirement_profile_digest
+            and assignment_snapshot.authentication_mechanism_class
+            == route_snapshot.authentication_mechanism_class
+            and assignment_snapshot.principal_class == route_snapshot.principal_class
+            and assignment_snapshot.privilege_class == policy.required_privilege_class
+            and assignment_snapshot.credential_generation > 0
+            and assignment_snapshot.rotation_epoch > 0
+            and route_binding.scope
+            == route_snapshot.scope
+            == assignment_snapshot.scope
+            == candidate.scope
+            and route_snapshot.captured_at <= route_binding.bound_at <= candidate.bound_at
+            and assignment_snapshot.captured_at <= candidate.bound_at
+            and candidate.policy_id == policy.policy_id
+            and candidate.policy_version == policy.policy_version
+            and candidate.policy_digest == request.expected_policy_digest == policy.canonical_digest
+            and candidate.binder_subject_id == request.binder_subject_id
+            and candidate.bound_at == request.requested_at
+            and candidate.state
+            is WorkflowEventPhysicalTransportCredentialAssignmentBindingState.BOUND
+            and canonical_digest(candidate.digest_payload()) == candidate.canonical_digest
+            and not any(candidate.authority.canonical_value().values())
+        )
+
+    @staticmethod
+    def _credential_assignment_binding_idempotency_scope(
+        scope: WorkflowScope,
+        binder_subject_id: str,
+    ) -> str:
+        return canonical_digest(
+            {"binder_subject_id": binder_subject_id, "scope": scope.canonical_value()}
+        )
+
+    @staticmethod
+    def _credential_assignment_binding_payload(
+        binding: WorkflowEventPhysicalTransportCredentialAssignmentBinding,
+    ) -> dict[str, Any]:
+        return cast(dict[str, Any], binding.canonical_value())
+
+    @staticmethod
+    def _credential_assignment_binding_to_domain(
+        raw: dict[str, Any],
+    ) -> WorkflowEventPhysicalTransportCredentialAssignmentBinding:
+        values = dict(raw)
+        values["scope"] = WorkflowScope(**cast(Any, values["scope"]))
+        values["bound_at"] = datetime.fromisoformat(str(values["bound_at"]))
+        values["state"] = WorkflowEventPhysicalTransportCredentialAssignmentBindingState(
+            str(values["state"])
+        )
+        values["authority"] = WorkflowEventPhysicalTransportCredentialAssignmentBindingAuthority(
+            **cast(Any, values["authority"])
+        )
+        return WorkflowEventPhysicalTransportCredentialAssignmentBinding(**cast(Any, values))
+
+    @staticmethod
+    def _validate_credential_assignment_binding_request(
+        request: WorkflowTransportCredentialAssignmentBindingRequest,
+    ) -> None:
+        candidate = request.candidate
+        if (
+            candidate.physical_transport_route_binding_id
+            != request.expected_physical_transport_route_binding_id
+            or candidate.physical_transport_route_binding_digest
+            != request.expected_physical_transport_route_binding_digest
+            or candidate.transport_route_snapshot_id != request.expected_transport_route_snapshot_id
+            or candidate.transport_route_snapshot_digest
+            != request.expected_transport_route_snapshot_digest
+            or candidate.credential_assignment_snapshot_id
+            != request.expected_credential_assignment_snapshot_id
+            or candidate.credential_assignment_snapshot_digest
+            != request.expected_credential_assignment_snapshot_digest
+            or candidate.policy_digest != request.expected_policy_digest
+            or candidate.scope != request.scope
+            or candidate.binder_subject_id != request.binder_subject_id
+            or candidate.bound_at != request.requested_at
+            or candidate.state
+            is not WorkflowEventPhysicalTransportCredentialAssignmentBindingState.BOUND
+            or any(candidate.authority.canonical_value().values())
+        ):
+            raise ValueError("workflow credential-assignment binding request is unsafe")
+        if not 8 <= len(request.idempotency_key) <= 128:
+            raise ValueError("credential-assignment binding idempotency key is invalid")
+        if len(request.request_fingerprint) != 64 or any(
+            character not in "0123456789abcdef" for character in request.request_fingerprint
+        ):
+            raise ValueError("credential-assignment binding fingerprint is invalid")
+        if request.requested_at.tzinfo is None:
+            raise ValueError("credential-assignment binding time must be aware")
+
+    @staticmethod
+    def _credential_assignment_binding_contract_violation() -> NoReturn:
+        raise WorkflowTransportCredentialAssignmentBindingError(
+            "workflow_transport_credential_assignment_binding_repository_contract_violation",
+            "The workflow credential-assignment binding does not match durable evidence.",
         )
 
     async def _physical_transport_route_binding_replay(

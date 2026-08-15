@@ -613,6 +613,12 @@ MVP workflows do not execute C3 through C5 capabilities.
   creation only after the atomic snapshot and claim commit. The deployment registry treats the
   highest unique rotation/generation revision as head, so a newer inactive or revoked record
   supersedes earlier active history without mutable rows.
+- ADR-154 establishes an immutable workflow physical-transport credential-assignment binding
+  between one exact route binding, its exact route snapshot and one compatible assignment
+  snapshot. Different credential generations may remain as append-only history for a route
+  binding, but this boundary grants no credential or protected-artifact access and makes no
+  current-head, expiry or revocation decision. A later freshness admission must independently
+  prove those properties before credential-access authorization.
 
 ## 39. Assumptions
 

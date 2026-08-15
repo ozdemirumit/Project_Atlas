@@ -19,6 +19,19 @@ from atlas.modules.workflows.application.byte_artifacts import (
     WORKFLOW_EVENT_BYTE_ARTIFACT_PRODUCER,
     WorkflowEventByteArtifactService,
 )
+from atlas.modules.workflows.application.credential_assignment_binding_ports import (
+    WorkflowTransportCredentialAssignmentBindingError,
+    WorkflowTransportCredentialAssignmentBindingIdempotencyRecord,
+    WorkflowTransportCredentialAssignmentBindingRepository,
+    WorkflowTransportCredentialAssignmentBindingRequest,
+    WorkflowTransportCredentialAssignmentBindingResult,
+    WorkflowTransportCredentialAssignmentBindingStatus,
+)
+from atlas.modules.workflows.application.credential_assignment_bindings import (
+    WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_BINDER_AUDIENCE,
+    WorkflowEventPhysicalTransportCredentialAssignmentBindingService,
+    WorkflowPhysicalTransportCredentialBinderContext,
+)
 from atlas.modules.workflows.application.credential_assignment_snapshot_ports import (
     DeploymentPhysicalTransportCredentialAssignmentRegistry,
     DeploymentPhysicalTransportCredentialAssignmentSynchronizer,
@@ -259,6 +272,7 @@ __all__ = [
     "WORKFLOW_EVENT_LOGICAL_CHANNEL_BINDING_PRODUCER",
     "WORKFLOW_EVENT_TRANSPORT_ADMISSION_PRODUCER",
     "WORKFLOW_OUTBOX_PUBLISHER_AUDIENCE",
+    "WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_BINDER_AUDIENCE",
     "WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_MATERIALIZATION_PRODUCER",
     "WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_RESOLUTION_AUTHORIZATION_LEASE_PRODUCER",
     "WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_RESOLVER_AUDIENCE",
@@ -316,6 +330,7 @@ __all__ = [
     "WorkflowEventLogicalChannelBindingResult",
     "WorkflowEventLogicalChannelBindingService",
     "WorkflowEventLogicalChannelBindingStatus",
+    "WorkflowEventPhysicalTransportCredentialAssignmentBindingService",
     "WorkflowEventPhysicalTransportEndpointMaterializationClaimRequest",
     "WorkflowEventPhysicalTransportEndpointMaterializationClaimResult",
     "WorkflowEventPhysicalTransportEndpointMaterializationClaimStatus",
@@ -382,6 +397,7 @@ __all__ = [
     "WorkflowOutboxPublicationLeaseRepository",
     "WorkflowOutboxPublicationLeaseService",
     "WorkflowOutboxPublisherContext",
+    "WorkflowPhysicalTransportCredentialBinderContext",
     "WorkflowPhysicalTransportEndpointMaterializer",
     "WorkflowPhysicalTransportEndpointResolverContext",
     "WorkflowPhysicalTransportRouteBinderContext",
@@ -404,6 +420,12 @@ __all__ = [
     "WorkflowRunMaterializationService",
     "WorkflowRunMaterializationStatus",
     "WorkflowTransportCompatibilityAdmitterContext",
+    "WorkflowTransportCredentialAssignmentBindingError",
+    "WorkflowTransportCredentialAssignmentBindingIdempotencyRecord",
+    "WorkflowTransportCredentialAssignmentBindingRepository",
+    "WorkflowTransportCredentialAssignmentBindingRequest",
+    "WorkflowTransportCredentialAssignmentBindingResult",
+    "WorkflowTransportCredentialAssignmentBindingStatus",
     "WorkflowTransportCredentialAssignmentRegistryContext",
     "WorkflowTransportCredentialAssignmentSnapshotError",
     "WorkflowTransportCredentialAssignmentSnapshotIdempotencyRecord",

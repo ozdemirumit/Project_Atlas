@@ -56,6 +56,12 @@ WORKFLOW_TRANSPORT_CREDENTIAL_ASSIGNMENT_SNAPSHOT_READ = (
     "workflow.transport-credential-assignment-snapshots.read"
 )
 WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_BINDING_READ = "workflow.physical-transport-route-bindings.read"
+WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_ASSIGNMENT_BINDING_READ = (
+    "workflow.physical-transport-credential-assignment-bindings.read"
+)
+WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_ASSIGNMENT_BINDING_BIND = (
+    "workflow.physical-transport-credential-assignment-bindings.bind"
+)
 WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMISSION_READ = (
     "workflow.physical-transport-route-freshness-admissions.read"
 )
@@ -1723,6 +1729,20 @@ def workflow_physical_transport_route_binding_scope(
     )
 
 
+def workflow_physical_transport_credential_assignment_binding_scope(
+    organization_id: str,
+    environment: str,
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.workflow",
+        resource_id="resource.workflow.physical-transport-credential-assignment-bindings",
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
 def workflow_physical_transport_route_freshness_admission_scope(
     organization_id: str,
     environment: str,
@@ -2025,6 +2045,19 @@ def build_development_authorization_service(
         PermissionDefinition(
             permission_id=WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_BINDING_READ,
             description="Read minimized immutable workflow physical transport route bindings.",
+        ),
+        PermissionDefinition(
+            permission_id=WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_ASSIGNMENT_BINDING_READ,
+            description=(
+                "Read minimized immutable workflow physical transport credential-assignment "
+                "bindings."
+            ),
+        ),
+        PermissionDefinition(
+            permission_id=WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_ASSIGNMENT_BINDING_BIND,
+            description=(
+                "Bind one exact immutable physical route to one credential-assignment snapshot."
+            ),
         ),
         PermissionDefinition(
             permission_id=WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMISSION_READ,
@@ -2924,6 +2957,7 @@ def build_development_authorization_service(
                 WORKFLOW_TRANSPORT_ROUTE_SNAPSHOT_READ,
                 WORKFLOW_TRANSPORT_CREDENTIAL_ASSIGNMENT_SNAPSHOT_READ,
                 WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_BINDING_READ,
+                WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_ASSIGNMENT_BINDING_READ,
                 WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMISSION_READ,
                 WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_RESOLUTION_AUTHORIZATION_LEASE_READ,
                 WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_MATERIALIZATION_READ,
@@ -5040,6 +5074,20 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=workflow_physical_transport_route_binding_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id=(
+                    "assignment.development."
+                    "workflow-physical-transport-credential-assignment-bindings"
+                ),
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=workflow_physical_transport_credential_assignment_binding_scope(
                     settings.development_organization_id,
                     settings.environment,
                 ),
