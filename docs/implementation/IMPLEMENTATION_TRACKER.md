@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-207 |
 | Title | Atomic single-use workflow credential-access lease consumption and protected credential materialization |
-| Status | In progress |
+| Status | Review |
 | Branch | `agent/workflow-credential-materialization` |
-| Pull Request | Not opened |
+| Pull Request | [#220](https://github.com/ozdemirumit/Project_Atlas/pull/220) |
 | Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-153, ADR-154, ADR-155, ADR-156, ADR-157 |
 | Last Updated | 2026-08-15 |
-| Next Action | Implement ADR-157 domain, protected adapter, persistence, API, UI and validation boundaries |
+| Next Action | Complete exact-head PR CI, SHA-locked merge and independent main CI |
 
 ### ATLAS-IMP-207 Scope Rationale
 
@@ -61,6 +61,11 @@
   successful artifacts are revoked/destroyed on audit or persistence uncertainty; timely receipts
   remain recordable after lease expiry; artifact lifetime and attempt windows are bounded; API and
   frontend inventory shapes agree; and all internal failures map to one non-oracle response.
+- Live browser validation at `http://127.0.0.1:5264` used the normal `atlas-demo` / `local-demo`
+  username/password login. Refreshing the workflow workspace and navigating to Installed MCPs kept
+  the same signed-in session; no MFA, second login or `authorized browser session` prompt appeared.
+  Credential-materialization outcome evidence remained minimized and read-only with no consume,
+  retry, reveal, copy, download or operational control.
 - CI performs the latest `0129 -> head` migration round trip and runs the live PostgreSQL
   credential-materialization concurrency, append-only and claim-before-materializer test.
 
