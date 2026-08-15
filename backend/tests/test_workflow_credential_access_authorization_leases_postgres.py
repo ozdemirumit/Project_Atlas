@@ -39,6 +39,7 @@ from atlas.modules.workflows.application import (
     WorkflowTransportCredentialAccessAuthorizationLeaseError,
 )
 from atlas.modules.workflows.domain import (
+    WorkflowEventPhysicalTransportCredentialAccessAuthorizationLease,
     WorkflowScope,
     code_owned_workflow_event_physical_transport_credential_access_authorization_policy,
 )
@@ -233,7 +234,7 @@ async def test_memory_adapter_preserves_atomic_single_lease_and_exact_replay_par
     )
     policy = code_owned_workflow_event_physical_transport_credential_access_authorization_policy()
 
-    async def authorize() -> object:
+    async def authorize() -> WorkflowEventPhysicalTransportCredentialAccessAuthorizationLease:
         return await service.authorize(
             freshness_admission_id=admission.freshness_admission_id,
             freshness_admission_digest=admission.canonical_digest,
