@@ -155,6 +155,10 @@ class WorkflowEventPhysicalTransportCredentialAssignmentBindingState(StrEnum):
     BOUND = "bound"
 
 
+class WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionState(StrEnum):
+    ADMITTED_CURRENT = "admitted_current"
+
+
 class WorkflowEventPhysicalTransportRouteFreshnessAdmissionState(StrEnum):
     ADMITTED_CURRENT = "admitted_current"
 
@@ -3790,6 +3794,313 @@ class WorkflowEventPhysicalTransportCredentialAssignmentBinding:
             "state": self.state.value,
             "transport_route_snapshot_digest": self.transport_route_snapshot_digest,
             "transport_route_snapshot_id": self.transport_route_snapshot_id,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+    @property
+    def grants_endpoint_resolution_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_protected_artifact_access_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_route_selection_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_route_binding_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_credential_selection_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_credential_assignment_binding_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_credential_access_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_credential_brokerage_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_credential_resolution_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_credential_delivery_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_network_access_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_readiness_probe_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_publication_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_delivery_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_dispatch_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_execution_authority(self) -> bool:
+        return False
+
+    @property
+    def grants_infrastructure_mutation_authority(self) -> bool:
+        return False
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportCredentialAssignmentFreshnessPolicy:
+    """Code-owned requirements for a bounded assignment-head admission."""
+
+    policy_id: str
+    policy_version: str
+    validity_window_seconds: int
+    unique_current_head_required: bool
+    monotonic_rotation_rank_required: bool
+    active_assignment_required: bool
+    non_revoked_assignment_required: bool
+    assignment_expiry_bound_required: bool
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        _require_identifier(self.policy_id, name="credential assignment freshness policy id")
+        _require_identifier(
+            self.policy_version,
+            name="credential assignment freshness policy version",
+        )
+        if self.validity_window_seconds != 60:
+            raise ValueError("credential assignment freshness validity window must be 60 seconds")
+        if not all(
+            value is True
+            for value in (
+                self.unique_current_head_required,
+                self.monotonic_rotation_rank_required,
+                self.active_assignment_required,
+                self.non_revoked_assignment_required,
+                self.assignment_expiry_bound_required,
+            )
+        ):
+            raise ValueError("credential assignment freshness policy is unsafe")
+        _require_digest(
+            self.canonical_digest,
+            name="credential assignment freshness policy digest",
+        )
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("credential assignment freshness policy digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "active_assignment_required": self.active_assignment_required,
+            "assignment_expiry_bound_required": self.assignment_expiry_bound_required,
+            "monotonic_rotation_rank_required": self.monotonic_rotation_rank_required,
+            "non_revoked_assignment_required": self.non_revoked_assignment_required,
+            "policy_id": self.policy_id,
+            "policy_version": self.policy_version,
+            "unique_current_head_required": self.unique_current_head_required,
+            "validity_window_seconds": self.validity_window_seconds,
+        }
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+
+def code_owned_workflow_event_physical_transport_credential_assignment_freshness_policy() -> (
+    WorkflowEventPhysicalTransportCredentialAssignmentFreshnessPolicy
+):
+    values: dict[str, object] = {
+        "policy_id": ("policy.workflow-event-physical-transport-credential-assignment-freshness"),
+        "policy_version": "1.0",
+        "validity_window_seconds": 60,
+        "unique_current_head_required": True,
+        "monotonic_rotation_rank_required": True,
+        "active_assignment_required": True,
+        "non_revoked_assignment_required": True,
+        "assignment_expiry_bound_required": True,
+    }
+    return WorkflowEventPhysicalTransportCredentialAssignmentFreshnessPolicy(
+        **cast(Any, values), canonical_digest=canonical_digest(values)
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionAuthority:
+    endpoint_resolution_authorized: bool = False
+    protected_artifact_access_authorized: bool = False
+    route_selection_authorized: bool = False
+    route_binding_authorized: bool = False
+    credential_selection_authorized: bool = False
+    credential_assignment_binding_authorized: bool = False
+    credential_access_authorized: bool = False
+    credential_brokerage_authorized: bool = False
+    credential_resolution_authorized: bool = False
+    credential_delivery_authorized: bool = False
+    network_access_authorized: bool = False
+    readiness_probe_authorized: bool = False
+    publication_authorized: bool = False
+    delivery_authorized: bool = False
+    dispatch_authorized: bool = False
+    execution_authorized: bool = False
+    infrastructure_mutation_authorized: bool = False
+
+    def __post_init__(self) -> None:
+        if any(value is not False for value in self.canonical_value().values()):
+            raise ValueError("credential assignment freshness admissions cannot grant authority")
+
+    def canonical_value(self) -> dict[str, bool]:
+        return {
+            "credential_access_authorized": self.credential_access_authorized,
+            "credential_assignment_binding_authorized": (
+                self.credential_assignment_binding_authorized
+            ),
+            "credential_brokerage_authorized": self.credential_brokerage_authorized,
+            "credential_delivery_authorized": self.credential_delivery_authorized,
+            "credential_resolution_authorized": self.credential_resolution_authorized,
+            "credential_selection_authorized": self.credential_selection_authorized,
+            "delivery_authorized": self.delivery_authorized,
+            "dispatch_authorized": self.dispatch_authorized,
+            "endpoint_resolution_authorized": self.endpoint_resolution_authorized,
+            "execution_authorized": self.execution_authorized,
+            "infrastructure_mutation_authorized": self.infrastructure_mutation_authorized,
+            "network_access_authorized": self.network_access_authorized,
+            "protected_artifact_access_authorized": (self.protected_artifact_access_authorized),
+            "publication_authorized": self.publication_authorized,
+            "readiness_probe_authorized": self.readiness_probe_authorized,
+            "route_binding_authorized": self.route_binding_authorized,
+            "route_selection_authorized": self.route_selection_authorized,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmission:
+    """Bounded current-assignment evidence without credential access authority."""
+
+    freshness_admission_id: str
+    physical_transport_credential_assignment_binding_id: str
+    physical_transport_credential_assignment_binding_digest: str
+    credential_assignment_snapshot_id: str
+    credential_assignment_snapshot_digest: str
+    assignment_id: str
+    assignment_revision: str
+    source_assignment_digest: str
+    credential_generation: int
+    rotation_epoch: int
+    assignment_activated_at: datetime
+    assignment_expires_at: datetime
+    assignment_active: bool
+    assignment_non_revoked: bool
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    scope: WorkflowScope
+    admitter_subject_id: str
+    evaluated_at: datetime
+    valid_until: datetime
+    state: WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionState
+    authority: WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.freshness_admission_id, "credential assignment freshness admission id"),
+            (
+                self.physical_transport_credential_assignment_binding_id,
+                "credential assignment binding id",
+            ),
+            (self.credential_assignment_snapshot_id, "credential assignment snapshot id"),
+            (self.assignment_id, "credential assignment id"),
+            (self.assignment_revision, "credential assignment revision"),
+            (self.policy_id, "credential assignment freshness policy id"),
+            (self.policy_version, "credential assignment freshness policy version"),
+            (self.admitter_subject_id, "credential assignment freshness admitter subject id"),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (
+                self.physical_transport_credential_assignment_binding_digest,
+                "credential assignment binding digest",
+            ),
+            (
+                self.credential_assignment_snapshot_digest,
+                "credential assignment snapshot digest",
+            ),
+            (self.source_assignment_digest, "credential assignment source digest"),
+            (self.policy_digest, "credential assignment freshness policy digest"),
+            (self.canonical_digest, "credential assignment freshness admission digest"),
+        ):
+            _require_digest(value, name=name)
+        if self.credential_generation < 1 or self.rotation_epoch < 1:
+            raise ValueError("credential assignment freshness rank must be positive")
+        if (
+            self.assignment_activated_at.tzinfo is None
+            or self.assignment_expires_at.tzinfo is None
+            or self.evaluated_at.tzinfo is None
+            or self.valid_until.tzinfo is None
+        ):
+            raise ValueError("credential assignment freshness times must be timezone-aware")
+        if not self.assignment_activated_at <= self.evaluated_at < self.assignment_expires_at:
+            raise ValueError("credential assignment must be active at freshness evaluation")
+        if self.valid_until - self.evaluated_at > timedelta(seconds=60):
+            raise ValueError("credential assignment freshness validity exceeds policy maximum")
+        if not self.evaluated_at < self.valid_until <= self.assignment_expires_at:
+            raise ValueError("credential assignment freshness validity is outside assignment life")
+        if self.assignment_active is not True or self.assignment_non_revoked is not True:
+            raise ValueError("credential assignment freshness source state is inadmissible")
+        if self.state.value != "admitted_current":
+            raise ValueError("credential assignment freshness must remain admitted_current")
+        if any(self.authority.canonical_value().values()):
+            raise ValueError("credential assignment freshness cannot grant authority")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("credential assignment freshness admission digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "admitter_subject_id": self.admitter_subject_id,
+            "assignment_activated_at": self.assignment_activated_at.isoformat(),
+            "assignment_active": self.assignment_active,
+            "assignment_expires_at": self.assignment_expires_at.isoformat(),
+            "assignment_id": self.assignment_id,
+            "assignment_non_revoked": self.assignment_non_revoked,
+            "assignment_revision": self.assignment_revision,
+            "authority": self.authority.canonical_value(),
+            "credential_assignment_snapshot_digest": (self.credential_assignment_snapshot_digest),
+            "credential_assignment_snapshot_id": self.credential_assignment_snapshot_id,
+            "credential_generation": self.credential_generation,
+            "evaluated_at": self.evaluated_at.isoformat(),
+            "freshness_admission_id": self.freshness_admission_id,
+            "physical_transport_credential_assignment_binding_digest": (
+                self.physical_transport_credential_assignment_binding_digest
+            ),
+            "physical_transport_credential_assignment_binding_id": (
+                self.physical_transport_credential_assignment_binding_id
+            ),
+            "policy_digest": self.policy_digest,
+            "policy_id": self.policy_id,
+            "policy_version": self.policy_version,
+            "rotation_epoch": self.rotation_epoch,
+            "scope": self.scope.canonical_value(),
+            "source_assignment_digest": self.source_assignment_digest,
+            "state": self.state.value,
+            "valid_until": self.valid_until.isoformat(),
         }
 
     def canonical_value(self) -> dict[str, object]:

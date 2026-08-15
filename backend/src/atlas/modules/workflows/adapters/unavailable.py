@@ -44,6 +44,12 @@ from atlas.modules.workflows.application.credential_assignment_binding_ports imp
     WorkflowTransportCredentialAssignmentBindingRequest,
     WorkflowTransportCredentialAssignmentBindingResult,
 )
+from atlas.modules.workflows.application.credential_assignment_freshness_admission_ports import (
+    WorkflowTransportCredentialAssignmentFreshnessAdmissionError,
+    WorkflowTransportCredentialAssignmentFreshnessAdmissionIdempotencyRecord,
+    WorkflowTransportCredentialAssignmentFreshnessAdmissionRequest,
+    WorkflowTransportCredentialAssignmentFreshnessAdmissionResult,
+)
 from atlas.modules.workflows.application.credential_assignment_snapshot_ports import (
     WorkflowTransportCredentialAssignmentSnapshotError,
     WorkflowTransportCredentialAssignmentSnapshotIdempotencyRecord,
@@ -125,6 +131,7 @@ from atlas.modules.workflows.domain import (
     WorkflowEventByteArtifact,
     WorkflowEventLogicalChannelBinding,
     WorkflowEventPhysicalTransportCredentialAssignmentBinding,
+    WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmission,
     WorkflowEventPhysicalTransportEndpointMaterializationAttempt,
     WorkflowEventPhysicalTransportEndpointMaterializationResult,
     WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease,
@@ -558,6 +565,43 @@ class UnavailableWorkflowPlanRepository:
     ) -> WorkflowTransportCredentialAssignmentBindingResult:
         self._raise_credential_assignment_binding()
 
+    async def get_credential_assignment_binding_by_id(
+        self,
+        *,
+        binding_id: str,
+    ) -> WorkflowEventPhysicalTransportCredentialAssignmentBinding | None:
+        self._raise_credential_assignment_freshness()
+
+    async def get_current_credential_assignment_head(
+        self,
+        *,
+        assignment_id: str,
+    ) -> DeploymentPhysicalTransportCredentialAssignment | None:
+        self._raise_credential_assignment_freshness()
+
+    async def list_credential_assignment_freshness_admissions(
+        self,
+        *,
+        scope: WorkflowScope,
+        limit: int = 256,
+    ) -> tuple[WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmission, ...]:
+        self._raise_credential_assignment_freshness()
+
+    async def get_credential_assignment_freshness_admission_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        admitter_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowTransportCredentialAssignmentFreshnessAdmissionIdempotencyRecord | None:
+        self._raise_credential_assignment_freshness()
+
+    async def admit_credential_assignment_freshness(
+        self,
+        request: WorkflowTransportCredentialAssignmentFreshnessAdmissionRequest,
+    ) -> WorkflowTransportCredentialAssignmentFreshnessAdmissionResult:
+        self._raise_credential_assignment_freshness()
+
     async def get_current_route_selection_head(
         self, *, scope: WorkflowScope, route_set_id: str
     ) -> DeploymentEventTransportRouteSelectionHead | None:
@@ -792,6 +836,13 @@ class UnavailableWorkflowPlanRepository:
         raise WorkflowTransportCredentialAssignmentBindingError(
             "workflow_transport_credential_assignment_binding_repository_unavailable",
             "Durable workflow credential-assignment binding storage is not configured.",
+        )
+
+    @staticmethod
+    def _raise_credential_assignment_freshness() -> NoReturn:
+        raise WorkflowTransportCredentialAssignmentFreshnessAdmissionError(
+            "workflow_transport_credential_assignment_freshness_repository_unavailable",
+            "Durable credential-assignment freshness admission storage is not configured.",
         )
 
     @staticmethod

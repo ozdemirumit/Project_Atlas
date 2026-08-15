@@ -12,6 +12,7 @@ from atlas.api.security import (
     authorize_workflow_definition_read,
     authorize_workflow_physical_transport_credential_assignment_binding_bind,
     authorize_workflow_physical_transport_credential_assignment_binding_read,
+    authorize_workflow_physical_transport_credential_assignment_freshness_admission_read,
     authorize_workflow_physical_transport_endpoint_materialization_read,
     authorize_workflow_physical_transport_endpoint_resolution_authorization_lease_read,
     authorize_workflow_physical_transport_route_binding_read,
@@ -25,6 +26,7 @@ from atlas.api.security import (
     authorize_workflow_transport_route_snapshot_read,
     browser_session_subject,
     workflow_outbox_publisher_subject,
+    workflow_physical_transport_credential_assignment_freshness_admitter_subject,
     workflow_physical_transport_endpoint_resolver_subject,
     workflow_physical_transport_route_binder_subject,
     workflow_physical_transport_route_freshness_admitter_subject,
@@ -44,6 +46,7 @@ from atlas.api.workflow_schemas import (
     CreateEventPhysicalTransportProfileSnapshotInput,
     CreateEventPhysicalTransportRouteSnapshotInput,
     CreateWorkflowEventPhysicalTransportCredentialAssignmentBindingInput,
+    CreateWorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionInput,
     CreateWorkflowEventPhysicalTransportEndpointMaterializationInput,
     CreateWorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseInput,
     CreateWorkflowEventPhysicalTransportRouteBindingInput,
@@ -99,6 +102,10 @@ from atlas.api.workflow_schemas import (
     WorkflowEventPhysicalTransportCredentialAssignmentBindingInventoryData,
     WorkflowEventPhysicalTransportCredentialAssignmentBindingInventoryResponse,
     WorkflowEventPhysicalTransportCredentialAssignmentBindingResponse,
+    WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionData,
+    WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionInventoryData,
+    WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionInventoryResponse,
+    WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionResponse,
     WorkflowEventPhysicalTransportEndpointMaterializationData,
     WorkflowEventPhysicalTransportEndpointMaterializationInventoryData,
     WorkflowEventPhysicalTransportEndpointMaterializationInventoryResponse,
@@ -151,6 +158,7 @@ from atlas.modules.conversations.domain.models import ConversationScope
 from atlas.modules.identity.domain.models import AuthenticatedSubject
 from atlas.modules.workflows.application import (
     WORKFLOW_OUTBOX_PUBLISHER_AUDIENCE,
+    WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_ASSIGNMENT_FRESHNESS_ADMITTER_AUDIENCE,
     WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_BINDER_AUDIENCE,
     WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_RESOLVER_AUDIENCE,
     WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_BINDER_AUDIENCE,
@@ -172,6 +180,7 @@ from atlas.modules.workflows.application import (
     WorkflowEventLogicalChannelBindingError,
     WorkflowEventLogicalChannelBindingService,
     WorkflowEventPhysicalTransportCredentialAssignmentBindingService,
+    WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionService,
     WorkflowEventPhysicalTransportEndpointMaterializationError,
     WorkflowEventPhysicalTransportEndpointMaterializationService,
     WorkflowEventPhysicalTransportEndpointMaterializationUncertainError,
@@ -188,6 +197,7 @@ from atlas.modules.workflows.application import (
     WorkflowOutboxPublicationLeaseRepository,
     WorkflowOutboxPublicationLeaseService,
     WorkflowOutboxPublisherContext,
+    WorkflowPhysicalTransportCredentialAssignmentFreshnessAdmitterContext,
     WorkflowPhysicalTransportCredentialBinderContext,
     WorkflowPhysicalTransportEndpointResolverContext,
     WorkflowPhysicalTransportRouteBinderContext,
@@ -212,6 +222,9 @@ from atlas.modules.workflows.application import (
 )
 from atlas.modules.workflows.application.credential_assignment_binding_ports import (
     WorkflowTransportCredentialAssignmentBindingError,
+)
+from atlas.modules.workflows.application.credential_assignment_freshness_admission_ports import (
+    WorkflowTransportCredentialAssignmentFreshnessAdmissionError,
 )
 from atlas.modules.workflows.application.event_envelope_ports import (
     WorkflowDispatchEventEnvelopeError,
@@ -249,6 +262,7 @@ from atlas.modules.workflows.domain import (
     WorkflowEventLogicalChannelBindingState,
     WorkflowEventLogicalChannelPolicy,
     WorkflowEventPhysicalTransportCredentialAssignmentBinding,
+    WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmission,
     WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease,
     WorkflowEventPhysicalTransportRouteBinding,
     WorkflowEventPhysicalTransportRouteFreshnessAdmission,
@@ -786,6 +800,28 @@ def _raise_physical_transport_credential_assignment_binding(
         code=error.code,
         title=title,
         detail=error.detail,
+        retryable=status == 503,
+    ) from error
+
+
+def _raise_physical_transport_credential_assignment_freshness_admission(
+    error: WorkflowTransportCredentialAssignmentFreshnessAdmissionError,
+) -> NoReturn:
+    if error.code.endswith("_invalid") or error.code.endswith("_required"):
+        status, title = 422, "Workflow credential-assignment freshness request invalid"
+    elif "repository" in error.code or "audit" in error.code or "unavailable" in error.code:
+        status, title = 503, "Workflow credential-assignment freshness service unavailable"
+    else:
+        status, title = 409, "Workflow credential-assignment freshness admission unavailable"
+    detail = {
+        422: "The credential-assignment freshness request is invalid.",
+        503: "The credential-assignment freshness service is temporarily unavailable.",
+    }.get(status, "The current evidence could not support a freshness admission.")
+    raise AtlasError(
+        status=status,
+        code=error.code,
+        title=title,
+        detail=detail,
         retryable=status == 503,
     ) from error
 
@@ -1477,6 +1513,22 @@ def _physical_transport_credential_assignment_binding_response(
     _no_store(response)
     return WorkflowEventPhysicalTransportCredentialAssignmentBindingResponse(
         data=WorkflowEventPhysicalTransportCredentialAssignmentBindingData.from_domain(binding),
+        meta=_meta(request),
+    )
+
+
+def _physical_transport_credential_assignment_freshness_admission_response(
+    admission: WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmission,
+    request: Request,
+    response: Response,
+) -> WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionResponse:
+    _no_store(response)
+    return WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionResponse(
+        data=(
+            WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionData.from_domain(
+                admission
+            )
+        ),
         meta=_meta(request),
     )
 
@@ -4093,6 +4145,133 @@ async def create_workflow_physical_transport_credential_assignment_binding(
     except WorkflowTransportCredentialAssignmentBindingError as error:
         _raise_physical_transport_credential_assignment_binding(error)
     return _physical_transport_credential_assignment_binding_response(binding, request, response)
+
+
+@router.get(
+    "/physical-transport-credential-assignment-freshness-admissions",
+    response_model=(
+        WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionInventoryResponse
+    ),
+)
+async def list_workflow_physical_transport_credential_assignment_freshness_admissions(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[
+        AuthorizationDecision,
+        Depends(
+            authorize_workflow_physical_transport_credential_assignment_freshness_admission_read
+        ),
+    ],
+) -> WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionInventoryResponse:
+    del decision
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    service = cast(
+        WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionService,
+        getattr(  # noqa: B009 - state key intentionally mirrors the public dependency name.
+            request.app.state,
+            "workflow_event_physical_transport_credential_assignment_freshness_admission_service",
+        ),
+    )
+    try:
+        admissions = await service.list_admissions(scope=scope, limit=256)
+    except WorkflowTransportCredentialAssignmentFreshnessAdmissionError as error:
+        _raise_physical_transport_credential_assignment_freshness_admission(error)
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code=(
+                "workflow_physical_transport_credential_assignment_freshness_repository_unavailable"
+            ),
+            title="Workflow credential-assignment freshness service unavailable",
+            detail="Credential-assignment freshness admission metadata is unavailable.",
+            retryable=True,
+        ) from error
+    _no_store(response)
+    return WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionInventoryResponse(
+        data=WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionInventoryData(
+            physical_transport_credential_assignment_freshness_admissions=[
+                WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionData.from_domain(
+                    admission
+                )
+                for admission in sorted(
+                    admissions,
+                    key=lambda value: (
+                        -value.evaluated_at.timestamp(),
+                        value.freshness_admission_id,
+                    ),
+                )
+            ],
+            durable=service.durable,
+        ),
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    "/physical-transport-credential-assignment-freshness-admissions",
+    response_model=WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionResponse,
+    status_code=201,
+)
+async def create_workflow_physical_transport_credential_assignment_freshness_admission(
+    payload: CreateWorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[
+        AuthenticatedSubject,
+        Depends(workflow_physical_transport_credential_assignment_freshness_admitter_subject),
+    ],
+) -> WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionResponse:
+    service = cast(
+        WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionService,
+        getattr(  # noqa: B009 - state key intentionally mirrors the public dependency name.
+            request.app.state,
+            "workflow_event_physical_transport_credential_assignment_freshness_admission_service",
+        ),
+    )
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    try:
+        admission = await service.admit(
+            physical_transport_credential_assignment_binding_id=(
+                payload.physical_transport_credential_assignment_binding_id
+            ),
+            physical_transport_credential_assignment_binding_digest=(
+                payload.physical_transport_credential_assignment_binding_digest
+            ),
+            policy_id=payload.policy_id,
+            policy_version=payload.policy_version,
+            idempotency_key=payload.idempotency_key,
+            context=WorkflowPhysicalTransportCredentialAssignmentFreshnessAdmitterContext(
+                subject_id=subject.subject_id,
+                actor_type=subject.kind.value,
+                authentication_method=subject.authentication_method.value,
+                credential_audience=(
+                    WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_ASSIGNMENT_FRESHNESS_ADMITTER_AUDIENCE
+                ),
+                scope=scope,
+                correlation_id=str(request.state.correlation_id),
+                decision_id=(
+                    "decision.workflow-physical-transport-credential-assignment-freshness-"
+                    "admitter-authenticated"
+                ),
+                requested_at=datetime.now(UTC),
+            ),
+        )
+    except WorkflowTransportCredentialAssignmentFreshnessAdmissionError as error:
+        _raise_physical_transport_credential_assignment_freshness_admission(error)
+    return _physical_transport_credential_assignment_freshness_admission_response(
+        admission,
+        request,
+        response,
+    )
 
 
 @router.get(

@@ -23,6 +23,7 @@ import {
   type WorkflowOrchestrationLease,
   type WorkflowPhysicalTransportCredentialAssignmentSnapshot,
   type WorkflowPhysicalTransportCredentialAssignmentBinding,
+  type WorkflowPhysicalTransportCredentialAssignmentFreshnessAdmission,
   type WorkflowPhysicalTransportRouteBinding,
   type WorkflowPhysicalTransportEndpointMaterialization,
   type WorkflowPhysicalTransportRouteFreshnessAdmission,
@@ -662,6 +663,48 @@ const physicalTransportCredentialAssignmentBinding: WorkflowPhysicalTransportCre
     "integrity-ref.workflow-physical-transport-credential-assignment-binding.1234567890abcdef",
 };
 
+const physicalTransportCredentialAssignmentFreshnessAdmission: WorkflowPhysicalTransportCredentialAssignmentFreshnessAdmission = {
+  freshness_admission_id:
+    "workflow-physical-transport-credential-assignment-freshness-admission.1234567890abcdef",
+  physical_transport_credential_assignment_binding_id:
+    physicalTransportCredentialAssignmentBinding.binding_id,
+  credential_assignment_snapshot_id:
+    physicalTransportCredentialAssignmentBinding.credential_assignment_snapshot_id,
+  assignment_id: "deployment-physical-transport-credential-assignment.1234567890abcdef",
+  assignment_revision: "revision.7",
+  credential_generation: 7,
+  rotation_epoch: 3,
+  policy_id: "policy.workflow-event-physical-transport-credential-assignment-freshness",
+  policy_version: "1.0",
+  scope: { ...plan.scope },
+  admitter_subject_id:
+    "workload.workflow-physical-transport-credential-assignment-freshness-admitter",
+  evaluated_at: "2099-08-14T10:08:00Z",
+  valid_until: "2099-08-14T10:08:45Z",
+  state: "admitted_current",
+  authority: {
+    endpoint_resolution_authorized: false,
+    protected_artifact_access_authorized: false,
+    route_selection_authorized: false,
+    route_binding_authorized: false,
+    credential_selection_authorized: false,
+    credential_assignment_binding_authorized: false,
+    credential_access_authorized: false,
+    credential_brokerage_authorized: false,
+    credential_resolution_authorized: false,
+    credential_delivery_authorized: false,
+    network_access_authorized: false,
+    readiness_probe_authorized: false,
+    publication_authorized: false,
+    delivery_authorized: false,
+    dispatch_authorized: false,
+    execution_authorized: false,
+    infrastructure_mutation_authorized: false,
+  },
+  integrity_reference:
+    "integrity-ref.workflow-physical-transport-credential-assignment-freshness.1234567890abcdef",
+};
+
 const physicalTransportRouteFreshnessAdmission: WorkflowPhysicalTransportRouteFreshnessAdmission = {
   freshness_admission_id: "workflow-physical-route-freshness-admission.1234567890abcdef",
   physical_transport_route_binding_id: physicalTransportRouteBinding.binding_id,
@@ -1091,6 +1134,28 @@ function physicalTransportCredentialAssignmentBindingResponse(
   );
 }
 
+function physicalTransportCredentialAssignmentFreshnessAdmissionResponse(
+  admissions: unknown[],
+  status = 200,
+): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: {
+            physical_transport_credential_assignment_freshness_admissions: admissions,
+            durable: false,
+          },
+          meta: {
+            correlation_id:
+              "correlation.workflow.physical-transport-credential-assignment-freshness-admission",
+            generated_at: "2099-08-14T10:08:00Z",
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function physicalTransportRouteFreshnessAdmissionResponse(
   admissions: unknown[],
   status = 200,
@@ -1216,6 +1281,7 @@ function mockReadResponses(input: {
   transportRouteSnapshots?: unknown[];
   physicalTransportRouteBindings?: unknown[];
   physicalTransportCredentialAssignmentBindings?: unknown[];
+  physicalTransportCredentialAssignmentFreshnessAdmissions?: unknown[];
   physicalTransportRouteFreshnessAdmissions?: unknown[];
   endpointResolutionAuthorizationLeases?: unknown[];
   endpointResolutionAuthorizationLeaseServerTime?: string;
@@ -1230,6 +1296,7 @@ function mockReadResponses(input: {
   pendingTransportRouteSnapshotResponse?: Promise<Response>;
   pendingPhysicalTransportRouteBindingResponse?: Promise<Response>;
   pendingPhysicalTransportCredentialAssignmentBindingResponse?: Promise<Response>;
+  pendingPhysicalTransportCredentialAssignmentFreshnessAdmissionResponse?: Promise<Response>;
   pendingPhysicalTransportRouteFreshnessAdmissionResponse?: Promise<Response>;
   pendingEndpointResolutionAuthorizationLeaseResponse?: Promise<Response>;
   pendingEndpointMaterializationResponse?: Promise<Response>;
@@ -1256,6 +1323,8 @@ function mockReadResponses(input: {
   physicalTransportRouteBindingStatuses?: number[];
   physicalTransportCredentialAssignmentBindingStatus?: number;
   physicalTransportCredentialAssignmentBindingStatuses?: number[];
+  physicalTransportCredentialAssignmentFreshnessAdmissionStatus?: number;
+  physicalTransportCredentialAssignmentFreshnessAdmissionStatuses?: number[];
   physicalTransportRouteFreshnessAdmissionStatus?: number;
   physicalTransportRouteFreshnessAdmissionStatuses?: number[];
   endpointResolutionAuthorizationLeaseStatus?: number;
@@ -1274,6 +1343,7 @@ function mockReadResponses(input: {
   let transportRouteSnapshotReadCount = 0;
   let physicalTransportRouteBindingReadCount = 0;
   let physicalTransportCredentialAssignmentBindingReadCount = 0;
+  let physicalTransportCredentialAssignmentFreshnessAdmissionReadCount = 0;
   let physicalTransportRouteFreshnessAdmissionReadCount = 0;
   let endpointResolutionAuthorizationLeaseReadCount = 0;
   let endpointMaterializationReadCount = 0;
@@ -1355,6 +1425,28 @@ function mockReadResponses(input: {
       return Promise.resolve(
         physicalTransportRouteFreshnessAdmissionResponse(
           input.physicalTransportRouteFreshnessAdmissions ?? [],
+          status,
+        ),
+      );
+    }
+    if (
+      url.endsWith(
+        "/api/v1/workflows/physical-transport-credential-assignment-freshness-admissions",
+      )
+    ) {
+      if (input.pendingPhysicalTransportCredentialAssignmentFreshnessAdmissionResponse) {
+        return input.pendingPhysicalTransportCredentialAssignmentFreshnessAdmissionResponse;
+      }
+      const status =
+        input.physicalTransportCredentialAssignmentFreshnessAdmissionStatuses?.[
+          Math.min(
+            physicalTransportCredentialAssignmentFreshnessAdmissionReadCount++,
+            input.physicalTransportCredentialAssignmentFreshnessAdmissionStatuses.length - 1,
+          )
+        ] ?? input.physicalTransportCredentialAssignmentFreshnessAdmissionStatus ?? 200;
+      return Promise.resolve(
+        physicalTransportCredentialAssignmentFreshnessAdmissionResponse(
+          input.physicalTransportCredentialAssignmentFreshnessAdmissions ?? [],
           status,
         ),
       );
@@ -2481,6 +2573,409 @@ describe("WorkflowPlanningWorkspace", () => {
       ).toBeNull();
       view.unmount();
     }
+  });
+
+  it("renders minimized credential-assignment freshness evidence between binding and route freshness sections", async () => {
+    mockReadResponses({
+      physicalTransportCredentialAssignmentFreshnessAdmissions: [
+        physicalTransportCredentialAssignmentFreshnessAdmission,
+      ],
+    });
+    renderWorkspace();
+
+    const bindingHeading = await screen.findByRole("heading", {
+      name: "Physical transport credential-assignment bindings",
+    });
+    const freshnessHeading = await screen.findByRole("heading", {
+      name: "Physical transport credential-assignment freshness admissions",
+    });
+    const routeFreshnessHeading = await screen.findByRole("heading", {
+      name: "Physical transport route freshness admissions",
+    });
+    expect(
+      bindingHeading.compareDocumentPosition(freshnessHeading) & 4,
+    ).toBe(4);
+    expect(
+      freshnessHeading.compareDocumentPosition(routeFreshnessHeading) & 4,
+    ).toBe(4);
+
+    const section = freshnessHeading.closest("section") as HTMLElement;
+    const records = await within(section).findByRole("list", {
+      name: "Physical transport credential-assignment freshness admissions",
+    });
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) =>
+        (request instanceof Request ? request.url : request.toString()).endsWith(
+          "/api/v1/workflows/physical-transport-credential-assignment-freshness-admissions",
+        ),
+      ),
+    ).toBe(true);
+    for (const identifier of [
+      physicalTransportCredentialAssignmentFreshnessAdmission.freshness_admission_id,
+      physicalTransportCredentialAssignmentFreshnessAdmission
+        .physical_transport_credential_assignment_binding_id,
+      physicalTransportCredentialAssignmentFreshnessAdmission.credential_assignment_snapshot_id,
+      physicalTransportCredentialAssignmentFreshnessAdmission.assignment_id,
+      physicalTransportCredentialAssignmentFreshnessAdmission.assignment_revision,
+      physicalTransportCredentialAssignmentFreshnessAdmission.policy_id,
+      physicalTransportCredentialAssignmentFreshnessAdmission.admitter_subject_id,
+      physicalTransportCredentialAssignmentFreshnessAdmission.integrity_reference,
+    ]) {
+      expect(within(section).getByTitle(identifier)).toBeVisible();
+    }
+    expect(records).toHaveTextContent("admitted_current");
+    expect(records).toHaveTextContent("Time window open");
+    expect(records).toHaveTextContent("Rotation epoch 3 | credential generation 7");
+    expect(records).toHaveTextContent("revision");
+    expect(records).toHaveTextContent("Evaluated");
+    expect(records).toHaveTextContent("valid until");
+    expect(records).toHaveTextContent("organization.test");
+    expect(records).toHaveTextContent(
+      "Zero authority: route selection and binding, endpoint resolution, protected-artifact access, credential selection, assignment binding, access, brokerage, resolution and delivery, network access, readiness probes, publication, delivery, dispatch, execution and infrastructure mutation are all false.",
+    );
+    expect(section).toHaveTextContent(
+      "An open time window does not independently prove that the assignment remains the current, active or non-revoked head",
+    );
+    expect(
+      within(section).queryByRole("button", {
+        name: /create|admit|renew|override|reveal|authorize|resolve|copy|download|publish|dispatch|execute/i,
+      }),
+    ).toBeNull();
+    expect(section).not.toHaveTextContent(
+      /digest-private|profile-private|requirement-private|target-private|broker-private|endpoint-private|artifact-private|secret-private|MFA|second login|authorized browser session/i,
+    );
+  });
+
+  it("renders an empty credential-assignment freshness inventory as a healthy read-only state", async () => {
+    mockReadResponses({ physicalTransportCredentialAssignmentFreshnessAdmissions: [] });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Physical transport credential-assignment freshness admissions",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText(
+        "No physical transport credential-assignment freshness admissions are recorded in this scope.",
+      ),
+    ).toBeVisible();
+    expect(within(section).queryByRole("alert")).toBeNull();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("shows loading while credential-assignment freshness evidence is pending", async () => {
+    mockReadResponses({
+      pendingPhysicalTransportCredentialAssignmentFreshnessAdmissionResponse:
+        new Promise<Response>(() => undefined),
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Physical transport credential-assignment freshness admissions",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText(
+        "Loading physical transport credential-assignment freshness admissions...",
+      ),
+    ).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("retries an unavailable credential-assignment freshness read without operational controls", async () => {
+    mockReadResponses({
+      physicalTransportCredentialAssignmentFreshnessAdmissions: [
+        physicalTransportCredentialAssignmentFreshnessAdmission,
+      ],
+      physicalTransportCredentialAssignmentFreshnessAdmissionStatuses: [500, 200],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Physical transport credential-assignment freshness admissions",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText(
+        "Credential-assignment freshness admissions are unavailable",
+      ),
+    ).toBeVisible();
+    expect(section).toHaveTextContent(
+      "No current-head, expiry, revocation or operational state is inferred from this failed read.",
+    );
+    fireEvent.click(
+      within(section).getByRole("button", {
+        name: "Retry physical transport credential-assignment freshness admission read",
+      }),
+    );
+    expect(
+      await within(section).findByTitle(
+        physicalTransportCredentialAssignmentFreshnessAdmission.freshness_admission_id,
+      ),
+    ).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it.each([
+    [401, "Your session has expired", "Sign in again to continue."],
+    [
+      403,
+      "Credential-assignment freshness permission is missing",
+      "current role or scope cannot inspect credential-assignment freshness evidence",
+    ],
+  ])(
+    "handles credential-assignment freshness status %s with the normal username/password session",
+    async (status, title, detail) => {
+      mockReadResponses({
+        physicalTransportCredentialAssignmentFreshnessAdmissionStatus: status,
+      });
+      renderWorkspace();
+
+      const section = (await screen.findByRole("heading", {
+        name: "Physical transport credential-assignment freshness admissions",
+      })).closest("section") as HTMLElement;
+      expect(await within(section).findByText(title)).toBeVisible();
+      expect(within(section).getByText(new RegExp(detail, "i"))).toBeVisible();
+      expect(within(section).queryByRole("button")).toBeNull();
+      if (status !== 401) expect(section).not.toHaveTextContent("Sign in again");
+      expect(section).not.toHaveTextContent(/MFA|second login|authorized browser session/i);
+    },
+  );
+
+  it("marks an elapsed credential-assignment freshness window as expired without inferring currentness", async () => {
+    const evaluatedAt = new Date(Date.now() - 120_000);
+    const validUntil = new Date(evaluatedAt.getTime() + 45_000);
+    mockReadResponses({
+      physicalTransportCredentialAssignmentFreshnessAdmissions: [
+        {
+          ...physicalTransportCredentialAssignmentFreshnessAdmission,
+          evaluated_at: evaluatedAt.toISOString(),
+          valid_until: validUntil.toISOString(),
+        },
+      ],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Physical transport credential-assignment freshness admissions",
+    })).closest("section") as HTMLElement;
+    expect(await within(section).findByText("Expired")).toBeVisible();
+    expect(section).not.toHaveTextContent(/current head confirmed|still current/i);
+    expect(section).toHaveTextContent("point-in-time evidence only");
+  });
+
+  it("accepts multiple historical freshness admissions for the same credential-assignment binding", async () => {
+    const historicalAdmission = {
+      ...physicalTransportCredentialAssignmentFreshnessAdmission,
+      freshness_admission_id:
+        "workflow-physical-transport-credential-assignment-freshness-admission.abcdef1234567890",
+      evaluated_at: "2099-08-14T10:09:00+00:00",
+      valid_until: "2099-08-14T10:10:00+00:00",
+      policy_id:
+        "policy.workflow-event-physical-transport-credential-assignment-freshness-legacy",
+      policy_version: "0.9",
+      integrity_reference:
+        "integrity-ref.workflow-physical-transport-credential-assignment-freshness.abcdef1234567890",
+    };
+    mockReadResponses({
+      physicalTransportCredentialAssignmentFreshnessAdmissions: [
+        physicalTransportCredentialAssignmentFreshnessAdmission,
+        historicalAdmission,
+      ],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Physical transport credential-assignment freshness admissions",
+    })).closest("section") as HTMLElement;
+    const records = await within(section).findAllByRole("listitem");
+    expect(records).toHaveLength(2);
+    expect(
+      within(section).getByTitle(historicalAdmission.freshness_admission_id),
+    ).toBeVisible();
+    expect(section).toHaveTextContent("v0.9");
+  });
+
+  it.each([
+    [
+      "an extra digest",
+      {
+        ...physicalTransportCredentialAssignmentFreshnessAdmission,
+        canonical_digest: "a".repeat(64),
+      },
+    ],
+    [
+      "a credential profile",
+      {
+        ...physicalTransportCredentialAssignmentFreshnessAdmission,
+        credential_profile_id: "profile-private",
+      },
+    ],
+    [
+      "a credential requirement",
+      {
+        ...physicalTransportCredentialAssignmentFreshnessAdmission,
+        credential_requirement_id: "requirement-private",
+      },
+    ],
+    [
+      "a target",
+      {
+        ...physicalTransportCredentialAssignmentFreshnessAdmission,
+        target_commitment: "target-private",
+      },
+    ],
+    [
+      "a broker",
+      {
+        ...physicalTransportCredentialAssignmentFreshnessAdmission,
+        broker_policy_id: "broker-private",
+      },
+    ],
+    [
+      "an endpoint",
+      {
+        ...physicalTransportCredentialAssignmentFreshnessAdmission,
+        endpoint: "endpoint-private",
+      },
+    ],
+    [
+      "an artifact",
+      {
+        ...physicalTransportCredentialAssignmentFreshnessAdmission,
+        protected_artifact: "artifact-private",
+      },
+    ],
+    [
+      "secret content",
+      { ...physicalTransportCredentialAssignmentFreshnessAdmission, secret: "secret-private" },
+    ],
+    [
+      "a changed scope",
+      {
+        ...physicalTransportCredentialAssignmentFreshnessAdmission,
+        scope: {
+          ...physicalTransportCredentialAssignmentFreshnessAdmission.scope,
+          site_id: "site.other",
+        },
+      },
+    ],
+    [
+      "operational authority",
+      {
+        ...physicalTransportCredentialAssignmentFreshnessAdmission,
+        authority: {
+          ...physicalTransportCredentialAssignmentFreshnessAdmission.authority,
+          credential_access_authorized: true,
+        },
+      },
+    ],
+    [
+      "a non-positive credential generation",
+      {
+        ...physicalTransportCredentialAssignmentFreshnessAdmission,
+        credential_generation: 0,
+      },
+    ],
+    [
+      "a non-positive rotation epoch",
+      { ...physicalTransportCredentialAssignmentFreshnessAdmission, rotation_epoch: 0 },
+    ],
+    [
+      "an unknown state",
+      { ...physicalTransportCredentialAssignmentFreshnessAdmission, state: "expired" },
+    ],
+    [
+      "an empty validity window",
+      {
+        ...physicalTransportCredentialAssignmentFreshnessAdmission,
+        valid_until: physicalTransportCredentialAssignmentFreshnessAdmission.evaluated_at,
+      },
+    ],
+    [
+      "a validity window over 60 seconds",
+      {
+        ...physicalTransportCredentialAssignmentFreshnessAdmission,
+        valid_until: "2099-08-14T10:09:01Z",
+      },
+    ],
+    [
+      "a timezone-naive evaluation timestamp",
+      {
+        ...physicalTransportCredentialAssignmentFreshnessAdmission,
+        evaluated_at: "2099-08-14T10:08:00",
+      },
+    ],
+  ])(
+    "fails closed when credential-assignment freshness evidence contains %s",
+    async (_case, unsafeAdmission) => {
+      mockReadResponses({
+        physicalTransportCredentialAssignmentFreshnessAdmissions: [unsafeAdmission],
+      });
+      renderWorkspace();
+
+      const section = (await screen.findByRole("heading", {
+        name: "Physical transport credential-assignment freshness admissions",
+      })).closest("section") as HTMLElement;
+      expect(
+        await within(section).findByText(
+          "Credential-assignment freshness admissions are unavailable",
+        ),
+      ).toBeVisible();
+      expect(
+        within(section).queryByRole("list", {
+          name: "Physical transport credential-assignment freshness admissions",
+        }),
+      ).toBeNull();
+      expect(section).not.toHaveTextContent(
+        /profile-private|requirement-private|target-private|broker-private|endpoint-private|artifact-private|secret-private|site\.other/i,
+      );
+    },
+  );
+
+  it("fails closed when credential-assignment freshness admission IDs are duplicated", async () => {
+    mockReadResponses({
+      physicalTransportCredentialAssignmentFreshnessAdmissions: [
+        physicalTransportCredentialAssignmentFreshnessAdmission,
+        {
+          ...physicalTransportCredentialAssignmentFreshnessAdmission,
+          assignment_revision: "revision.8",
+          credential_generation: 8,
+        },
+      ],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Physical transport credential-assignment freshness admissions",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText(
+        "Credential-assignment freshness admissions are unavailable",
+      ),
+    ).toBeVisible();
+    expect(within(section).queryByRole("list")).toBeNull();
+  });
+
+  it("fails closed when credential-assignment freshness inventory exceeds 256 records", async () => {
+    mockReadResponses({
+      physicalTransportCredentialAssignmentFreshnessAdmissions: Array.from(
+        { length: 257 },
+        (_, index) => ({
+          ...physicalTransportCredentialAssignmentFreshnessAdmission,
+          freshness_admission_id: `workflow-credential-freshness-admission.${String(index).padStart(3, "0")}`,
+          integrity_reference: `integrity-ref.workflow-credential-freshness.${String(index).padStart(3, "0")}`,
+        }),
+      ),
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Physical transport credential-assignment freshness admissions",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText(
+        "Credential-assignment freshness admissions are unavailable",
+      ),
+    ).toBeVisible();
+    expect(within(section).queryByRole("list")).toBeNull();
   });
 
   it("loads read-only physical route freshness admissions without private route details or mutation controls", async () => {

@@ -17,6 +17,7 @@ from atlas.modules.workflows.domain import (
     WorkflowEventByteArtifact,
     WorkflowEventLogicalChannelBinding,
     WorkflowEventPhysicalTransportCredentialAssignmentBinding,
+    WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmission,
     WorkflowEventPhysicalTransportEndpointMaterializationAttempt,
     WorkflowEventPhysicalTransportEndpointMaterializationResult,
     WorkflowEventPhysicalTransportEndpointMaterializationResultState,
@@ -1380,6 +1381,116 @@ class WorkflowEventPhysicalTransportCredentialAssignmentBindingResponse(BaseMode
 
 class WorkflowEventPhysicalTransportCredentialAssignmentBindingInventoryResponse(BaseModel):
     data: WorkflowEventPhysicalTransportCredentialAssignmentBindingInventoryData
+    meta: ResponseMeta
+
+
+class CreateWorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    physical_transport_credential_assignment_binding_id: str = Field(
+        min_length=3, max_length=128, pattern=STABLE_ID
+    )
+    physical_transport_credential_assignment_binding_digest: str = Field(
+        min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$"
+    )
+    policy_id: Literal["policy.workflow-event-physical-transport-credential-assignment-freshness"]
+    policy_version: Literal["1.0"]
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionAuthorityData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    endpoint_resolution_authorized: Literal[False]
+    protected_artifact_access_authorized: Literal[False]
+    route_selection_authorized: Literal[False]
+    route_binding_authorized: Literal[False]
+    credential_selection_authorized: Literal[False]
+    credential_assignment_binding_authorized: Literal[False]
+    credential_access_authorized: Literal[False]
+    credential_brokerage_authorized: Literal[False]
+    credential_resolution_authorized: Literal[False]
+    credential_delivery_authorized: Literal[False]
+    network_access_authorized: Literal[False]
+    readiness_probe_authorized: Literal[False]
+    publication_authorized: Literal[False]
+    delivery_authorized: Literal[False]
+    dispatch_authorized: Literal[False]
+    execution_authorized: Literal[False]
+    infrastructure_mutation_authorized: Literal[False]
+
+
+class WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionData(BaseModel):
+    """Minimized point-in-time evidence without credential or private policy data."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    freshness_admission_id: str
+    physical_transport_credential_assignment_binding_id: str
+    credential_assignment_snapshot_id: str
+    assignment_id: str
+    assignment_revision: str
+    credential_generation: int = Field(ge=1)
+    rotation_epoch: int = Field(ge=1)
+    policy_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    policy_version: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9._:-]+$")
+    scope: WorkflowScopeData
+    admitter_subject_id: str
+    evaluated_at: datetime
+    valid_until: datetime
+    state: Literal["admitted_current"]
+    authority: WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionAuthorityData
+    integrity_reference: str = Field(min_length=3, max_length=256, pattern=STABLE_ID)
+
+    @classmethod
+    def from_domain(
+        cls,
+        admission: WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmission,
+    ) -> WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionData:
+        return cls(
+            freshness_admission_id=admission.freshness_admission_id,
+            physical_transport_credential_assignment_binding_id=(
+                admission.physical_transport_credential_assignment_binding_id
+            ),
+            credential_assignment_snapshot_id=admission.credential_assignment_snapshot_id,
+            assignment_id=admission.assignment_id,
+            assignment_revision=admission.assignment_revision,
+            credential_generation=admission.credential_generation,
+            rotation_epoch=admission.rotation_epoch,
+            policy_id=admission.policy_id,
+            policy_version=admission.policy_version,
+            scope=WorkflowScopeData.model_validate(admission.scope.canonical_value()),
+            admitter_subject_id=admission.admitter_subject_id,
+            evaluated_at=admission.evaluated_at,
+            valid_until=admission.valid_until,
+            state="admitted_current",
+            authority=(
+                WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionAuthorityData.model_validate(
+                    admission.authority.canonical_value()
+                )
+            ),
+            integrity_reference=f"integrity.{admission.freshness_admission_id}",
+        )
+
+
+class WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    physical_transport_credential_assignment_freshness_admissions: list[
+        WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionData
+    ] = Field(max_length=256)
+    durable: bool
+
+
+class WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionResponse(BaseModel):
+    data: WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionData
+    meta: ResponseMeta
+
+
+class WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionInventoryResponse(
+    BaseModel
+):
+    data: WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionInventoryData
     meta: ResponseMeta
 
 

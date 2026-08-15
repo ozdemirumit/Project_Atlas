@@ -619,6 +619,11 @@ MVP workflows do not execute C3 through C5 capabilities.
   binding, but this boundary grants no credential or protected-artifact access and makes no
   current-head, expiry or revocation decision. A later freshness admission must independently
   prove those properties before credential-access authorization.
+- ADR-155 establishes a bounded immutable freshness admission for one exact workflow credential-
+  assignment binding and assignment snapshot against the append-only deployment registry's unique
+  highest rotation/generation head. It requires active, unexpired and unrevoked lifecycle state,
+  uses assignment-scoped fencing and database time, and grants no credential access, brokerage,
+  secret delivery, network, publication, delivery, dispatch or execution authority.
 
 ## 39. Assumptions
 

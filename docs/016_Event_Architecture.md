@@ -354,6 +354,15 @@ or mutation authority. A later independent freshness admission must compare one 
 with the authoritative assignment head, expiry and revocation state before credential-access
 authorization can be considered.
 
+That comparison is represented by a bounded immutable credential-assignment freshness admission.
+It locks and revalidates the exact workflow credential-assignment binding and assignment snapshot,
+then fences the append-only deployment registry and proves that the same revision remains the
+unique highest rotation/generation head, active, unexpired and unrevoked. Its lifetime is at most
+60 seconds and never exceeds assignment expiry. The admission is evidence only: a future
+credential-access authorizer must repeat the fenced head and lifecycle checks immediately before
+issuing any capability, and no secret, endpoint, brokerage, network or operational authority is
+introduced here.
+
 ### 10.2 Publication State
 
 Outbox records track:

@@ -53,6 +53,13 @@ from atlas.modules.workflows.application.credential_assignment_binding_ports imp
     WorkflowTransportCredentialAssignmentBindingResult,
     WorkflowTransportCredentialAssignmentBindingStatus,
 )
+from atlas.modules.workflows.application.credential_assignment_freshness_admission_ports import (
+    WorkflowTransportCredentialAssignmentFreshnessAdmissionIdempotencyRecord,
+    WorkflowTransportCredentialAssignmentFreshnessAdmissionRequest,
+    WorkflowTransportCredentialAssignmentFreshnessAdmissionResult,
+    WorkflowTransportCredentialAssignmentFreshnessAdmissionStatus,
+    validate_workflow_transport_credential_assignment_freshness_request,
+)
 from atlas.modules.workflows.application.credential_assignment_snapshot_ports import (
     WorkflowTransportCredentialAssignmentSnapshotError,
     WorkflowTransportCredentialAssignmentSnapshotIdempotencyRecord,
@@ -142,6 +149,7 @@ from atlas.modules.workflows.domain import (
     WorkflowEventLogicalChannelBindingState,
     WorkflowEventPhysicalTransportCredentialAssignmentBinding,
     WorkflowEventPhysicalTransportCredentialAssignmentBindingState,
+    WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmission,
     WorkflowEventPhysicalTransportEndpointMaterializationAttempt,
     WorkflowEventPhysicalTransportEndpointMaterializationAttemptState,
     WorkflowEventPhysicalTransportEndpointMaterializationAuthority,
@@ -281,6 +289,14 @@ class InMemoryWorkflowPlanRepository:
         self._credential_assignment_binding_requests: dict[
             tuple[WorkflowScope, str, str],
             WorkflowTransportCredentialAssignmentBindingIdempotencyRecord,
+        ] = {}
+        self._credential_assignment_freshness_admissions: dict[
+            str,
+            WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmission,
+        ] = {}
+        self._credential_assignment_freshness_admission_requests: dict[
+            tuple[WorkflowScope, str, str],
+            WorkflowTransportCredentialAssignmentFreshnessAdmissionIdempotencyRecord,
         ] = {}
         self._route_selection_heads: dict[
             tuple[WorkflowScope, str], DeploymentEventTransportRouteSelectionHead
@@ -1627,6 +1643,21 @@ class InMemoryWorkflowPlanRepository:
                 )
             )
 
+    async def get_credential_assignment_binding_by_id(
+        self,
+        *,
+        binding_id: str,
+    ) -> WorkflowEventPhysicalTransportCredentialAssignmentBinding | None:
+        async with self._lock:
+            return next(
+                (
+                    binding
+                    for binding in self._credential_assignment_bindings.values()
+                    if binding.binding_id == binding_id
+                ),
+                None,
+            )
+
     async def list_credential_assignment_bindings(
         self, *, scope: WorkflowScope, limit: int = 256
     ) -> tuple[WorkflowEventPhysicalTransportCredentialAssignmentBinding, ...]:
@@ -1744,6 +1775,140 @@ class InMemoryWorkflowPlanRepository:
             return WorkflowTransportCredentialAssignmentBindingResult(
                 WorkflowTransportCredentialAssignmentBindingStatus.BOUND,
                 candidate,
+            )
+
+    async def get_current_credential_assignment_head(
+        self,
+        *,
+        assignment_id: str,
+    ) -> DeploymentPhysicalTransportCredentialAssignment | None:
+        async with self._lock:
+            try:
+                return select_deployment_physical_transport_credential_assignment_head(
+                    tuple(
+                        assignment
+                        for (candidate_id, _), assignment in self._credential_assignments.items()
+                        if candidate_id == assignment_id
+                    )
+                )
+            except ValueError:
+                return None
+
+    async def list_credential_assignment_freshness_admissions(
+        self,
+        *,
+        scope: WorkflowScope,
+        limit: int = 256,
+    ) -> tuple[WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmission, ...]:
+        if not 1 <= limit <= 256:
+            raise ValueError("credential-assignment freshness admission limit is invalid")
+        async with self._lock:
+            admissions = sorted(
+                (
+                    admission
+                    for admission in self._credential_assignment_freshness_admissions.values()
+                    if admission.scope == scope
+                ),
+                key=lambda admission: admission.freshness_admission_id,
+            )
+            admissions.sort(key=lambda admission: admission.evaluated_at, reverse=True)
+            return tuple(admissions[:limit])
+
+    async def get_credential_assignment_freshness_admission_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        admitter_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowTransportCredentialAssignmentFreshnessAdmissionIdempotencyRecord | None:
+        async with self._lock:
+            return self._credential_assignment_freshness_admission_requests.get(
+                (scope, admitter_subject_id, idempotency_key)
+            )
+
+    async def admit_credential_assignment_freshness(
+        self,
+        request: WorkflowTransportCredentialAssignmentFreshnessAdmissionRequest,
+    ) -> WorkflowTransportCredentialAssignmentFreshnessAdmissionResult:
+        validate_workflow_transport_credential_assignment_freshness_request(request)
+        request_key = (request.scope, request.admitter_subject_id, request.idempotency_key)
+        async with self._lock:
+            binding = next(
+                (
+                    item
+                    for item in self._credential_assignment_bindings.values()
+                    if item.binding_id == request.expected_credential_assignment_binding_id
+                ),
+                None,
+            )
+            snapshot = next(
+                (
+                    item
+                    for item in self._credential_assignment_snapshots.values()
+                    if item.snapshot_id == request.expected_credential_assignment_snapshot_id
+                ),
+                None,
+            )
+            try:
+                head = select_deployment_physical_transport_credential_assignment_head(
+                    tuple(
+                        assignment
+                        for (candidate_id, _), assignment in self._credential_assignments.items()
+                        if candidate_id == request.expected_assignment_id
+                    )
+                )
+            except ValueError:
+                head = None
+            if not self._credential_assignment_freshness_evidence_matches(
+                binding=binding,
+                snapshot=snapshot,
+                head=head,
+                request=request,
+            ):
+                return WorkflowTransportCredentialAssignmentFreshnessAdmissionResult(
+                    WorkflowTransportCredentialAssignmentFreshnessAdmissionStatus.EVIDENCE_CONFLICT,
+                    None,
+                )
+
+            prior = self._credential_assignment_freshness_admission_requests.get(request_key)
+            if prior is not None:
+                status = (
+                    WorkflowTransportCredentialAssignmentFreshnessAdmissionStatus.REPLAY
+                    if prior.request_fingerprint == request.request_fingerprint
+                    else (
+                        WorkflowTransportCredentialAssignmentFreshnessAdmissionStatus.IDEMPOTENCY_CONFLICT
+                    )
+                )
+                return WorkflowTransportCredentialAssignmentFreshnessAdmissionResult(
+                    status,
+                    prior.admission,
+                )
+            if request.candidate.freshness_admission_id in (
+                self._credential_assignment_freshness_admissions
+            ):
+                return WorkflowTransportCredentialAssignmentFreshnessAdmissionResult(
+                    WorkflowTransportCredentialAssignmentFreshnessAdmissionStatus.EVIDENCE_CONFLICT,
+                    None,
+                )
+            try:
+                await request.required_precommit_audit()
+            except Exception:
+                return WorkflowTransportCredentialAssignmentFreshnessAdmissionResult(
+                    WorkflowTransportCredentialAssignmentFreshnessAdmissionStatus.PRECOMMIT_AUDIT_FAILED,
+                    None,
+                )
+            self._credential_assignment_freshness_admissions[
+                request.candidate.freshness_admission_id
+            ] = request.candidate
+            self._credential_assignment_freshness_admission_requests[request_key] = (
+                WorkflowTransportCredentialAssignmentFreshnessAdmissionIdempotencyRecord(
+                    request_fingerprint=request.request_fingerprint,
+                    admission=request.candidate,
+                )
+            )
+            return WorkflowTransportCredentialAssignmentFreshnessAdmissionResult(
+                WorkflowTransportCredentialAssignmentFreshnessAdmissionStatus.ADMITTED_CURRENT,
+                request.candidate,
             )
 
     async def get_current_route_selection_head(
@@ -3593,6 +3758,104 @@ class InMemoryWorkflowPlanRepository:
             and candidate.state
             is WorkflowEventPhysicalTransportCredentialAssignmentBindingState.BOUND
             and canonical_digest(candidate.digest_payload()) == candidate.canonical_digest
+            and not any(candidate.authority.canonical_value().values())
+        )
+
+    @staticmethod
+    def _credential_assignment_freshness_evidence_matches(
+        *,
+        binding: WorkflowEventPhysicalTransportCredentialAssignmentBinding | None,
+        snapshot: EventPhysicalTransportCredentialAssignmentSnapshot | None,
+        head: DeploymentPhysicalTransportCredentialAssignment | None,
+        request: WorkflowTransportCredentialAssignmentFreshnessAdmissionRequest,
+    ) -> bool:
+        if binding is None or snapshot is None or head is None:
+            return False
+        candidate = request.candidate
+        head_matches_snapshot = (
+            head.assignment_id == snapshot.assignment_id
+            and head.assignment_revision == snapshot.assignment_revision
+            and head.canonical_digest == snapshot.source_assignment_digest
+            and head.scope == snapshot.scope
+            and head.route_id == snapshot.route_id
+            and head.route_revision == snapshot.route_revision
+            and head.source_route_digest == snapshot.source_route_digest
+            and head.credential_requirement_profile_id == snapshot.credential_requirement_profile_id
+            and head.credential_requirement_profile_version
+            == snapshot.credential_requirement_profile_version
+            and head.credential_requirement_profile_digest
+            == snapshot.credential_requirement_profile_digest
+            and head.credential_profile_id == snapshot.credential_profile_id
+            and head.credential_profile_version == snapshot.credential_profile_version
+            and head.credential_profile_digest == snapshot.credential_profile_digest
+            and head.authentication_mechanism_class == snapshot.authentication_mechanism_class
+            and head.principal_class == snapshot.principal_class
+            and head.privilege_class == snapshot.privilege_class == "read-only"
+            and head.target_scope_commitment == snapshot.target_scope_commitment
+            and head.credential_generation == snapshot.credential_generation
+            and head.rotation_epoch == snapshot.rotation_epoch
+            and head.activated_at == snapshot.activated_at
+            and head.expires_at == snapshot.expires_at
+            and head.broker_policy_id == snapshot.broker_policy_id
+            and head.broker_policy_version == snapshot.broker_policy_version
+            and head.broker_policy_digest == snapshot.broker_policy_digest
+        )
+        return bool(
+            canonical_digest(binding.digest_payload()) == binding.canonical_digest
+            and canonical_digest(snapshot.digest_payload()) == snapshot.canonical_digest
+            and canonical_digest(head.digest_payload()) == head.canonical_digest
+            and binding.binding_id
+            == request.expected_credential_assignment_binding_id
+            == candidate.physical_transport_credential_assignment_binding_id
+            and binding.canonical_digest
+            == request.expected_credential_assignment_binding_digest
+            == candidate.physical_transport_credential_assignment_binding_digest
+            and binding.state
+            is WorkflowEventPhysicalTransportCredentialAssignmentBindingState.BOUND
+            and binding.credential_assignment_snapshot_id
+            == snapshot.snapshot_id
+            == request.expected_credential_assignment_snapshot_id
+            == candidate.credential_assignment_snapshot_id
+            and binding.credential_assignment_snapshot_digest
+            == snapshot.canonical_digest
+            == request.expected_credential_assignment_snapshot_digest
+            == candidate.credential_assignment_snapshot_digest
+            and snapshot.state
+            is EventPhysicalTransportCredentialAssignmentSnapshotState.SNAPSHOTTED
+            and head_matches_snapshot
+            and head.assignment_id == request.expected_assignment_id == candidate.assignment_id
+            and head.assignment_revision
+            == request.expected_assignment_revision
+            == candidate.assignment_revision
+            and head.canonical_digest
+            == request.expected_source_assignment_digest
+            == candidate.source_assignment_digest
+            and head.credential_generation
+            == request.expected_credential_generation
+            == candidate.credential_generation
+            and head.rotation_epoch == request.expected_rotation_epoch == candidate.rotation_epoch
+            and head.activated_at
+            == request.expected_assignment_activated_at
+            == candidate.assignment_activated_at
+            and head.expires_at
+            == request.expected_assignment_expires_at
+            == candidate.assignment_expires_at
+            and head.active == request.expected_assignment_active == candidate.assignment_active
+            and head.revoked == request.expected_assignment_revoked
+            and candidate.assignment_non_revoked == (not head.revoked)
+            and head.active
+            and not head.revoked
+            and head.activated_at <= request.requested_at < head.expires_at
+            and candidate.valid_until
+            == min(request.requested_at + timedelta(seconds=60), head.expires_at)
+            and candidate.policy_digest == request.expected_policy_digest
+            and candidate.scope == request.scope == binding.scope == snapshot.scope == head.scope
+            and candidate.admitter_subject_id == request.admitter_subject_id
+            and candidate.evaluated_at == request.requested_at
+            and candidate.state.value == "admitted_current"
+            and canonical_digest(candidate.digest_payload()) == candidate.canonical_digest
+            and not any(binding.authority.canonical_value().values())
+            and not any(snapshot.authority.canonical_value().values())
             and not any(candidate.authority.canonical_value().values())
         )
 

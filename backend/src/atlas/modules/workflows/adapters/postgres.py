@@ -38,6 +38,8 @@ from atlas.core.persistence.models import (
     WorkflowEventLogicalChannelBindingModel,
     WorkflowEventPhysicalTransportCredentialAssignmentBindingClaimModel,
     WorkflowEventPhysicalTransportCredentialAssignmentBindingModel,
+    WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionModel,
+    WorkflowEventPhysicalTransportCredentialAssignmentFreshnessClaimModel,
     WorkflowEventPhysicalTransportEndpointMaterializationAttemptModel,
     WorkflowEventPhysicalTransportEndpointMaterializationResultModel,
     WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseClaimModel,
@@ -103,6 +105,14 @@ from atlas.modules.workflows.application.credential_assignment_binding_ports imp
     WorkflowTransportCredentialAssignmentBindingRequest,
     WorkflowTransportCredentialAssignmentBindingResult,
     WorkflowTransportCredentialAssignmentBindingStatus,
+)
+from atlas.modules.workflows.application.credential_assignment_freshness_admission_ports import (
+    WorkflowTransportCredentialAssignmentFreshnessAdmissionError,
+    WorkflowTransportCredentialAssignmentFreshnessAdmissionIdempotencyRecord,
+    WorkflowTransportCredentialAssignmentFreshnessAdmissionRequest,
+    WorkflowTransportCredentialAssignmentFreshnessAdmissionResult,
+    WorkflowTransportCredentialAssignmentFreshnessAdmissionStatus,
+    validate_workflow_transport_credential_assignment_freshness_request,
 )
 from atlas.modules.workflows.application.credential_assignment_snapshot_ports import (
     WorkflowTransportCredentialAssignmentSnapshotError,
@@ -231,6 +241,9 @@ from atlas.modules.workflows.domain import (
     WorkflowEventPhysicalTransportCredentialAssignmentBinding,
     WorkflowEventPhysicalTransportCredentialAssignmentBindingAuthority,
     WorkflowEventPhysicalTransportCredentialAssignmentBindingState,
+    WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmission,
+    WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionAuthority,
+    WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionState,
     WorkflowEventPhysicalTransportEndpointMaterializationAttempt,
     WorkflowEventPhysicalTransportEndpointMaterializationAttemptState,
     WorkflowEventPhysicalTransportEndpointMaterializationAuthority,
@@ -2656,6 +2669,219 @@ class PostgreSQLWorkflowPlanRepository:
                 )
         return WorkflowTransportCredentialAssignmentBindingResult(
             WorkflowTransportCredentialAssignmentBindingStatus.EVIDENCE_CONFLICT,
+            None,
+        )
+
+    async def get_credential_assignment_binding_by_id(
+        self,
+        *,
+        binding_id: str,
+    ) -> WorkflowEventPhysicalTransportCredentialAssignmentBinding | None:
+        async with self._sessions() as session:
+            row = await session.get(
+                WorkflowEventPhysicalTransportCredentialAssignmentBindingModel,
+                binding_id,
+            )
+            return None if row is None else self._credential_assignment_binding_from_row(row)
+
+    async def get_current_credential_assignment_head(
+        self,
+        *,
+        assignment_id: str,
+    ) -> DeploymentPhysicalTransportCredentialAssignment | None:
+        async with self._sessions() as session:
+            rows = tuple(
+                (
+                    await session.scalars(
+                        select(DeploymentEventTransportCredentialAssignmentModel)
+                        .where(
+                            DeploymentEventTransportCredentialAssignmentModel.assignment_id
+                            == assignment_id
+                        )
+                        .order_by(
+                            DeploymentEventTransportCredentialAssignmentModel.rotation_epoch,
+                            DeploymentEventTransportCredentialAssignmentModel.credential_generation,
+                            DeploymentEventTransportCredentialAssignmentModel.assignment_revision,
+                        )
+                    )
+                ).all()
+            )
+            try:
+                return select_deployment_physical_transport_credential_assignment_head(
+                    tuple(self._credential_assignment_from_row(row) for row in rows)
+                )
+            except (ValueError, WorkflowTransportCredentialAssignmentSnapshotError) as exc:
+                raise WorkflowTransportCredentialAssignmentFreshnessAdmissionError(
+                    "workflow_transport_credential_assignment_freshness_registry_conflict",
+                    "Credential-assignment registry head evidence is ambiguous or invalid.",
+                ) from exc
+
+    async def list_credential_assignment_freshness_admissions(
+        self,
+        *,
+        scope: WorkflowScope,
+        limit: int = 256,
+    ) -> tuple[WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmission, ...]:
+        if not 1 <= limit <= 256:
+            raise ValueError("credential-assignment freshness admission limit is invalid")
+        async with self._sessions() as session:
+            rows = tuple(
+                (
+                    await session.scalars(
+                        select(
+                            WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionModel
+                        )
+                        .where(
+                            WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionModel.organization_id
+                            == scope.organization_id,
+                            WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionModel.environment_id
+                            == scope.environment_id,
+                            WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionModel.site_id
+                            == scope.site_id,
+                        )
+                        .order_by(
+                            WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionModel.evaluated_at.desc(),
+                            WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionModel.freshness_admission_id,
+                        )
+                        .limit(limit)
+                    )
+                ).all()
+            )
+            return tuple(
+                self._credential_assignment_freshness_admission_from_row(row) for row in rows
+            )
+
+    async def get_credential_assignment_freshness_admission_request(
+        self,
+        *,
+        scope: WorkflowScope,
+        admitter_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowTransportCredentialAssignmentFreshnessAdmissionIdempotencyRecord | None:
+        async with self._sessions() as session:
+            claim = await self._load_credential_assignment_freshness_claim(
+                session,
+                scope=scope,
+                admitter_subject_id=admitter_subject_id,
+                idempotency_key=idempotency_key,
+            )
+            if claim is None:
+                return None
+            admission_row = await session.get(
+                WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionModel,
+                claim.freshness_admission_id,
+            )
+            return self._credential_assignment_freshness_record_from_claim(
+                claim,
+                admission_row,
+            )
+
+    async def admit_credential_assignment_freshness(
+        self,
+        request: WorkflowTransportCredentialAssignmentFreshnessAdmissionRequest,
+    ) -> WorkflowTransportCredentialAssignmentFreshnessAdmissionResult:
+        validate_workflow_transport_credential_assignment_freshness_request(request)
+        candidate = request.candidate
+        async with self._sessions() as session:
+            (
+                binding_row,
+                snapshot_row,
+                head,
+                observed_at,
+            ) = await self._lock_credential_assignment_freshness_sources(
+                session,
+                request=request,
+            )
+            if not self._credential_assignment_freshness_evidence_matches(
+                binding_row=binding_row,
+                snapshot_row=snapshot_row,
+                head=head,
+                observed_at=observed_at,
+                request=request,
+            ):
+                await session.rollback()
+                return WorkflowTransportCredentialAssignmentFreshnessAdmissionResult(
+                    WorkflowTransportCredentialAssignmentFreshnessAdmissionStatus.EVIDENCE_CONFLICT,
+                    None,
+                )
+            replay = await self._credential_assignment_freshness_replay(
+                session,
+                request=request,
+                head=head,
+                observed_at=observed_at,
+            )
+            if replay is not None:
+                await session.rollback()
+                return replay
+            try:
+                await request.required_precommit_audit()
+            except Exception:
+                await session.rollback()
+                return WorkflowTransportCredentialAssignmentFreshnessAdmissionResult(
+                    WorkflowTransportCredentialAssignmentFreshnessAdmissionStatus.PRECOMMIT_AUDIT_FAILED,
+                    None,
+                )
+            commit_observed_at = cast(
+                datetime,
+                await session.scalar(select(func.clock_timestamp())),
+            )
+            if not self._credential_assignment_freshness_evidence_matches(
+                binding_row=binding_row,
+                snapshot_row=snapshot_row,
+                head=head,
+                observed_at=commit_observed_at,
+                request=request,
+            ):
+                await session.rollback()
+                return WorkflowTransportCredentialAssignmentFreshnessAdmissionResult(
+                    WorkflowTransportCredentialAssignmentFreshnessAdmissionStatus.EVIDENCE_CONFLICT,
+                    None,
+                )
+            try:
+                session.add(self._credential_assignment_freshness_admission_model(candidate))
+                await session.flush()
+                session.add(self._credential_assignment_freshness_claim_model(request))
+                await session.commit()
+                return WorkflowTransportCredentialAssignmentFreshnessAdmissionResult(
+                    WorkflowTransportCredentialAssignmentFreshnessAdmissionStatus.ADMITTED_CURRENT,
+                    candidate,
+                )
+            except IntegrityError:
+                await session.rollback()
+
+        async with self._sessions() as session:
+            (
+                binding_row,
+                snapshot_row,
+                head,
+                observed_at,
+            ) = await self._lock_credential_assignment_freshness_sources(
+                session,
+                request=request,
+            )
+            if not self._credential_assignment_freshness_evidence_matches(
+                binding_row=binding_row,
+                snapshot_row=snapshot_row,
+                head=head,
+                observed_at=observed_at,
+                request=request,
+            ):
+                await session.rollback()
+                return WorkflowTransportCredentialAssignmentFreshnessAdmissionResult(
+                    WorkflowTransportCredentialAssignmentFreshnessAdmissionStatus.EVIDENCE_CONFLICT,
+                    None,
+                )
+            replay = await self._credential_assignment_freshness_replay(
+                session,
+                request=request,
+                head=head,
+                observed_at=observed_at,
+            )
+            await session.rollback()
+            if replay is not None:
+                return replay
+        return WorkflowTransportCredentialAssignmentFreshnessAdmissionResult(
+            WorkflowTransportCredentialAssignmentFreshnessAdmissionStatus.EVIDENCE_CONFLICT,
             None,
         )
 
@@ -8778,6 +9004,545 @@ class PostgreSQLWorkflowPlanRepository:
         raise WorkflowTransportCredentialAssignmentBindingError(
             "workflow_transport_credential_assignment_binding_repository_contract_violation",
             "The workflow credential-assignment binding does not match durable evidence.",
+        )
+
+    async def _lock_credential_assignment_freshness_sources(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowTransportCredentialAssignmentFreshnessAdmissionRequest,
+    ) -> tuple[
+        WorkflowEventPhysicalTransportCredentialAssignmentBindingModel | None,
+        EventPhysicalTransportCredentialAssignmentSnapshotModel | None,
+        DeploymentPhysicalTransportCredentialAssignment | None,
+        datetime,
+    ]:
+        binding_row = cast(
+            WorkflowEventPhysicalTransportCredentialAssignmentBindingModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportCredentialAssignmentBindingModel)
+                .where(
+                    WorkflowEventPhysicalTransportCredentialAssignmentBindingModel.binding_id
+                    == request.expected_credential_assignment_binding_id
+                )
+                .with_for_update()
+            ),
+        )
+        snapshot_row = cast(
+            EventPhysicalTransportCredentialAssignmentSnapshotModel | None,
+            await session.scalar(
+                select(EventPhysicalTransportCredentialAssignmentSnapshotModel)
+                .where(
+                    EventPhysicalTransportCredentialAssignmentSnapshotModel.snapshot_id
+                    == request.expected_credential_assignment_snapshot_id
+                )
+                .with_for_update()
+            ),
+        )
+        await session.scalar(
+            select(
+                func.pg_advisory_xact_lock(
+                    self._credential_assignment_registry_lock_id(request.expected_assignment_id)
+                )
+            )
+        )
+        assignment_rows = tuple(
+            (
+                await session.scalars(
+                    select(DeploymentEventTransportCredentialAssignmentModel)
+                    .where(
+                        DeploymentEventTransportCredentialAssignmentModel.assignment_id
+                        == request.expected_assignment_id
+                    )
+                    .order_by(
+                        DeploymentEventTransportCredentialAssignmentModel.rotation_epoch,
+                        DeploymentEventTransportCredentialAssignmentModel.credential_generation,
+                        DeploymentEventTransportCredentialAssignmentModel.assignment_revision,
+                    )
+                    .with_for_update()
+                )
+            ).all()
+        )
+        try:
+            head = select_deployment_physical_transport_credential_assignment_head(
+                tuple(self._credential_assignment_from_row(row) for row in assignment_rows)
+            )
+        except (ValueError, WorkflowTransportCredentialAssignmentSnapshotError):
+            head = None
+        observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+        return binding_row, snapshot_row, head, observed_at
+
+    async def _credential_assignment_freshness_replay(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowTransportCredentialAssignmentFreshnessAdmissionRequest,
+        head: DeploymentPhysicalTransportCredentialAssignment | None,
+        observed_at: datetime,
+    ) -> WorkflowTransportCredentialAssignmentFreshnessAdmissionResult | None:
+        claim = await self._load_credential_assignment_freshness_claim(
+            session,
+            scope=request.scope,
+            admitter_subject_id=request.admitter_subject_id,
+            idempotency_key=request.idempotency_key,
+        )
+        if claim is None:
+            return None
+        admission_row = await session.get(
+            WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionModel,
+            claim.freshness_admission_id,
+        )
+        record = self._credential_assignment_freshness_record_from_claim(
+            claim,
+            admission_row,
+        )
+        if claim.request_fingerprint != request.request_fingerprint:
+            return WorkflowTransportCredentialAssignmentFreshnessAdmissionResult(
+                WorkflowTransportCredentialAssignmentFreshnessAdmissionStatus.IDEMPOTENCY_CONFLICT,
+                record.admission,
+            )
+        if head is None or not self._credential_assignment_freshness_remains_current(
+            record.admission,
+            head=head,
+            observed_at=observed_at,
+        ):
+            return WorkflowTransportCredentialAssignmentFreshnessAdmissionResult(
+                WorkflowTransportCredentialAssignmentFreshnessAdmissionStatus.EVIDENCE_CONFLICT,
+                record.admission,
+            )
+        return WorkflowTransportCredentialAssignmentFreshnessAdmissionResult(
+            WorkflowTransportCredentialAssignmentFreshnessAdmissionStatus.REPLAY,
+            record.admission,
+        )
+
+    @classmethod
+    async def _load_credential_assignment_freshness_claim(
+        cls,
+        session: AsyncSession,
+        *,
+        scope: WorkflowScope,
+        admitter_subject_id: str,
+        idempotency_key: str,
+    ) -> WorkflowEventPhysicalTransportCredentialAssignmentFreshnessClaimModel | None:
+        return cast(
+            WorkflowEventPhysicalTransportCredentialAssignmentFreshnessClaimModel | None,
+            await session.scalar(
+                select(WorkflowEventPhysicalTransportCredentialAssignmentFreshnessClaimModel).where(
+                    WorkflowEventPhysicalTransportCredentialAssignmentFreshnessClaimModel.idempotency_scope_id
+                    == cls._credential_assignment_freshness_idempotency_scope(
+                        scope,
+                        admitter_subject_id,
+                    ),
+                    WorkflowEventPhysicalTransportCredentialAssignmentFreshnessClaimModel.idempotency_key
+                    == idempotency_key,
+                    WorkflowEventPhysicalTransportCredentialAssignmentFreshnessClaimModel.organization_id
+                    == scope.organization_id,
+                    WorkflowEventPhysicalTransportCredentialAssignmentFreshnessClaimModel.environment_id
+                    == scope.environment_id,
+                    WorkflowEventPhysicalTransportCredentialAssignmentFreshnessClaimModel.site_id
+                    == scope.site_id,
+                    WorkflowEventPhysicalTransportCredentialAssignmentFreshnessClaimModel.admitter_subject_id
+                    == admitter_subject_id,
+                )
+            ),
+        )
+
+    @classmethod
+    def _credential_assignment_freshness_record_from_claim(
+        cls,
+        claim: WorkflowEventPhysicalTransportCredentialAssignmentFreshnessClaimModel,
+        admission_row: WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionModel
+        | None,
+    ) -> WorkflowTransportCredentialAssignmentFreshnessAdmissionIdempotencyRecord:
+        if admission_row is None:
+            cls._credential_assignment_freshness_contract_violation()
+        assert admission_row is not None
+        admission = cls._credential_assignment_freshness_admission_from_row(admission_row)
+        scope_id = cls._credential_assignment_freshness_idempotency_scope(
+            admission.scope,
+            admission.admitter_subject_id,
+        )
+        payload: dict[str, Any] = {
+            "idempotency_key": claim.idempotency_key,
+            "idempotency_scope_id": scope_id,
+            "request_fingerprint": claim.request_fingerprint,
+            "result_admission": cls._credential_assignment_freshness_payload(admission),
+            "result_digest": admission.canonical_digest,
+        }
+        if (
+            claim.idempotency_scope_id != scope_id
+            or claim.result_digest != admission.canonical_digest
+            or claim.freshness_admission_id != admission.freshness_admission_id
+            or claim.credential_assignment_binding_id
+            != admission.physical_transport_credential_assignment_binding_id
+            or claim.credential_assignment_snapshot_id
+            != admission.credential_assignment_snapshot_id
+            or claim.assignment_id != admission.assignment_id
+            or claim.assignment_revision != admission.assignment_revision
+            or claim.policy_digest != admission.policy_digest
+            or claim.organization_id != admission.scope.organization_id
+            or claim.environment_id != admission.scope.environment_id
+            or claim.site_id != admission.scope.site_id
+            or claim.admitter_subject_id != admission.admitter_subject_id
+            or claim.created_at.tzinfo is None
+            or claim.created_at != admission.evaluated_at
+            or claim.payload != payload
+            or claim.canonical_digest != canonical_digest(payload)
+        ):
+            cls._credential_assignment_freshness_contract_violation()
+        return WorkflowTransportCredentialAssignmentFreshnessAdmissionIdempotencyRecord(
+            request_fingerprint=claim.request_fingerprint,
+            admission=admission,
+        )
+
+    @classmethod
+    def _credential_assignment_freshness_admission_from_row(
+        cls,
+        row: WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionModel,
+    ) -> WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmission:
+        try:
+            admission = cls._credential_assignment_freshness_to_domain(row.payload)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowTransportCredentialAssignmentFreshnessAdmissionError(
+                "workflow_transport_credential_assignment_freshness_repository_contract_violation",
+                "The credential-assignment freshness admission record is invalid.",
+            ) from exc
+        authority = admission.authority
+        if (
+            row.freshness_admission_id != admission.freshness_admission_id
+            or row.credential_assignment_binding_id
+            != admission.physical_transport_credential_assignment_binding_id
+            or row.credential_assignment_binding_digest
+            != admission.physical_transport_credential_assignment_binding_digest
+            or row.credential_assignment_snapshot_id != admission.credential_assignment_snapshot_id
+            or row.credential_assignment_snapshot_digest
+            != admission.credential_assignment_snapshot_digest
+            or row.assignment_id != admission.assignment_id
+            or row.assignment_revision != admission.assignment_revision
+            or row.source_assignment_digest != admission.source_assignment_digest
+            or row.credential_generation != admission.credential_generation
+            or row.rotation_epoch != admission.rotation_epoch
+            or row.assignment_activated_at != admission.assignment_activated_at
+            or row.assignment_expires_at != admission.assignment_expires_at
+            or row.assignment_active != admission.assignment_active
+            or row.assignment_non_revoked != admission.assignment_non_revoked
+            or row.policy_id != admission.policy_id
+            or row.policy_version != admission.policy_version
+            or row.policy_digest != admission.policy_digest
+            or row.organization_id != admission.scope.organization_id
+            or row.environment_id != admission.scope.environment_id
+            or row.site_id != admission.scope.site_id
+            or row.admitter_subject_id != admission.admitter_subject_id
+            or row.evaluated_at != admission.evaluated_at
+            or row.valid_until != admission.valid_until
+            or row.state != admission.state.value
+            or row.route_selection_authority_granted != authority.route_selection_authorized
+            or row.route_binding_authority_granted != authority.route_binding_authorized
+            or row.endpoint_resolution_authority_granted != authority.endpoint_resolution_authorized
+            or row.protected_artifact_access_authority_granted
+            != authority.protected_artifact_access_authorized
+            or row.credential_selection_authority_granted
+            != authority.credential_selection_authorized
+            or row.credential_assignment_binding_authority_granted
+            != authority.credential_assignment_binding_authorized
+            or row.credential_access_authority_granted != authority.credential_access_authorized
+            or row.credential_brokerage_authority_granted
+            != authority.credential_brokerage_authorized
+            or row.credential_resolution_authority_granted
+            != authority.credential_resolution_authorized
+            or row.credential_delivery_authority_granted != authority.credential_delivery_authorized
+            or row.network_access_authority_granted != authority.network_access_authorized
+            or row.readiness_probe_authority_granted != authority.readiness_probe_authorized
+            or row.publication_authority_granted != authority.publication_authorized
+            or row.delivery_authority_granted != authority.delivery_authorized
+            or row.dispatch_authority_granted != authority.dispatch_authorized
+            or row.execution_authority_granted != authority.execution_authorized
+            or row.infrastructure_mutation_authority_granted
+            != authority.infrastructure_mutation_authorized
+            or row.canonical_digest != admission.canonical_digest
+            or row.payload != cls._credential_assignment_freshness_payload(admission)
+        ):
+            cls._credential_assignment_freshness_contract_violation()
+        return admission
+
+    @classmethod
+    def _credential_assignment_freshness_admission_model(
+        cls,
+        admission: WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmission,
+    ) -> WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionModel:
+        authority = admission.authority
+        return WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionModel(
+            freshness_admission_id=admission.freshness_admission_id,
+            credential_assignment_binding_id=(
+                admission.physical_transport_credential_assignment_binding_id
+            ),
+            credential_assignment_binding_digest=(
+                admission.physical_transport_credential_assignment_binding_digest
+            ),
+            credential_assignment_snapshot_id=admission.credential_assignment_snapshot_id,
+            credential_assignment_snapshot_digest=(admission.credential_assignment_snapshot_digest),
+            assignment_id=admission.assignment_id,
+            assignment_revision=admission.assignment_revision,
+            source_assignment_digest=admission.source_assignment_digest,
+            credential_generation=admission.credential_generation,
+            rotation_epoch=admission.rotation_epoch,
+            assignment_activated_at=admission.assignment_activated_at,
+            assignment_expires_at=admission.assignment_expires_at,
+            assignment_active=admission.assignment_active,
+            assignment_non_revoked=admission.assignment_non_revoked,
+            policy_id=admission.policy_id,
+            policy_version=admission.policy_version,
+            policy_digest=admission.policy_digest,
+            organization_id=admission.scope.organization_id,
+            environment_id=admission.scope.environment_id,
+            site_id=admission.scope.site_id,
+            admitter_subject_id=admission.admitter_subject_id,
+            evaluated_at=admission.evaluated_at,
+            valid_until=admission.valid_until,
+            state=admission.state.value,
+            route_selection_authority_granted=authority.route_selection_authorized,
+            route_binding_authority_granted=authority.route_binding_authorized,
+            endpoint_resolution_authority_granted=authority.endpoint_resolution_authorized,
+            protected_artifact_access_authority_granted=(
+                authority.protected_artifact_access_authorized
+            ),
+            credential_selection_authority_granted=authority.credential_selection_authorized,
+            credential_assignment_binding_authority_granted=(
+                authority.credential_assignment_binding_authorized
+            ),
+            credential_access_authority_granted=authority.credential_access_authorized,
+            credential_brokerage_authority_granted=authority.credential_brokerage_authorized,
+            credential_resolution_authority_granted=authority.credential_resolution_authorized,
+            credential_delivery_authority_granted=authority.credential_delivery_authorized,
+            network_access_authority_granted=authority.network_access_authorized,
+            readiness_probe_authority_granted=authority.readiness_probe_authorized,
+            publication_authority_granted=authority.publication_authorized,
+            delivery_authority_granted=authority.delivery_authorized,
+            dispatch_authority_granted=authority.dispatch_authorized,
+            execution_authority_granted=authority.execution_authorized,
+            infrastructure_mutation_authority_granted=(
+                authority.infrastructure_mutation_authorized
+            ),
+            canonical_digest=admission.canonical_digest,
+            payload=cls._credential_assignment_freshness_payload(admission),
+        )
+
+    @classmethod
+    def _credential_assignment_freshness_claim_model(
+        cls,
+        request: WorkflowTransportCredentialAssignmentFreshnessAdmissionRequest,
+    ) -> WorkflowEventPhysicalTransportCredentialAssignmentFreshnessClaimModel:
+        admission = request.candidate
+        scope_id = cls._credential_assignment_freshness_idempotency_scope(
+            admission.scope,
+            admission.admitter_subject_id,
+        )
+        payload: dict[str, Any] = {
+            "idempotency_key": request.idempotency_key,
+            "idempotency_scope_id": scope_id,
+            "request_fingerprint": request.request_fingerprint,
+            "result_admission": cls._credential_assignment_freshness_payload(admission),
+            "result_digest": admission.canonical_digest,
+        }
+        digest = canonical_digest(payload)
+        return WorkflowEventPhysicalTransportCredentialAssignmentFreshnessClaimModel(
+            claim_id=f"wf_cred_fresh_claim_{sha256(digest.encode()).hexdigest()[:32]}",
+            idempotency_scope_id=scope_id,
+            idempotency_key=request.idempotency_key,
+            request_fingerprint=request.request_fingerprint,
+            result_digest=admission.canonical_digest,
+            freshness_admission_id=admission.freshness_admission_id,
+            credential_assignment_binding_id=(
+                admission.physical_transport_credential_assignment_binding_id
+            ),
+            credential_assignment_snapshot_id=admission.credential_assignment_snapshot_id,
+            assignment_id=admission.assignment_id,
+            assignment_revision=admission.assignment_revision,
+            policy_digest=admission.policy_digest,
+            organization_id=admission.scope.organization_id,
+            environment_id=admission.scope.environment_id,
+            site_id=admission.scope.site_id,
+            admitter_subject_id=admission.admitter_subject_id,
+            created_at=admission.evaluated_at,
+            canonical_digest=digest,
+            payload=payload,
+        )
+
+    @classmethod
+    def _credential_assignment_freshness_evidence_matches(
+        cls,
+        *,
+        binding_row: WorkflowEventPhysicalTransportCredentialAssignmentBindingModel | None,
+        snapshot_row: EventPhysicalTransportCredentialAssignmentSnapshotModel | None,
+        head: DeploymentPhysicalTransportCredentialAssignment | None,
+        observed_at: datetime,
+        request: WorkflowTransportCredentialAssignmentFreshnessAdmissionRequest,
+    ) -> bool:
+        if binding_row is None or snapshot_row is None or head is None:
+            return False
+        try:
+            binding = cls._credential_assignment_binding_from_row(binding_row)
+            snapshot = cls._credential_assignment_snapshot_from_row(snapshot_row)
+        except (
+            WorkflowTransportCredentialAssignmentBindingError,
+            WorkflowTransportCredentialAssignmentSnapshotError,
+        ):
+            return False
+        candidate = request.candidate
+        return bool(
+            binding.binding_id
+            == request.expected_credential_assignment_binding_id
+            == candidate.physical_transport_credential_assignment_binding_id
+            and binding.canonical_digest
+            == request.expected_credential_assignment_binding_digest
+            == candidate.physical_transport_credential_assignment_binding_digest
+            and binding.state
+            is WorkflowEventPhysicalTransportCredentialAssignmentBindingState.BOUND
+            and binding.credential_assignment_snapshot_id
+            == snapshot.snapshot_id
+            == request.expected_credential_assignment_snapshot_id
+            == candidate.credential_assignment_snapshot_id
+            and binding.credential_assignment_snapshot_digest
+            == snapshot.canonical_digest
+            == request.expected_credential_assignment_snapshot_digest
+            == candidate.credential_assignment_snapshot_digest
+            and snapshot.state
+            is EventPhysicalTransportCredentialAssignmentSnapshotState.SNAPSHOTTED
+            and head.assignment_id
+            == snapshot.assignment_id
+            == request.expected_assignment_id
+            == candidate.assignment_id
+            and head.assignment_revision
+            == snapshot.assignment_revision
+            == request.expected_assignment_revision
+            == candidate.assignment_revision
+            and head.canonical_digest
+            == snapshot.source_assignment_digest
+            == request.expected_source_assignment_digest
+            == candidate.source_assignment_digest
+            and head.scope == snapshot.scope == binding.scope == request.scope == candidate.scope
+            and head.route_id == snapshot.route_id
+            and head.route_revision == snapshot.route_revision
+            and head.source_route_digest == snapshot.source_route_digest
+            and head.credential_requirement_profile_id == snapshot.credential_requirement_profile_id
+            and head.credential_requirement_profile_version
+            == snapshot.credential_requirement_profile_version
+            and head.credential_requirement_profile_digest
+            == snapshot.credential_requirement_profile_digest
+            and head.credential_profile_id == snapshot.credential_profile_id
+            and head.credential_profile_version == snapshot.credential_profile_version
+            and head.credential_profile_digest == snapshot.credential_profile_digest
+            and head.authentication_mechanism_class == snapshot.authentication_mechanism_class
+            and head.principal_class == snapshot.principal_class
+            and head.privilege_class == snapshot.privilege_class == "read-only"
+            and head.target_scope_commitment == snapshot.target_scope_commitment
+            and head.credential_generation
+            == snapshot.credential_generation
+            == request.expected_credential_generation
+            == candidate.credential_generation
+            and head.rotation_epoch
+            == snapshot.rotation_epoch
+            == request.expected_rotation_epoch
+            == candidate.rotation_epoch
+            and head.activated_at
+            == snapshot.activated_at
+            == request.expected_assignment_activated_at
+            == candidate.assignment_activated_at
+            and head.expires_at
+            == snapshot.expires_at
+            == request.expected_assignment_expires_at
+            == candidate.assignment_expires_at
+            and head.broker_policy_id == snapshot.broker_policy_id
+            and head.broker_policy_version == snapshot.broker_policy_version
+            and head.broker_policy_digest == snapshot.broker_policy_digest
+            and head.active == request.expected_assignment_active == candidate.assignment_active
+            and head.revoked == request.expected_assignment_revoked
+            and candidate.assignment_non_revoked == (not head.revoked)
+            and head.active
+            and not head.revoked
+            and head.activated_at <= observed_at < head.expires_at
+            and candidate.evaluated_at == request.requested_at <= observed_at
+            and observed_at < candidate.valid_until
+            and candidate.valid_until
+            == min(request.requested_at + timedelta(seconds=60), head.expires_at)
+            and candidate.policy_digest == request.expected_policy_digest
+            and candidate.admitter_subject_id == request.admitter_subject_id
+            and candidate.state.value == "admitted_current"
+            and canonical_digest(binding.digest_payload()) == binding.canonical_digest
+            and canonical_digest(snapshot.digest_payload()) == snapshot.canonical_digest
+            and canonical_digest(head.digest_payload()) == head.canonical_digest
+            and canonical_digest(candidate.digest_payload()) == candidate.canonical_digest
+            and not any(binding.authority.canonical_value().values())
+            and not any(snapshot.authority.canonical_value().values())
+            and not any(candidate.authority.canonical_value().values())
+        )
+
+    @staticmethod
+    def _credential_assignment_freshness_remains_current(
+        admission: WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmission,
+        *,
+        head: DeploymentPhysicalTransportCredentialAssignment,
+        observed_at: datetime,
+    ) -> bool:
+        return (
+            observed_at < admission.valid_until
+            and head.assignment_id == admission.assignment_id
+            and head.assignment_revision == admission.assignment_revision
+            and head.canonical_digest == admission.source_assignment_digest
+            and head.credential_generation == admission.credential_generation
+            and head.rotation_epoch == admission.rotation_epoch
+            and head.activated_at == admission.assignment_activated_at
+            and head.expires_at == admission.assignment_expires_at
+            and head.active
+            and not head.revoked
+            and head.activated_at <= observed_at < head.expires_at
+        )
+
+    @staticmethod
+    def _credential_assignment_freshness_idempotency_scope(
+        scope: WorkflowScope,
+        admitter_subject_id: str,
+    ) -> str:
+        return canonical_digest(
+            {"admitter_subject_id": admitter_subject_id, "scope": scope.canonical_value()}
+        )
+
+    @staticmethod
+    def _credential_assignment_freshness_payload(
+        admission: WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmission,
+    ) -> dict[str, Any]:
+        return cast(dict[str, Any], admission.canonical_value())
+
+    @staticmethod
+    def _credential_assignment_freshness_to_domain(
+        raw: dict[str, Any],
+    ) -> WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmission:
+        values = dict(raw)
+        values["scope"] = WorkflowScope(**cast(Any, values["scope"]))
+        for name in (
+            "assignment_activated_at",
+            "assignment_expires_at",
+            "evaluated_at",
+            "valid_until",
+        ):
+            values[name] = datetime.fromisoformat(str(values[name]))
+        values["state"] = WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionState(
+            str(values["state"])
+        )
+        values["authority"] = (
+            WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionAuthority(
+                **cast(Any, values["authority"])
+            )
+        )
+        return WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmission(
+            **cast(Any, values)
+        )
+
+    @staticmethod
+    def _credential_assignment_freshness_contract_violation() -> NoReturn:
+        raise WorkflowTransportCredentialAssignmentFreshnessAdmissionError(
+            "workflow_transport_credential_assignment_freshness_repository_contract_violation",
+            "Credential-assignment freshness evidence does not match durable state.",
         )
 
     async def _physical_transport_route_binding_replay(
