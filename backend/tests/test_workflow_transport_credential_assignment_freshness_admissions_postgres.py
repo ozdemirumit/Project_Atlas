@@ -358,13 +358,6 @@ async def test_live_postgres_atomic_replay_multiple_admissions_and_append_only_g
         requested_at=datetime.now(UTC),
         idempotency_key="credential-freshness-pg-0001",
     )
-    second = _admission_request(
-        binding,
-        snapshot,
-        head,
-        requested_at=first.requested_at + timedelta(seconds=1),
-        idempotency_key="credential-freshness-pg-0002",
-    )
     try:
         await _reset_live(engine, binding_request, assignment_id=head.assignment_id)
         await seed_binding_sources(engine, route=route, assignments=(snapshot,))
@@ -381,6 +374,13 @@ async def test_live_postgres_atomic_replay_multiple_admissions_and_append_only_g
             WorkflowTransportCredentialAssignmentFreshnessAdmissionStatus.ADMITTED_CURRENT,
             WorkflowTransportCredentialAssignmentFreshnessAdmissionStatus.REPLAY,
         }
+        second = _admission_request(
+            binding,
+            snapshot,
+            head,
+            requested_at=datetime.now(UTC),
+            idempotency_key="credential-freshness-pg-0002",
+        )
         another = await repository.admit_credential_assignment_freshness(second)
         assert (
             another.status
