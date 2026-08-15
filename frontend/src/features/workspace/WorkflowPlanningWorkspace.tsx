@@ -34,6 +34,7 @@ import {
   listWorkflowEndpointResolutionAuthorizationLeases,
   listWorkflowPhysicalTransportCredentialAccessAuthorizationLeases,
   listWorkflowPhysicalTransportCredentialMaterializations,
+  listWorkflowPhysicalTransportTargetContextBindings,
   listWorkflowPhysicalTransportCredentialAssignmentSnapshots,
   listWorkflowPhysicalTransportCredentialAssignmentFreshnessAdmissions,
   listWorkflowPhysicalTransportEndpointMaterializations,
@@ -209,6 +210,16 @@ export default function WorkflowPlanningWorkspace({
       siteId,
     ],
     queryFn: () => listWorkflowPhysicalTransportCredentialMaterializations({ scope }),
+    retry: false,
+  });
+  const targetContextBindingQuery = useQuery({
+    queryKey: [
+      "workflow-physical-transport-target-context-bindings",
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: () => listWorkflowPhysicalTransportTargetContextBindings({ scope }),
     retry: false,
   });
   const targetQuery = useQuery({
@@ -666,6 +677,10 @@ export default function WorkflowPlanningWorkspace({
   const credentialMaterializationErrorStatus =
     credentialMaterializationQuery.error instanceof ApiRequestError
       ? credentialMaterializationQuery.error.status
+      : undefined;
+  const targetContextBindingErrorStatus =
+    targetContextBindingQuery.error instanceof ApiRequestError
+      ? targetContextBindingQuery.error.status
       : undefined;
   const eventEnvelopes = eventEnvelopesForAdmission;
   const transportAdmissions = transportAdmissionsForArtifacts;
@@ -2310,6 +2325,144 @@ export default function WorkflowPlanningWorkspace({
             This normal-session inventory is read-only. It exposes minimized lineage and outcome
             evidence only, with no credential content, protected-artifact access, materialization
             action, retry operation, delivery, network, dispatch, execution, or mutation authority.
+          </span>
+        </div>
+      </section>
+
+      <section
+        className="workflow-physical-route-binding-band"
+        aria-labelledby="workflow-target-context-binding-title"
+      >
+        <div className="workflow-section-heading">
+          <div>
+            <p className="eyebrow">SAME-TARGET EVIDENCE</p>
+            <h2 id="workflow-target-context-binding-title">Target context bindings</h2>
+          </div>
+          <span>Read only</span>
+        </div>
+        {targetContextBindingQuery.isLoading && (
+          <div className="workflow-empty-state" role="status">
+            <RefreshCw className="spin" size={18} />
+            <span>Loading target context binding evidence...</span>
+          </div>
+        )}
+        {targetContextBindingQuery.isError && (
+          <div className="inline-error" role="alert">
+            <div>
+              <strong>
+                {targetContextBindingErrorStatus === 401
+                  ? "Your session has expired"
+                  : targetContextBindingErrorStatus === 403
+                    ? "Target context binding evidence permission is missing"
+                    : "Target context binding evidence is unavailable"}
+              </strong>
+              <span>
+                {targetContextBindingErrorStatus === 401
+                  ? "Sign in again to continue."
+                  : targetContextBindingErrorStatus === 403
+                    ? "Your current role or scope cannot inspect target context binding evidence."
+                    : "No target relationship or operational state is inferred from this failed read."}
+              </span>
+            </div>
+          </div>
+        )}
+        {targetContextBindingQuery.isSuccess &&
+          targetContextBindingQuery.data.physical_transport_target_context_bindings.length ===
+            0 && (
+            <div className="workflow-empty-state" role="status">
+              <Database size={19} />
+              <span>No target context bindings are recorded in this scope.</span>
+            </div>
+          )}
+        {targetContextBindingQuery.isSuccess &&
+          targetContextBindingQuery.data.physical_transport_target_context_bindings.length > 0 && (
+            <ol
+              className="workflow-step-preview workflow-physical-route-binding-list"
+              aria-label="Target context bindings"
+            >
+              {targetContextBindingQuery.data.physical_transport_target_context_bindings.map(
+                (binding) => (
+                  <li key={binding.binding_id}>
+                    {binding.effective_state === "active" ? (
+                      <ShieldCheck size={18} />
+                    ) : (
+                      <FileClock size={18} />
+                    )}
+                    <div>
+                      <strong>
+                        <code title={binding.binding_id}>
+                          {safeHolderIdentifier(binding.binding_id)}
+                        </code>
+                        <span
+                          className={`state-badge ${
+                            binding.effective_state === "active" ? "neutral" : "warning"
+                          }`}
+                        >
+                          {binding.effective_state === "active"
+                            ? "Same target verified"
+                            : "Binding expired"}
+                        </span>
+                      </strong>
+                      <div className="workflow-physical-route-binding-grid">
+                        <span>
+                          Endpoint materialization{" "}
+                          <code title={binding.endpoint_materialization_id}>
+                            {safeHolderIdentifier(binding.endpoint_materialization_id)}
+                          </code>
+                        </span>
+                        <span>
+                          Credential materialization{" "}
+                          <code title={binding.credential_materialization_id}>
+                            {safeHolderIdentifier(binding.credential_materialization_id)}
+                          </code>
+                        </span>
+                        <span>
+                          Organization {binding.scope.organization_id} | environment{" "}
+                          {binding.scope.environment_id} | site {binding.scope.site_id}
+                        </span>
+                        <span>
+                          Binder workload{" "}
+                          <code title={binding.binder_subject_id}>
+                            {safeHolderIdentifier(binding.binder_subject_id)}
+                          </code>
+                        </span>
+                        <span>Bound {formatTimestamp(binding.bound_at)}</span>
+                        <span>Joint usable until {formatTimestamp(binding.joint_usable_until)}</span>
+                        <span>
+                          Policy{" "}
+                          <code title={binding.policy_reference}>
+                            {safeHolderIdentifier(binding.policy_reference)}
+                          </code>
+                        </span>
+                        <span>
+                          Context schema{" "}
+                          <code title={binding.target_context_schema_reference}>
+                            {safeHolderIdentifier(binding.target_context_schema_reference)}
+                          </code>
+                        </span>
+                        <span className="workflow-physical-route-binding-authority">
+                          Authority endpoint resolution false | protected artifact access false |
+                          route selection false | route binding false | credential selection false |
+                          credential assignment binding false | credential access false |
+                          credential brokerage false | credential resolution false | credential
+                          delivery false | network access false | readiness probe false | publication
+                          false | delivery false | dispatch false | execution false | infrastructure
+                          mutation false
+                        </span>
+                      </div>
+                    </div>
+                  </li>
+                ),
+              )}
+            </ol>
+          )}
+        <div className="workflow-safety-boundary" role="note">
+          <LockKeyhole size={18} />
+          <span>
+            This read-only inventory confirms only that successful endpoint and credential
+            materialization evidence was bound to the same target context. It exposes no artifact,
+            endpoint coordinate, credential, protected-store access, network access, delivery,
+            publication, dispatch, execution, or mutation authority.
           </span>
         </div>
       </section>

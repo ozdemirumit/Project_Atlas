@@ -985,6 +985,47 @@ export type WorkflowPhysicalTransportCredentialMaterializationInventory = {
   durable: boolean;
 };
 
+export type WorkflowPhysicalTransportTargetContextBindingAuthority = {
+  endpoint_resolution_authorized: false;
+  protected_artifact_access_authorized: false;
+  route_selection_authorized: false;
+  route_binding_authorized: false;
+  credential_selection_authorized: false;
+  credential_assignment_binding_authorized: false;
+  credential_access_authorized: false;
+  credential_brokerage_authorized: false;
+  credential_resolution_authorized: false;
+  credential_delivery_authorized: false;
+  network_access_authorized: false;
+  readiness_probe_authorized: false;
+  publication_authorized: false;
+  delivery_authorized: false;
+  dispatch_authorized: false;
+  execution_authorized: false;
+  infrastructure_mutation_authorized: false;
+};
+
+export type WorkflowPhysicalTransportTargetContextBinding = {
+  binding_id: string;
+  endpoint_materialization_id: string;
+  credential_materialization_id: string;
+  state: "bound";
+  effective_state: "active" | "expired";
+  scope: WorkflowRunPlan["scope"];
+  binder_subject_id: string;
+  bound_at: string;
+  joint_usable_until: string;
+  policy_reference: string;
+  target_context_schema_reference: string;
+  authority: WorkflowPhysicalTransportTargetContextBindingAuthority;
+};
+
+export type WorkflowPhysicalTransportTargetContextBindingInventory = {
+  physical_transport_target_context_bindings: WorkflowPhysicalTransportTargetContextBinding[];
+  server_time: string;
+  durable: boolean;
+};
+
 export type WorkflowPhysicalTransportCredentialAssignmentSnapshotAuthority = {
   endpoint_resolution_authorized: false;
   protected_artifact_access_authorized: false;
@@ -1857,6 +1898,44 @@ const physicalTransportCredentialMaterializationFields = [
 ] as const;
 const physicalTransportCredentialMaterializationInventoryFields = [
   "physical_transport_credential_materializations",
+  "server_time",
+  "durable",
+] as const;
+const physicalTransportTargetContextBindingAuthorityFields = [
+  "endpoint_resolution_authorized",
+  "protected_artifact_access_authorized",
+  "route_selection_authorized",
+  "route_binding_authorized",
+  "credential_selection_authorized",
+  "credential_assignment_binding_authorized",
+  "credential_access_authorized",
+  "credential_brokerage_authorized",
+  "credential_resolution_authorized",
+  "credential_delivery_authorized",
+  "network_access_authorized",
+  "readiness_probe_authorized",
+  "publication_authorized",
+  "delivery_authorized",
+  "dispatch_authorized",
+  "execution_authorized",
+  "infrastructure_mutation_authorized",
+] as const;
+const physicalTransportTargetContextBindingFields = [
+  "binding_id",
+  "endpoint_materialization_id",
+  "credential_materialization_id",
+  "state",
+  "effective_state",
+  "scope",
+  "binder_subject_id",
+  "bound_at",
+  "joint_usable_until",
+  "policy_reference",
+  "target_context_schema_reference",
+  "authority",
+] as const;
+const physicalTransportTargetContextBindingInventoryFields = [
+  "physical_transport_target_context_bindings",
   "server_time",
   "durable",
 ] as const;
@@ -3357,6 +3436,54 @@ function isPhysicalTransportCredentialMaterialization(
   );
 }
 
+function hasZeroPhysicalTransportTargetContextBindingAuthority(
+  value: unknown,
+): value is WorkflowPhysicalTransportTargetContextBindingAuthority {
+  return (
+    isObject(value) &&
+    hasExactKeys(value, physicalTransportTargetContextBindingAuthorityFields) &&
+    physicalTransportTargetContextBindingAuthorityFields.every((field) => value[field] === false)
+  );
+}
+
+function isPhysicalTransportTargetContextBinding(
+  value: unknown,
+  scope: WorkflowScope,
+  serverTime: string,
+): value is WorkflowPhysicalTransportTargetContextBinding {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, physicalTransportTargetContextBindingFields) ||
+    !isExactScope(value.scope) ||
+    containsCredentialMaterial(value) ||
+    !isTimestamp(value.bound_at) ||
+    !isTimestamp(value.joint_usable_until)
+  ) {
+    return false;
+  }
+  const bindingScope = value.scope;
+  const boundAt = Date.parse(value.bound_at);
+  const jointUsableUntil = Date.parse(value.joint_usable_until);
+  const evaluatedAt = Date.parse(serverTime);
+  const expectedEffectiveState = evaluatedAt < jointUsableUntil ? "active" : "expired";
+  return (
+    isStableIdentifier(value.binding_id) &&
+    isStableIdentifier(value.endpoint_materialization_id) &&
+    isStableIdentifier(value.credential_materialization_id) &&
+    value.state === "bound" &&
+    value.effective_state === expectedEffectiveState &&
+    bindingScope.organization_id === scope.organizationId &&
+    bindingScope.environment_id === scope.environmentId &&
+    bindingScope.site_id === scope.siteId &&
+    isStableIdentifier(value.binder_subject_id) &&
+    boundAt <= evaluatedAt &&
+    boundAt < jointUsableUntil &&
+    isIdentifier(value.policy_reference) &&
+    isIdentifier(value.target_context_schema_reference) &&
+    hasZeroPhysicalTransportTargetContextBindingAuthority(value.authority)
+  );
+}
+
 function hasZeroPhysicalTransportCredentialAssignmentSnapshotAuthority(
   value: unknown,
 ): value is WorkflowPhysicalTransportCredentialAssignmentSnapshotAuthority {
@@ -4453,6 +4580,67 @@ export async function listWorkflowPhysicalTransportCredentialMaterializations(in
     leaseIds.add(materialization.lease_id);
   }
   return data as WorkflowPhysicalTransportCredentialMaterializationInventory;
+}
+
+export async function listWorkflowPhysicalTransportTargetContextBindings(input: {
+  scope: WorkflowScope;
+}): Promise<WorkflowPhysicalTransportTargetContextBindingInventory> {
+  const response = await apiFetch(
+    "/api/v1/workflows/physical-transport-target-context-bindings",
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(
+    response,
+    "Workflow physical transport target-context binding retrieval failed",
+  );
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, physicalTransportTargetContextBindingInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    !Array.isArray(data.physical_transport_target_context_bindings) ||
+    data.physical_transport_target_context_bindings.length > 256 ||
+    !isTimestamp(data.server_time) ||
+    typeof data.durable !== "boolean"
+  ) {
+    throw new ApiRequestError(
+      "Workflow physical transport target-context binding response was unsafe",
+      response.status,
+    );
+  }
+  const serverTime = data.server_time;
+  if (
+    !data.physical_transport_target_context_bindings.every((binding) =>
+      isPhysicalTransportTargetContextBinding(binding, input.scope, serverTime),
+    )
+  ) {
+    throw new ApiRequestError(
+      "Workflow physical transport target-context binding response was unsafe",
+      response.status,
+    );
+  }
+  const bindingIds = new Set<string>();
+  const endpointMaterializationIds = new Set<string>();
+  const credentialMaterializationIds = new Set<string>();
+  for (const binding of data.physical_transport_target_context_bindings) {
+    if (
+      !isObject(binding) ||
+      typeof binding.binding_id !== "string" ||
+      typeof binding.endpoint_materialization_id !== "string" ||
+      typeof binding.credential_materialization_id !== "string" ||
+      bindingIds.has(binding.binding_id) ||
+      endpointMaterializationIds.has(binding.endpoint_materialization_id) ||
+      credentialMaterializationIds.has(binding.credential_materialization_id)
+    ) {
+      throw new ApiRequestError(
+        "Workflow physical transport target-context binding response was unsafe",
+        response.status,
+      );
+    }
+    bindingIds.add(binding.binding_id);
+    endpointMaterializationIds.add(binding.endpoint_materialization_id);
+    credentialMaterializationIds.add(binding.credential_materialization_id);
+  }
+  return data as WorkflowPhysicalTransportTargetContextBindingInventory;
 }
 
 export async function listWorkflowPhysicalTransportCredentialAssignmentSnapshots(): Promise<WorkflowPhysicalTransportCredentialAssignmentSnapshotInventory> {
