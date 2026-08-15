@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-203 |
 | Title | Immutable deployment physical-transport credential-assignment snapshot without workflow binding, secret access or network authority |
-| Status | Implementation and local validation complete; PR CI pending |
+| Status | Implementation complete; PR verification passed |
 | Branch | `agent/workflow-transport-credential-assignment-snapshots` |
-| Pull Request | Not opened |
+| Pull Request | [#216](https://github.com/ozdemirumit/Project_Atlas/pull/216) |
 | Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-148, ADR-149, ADR-150, ADR-151, ADR-152, ADR-153 |
 | Last Updated | 2026-08-15 |
-| Next Action | Complete live-browser validation, publish the PR and verify PostgreSQL CI |
+| Next Action | Merge the SHA-locked PR, verify main CI and begin the next bounded slice |
 
 ### ATLAS-IMP-203 Scope Rationale
 
@@ -64,6 +64,9 @@
   prompt; no credential or operational authority was exposed.
 - CI now performs a latest-revision downgrade/upgrade round trip and runs the credential-assignment
   snapshot PostgreSQL concurrency and immutability tests against the service database.
+- Exact-head commit `b797bf347051f3c54aedad3a2263986e203e94da` passed PR CI run
+  `31853442682`; backend and frontend completed successfully, including the real PostgreSQL
+  migration round trip and concurrent snapshot/replay test.
 
 ### ATLAS-IMP-202 Delivery Evidence
 
