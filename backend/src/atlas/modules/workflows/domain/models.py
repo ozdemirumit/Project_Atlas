@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from datetime import datetime, timedelta
 from enum import StrEnum
 from hashlib import sha256
@@ -193,6 +193,23 @@ class WorkflowEventPhysicalTransportEndpointMaterializationResultState(StrEnum):
 class WorkflowEventPhysicalTransportEndpointMaterializationFailureClass(StrEnum):
     SEALED_LINEAGE_REJECTED = "sealed_lineage_rejected"
     ENDPOINT_SET_INVALID = "endpoint_set_invalid"
+    POLICY_LIMIT_EXCEEDED = "policy_limit_exceeded"
+    DEADLINE_EXPIRED = "deadline_expired"
+    PROTECTED_ARTIFACT_REVOKED = "protected_artifact_revoked"
+
+
+class WorkflowEventPhysicalTransportCredentialMaterializationAttemptState(StrEnum):
+    MATERIALIZATION_STARTED = "materialization_started"
+
+
+class WorkflowEventPhysicalTransportCredentialMaterializationResultState(StrEnum):
+    MATERIALIZED_PROTECTED = "materialized_protected"
+    MATERIALIZATION_FAILED = "materialization_failed"
+
+
+class WorkflowEventPhysicalTransportCredentialMaterializationFailureClass(StrEnum):
+    SEALED_LINEAGE_REJECTED = "sealed_lineage_rejected"
+    CREDENTIAL_SOURCE_INVALID = "credential_source_invalid"
     POLICY_LIMIT_EXCEEDED = "policy_limit_exceeded"
     DEADLINE_EXPIRED = "deadline_expired"
     PROTECTED_ARTIFACT_REVOKED = "protected_artifact_revoked"
@@ -4456,6 +4473,678 @@ class WorkflowEventPhysicalTransportCredentialAccessAuthorizationLease:
         return (
             WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseEffectiveState.EXPIRED
         )
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportCredentialMaterializationPolicy:
+    """Code-owned protected credential materialization contract."""
+
+    policy_id: str
+    policy_version: str
+    required_materializer_contract_id: str
+    required_materializer_attestor_id: str
+    protected_artifact_schema_id: str
+    protected_artifact_schema_version: str
+    protected_artifact_profile_digest: str
+    maximum_artifact_lifetime_seconds: int
+    irreversible_consumption_required: bool
+    automatic_retry_prohibited: bool
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.policy_id, "credential materialization policy id"),
+            (self.policy_version, "credential materialization policy version"),
+            (self.required_materializer_contract_id, "credential materializer contract id"),
+            (self.required_materializer_attestor_id, "credential materializer attestor id"),
+            (self.protected_artifact_schema_id, "protected credential artifact schema id"),
+            (
+                self.protected_artifact_schema_version,
+                "protected credential artifact schema version",
+            ),
+        ):
+            _require_identifier(value, name=name)
+        _require_digest(
+            self.protected_artifact_profile_digest,
+            name="protected credential artifact profile digest",
+        )
+        _require_digest(self.canonical_digest, name="credential materialization policy digest")
+        if not 1 <= self.maximum_artifact_lifetime_seconds <= 15:
+            raise ValueError("credential materialization lifetime exceeds lease boundary")
+        if (
+            self.irreversible_consumption_required is not True
+            or self.automatic_retry_prohibited is not True
+        ):
+            raise ValueError("credential materialization policy is unsafe")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("credential materialization policy canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "automatic_retry_prohibited": self.automatic_retry_prohibited,
+            "irreversible_consumption_required": self.irreversible_consumption_required,
+            "maximum_artifact_lifetime_seconds": self.maximum_artifact_lifetime_seconds,
+            "policy_id": self.policy_id,
+            "policy_version": self.policy_version,
+            "protected_artifact_profile_digest": self.protected_artifact_profile_digest,
+            "protected_artifact_schema_id": self.protected_artifact_schema_id,
+            "protected_artifact_schema_version": self.protected_artifact_schema_version,
+            "required_materializer_attestor_id": self.required_materializer_attestor_id,
+            "required_materializer_contract_id": self.required_materializer_contract_id,
+        }
+
+
+def code_owned_workflow_event_physical_transport_credential_materialization_policy() -> (
+    WorkflowEventPhysicalTransportCredentialMaterializationPolicy
+):
+    values: dict[str, object] = {
+        "policy_id": "policy.workflow-event-physical-transport-credential-materialization",
+        "policy_version": "1.0",
+        "required_materializer_contract_id": (
+            "contract.workflow-physical-transport-credential-materializer.v1"
+        ),
+        "required_materializer_attestor_id": (
+            "attestor.workflow-physical-transport-credential-materializer"
+        ),
+        "protected_artifact_schema_id": "schema.workflow-protected-credential-artifact",
+        "protected_artifact_schema_version": "1.0",
+        "protected_artifact_profile_digest": canonical_digest(
+            {"profile": "workflow-protected-credential-artifact", "version": "1.0"}
+        ),
+        "maximum_artifact_lifetime_seconds": 15,
+        "irreversible_consumption_required": True,
+        "automatic_retry_prohibited": True,
+    }
+    return WorkflowEventPhysicalTransportCredentialMaterializationPolicy(
+        **cast(Any, values), canonical_digest=canonical_digest(values)
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportCredentialMaterializationAuthority:
+    endpoint_resolution_authorized: bool = False
+    protected_artifact_access_authorized: bool = False
+    route_selection_authorized: bool = False
+    route_binding_authorized: bool = False
+    credential_selection_authorized: bool = False
+    credential_assignment_binding_authorized: bool = False
+    credential_access_authorized: bool = False
+    credential_brokerage_authorized: bool = False
+    credential_resolution_authorized: bool = False
+    credential_delivery_authorized: bool = False
+    network_access_authorized: bool = False
+    readiness_probe_authorized: bool = False
+    publication_authorized: bool = False
+    delivery_authorized: bool = False
+    dispatch_authorized: bool = False
+    execution_authorized: bool = False
+    infrastructure_mutation_authorized: bool = False
+
+    def __post_init__(self) -> None:
+        if any(value is not False for value in self.canonical_value().values()):
+            raise ValueError("credential materialization evidence cannot grant authority")
+
+    def canonical_value(self) -> dict[str, bool]:
+        return {
+            "credential_access_authorized": self.credential_access_authorized,
+            "credential_assignment_binding_authorized": (
+                self.credential_assignment_binding_authorized
+            ),
+            "credential_brokerage_authorized": self.credential_brokerage_authorized,
+            "credential_delivery_authorized": self.credential_delivery_authorized,
+            "credential_resolution_authorized": self.credential_resolution_authorized,
+            "credential_selection_authorized": self.credential_selection_authorized,
+            "delivery_authorized": self.delivery_authorized,
+            "dispatch_authorized": self.dispatch_authorized,
+            "endpoint_resolution_authorized": self.endpoint_resolution_authorized,
+            "execution_authorized": self.execution_authorized,
+            "infrastructure_mutation_authorized": self.infrastructure_mutation_authorized,
+            "network_access_authorized": self.network_access_authorized,
+            "protected_artifact_access_authorized": self.protected_artifact_access_authorized,
+            "publication_authorized": self.publication_authorized,
+            "readiness_probe_authorized": self.readiness_probe_authorized,
+            "route_binding_authorized": self.route_binding_authorized,
+            "route_selection_authorized": self.route_selection_authorized,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportCredentialAccessLeaseConsumptionClaim:
+    claim_id: str
+    authorization_lease_id: str
+    authorization_lease_digest: str
+    freshness_admission_id: str
+    freshness_admission_digest: str
+    attempt_id: str
+    materialization_id: str
+    scope: WorkflowScope
+    accessor_subject_id: str
+    claimed_at: datetime
+    request_fingerprint: str
+    idempotency_digest: str
+    authority: WorkflowEventPhysicalTransportCredentialMaterializationAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.claim_id, "credential materialization claim id"),
+            (self.authorization_lease_id, "credential access authorization lease id"),
+            (self.freshness_admission_id, "credential freshness admission id"),
+            (self.attempt_id, "credential materialization attempt id"),
+            (self.materialization_id, "credential materialization id"),
+            (self.accessor_subject_id, "credential accessor subject id"),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (self.authorization_lease_digest, "credential access authorization lease digest"),
+            (self.freshness_admission_digest, "credential freshness admission digest"),
+            (self.request_fingerprint, "credential materialization request fingerprint"),
+            (self.idempotency_digest, "credential materialization idempotency digest"),
+            (self.canonical_digest, "credential materialization claim digest"),
+        ):
+            _require_digest(value, name=name)
+        if self.claimed_at.tzinfo is None:
+            raise ValueError("credential materialization claim time must be aware")
+        if any(value is not False for value in self.authority.canonical_value().values()):
+            raise ValueError("credential materialization claims cannot grant authority")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("credential materialization claim canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "accessor_subject_id": self.accessor_subject_id,
+            "attempt_id": self.attempt_id,
+            "authority": self.authority.canonical_value(),
+            "authorization_lease_digest": self.authorization_lease_digest,
+            "authorization_lease_id": self.authorization_lease_id,
+            "claim_id": self.claim_id,
+            "claimed_at": self.claimed_at.isoformat(),
+            "freshness_admission_digest": self.freshness_admission_digest,
+            "freshness_admission_id": self.freshness_admission_id,
+            "idempotency_digest": self.idempotency_digest,
+            "materialization_id": self.materialization_id,
+            "request_fingerprint": self.request_fingerprint,
+            "scope": self.scope.canonical_value(),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportCredentialMaterializationAttempt:
+    attempt_id: str
+    materialization_id: str
+    consumption_claim_id: str
+    authorization_lease_id: str
+    authorization_lease_digest: str
+    freshness_admission_id: str
+    freshness_admission_digest: str
+    physical_transport_credential_assignment_binding_id: str
+    physical_transport_credential_assignment_binding_digest: str
+    credential_assignment_snapshot_id: str
+    credential_assignment_snapshot_digest: str
+    assignment_id: str
+    assignment_revision: str
+    source_assignment_digest: str
+    credential_generation: int
+    rotation_epoch: int
+    scope: WorkflowScope
+    accessor_subject_id: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    started_at: datetime
+    freshness_valid_until: datetime
+    lease_valid_until: datetime
+    state: WorkflowEventPhysicalTransportCredentialMaterializationAttemptState
+    authority: WorkflowEventPhysicalTransportCredentialMaterializationAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.attempt_id, "credential materialization attempt id"),
+            (self.materialization_id, "credential materialization id"),
+            (self.consumption_claim_id, "credential materialization claim id"),
+            (self.authorization_lease_id, "credential access authorization lease id"),
+            (
+                self.physical_transport_credential_assignment_binding_id,
+                "credential assignment binding id",
+            ),
+            (self.credential_assignment_snapshot_id, "credential assignment snapshot id"),
+            (self.assignment_id, "credential assignment id"),
+            (self.assignment_revision, "credential assignment revision"),
+            (self.accessor_subject_id, "credential accessor subject id"),
+            (self.policy_id, "credential materialization policy id"),
+            (self.policy_version, "credential materialization policy version"),
+        ):
+            _require_identifier(value, name=name)
+        for value, name in (
+            (self.authorization_lease_digest, "credential access authorization lease digest"),
+            (self.freshness_admission_digest, "credential freshness admission digest"),
+            (
+                self.physical_transport_credential_assignment_binding_digest,
+                "credential assignment binding digest",
+            ),
+            (self.credential_assignment_snapshot_digest, "credential assignment snapshot digest"),
+            (self.source_assignment_digest, "credential source assignment digest"),
+            (self.policy_digest, "credential materialization policy digest"),
+            (self.canonical_digest, "credential materialization attempt digest"),
+        ):
+            _require_digest(value, name=name)
+        if self.credential_generation < 1 or self.rotation_epoch < 1:
+            raise ValueError("credential materialization assignment rank must be positive")
+        if any(
+            value.tzinfo is None
+            for value in (self.started_at, self.freshness_valid_until, self.lease_valid_until)
+        ):
+            raise ValueError("credential materialization attempt times must be aware")
+        if (
+            self.state
+            is not (
+                WorkflowEventPhysicalTransportCredentialMaterializationAttemptState
+            ).MATERIALIZATION_STARTED
+        ):
+            raise ValueError("credential materialization attempt must remain started")
+        if any(value is not False for value in self.authority.canonical_value().values()):
+            raise ValueError("credential materialization attempts cannot grant authority")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("credential materialization attempt canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            "accessor_subject_id": self.accessor_subject_id,
+            "assignment_id": self.assignment_id,
+            "assignment_revision": self.assignment_revision,
+            "attempt_id": self.attempt_id,
+            "authority": self.authority.canonical_value(),
+            "authorization_lease_digest": self.authorization_lease_digest,
+            "authorization_lease_id": self.authorization_lease_id,
+            "consumption_claim_id": self.consumption_claim_id,
+            "credential_assignment_snapshot_digest": self.credential_assignment_snapshot_digest,
+            "credential_assignment_snapshot_id": self.credential_assignment_snapshot_id,
+            "credential_generation": self.credential_generation,
+            "freshness_admission_digest": self.freshness_admission_digest,
+            "freshness_admission_id": self.freshness_admission_id,
+            "freshness_valid_until": self.freshness_valid_until.isoformat(),
+            "lease_valid_until": self.lease_valid_until.isoformat(),
+            "materialization_id": self.materialization_id,
+            "physical_transport_credential_assignment_binding_digest": (
+                self.physical_transport_credential_assignment_binding_digest
+            ),
+            "physical_transport_credential_assignment_binding_id": (
+                self.physical_transport_credential_assignment_binding_id
+            ),
+            "policy_digest": self.policy_digest,
+            "policy_id": self.policy_id,
+            "policy_version": self.policy_version,
+            "rotation_epoch": self.rotation_epoch,
+            "scope": self.scope.canonical_value(),
+            "source_assignment_digest": self.source_assignment_digest,
+            "started_at": self.started_at.isoformat(),
+            "state": self.state.value,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportCredentialMaterializationInstruction:
+    materialization_id: str
+    attempt_id: str
+    consumption_claim_id: str
+    authorization_lease_id: str
+    authorization_lease_digest: str
+    credential_assignment_snapshot_id: str
+    credential_assignment_snapshot_digest: str
+    assignment_id: str
+    assignment_revision: str
+    source_assignment_digest: str
+    credential_requirement_profile_id: str
+    credential_requirement_profile_version: str
+    credential_requirement_profile_digest: str
+    credential_profile_id: str
+    credential_profile_version: str
+    credential_profile_digest: str
+    authentication_mechanism_class: str
+    principal_class: str
+    privilege_class: str
+    target_scope_commitment: str
+    credential_generation: int
+    rotation_epoch: int
+    broker_policy_id: str
+    broker_policy_version: str
+    broker_policy_digest: str
+    scope: WorkflowScope
+    accessor_subject_id: str
+    materializer_contract_id: str
+    materializer_attestor_id: str
+    protected_artifact_schema_id: str
+    protected_artifact_schema_version: str
+    protected_artifact_profile_digest: str
+    lease_valid_until: datetime
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.materialization_id,
+            self.attempt_id,
+            self.consumption_claim_id,
+            self.authorization_lease_id,
+            self.credential_assignment_snapshot_id,
+            self.assignment_id,
+            self.assignment_revision,
+            self.credential_requirement_profile_id,
+            self.credential_requirement_profile_version,
+            self.credential_profile_id,
+            self.credential_profile_version,
+            self.broker_policy_id,
+            self.broker_policy_version,
+            self.accessor_subject_id,
+            self.materializer_contract_id,
+            self.materializer_attestor_id,
+            self.protected_artifact_schema_id,
+            self.protected_artifact_schema_version,
+        ):
+            _require_identifier(value, name="credential materialization instruction identifier")
+        for value in (
+            self.authorization_lease_digest,
+            self.credential_assignment_snapshot_digest,
+            self.source_assignment_digest,
+            self.credential_requirement_profile_digest,
+            self.credential_profile_digest,
+            self.target_scope_commitment,
+            self.broker_policy_digest,
+            self.protected_artifact_profile_digest,
+            self.canonical_digest,
+        ):
+            _require_digest(value, name="credential materialization instruction digest")
+        if self.credential_generation < 1 or self.rotation_epoch < 1:
+            raise ValueError("credential materialization instruction rank must be positive")
+        if self.privilege_class != "read-only":
+            raise ValueError("credential materialization instruction must remain least privilege")
+        if self.lease_valid_until.tzinfo is None:
+            raise ValueError("credential materialization instruction deadline must be aware")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("credential materialization instruction canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            name: (
+                value.isoformat()
+                if isinstance(value, datetime)
+                else value.canonical_value()
+                if isinstance(value, WorkflowScope)
+                else value
+            )
+            for name, value in ((field.name, getattr(self, field.name)) for field in fields(self))
+            if name != "canonical_digest"
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportCredentialMaterializationReceipt:
+    materialization_id: str
+    attempt_id: str
+    consumption_claim_id: str
+    instruction_digest: str
+    materializer_contract_id: str
+    materializer_id: str
+    materializer_version: str
+    attested_by: str
+    accessor_subject_id: str
+    state: WorkflowEventPhysicalTransportCredentialMaterializationResultState
+    failure_class: WorkflowEventPhysicalTransportCredentialMaterializationFailureClass | None
+    protected_artifact_id: str | None
+    protected_artifact_digest: str | None
+    protected_artifact_schema_id: str
+    protected_artifact_schema_version: str
+    protected_artifact_profile_digest: str
+    source_assignment_digest: str
+    credential_generation: int
+    rotation_epoch: int
+    materialized_at: datetime | None
+    completed_at: datetime
+    usable_until: datetime | None
+    source_commitment_verified: bool
+    encrypted_at_rest: bool
+    accessor_bound: bool
+    lineage_bound: bool
+    raw_credential_returned: bool
+    secret_locator_returned: bool
+    provider_payload_returned: bool
+    network_activity_performed: bool
+    process_activity_performed: bool
+    protected_artifact_revoked: bool
+    cleanup_confirmed: bool
+    signature_verified: bool
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.materialization_id,
+            self.attempt_id,
+            self.consumption_claim_id,
+            self.materializer_contract_id,
+            self.materializer_id,
+            self.materializer_version,
+            self.attested_by,
+            self.accessor_subject_id,
+            self.protected_artifact_schema_id,
+            self.protected_artifact_schema_version,
+        ):
+            _require_identifier(value, name="credential materialization receipt identifier")
+        for value in (
+            self.instruction_digest,
+            self.protected_artifact_profile_digest,
+            self.source_assignment_digest,
+            self.canonical_digest,
+        ):
+            _require_digest(value, name="credential materialization receipt digest")
+        if self.completed_at.tzinfo is None:
+            raise ValueError("credential materialization receipt completion time must be aware")
+        if (
+            any(
+                (
+                    self.raw_credential_returned,
+                    self.secret_locator_returned,
+                    self.provider_payload_returned,
+                    self.network_activity_performed,
+                    self.process_activity_performed,
+                )
+            )
+            or self.signature_verified is not True
+        ):
+            raise ValueError("credential materialization receipt reports prohibited exposure")
+        if (
+            self.state
+            is (
+                WorkflowEventPhysicalTransportCredentialMaterializationResultState
+            ).MATERIALIZED_PROTECTED
+        ):
+            if (
+                self.failure_class is not None
+                or self.protected_artifact_id is None
+                or self.protected_artifact_digest is None
+                or self.materialized_at is None
+                or self.usable_until is None
+                or not self.materialized_at <= self.completed_at < self.usable_until
+                or not all(
+                    (
+                        self.source_commitment_verified,
+                        self.encrypted_at_rest,
+                        self.accessor_bound,
+                        self.lineage_bound,
+                        self.cleanup_confirmed,
+                    )
+                )
+                or self.protected_artifact_revoked
+            ):
+                raise ValueError("successful credential materialization receipt is invalid")
+            _require_identifier(self.protected_artifact_id, name="protected credential artifact id")
+            _require_digest(
+                self.protected_artifact_digest, name="protected credential artifact digest"
+            )
+        elif (
+            self.state
+            is not (
+                WorkflowEventPhysicalTransportCredentialMaterializationResultState
+            ).MATERIALIZATION_FAILED
+            or self.failure_class is None
+            or self.protected_artifact_id is not None
+            or self.protected_artifact_digest is not None
+            or self.materialized_at is not None
+            or self.usable_until is not None
+            or self.protected_artifact_revoked is not True
+            or self.cleanup_confirmed is not True
+        ):
+            raise ValueError("failed credential materialization receipt is invalid")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("credential materialization receipt canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            name: (
+                value.isoformat()
+                if isinstance(value, datetime)
+                else value.value
+                if isinstance(value, StrEnum)
+                else value
+            )
+            for name, value in ((field.name, getattr(self, field.name)) for field in fields(self))
+            if name != "canonical_digest"
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEventPhysicalTransportCredentialMaterializationResult:
+    materialization_id: str
+    attempt_id: str
+    attempt_digest: str
+    consumption_claim_id: str
+    consumption_claim_digest: str
+    authorization_lease_id: str
+    authorization_lease_digest: str
+    freshness_admission_id: str
+    freshness_admission_digest: str
+    credential_assignment_snapshot_id: str
+    credential_assignment_snapshot_digest: str
+    assignment_id: str
+    assignment_revision: str
+    credential_generation: int
+    rotation_epoch: int
+    scope: WorkflowScope
+    accessor_subject_id: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    materializer_id: str
+    materializer_version: str
+    materialization_receipt_digest: str
+    state: WorkflowEventPhysicalTransportCredentialMaterializationResultState
+    failure_class: WorkflowEventPhysicalTransportCredentialMaterializationFailureClass | None
+    protected_artifact_id: str | None
+    protected_artifact_digest: str | None
+    protected_artifact_schema_id: str
+    protected_artifact_schema_version: str
+    protected_artifact_profile_digest: str
+    completed_at: datetime
+    usable_until: datetime | None
+    protected_artifact_revoked: bool
+    cleanup_confirmed: bool
+    authority: WorkflowEventPhysicalTransportCredentialMaterializationAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.materialization_id,
+            self.attempt_id,
+            self.consumption_claim_id,
+            self.authorization_lease_id,
+            self.freshness_admission_id,
+            self.credential_assignment_snapshot_id,
+            self.assignment_id,
+            self.assignment_revision,
+            self.accessor_subject_id,
+            self.policy_id,
+            self.policy_version,
+            self.materializer_id,
+            self.materializer_version,
+            self.protected_artifact_schema_id,
+            self.protected_artifact_schema_version,
+        ):
+            _require_identifier(value, name="credential materialization result identifier")
+        for value in (
+            self.attempt_digest,
+            self.consumption_claim_digest,
+            self.authorization_lease_digest,
+            self.freshness_admission_digest,
+            self.credential_assignment_snapshot_digest,
+            self.policy_digest,
+            self.materialization_receipt_digest,
+            self.protected_artifact_profile_digest,
+            self.canonical_digest,
+        ):
+            _require_digest(value, name="credential materialization result digest")
+        if (
+            self.completed_at.tzinfo is None
+            or self.credential_generation < 1
+            or self.rotation_epoch < 1
+        ):
+            raise ValueError("credential materialization result metadata is invalid")
+        if (
+            self.state
+            is (
+                WorkflowEventPhysicalTransportCredentialMaterializationResultState
+            ).MATERIALIZED_PROTECTED
+        ):
+            if (
+                self.failure_class is not None
+                or self.protected_artifact_id is None
+                or self.protected_artifact_digest is None
+                or self.usable_until is None
+                or not self.completed_at < self.usable_until
+                or self.protected_artifact_revoked
+                or not self.cleanup_confirmed
+            ):
+                raise ValueError("successful credential materialization result is invalid")
+            _require_identifier(self.protected_artifact_id, name="protected credential artifact id")
+            _require_digest(
+                self.protected_artifact_digest, name="protected credential artifact digest"
+            )
+        elif (
+            self.state
+            is not (
+                WorkflowEventPhysicalTransportCredentialMaterializationResultState
+            ).MATERIALIZATION_FAILED
+            or self.failure_class is None
+            or self.protected_artifact_id is not None
+            or self.protected_artifact_digest is not None
+            or self.usable_until is not None
+            or self.protected_artifact_revoked is not True
+            or self.cleanup_confirmed is not True
+        ):
+            raise ValueError("failed credential materialization result is invalid")
+        if any(value is not False for value in self.authority.canonical_value().values()):
+            raise ValueError("credential materialization results cannot grant authority")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("credential materialization result canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return {
+            name: (
+                value.isoformat()
+                if isinstance(value, datetime)
+                else value.value
+                if isinstance(value, StrEnum)
+                else value.canonical_value()
+                if isinstance(
+                    value,
+                    (
+                        WorkflowScope,
+                        WorkflowEventPhysicalTransportCredentialMaterializationAuthority,
+                    ),
+                )
+                else value
+            )
+            for name, value in ((field.name, getattr(self, field.name)) for field in fields(self))
+            if name != "canonical_digest"
+        }
 
 
 @dataclass(frozen=True, slots=True)
