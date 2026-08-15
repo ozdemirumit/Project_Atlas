@@ -2016,6 +2016,7 @@ class PostgreSQLWorkflowPlanRepository:
                 )
             try:
                 session.add(self._credential_assignment_snapshot_model(candidate))
+                await session.flush()
                 session.add(self._credential_assignment_snapshot_claim_model(request))
                 await session.commit()
                 return WorkflowTransportCredentialAssignmentSnapshotResult(
