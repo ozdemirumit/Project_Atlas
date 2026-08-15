@@ -283,7 +283,6 @@ def upgrade() -> None:
         (
             "authorization_lease_id",
             "freshness_admission_id",
-            "physical_transport_credential_assignment_binding_id",
             "credential_assignment_snapshot_id",
             "assignment_id",
             "policy_digest",
@@ -292,6 +291,11 @@ def upgrade() -> None:
             "site_id",
             "accessor_subject_id",
         ),
+    )
+    op.create_index(
+        "ix_wf_credential_mat_attempt_assignment_binding",
+        attempt_table,
+        ["physical_transport_credential_assignment_binding_id"],
     )
     _create_indexes(
         result_table,
