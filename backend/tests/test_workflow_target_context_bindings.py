@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import FrozenInstanceError, fields, replace
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -84,7 +84,7 @@ def binding_values() -> dict[str, object]:
 def make_binding(**changes: object) -> WorkflowEventPhysicalTransportTargetContextBinding:
     values = {**binding_values(), **changes}
     return WorkflowEventPhysicalTransportTargetContextBinding(
-        **values,
+        **cast(Any, values),
         canonical_digest=canonical_digest(canonical_payload(values)),
     )
 
@@ -106,7 +106,7 @@ def test_code_owned_policy_v1_requires_versioned_safe_binding_contract() -> None
     unsafe = {**policy.digest_payload(), "exact_route_lineage_required": False}
     with pytest.raises(ValueError, match="requirements must remain enabled"):
         WorkflowEventPhysicalTransportTargetContextBindingPolicy(
-            **unsafe,
+            **cast(Any, unsafe),
             canonical_digest=canonical_digest(unsafe),
         )
 
