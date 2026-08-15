@@ -8,10 +8,10 @@
 | Title | Immutable workflow physical-transport credential-assignment freshness admission without access authority |
 | Status | In progress |
 | Branch | `agent/workflow-credential-assignment-freshness-admissions` |
-| Pull Request | Not opened |
+| Pull Request | [#218](https://github.com/ozdemirumit/Project_Atlas/pull/218) |
 | Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-150, ADR-153, ADR-154, ADR-155 |
 | Last Updated | 2026-08-15 |
-| Next Action | Complete live validation, PR CI, merge and independent `main` CI verification |
+| Next Action | Complete PR CI, merge and independent `main` CI verification |
 
 ### ATLAS-IMP-205 Scope Rationale
 
