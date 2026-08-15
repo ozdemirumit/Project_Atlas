@@ -6412,6 +6412,14 @@ textarea:focus-visible {
   grid-column: 1 / -1;
 }
 
+.workflow-target-context-opening-zero-authority {
+  padding: 7px 9px;
+  border-left: 3px solid #517166;
+  background: #f3f7f5;
+  color: #39544b;
+  font-weight: 650;
+}
+
 .workflow-empty-state {
   display: flex;
   align-items: center;

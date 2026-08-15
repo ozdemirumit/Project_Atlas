@@ -24,6 +24,7 @@ import {
   type WorkflowPhysicalTransportCredentialAccessAuthorizationLease,
   type WorkflowPhysicalTransportCredentialMaterialization,
   type WorkflowPhysicalTransportTargetContextAccessAuthorizationLease,
+  type WorkflowPhysicalTransportTargetContextArtifactOpening,
   type WorkflowPhysicalTransportTargetContextBinding,
   type WorkflowPhysicalTransportCredentialAssignmentSnapshot,
   type WorkflowPhysicalTransportCredentialAssignmentBinding,
@@ -959,6 +960,40 @@ const targetContextAccessAuthorizationLease: WorkflowPhysicalTransportTargetCont
   integrity_reference: "integrity.workflow-target-context-access-lease.1234567890abcdef",
 };
 
+const targetContextArtifactOpening: WorkflowPhysicalTransportTargetContextArtifactOpening = {
+  opening_id: "workflow-target-context-artifact-opening.1234567890abcdef",
+  scope: { ...plan.scope },
+  attempt_state: "completed",
+  result_state: "opened_protected",
+  issued_at: "2026-08-14T10:08:20Z",
+  started_at: "2026-08-14T10:08:23Z",
+  completed_at: "2026-08-14T10:08:24Z",
+  policy: {
+    policy_id: "policy.workflow-event-physical-transport-target-context-artifact-opening",
+    policy_version: "1.0",
+  },
+  authority: {
+    endpoint_resolution_authorized: false,
+    protected_artifact_access_authorized: false,
+    route_selection_authorized: false,
+    route_binding_authorized: false,
+    credential_selection_authorized: false,
+    credential_assignment_binding_authorized: false,
+    credential_access_authorized: false,
+    credential_brokerage_authorized: false,
+    credential_resolution_authorized: false,
+    credential_delivery_authorized: false,
+    network_access_authorized: false,
+    readiness_probe_authorized: false,
+    publication_authorized: false,
+    delivery_authorized: false,
+    dispatch_authorized: false,
+    execution_authorized: false,
+    infrastructure_mutation_authorized: false,
+  },
+  integrity_reference: "integrity.workflow-target-context-artifact-opening.1234567890abcdef",
+};
+
 const credentialAssignmentSnapshot: WorkflowPhysicalTransportCredentialAssignmentSnapshot = {
   snapshot_id: "workflow-credential-assignment-snapshot.1234567890abcdef",
   assignment_id: "deployment-credential-assignment.1234567890abcdef",
@@ -1477,6 +1512,29 @@ function targetContextAccessAuthorizationLeaseResponse(
   );
 }
 
+function targetContextArtifactOpeningResponse(
+  openings: unknown[],
+  status = 200,
+  serverTime = "2026-08-14T10:08:25Z",
+): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: {
+            physical_transport_target_context_artifact_openings: openings,
+            server_time: serverTime,
+            durable: false,
+          },
+          meta: {
+            correlation_id: "correlation.workflow.target-context-artifact-opening",
+            generated_at: serverTime,
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function credentialAssignmentSnapshotResponse(
   snapshots: unknown[],
   status = 200,
@@ -1549,6 +1607,8 @@ function mockReadResponses(input: {
   targetContextBindingServerTime?: string;
   targetContextAccessAuthorizationLeases?: unknown[];
   targetContextAccessAuthorizationLeaseServerTime?: string;
+  targetContextArtifactOpenings?: unknown[];
+  targetContextArtifactOpeningServerTime?: string;
   credentialAssignmentSnapshots?: unknown[];
   transportCompatibilityAdmissions?: unknown[];
   pendingTransportAdmissionResponse?: Promise<Response>;
@@ -1566,6 +1626,7 @@ function mockReadResponses(input: {
   pendingCredentialMaterializationResponse?: Promise<Response>;
   pendingTargetContextBindingResponse?: Promise<Response>;
   pendingTargetContextAccessAuthorizationLeaseResponse?: Promise<Response>;
+  pendingTargetContextArtifactOpeningResponse?: Promise<Response>;
   pendingCredentialAssignmentSnapshotResponse?: Promise<Response>;
   pendingTransportCompatibilityAdmissionResponse?: Promise<Response>;
   leaseStatus?: number;
@@ -1605,6 +1666,8 @@ function mockReadResponses(input: {
   targetContextBindingStatuses?: number[];
   targetContextAccessAuthorizationLeaseStatus?: number;
   targetContextAccessAuthorizationLeaseStatuses?: number[];
+  targetContextArtifactOpeningStatus?: number;
+  targetContextArtifactOpeningStatuses?: number[];
   credentialAssignmentSnapshotStatus?: number;
   credentialAssignmentSnapshotStatuses?: number[];
   transportCompatibilityAdmissionStatus?: number;
@@ -1625,10 +1688,34 @@ function mockReadResponses(input: {
   let credentialMaterializationReadCount = 0;
   let targetContextBindingReadCount = 0;
   let targetContextAccessAuthorizationLeaseReadCount = 0;
+  let targetContextArtifactOpeningReadCount = 0;
   let credentialAssignmentSnapshotReadCount = 0;
   let transportCompatibilityAdmissionReadCount = 0;
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (
+      url.endsWith(
+        "/api/v1/workflows/physical-transport-target-context-artifact-openings",
+      )
+    ) {
+      if (input.pendingTargetContextArtifactOpeningResponse) {
+        return input.pendingTargetContextArtifactOpeningResponse;
+      }
+      const status =
+        input.targetContextArtifactOpeningStatuses?.[
+          Math.min(
+            targetContextArtifactOpeningReadCount++,
+            input.targetContextArtifactOpeningStatuses.length - 1,
+          )
+        ] ?? input.targetContextArtifactOpeningStatus ?? 200;
+      return Promise.resolve(
+        targetContextArtifactOpeningResponse(
+          input.targetContextArtifactOpenings ?? [],
+          status,
+          input.targetContextArtifactOpeningServerTime,
+        ),
+      );
+    }
     if (
       url.endsWith(
         "/api/v1/workflows/physical-transport-target-context-access-authorization-leases",
@@ -4996,6 +5083,184 @@ describe("WorkflowPlanningWorkspace", () => {
       }),
     ).toBeNull();
     expect(section).not.toHaveTextContent(/binding\.hidden|attestation\.hidden/i);
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("renders target-context artifact opening attempts and results as minimized read-only evidence", async () => {
+    const pendingOpening: WorkflowPhysicalTransportTargetContextArtifactOpening = {
+      ...targetContextArtifactOpening,
+      opening_id: "workflow-target-context-artifact-opening.pending1234567890",
+      attempt_state: "started",
+      result_state: "pending",
+      completed_at: null,
+    };
+    const failedOpening: WorkflowPhysicalTransportTargetContextArtifactOpening = {
+      ...targetContextArtifactOpening,
+      opening_id: "workflow-target-context-artifact-opening.failed1234567890",
+      result_state: "opening_failed",
+    };
+    const uncertainOpening: WorkflowPhysicalTransportTargetContextArtifactOpening = {
+      ...targetContextArtifactOpening,
+      opening_id: "workflow-target-context-artifact-opening.uncertain1234567890",
+      attempt_state: "started",
+      result_state: "outcome_uncertain",
+      completed_at: null,
+    };
+    mockReadResponses({
+      targetContextArtifactOpenings: [
+        targetContextArtifactOpening,
+        pendingOpening,
+        failedOpening,
+        uncertainOpening,
+      ],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Target-context artifact openings",
+    })).closest("section") as HTMLElement;
+    const records = await within(section).findByRole("list", {
+      name: "Target-context artifact openings",
+    });
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) =>
+        (request instanceof Request ? request.url : request.toString()).endsWith(
+          "/api/v1/workflows/physical-transport-target-context-artifact-openings",
+        ),
+      ),
+    ).toBe(true);
+    expect(within(section).getByTitle(targetContextArtifactOpening.opening_id)).toBeVisible();
+    expect(within(section).getAllByTitle(targetContextArtifactOpening.policy.policy_id)).toHaveLength(
+      4,
+    );
+    expect(
+      within(section).getAllByTitle(targetContextArtifactOpening.integrity_reference),
+    ).toHaveLength(4);
+    expect(records).toHaveTextContent("opened protected");
+    expect(records).toHaveTextContent("pending");
+    expect(records).toHaveTextContent("opening failed");
+    expect(records).toHaveTextContent("outcome uncertain");
+    expect(records).toHaveTextContent("Issued");
+    expect(records).toHaveTextContent("Started");
+    expect(records).toHaveTextContent("Completed");
+    expect(records).toHaveTextContent("Not recorded");
+    expect(records).toHaveTextContent(
+      /Zero authority: this evidence grants no protected artifact access.*endpoint or credential disclosure.*delivery.*network.*readiness probe.*publication.*dispatch.*execution.*infrastructure mutation authority/i,
+    );
+    expect(
+      within(section).queryByRole("button", {
+        name: /open|retry|reveal|copy|download|connect|execute/i,
+      }),
+    ).toBeNull();
+    expect(section).not.toHaveTextContent(
+      /capsule|artifact[-_ ]?(?:id|digest)|attestation|endpoint[-_ ]?(?:id|coordinate)|credential[-_ ]?(?:id|detail)|route[-_ ]?(?:id|digest)|provider|canonical digest|fence|idempotency/i,
+    );
+    expect(section).not.toHaveTextContent(/\bMFA\b|second login|authorized browser session/i);
+  });
+
+  it("renders empty and loading target-context artifact opening states without controls", async () => {
+    mockReadResponses({ targetContextArtifactOpenings: [] });
+    const view = renderWorkspace();
+    let section = (await screen.findByRole("heading", {
+      name: "Target-context artifact openings",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText(
+        "No target-context artifact openings are recorded in this scope.",
+      ),
+    ).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+
+    view.unmount();
+    mockReadResponses({
+      pendingTargetContextArtifactOpeningResponse: new Promise<Response>(() => undefined),
+    });
+    renderWorkspace();
+    section = (await screen.findByRole("heading", {
+      name: "Target-context artifact openings",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Loading target-context artifact opening evidence..."),
+    ).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it.each([
+    [401, "Your session has expired", "Sign in again to continue."],
+    [
+      403,
+      "Target-context artifact opening permission is missing",
+      "current role or scope cannot inspect target-context artifact opening evidence",
+    ],
+    [
+      500,
+      "Target-context artifact openings are unavailable",
+      "No opening result, protected-access authority, or operational state is inferred",
+    ],
+  ])(
+    "handles target-context artifact opening read status %s in the normal browser session",
+    async (status, title, detail) => {
+      mockReadResponses({ targetContextArtifactOpeningStatus: status });
+      renderWorkspace();
+      const section = (await screen.findByRole("heading", {
+        name: "Target-context artifact openings",
+      })).closest("section") as HTMLElement;
+      expect(await within(section).findByText(title)).toBeVisible();
+      expect(within(section).getByText(new RegExp(detail, "i"))).toBeVisible();
+      expect(within(section).queryByRole("button")).toBeNull();
+      expect(section).not.toHaveTextContent(/\bMFA\b|second login|authorized browser session/i);
+    },
+  );
+
+  it.each([
+    ["a capsule", { ...targetContextArtifactOpening, capsule_id: "capsule.hidden" }],
+    ["an artifact", { ...targetContextArtifactOpening, artifact_id: "artifact.hidden" }],
+    ["an attestation", { ...targetContextArtifactOpening, attestation_id: "attestation.hidden" }],
+    ["a route", { ...targetContextArtifactOpening, route_id: "route.hidden" }],
+    ["a provider", { ...targetContextArtifactOpening, provider_id: "provider.hidden" }],
+    ["a digest", { ...targetContextArtifactOpening, result_digest: "a".repeat(64) }],
+    ["a fence", { ...targetContextArtifactOpening, fencing_token: 9 }],
+    ["an idempotency key", { ...targetContextArtifactOpening, idempotency_key: "hidden" }],
+    [
+      "an extra policy field",
+      {
+        ...targetContextArtifactOpening,
+        policy: { ...targetContextArtifactOpening.policy, policy_digest: "a".repeat(64) },
+      },
+    ],
+    [
+      "an extra authority",
+      {
+        ...targetContextArtifactOpening,
+        authority: { ...targetContextArtifactOpening.authority, open_authorized: false },
+      },
+    ],
+    [
+      "runtime authority",
+      {
+        ...targetContextArtifactOpening,
+        authority: { ...targetContextArtifactOpening.authority, execution_authorized: true },
+      },
+    ],
+    [
+      "an inconsistent pending completion",
+      { ...targetContextArtifactOpening, result_state: "pending", completed_at: null },
+    ],
+  ])("fails closed when a target-context artifact opening contains %s", async (_case, unsafe) => {
+    mockReadResponses({ targetContextArtifactOpenings: [unsafe] });
+    renderWorkspace();
+    const section = (await screen.findByRole("heading", {
+      name: "Target-context artifact openings",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Target-context artifact openings are unavailable"),
+    ).toBeVisible();
+    expect(
+      within(section).queryByRole("list", { name: "Target-context artifact openings" }),
+    ).toBeNull();
+    expect(section).not.toHaveTextContent(
+      /capsule\.hidden|artifact\.hidden|attestation\.hidden|route\.hidden|provider\.hidden/i,
+    );
     expect(within(section).queryByRole("button")).toBeNull();
   });
 
