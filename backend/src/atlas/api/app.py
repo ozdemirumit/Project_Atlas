@@ -1528,6 +1528,12 @@ from atlas.modules.support.application.service import SupportBundleService
 from atlas.modules.upgrade.adapters.memory import InMemoryUpgradeSimulationRepository
 from atlas.modules.upgrade.adapters.postgres import PostgreSQLUpgradeSimulationRepository
 from atlas.modules.upgrade.application.service import UpgradeService
+from atlas.modules.workflows.adapters.credential_materialization_synthetic import (
+    SyntheticWorkflowPhysicalTransportCredentialMaterializer,
+)
+from atlas.modules.workflows.adapters.credential_materialization_unavailable import (
+    UnavailableWorkflowPhysicalTransportCredentialMaterializer,
+)
 from atlas.modules.workflows.adapters.endpoint_materialization_synthetic import (
     SyntheticWorkflowPhysicalTransportEndpointMaterializer,
 )
@@ -1555,6 +1561,8 @@ from atlas.modules.workflows.application import (
     WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseService,
     WorkflowEventPhysicalTransportCredentialAssignmentBindingService,
     WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionService,
+    WorkflowEventPhysicalTransportCredentialMaterializationRepository,
+    WorkflowEventPhysicalTransportCredentialMaterializationService,
     WorkflowEventPhysicalTransportEndpointMaterializationRepository,
     WorkflowEventPhysicalTransportEndpointMaterializationService,
     WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseRepository,
@@ -1597,7 +1605,12 @@ from atlas.modules.workflows.domain import (
 
 
 class _WorkflowCredentialAccessAuthorizationNoStoreMiddleware(BaseHTTPMiddleware):
-    _PATH = "/api/v1/workflows/physical-transport-credential-access-authorization-leases"
+    _PATHS = frozenset(
+        {
+            "/api/v1/workflows/physical-transport-credential-access-authorization-leases",
+            "/api/v1/workflows/physical-transport-credential-materializations",
+        }
+    )
 
     async def dispatch(
         self,
@@ -1605,7 +1618,7 @@ class _WorkflowCredentialAccessAuthorizationNoStoreMiddleware(BaseHTTPMiddleware
         call_next: RequestResponseEndpoint,
     ) -> Response:
         response = await call_next(request)
-        if request.url.path == self._PATH:
+        if request.url.path in self._PATHS:
             response.headers.update(
                 {
                     "Cache-Control": "no-store, max-age=0",
@@ -2014,6 +2027,9 @@ def create_app(
     ) = None,
     workflow_event_physical_transport_endpoint_materialization_service: (
         WorkflowEventPhysicalTransportEndpointMaterializationService | None
+    ) = None,
+    workflow_event_physical_transport_credential_materialization_service: (
+        WorkflowEventPhysicalTransportCredentialMaterializationService | None
     ) = None,
     workflow_transport_profile_snapshot_service: WorkflowTransportProfileSnapshotService
     | None = None,
@@ -6487,6 +6503,50 @@ def create_app(
         resolved_endpoint_materialization_service = (
             workflow_event_physical_transport_endpoint_materialization_service
         )
+    if workflow_event_physical_transport_credential_materialization_service is None:
+        credential_materialization_repository_methods = (
+            "get_authoritative_time",
+            "get_credential_access_authorization_lease_by_id",
+            "get_credential_assignment_freshness_admission_by_id",
+            "get_credential_assignment_binding_by_id",
+            "get_credential_assignment_snapshot_by_id",
+            "get_current_credential_assignment_head",
+            "get_credential_materialization_claim_by_lease",
+            "get_credential_materialization_attempt_by_lease",
+            "list_credential_materialization_attempts",
+            "get_credential_materialization_result_by_lease",
+            "claim_credential_materialization",
+            "record_credential_materialization_result",
+        )
+        if not all(
+            callable(getattr(workflow_repository, method_name, None))
+            for method_name in credential_materialization_repository_methods
+        ):
+            raise ValueError(
+                "workflow planning repository does not implement protected credential "
+                "materializations; inject workflow_event_physical_transport_credential_"
+                "materialization_service explicitly"
+            )
+        credential_materialization_repository = cast(
+            WorkflowEventPhysicalTransportCredentialMaterializationRepository,
+            workflow_repository,
+        )
+        credential_materializer = (
+            SyntheticWorkflowPhysicalTransportCredentialMaterializer()
+            if resolved_settings.environment == "development"
+            else UnavailableWorkflowPhysicalTransportCredentialMaterializer()
+        )
+        resolved_credential_materialization_service = (
+            WorkflowEventPhysicalTransportCredentialMaterializationService(
+                repository=credential_materialization_repository,
+                materializer=credential_materializer,
+                audit_sink=resolved_audit_sink,
+            )
+        )
+    else:
+        resolved_credential_materialization_service = (
+            workflow_event_physical_transport_credential_materialization_service
+        )
     configured_transport_route_selection_heads = (
         _deployment_event_transport_route_selection_heads(
             resolved_settings,
@@ -6882,6 +6942,12 @@ def create_app(
         )
         app.state.workflow_endpoint_materialization_repository = (
             resolved_endpoint_materialization_service.repository
+        )
+        app.state.workflow_credential_materialization_service = (
+            resolved_credential_materialization_service
+        )
+        app.state.workflow_credential_materialization_repository = (
+            resolved_credential_materialization_service.repository
         )
         app.state.workflow_transport_route_selection_heads = (
             configured_transport_route_selection_heads

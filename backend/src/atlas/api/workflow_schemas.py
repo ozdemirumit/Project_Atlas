@@ -17,8 +17,12 @@ from atlas.modules.workflows.domain import (
     WorkflowEventByteArtifact,
     WorkflowEventLogicalChannelBinding,
     WorkflowEventPhysicalTransportCredentialAccessAuthorizationLease,
+    WorkflowEventPhysicalTransportCredentialAccessLeaseConsumptionClaim,
     WorkflowEventPhysicalTransportCredentialAssignmentBinding,
     WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmission,
+    WorkflowEventPhysicalTransportCredentialMaterializationAttempt,
+    WorkflowEventPhysicalTransportCredentialMaterializationResult,
+    WorkflowEventPhysicalTransportCredentialMaterializationResultState,
     WorkflowEventPhysicalTransportEndpointMaterializationAttempt,
     WorkflowEventPhysicalTransportEndpointMaterializationResult,
     WorkflowEventPhysicalTransportEndpointMaterializationResultState,
@@ -1913,6 +1917,139 @@ class WorkflowEventPhysicalTransportEndpointMaterializationResponse(BaseModel):
 
 class WorkflowEventPhysicalTransportEndpointMaterializationInventoryResponse(BaseModel):
     data: WorkflowEventPhysicalTransportEndpointMaterializationInventoryData
+    meta: ResponseMeta
+
+
+class CreateWorkflowEventPhysicalTransportCredentialMaterializationInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    authorization_lease_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    authorization_lease_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    policy_id: Literal["policy.workflow-event-physical-transport-credential-materialization"]
+    policy_version: Literal["1.0"]
+    irreversible_consumption_acknowledged: Literal[True]
+    uncertain_outcome_requires_new_authorization_acknowledged: Literal[True]
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class WorkflowEventPhysicalTransportCredentialMaterializationAuthorityData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    endpoint_resolution_authorized: Literal[False]
+    protected_artifact_access_authorized: Literal[False]
+    route_selection_authorized: Literal[False]
+    route_binding_authorized: Literal[False]
+    credential_selection_authorized: Literal[False]
+    credential_assignment_binding_authorized: Literal[False]
+    credential_access_authorized: Literal[False]
+    credential_brokerage_authorized: Literal[False]
+    credential_resolution_authorized: Literal[False]
+    credential_delivery_authorized: Literal[False]
+    network_access_authorized: Literal[False]
+    readiness_probe_authorized: Literal[False]
+    publication_authorized: Literal[False]
+    delivery_authorized: Literal[False]
+    dispatch_authorized: Literal[False]
+    execution_authorized: Literal[False]
+    infrastructure_mutation_authorized: Literal[False]
+
+
+class WorkflowEventPhysicalTransportCredentialMaterializationData(BaseModel):
+    """Human-safe outcome metadata without credential or protected-artifact access data."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    materialization_id: str
+    lease_id: str
+    freshness_admission_id: str
+    assignment_revision: str
+    credential_generation: int = Field(ge=1)
+    rotation_epoch: int = Field(ge=1)
+    policy_id: str
+    policy_version: str
+    scope: WorkflowScopeData
+    accessor_subject_id: str
+    consumed_at: datetime
+    recorded_at: datetime | None
+    outcome: Literal[
+        "materialized_protected",
+        "failed_closed_consumed",
+        "uncertain_consumed",
+    ]
+    lease_consumed: Literal[True]
+    protected_storage_verified: bool
+    raw_credential_disclosed: Literal[False]
+    authority: WorkflowEventPhysicalTransportCredentialMaterializationAuthorityData
+    integrity_reference: str = Field(min_length=3, max_length=256, pattern=STABLE_ID)
+
+    @classmethod
+    def from_domain(
+        cls,
+        *,
+        claim: WorkflowEventPhysicalTransportCredentialAccessLeaseConsumptionClaim,
+        attempt: WorkflowEventPhysicalTransportCredentialMaterializationAttempt,
+        result: WorkflowEventPhysicalTransportCredentialMaterializationResult | None,
+    ) -> WorkflowEventPhysicalTransportCredentialMaterializationData:
+        if result is None:
+            outcome = "uncertain_consumed"
+            recorded_at = None
+            protected_storage_verified = False
+        elif (
+            result.state
+            is (
+                WorkflowEventPhysicalTransportCredentialMaterializationResultState
+            ).MATERIALIZED_PROTECTED
+        ):
+            outcome = "materialized_protected"
+            recorded_at = result.completed_at
+            protected_storage_verified = True
+        else:
+            outcome = "failed_closed_consumed"
+            recorded_at = result.completed_at
+            protected_storage_verified = False
+        return cls(
+            materialization_id=attempt.materialization_id,
+            lease_id=attempt.authorization_lease_id,
+            freshness_admission_id=attempt.freshness_admission_id,
+            assignment_revision=attempt.assignment_revision,
+            credential_generation=attempt.credential_generation,
+            rotation_epoch=attempt.rotation_epoch,
+            policy_id=attempt.policy_id,
+            policy_version=attempt.policy_version,
+            scope=WorkflowScopeData.model_validate(attempt.scope.canonical_value()),
+            accessor_subject_id=attempt.accessor_subject_id,
+            consumed_at=claim.claimed_at,
+            recorded_at=recorded_at,
+            outcome=outcome,
+            lease_consumed=True,
+            protected_storage_verified=protected_storage_verified,
+            raw_credential_disclosed=False,
+            authority=(
+                WorkflowEventPhysicalTransportCredentialMaterializationAuthorityData.model_validate(
+                    attempt.authority.canonical_value()
+                )
+            ),
+            integrity_reference=f"integrity.{attempt.materialization_id}",
+        )
+
+
+class WorkflowEventPhysicalTransportCredentialMaterializationInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    physical_transport_credential_materializations: list[
+        WorkflowEventPhysicalTransportCredentialMaterializationData
+    ] = Field(max_length=256)
+    server_time: datetime
+    durable: bool
+
+
+class WorkflowEventPhysicalTransportCredentialMaterializationResponse(BaseModel):
+    data: WorkflowEventPhysicalTransportCredentialMaterializationData
+    meta: ResponseMeta
+
+
+class WorkflowEventPhysicalTransportCredentialMaterializationInventoryResponse(BaseModel):
+    data: WorkflowEventPhysicalTransportCredentialMaterializationInventoryData
     meta: ResponseMeta
 
 

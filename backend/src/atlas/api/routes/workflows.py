@@ -14,6 +14,7 @@ from atlas.api.security import (
     authorize_workflow_physical_transport_credential_assignment_binding_bind,
     authorize_workflow_physical_transport_credential_assignment_binding_read,
     authorize_workflow_physical_transport_credential_assignment_freshness_admission_read,
+    authorize_workflow_physical_transport_credential_materialization_read,
     authorize_workflow_physical_transport_endpoint_materialization_read,
     authorize_workflow_physical_transport_endpoint_resolution_authorization_lease_read,
     authorize_workflow_physical_transport_route_binding_read,
@@ -50,6 +51,7 @@ from atlas.api.workflow_schemas import (
     CreateWorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseInput,
     CreateWorkflowEventPhysicalTransportCredentialAssignmentBindingInput,
     CreateWorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionInput,
+    CreateWorkflowEventPhysicalTransportCredentialMaterializationInput,
     CreateWorkflowEventPhysicalTransportEndpointMaterializationInput,
     CreateWorkflowEventPhysicalTransportEndpointResolutionAuthorizationLeaseInput,
     CreateWorkflowEventPhysicalTransportRouteBindingInput,
@@ -113,6 +115,10 @@ from atlas.api.workflow_schemas import (
     WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionInventoryData,
     WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionInventoryResponse,
     WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionResponse,
+    WorkflowEventPhysicalTransportCredentialMaterializationData,
+    WorkflowEventPhysicalTransportCredentialMaterializationInventoryData,
+    WorkflowEventPhysicalTransportCredentialMaterializationInventoryResponse,
+    WorkflowEventPhysicalTransportCredentialMaterializationResponse,
     WorkflowEventPhysicalTransportEndpointMaterializationData,
     WorkflowEventPhysicalTransportEndpointMaterializationInventoryData,
     WorkflowEventPhysicalTransportEndpointMaterializationInventoryResponse,
@@ -190,6 +196,9 @@ from atlas.modules.workflows.application import (
     WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseService,
     WorkflowEventPhysicalTransportCredentialAssignmentBindingService,
     WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionService,
+    WorkflowEventPhysicalTransportCredentialMaterializationError,
+    WorkflowEventPhysicalTransportCredentialMaterializationService,
+    WorkflowEventPhysicalTransportCredentialMaterializationUncertainError,
     WorkflowEventPhysicalTransportEndpointMaterializationError,
     WorkflowEventPhysicalTransportEndpointMaterializationService,
     WorkflowEventPhysicalTransportEndpointMaterializationUncertainError,
@@ -927,6 +936,30 @@ def _raise_physical_transport_endpoint_materialization(
             and not isinstance(
                 error,
                 WorkflowEventPhysicalTransportEndpointMaterializationUncertainError,
+            )
+        ),
+    ) from error
+
+
+def _raise_physical_transport_credential_materialization(
+    error: WorkflowEventPhysicalTransportCredentialMaterializationError,
+) -> NoReturn:
+    if error.code.endswith("_invalid") or error.code.endswith("_required"):
+        status, title = 422, "Workflow credential materialization request invalid"
+    elif "unavailable" in error.code or "persistence" in error.code:
+        status, title = 503, "Workflow credential materialization service unavailable"
+    else:
+        status, title = 409, "Workflow credential materialization unavailable"
+    raise AtlasError(
+        status=status,
+        code=error.code,
+        title=title,
+        detail="The credential materialization request cannot be completed.",
+        retryable=(
+            status == 503
+            and not isinstance(
+                error,
+                WorkflowEventPhysicalTransportCredentialMaterializationUncertainError,
             )
         ),
     ) from error
@@ -4844,6 +4877,151 @@ async def create_workflow_physical_transport_endpoint_materialization(
     _no_store(response)
     return WorkflowEventPhysicalTransportEndpointMaterializationResponse(
         data=WorkflowEventPhysicalTransportEndpointMaterializationData.from_domain(
+            claim=claim,
+            attempt=attempt,
+            result=result,
+        ),
+        meta=_meta(request),
+    )
+
+
+@router.get(
+    "/physical-transport-credential-materializations",
+    response_model=WorkflowEventPhysicalTransportCredentialMaterializationInventoryResponse,
+)
+async def list_workflow_physical_transport_credential_materializations(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_workflow_physical_transport_credential_materialization_read),
+    ],
+) -> WorkflowEventPhysicalTransportCredentialMaterializationInventoryResponse:
+    del decision
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    service: WorkflowEventPhysicalTransportCredentialMaterializationService = (
+        request.app.state.workflow_credential_materialization_service
+    )
+    try:
+        attempts = await service.repository.list_credential_materialization_attempts(
+            scope=scope,
+            limit=256,
+        )
+        presentations: list[WorkflowEventPhysicalTransportCredentialMaterializationData] = []
+        for attempt in attempts:
+            if attempt.scope != scope:
+                raise WorkflowEventPhysicalTransportCredentialMaterializationError(
+                    "credential_materialization_repository_scope_violation"
+                )
+            claim = await service.repository.get_credential_materialization_claim_by_lease(
+                authorization_lease_id=attempt.authorization_lease_id
+            )
+            result = await service.repository.get_credential_materialization_result_by_lease(
+                authorization_lease_id=attempt.authorization_lease_id
+            )
+            if (
+                claim is None
+                or claim.scope != scope
+                or (result is not None and result.scope != scope)
+            ):
+                raise WorkflowEventPhysicalTransportCredentialMaterializationError(
+                    "credential_materialization_repository_scope_violation"
+                )
+            presentations.append(
+                WorkflowEventPhysicalTransportCredentialMaterializationData.from_domain(
+                    claim=claim,
+                    attempt=attempt,
+                    result=result,
+                )
+            )
+    except WorkflowEventPhysicalTransportCredentialMaterializationError as error:
+        _raise_physical_transport_credential_materialization(error)
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_credential_materialization_repository_unavailable",
+            title="Workflow credential materialization service unavailable",
+            detail="Credential materialization metadata is unavailable.",
+            retryable=True,
+        ) from error
+    _no_store(response)
+    return WorkflowEventPhysicalTransportCredentialMaterializationInventoryResponse(
+        data=WorkflowEventPhysicalTransportCredentialMaterializationInventoryData(
+            physical_transport_credential_materializations=sorted(
+                presentations,
+                key=lambda value: value.materialization_id,
+            ),
+            server_time=datetime.now(UTC),
+            durable=service.durable,
+        ),
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    "/physical-transport-credential-materializations",
+    response_model=WorkflowEventPhysicalTransportCredentialMaterializationResponse,
+    status_code=201,
+)
+async def create_workflow_physical_transport_credential_materialization(
+    payload: CreateWorkflowEventPhysicalTransportCredentialMaterializationInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[
+        AuthenticatedSubject,
+        Depends(workflow_physical_transport_credential_accessor_subject),
+    ],
+) -> WorkflowEventPhysicalTransportCredentialMaterializationResponse:
+    service: WorkflowEventPhysicalTransportCredentialMaterializationService = (
+        request.app.state.workflow_credential_materialization_service
+    )
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    try:
+        result = await service.materialize(
+            authorization_lease_id=payload.authorization_lease_id,
+            authorization_lease_digest=payload.authorization_lease_digest,
+            materialization_policy_id=payload.policy_id,
+            materialization_policy_version=payload.policy_version,
+            irreversible_consumption_acknowledged=(payload.irreversible_consumption_acknowledged),
+            uncertain_outcome_requires_new_authorization_acknowledged=(
+                payload.uncertain_outcome_requires_new_authorization_acknowledged
+            ),
+            idempotency_key=payload.idempotency_key,
+            context=WorkflowPhysicalTransportCredentialAccessorContext(
+                subject_id=subject.subject_id,
+                actor_type=subject.kind.value,
+                authentication_method=subject.authentication_method.value,
+                credential_audience=WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_ACCESSOR_AUDIENCE,
+                scope=scope,
+                correlation_id=str(request.state.correlation_id),
+                decision_id="decision.workflow-physical-transport-credential-accessor-authenticated",
+                requested_at=datetime.now(UTC),
+            ),
+        )
+        claim = await service.repository.get_credential_materialization_claim_by_lease(
+            authorization_lease_id=result.authorization_lease_id
+        )
+        attempt = await service.repository.get_credential_materialization_attempt_by_lease(
+            authorization_lease_id=result.authorization_lease_id
+        )
+        if claim is None or attempt is None:
+            raise WorkflowEventPhysicalTransportCredentialMaterializationUncertainError(
+                "credential_materialization_outcome_uncertain"
+            )
+    except WorkflowEventPhysicalTransportCredentialMaterializationError as error:
+        _raise_physical_transport_credential_materialization(error)
+    _no_store(response)
+    return WorkflowEventPhysicalTransportCredentialMaterializationResponse(
+        data=WorkflowEventPhysicalTransportCredentialMaterializationData.from_domain(
             claim=claim,
             attempt=attempt,
             result=result,
