@@ -48,7 +48,7 @@ def evidence(
         materialization_id=endpoint_materialization_id,
         canonical_digest="3" * 64,
         resolver_subject_id="service.endpoint-resolver",
-        usable_until=NOW + timedelta(minutes=5),
+        usable_until=NOW + timedelta(hours=2),
     )
     credential_binding = SimpleNamespace(
         binding_id="credential-assignment-binding.primary",
@@ -62,7 +62,7 @@ def evidence(
         materialization_id=credential_materialization_id,
         canonical_digest="6" * 64,
         accessor_subject_id="service.credential-accessor",
-        usable_until=NOW + timedelta(minutes=4),
+        usable_until=NOW + timedelta(hours=1),
     )
     return cast(
         tuple[Any, Any, Any, Any, Any, Any],
@@ -146,7 +146,7 @@ async def test_memory_binding_is_atomic_replay_safe_scope_bounded_and_source_uni
     assert await repository.list_target_context_bindings(scope=SCOPE) == (created.binding,)
     assert await repository.list_target_context_bindings(scope=OTHER_SCOPE) == ()
     assert not any(created.binding.authority.canonical_value().values())
-    assert created.binding.joint_usable_until == NOW + timedelta(minutes=4)
+    assert created.binding.joint_usable_until == NOW + timedelta(hours=1)
 
     policy = code_owned_workflow_event_physical_transport_target_context_binding_policy()
     route_binding, route_snapshot, endpoint_result, credential_binding, snapshot, result = (
