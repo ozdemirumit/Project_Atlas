@@ -380,6 +380,14 @@ claim-without-result is outcome-uncertain and is never retried automatically. Cl
 result grant zero authority and expose no credential, secret locator, artifact access, endpoint,
 network, delivery, dispatch or execution capability.
 
+Endpoint and credential outcomes are joined only through a later immutable protected transport
+target-context binding. The binder derives and validates the complete endpoint route, physical
+route binding, credential-assignment binding and materialization lineages without opening either
+protected artifact. It records the post-lock database time and the lesser artifact deadline as a
+historical overlap observation only. The binding grants no protected-artifact access, credential
+delivery, network, readiness, publication, delivery, dispatch or execution capability; every later
+authority boundary must revalidate protected-store state and remaining lifetime independently.
+
 ### 10.2 Publication State
 
 Outbox records track:

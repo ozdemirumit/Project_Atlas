@@ -634,6 +634,11 @@ MVP workflows do not execute C3 through C5 capabilities.
   protected adapter call; success, known failure and uncertainty remain append-only, raw
   credentials stay outside ordinary persistence and all post-materialization authority
   declarations are false.
+- ADR-158 establishes one immutable target-context binding across an exact successful endpoint
+  materialization result and credential materialization result after proving their complete shared
+  physical-route and assignment lineage. It opens neither artifact, records only the bounded
+  overlap observation and grants no artifact access, credential delivery, network, readiness,
+  publication, dispatch or execution authority.
 
 ## 39. Assumptions
 
