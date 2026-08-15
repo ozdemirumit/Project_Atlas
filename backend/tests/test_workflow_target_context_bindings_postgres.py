@@ -469,18 +469,31 @@ async def _cleanup_materialization_chain(
                 )
         for binding_id in credential_binding_ids:
             params = {"binding": binding_id}
+            await connection.execute(
+                text(
+                    "DELETE FROM workflow_event_transport_credential_access_authorization_claims "
+                    "WHERE authorization_lease_id IN ("
+                    "SELECT authorization_lease_id "
+                    "FROM workflow_event_transport_credential_access_authorization_leases "
+                    "WHERE credential_assignment_binding_id = :binding)"
+                ),
+                params,
+            )
+            await connection.execute(
+                text(
+                    "DELETE FROM workflow_event_transport_credential_access_authorization_leases "
+                    "WHERE credential_assignment_binding_id = :binding"
+                ),
+                params,
+            )
             for table in (
-                "workflow_event_transport_credential_access_authorization_claims",
-                "workflow_event_transport_credential_access_authorization_leases",
                 "workflow_event_transport_credential_freshness_claims",
                 "workflow_event_transport_credential_freshness_admissions",
                 "workflow_event_physical_transport_credential_binding_claims",
                 "workflow_event_physical_transport_credential_bindings",
             ):
                 column = (
-                    "physical_transport_credential_assignment_binding_id"
-                    if "authorization" in table
-                    else "credential_assignment_binding_id"
+                    "credential_assignment_binding_id"
                     if "freshness" in table
                     else "physical_transport_route_binding_id"
                     if "binding_claims" in table
