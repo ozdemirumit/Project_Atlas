@@ -192,6 +192,9 @@ class WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseService:
                 "credential_generation": head.credential_generation,
                 "freshness_admission_digest": admission_digest,
                 "freshness_admission_id": admission_id,
+                "policy_digest": self._policy.canonical_digest,
+                "policy_id": self._policy.policy_id,
+                "policy_version": self._policy.policy_version,
                 "rotation_epoch": head.rotation_epoch,
                 "scope": context.scope.canonical_value(),
             }

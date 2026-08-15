@@ -347,7 +347,7 @@ async def test_full_window_single_lease_and_fixed_workload_identity_are_mandator
 
 
 @pytest.mark.asyncio
-async def test_historical_policy_replay_and_completion_audit_recovery() -> None:
+async def test_policy_rotation_fails_replay_closed_and_completion_audit_recovers() -> None:
     failing = CollectingAuditSink(fail_kind="created")
     service, repository, _ = await service_fixture(audit=failing)
     with pytest.raises(WorkflowTransportCredentialAccessAuthorizationLeaseError) as uncertain:
@@ -376,10 +376,11 @@ async def test_historical_policy_replay_and_completion_audit_recovery() -> None:
         audit_sink=failing,
         policy=cast(Any, RotatedPolicy()),
     )
-    replay = await authorize(rotated, repository)
-    assert replay == committed
-    assert replay.policy_digest == current.canonical_digest
-    assert replay.policy_digest != rotated.policy.canonical_digest
+    with pytest.raises(WorkflowTransportCredentialAccessAuthorizationLeaseError) as mismatch:
+        await authorize(rotated, repository)
+    assert mismatch.value.code.endswith("_idempotency_conflict")
+    assert committed.policy_digest == current.canonical_digest
+    assert committed.policy_digest != rotated.policy.canonical_digest
     assert repository.calls == 2
 
 
@@ -450,6 +451,10 @@ def test_domain_and_public_surface_reject_authority_and_secret_material_drift() 
 async def test_effective_state_and_precommit_audit_failure_are_fail_closed() -> None:
     service, repository, _ = await service_fixture()
     lease = await authorize(service, repository)
+    assert (
+        lease.effective_state(evaluated_at=lease.issued_at - timedelta(microseconds=1))
+        is WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseEffectiveState.EXPIRED
+    )
     assert (
         lease.effective_state(evaluated_at=lease.valid_until - timedelta(microseconds=1))
         is WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseEffectiveState.ACTIVE

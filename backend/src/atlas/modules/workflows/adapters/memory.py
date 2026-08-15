@@ -1990,6 +1990,7 @@ class InMemoryWorkflowPlanRepository:
                     snapshot=snapshot,
                     head=head,
                     observed_at=observed_at,
+                    expected_policy_digest=request.expected_policy_digest,
                 ):
                     return WorkflowTransportCredentialAccessAuthorizationLeaseResult(
                         WorkflowTransportCredentialAccessAuthorizationLeaseStatus.EVIDENCE_CONFLICT,
@@ -4168,11 +4169,13 @@ class InMemoryWorkflowPlanRepository:
         snapshot: EventPhysicalTransportCredentialAssignmentSnapshot | None,
         head: DeploymentPhysicalTransportCredentialAssignment | None,
         observed_at: datetime,
+        expected_policy_digest: str,
     ) -> bool:
         if admission is None or binding is None or snapshot is None or head is None:
             return False
         return bool(
             canonical_digest(lease.digest_payload()) == lease.canonical_digest
+            and lease.policy_digest == expected_policy_digest
             and lease.freshness_admission_id == admission.freshness_admission_id
             and lease.freshness_admission_digest == admission.canonical_digest
             and lease.physical_transport_credential_assignment_binding_id == binding.binding_id
@@ -4193,7 +4196,7 @@ class InMemoryWorkflowPlanRepository:
             and lease.rotation_epoch == head.rotation_epoch == admission.rotation_epoch
             and head.active
             and not head.revoked
-            and head.activated_at <= observed_at < lease.valid_until
+            and head.activated_at <= lease.issued_at <= observed_at < lease.valid_until
             and observed_at < admission.valid_until
             and lease.valid_until <= head.expires_at
             and lease.scope == admission.scope == binding.scope == snapshot.scope == head.scope

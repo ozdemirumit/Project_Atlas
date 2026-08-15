@@ -4449,7 +4449,7 @@ class WorkflowEventPhysicalTransportCredentialAccessAuthorizationLease:
     ) -> WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseEffectiveState:
         if evaluated_at.tzinfo is None:
             raise ValueError("credential access authorization evaluation time must be aware")
-        if evaluated_at < self.valid_until:
+        if self.issued_at <= evaluated_at < self.valid_until:
             return (
                 WorkflowEventPhysicalTransportCredentialAccessAuthorizationLeaseEffectiveState
             ).ACTIVE

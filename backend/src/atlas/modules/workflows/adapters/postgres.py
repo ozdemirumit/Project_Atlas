@@ -9849,6 +9849,7 @@ class PostgreSQLWorkflowPlanRepository:
             head=head,
             admission_row=admission_row,
             observed_at=observed_at,
+            expected_policy_digest=request.expected_policy_digest,
         ):
             return WorkflowTransportCredentialAccessAuthorizationLeaseResult(
                 WorkflowTransportCredentialAccessAuthorizationLeaseStatus.EVIDENCE_CONFLICT,
@@ -10251,6 +10252,7 @@ class PostgreSQLWorkflowPlanRepository:
         admission_row: WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmissionModel
         | None,
         observed_at: datetime,
+        expected_policy_digest: str,
     ) -> bool:
         if binding_row is None or snapshot_row is None or head is None or admission_row is None:
             return False
@@ -10266,6 +10268,7 @@ class PostgreSQLWorkflowPlanRepository:
             return False
         return bool(
             canonical_digest(lease.digest_payload()) == lease.canonical_digest
+            and lease.policy_digest == expected_policy_digest
             and lease.freshness_admission_id == admission.freshness_admission_id
             and lease.freshness_admission_digest == admission.canonical_digest
             and lease.physical_transport_credential_assignment_binding_id == binding.binding_id
@@ -10288,7 +10291,7 @@ class PostgreSQLWorkflowPlanRepository:
             and lease.assignment_expires_at == head.expires_at
             and head.active
             and not head.revoked
-            and head.activated_at <= observed_at < lease.valid_until
+            and head.activated_at <= lease.issued_at <= observed_at < lease.valid_until
             and observed_at < admission.valid_until
             and lease.valid_until <= head.expires_at
             and lease.scope == admission.scope == binding.scope == snapshot.scope == head.scope
