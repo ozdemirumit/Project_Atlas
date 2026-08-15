@@ -629,6 +629,11 @@ MVP workflows do not execute C3 through C5 capabilities.
   credential-assignment freshness chain. It grants only a future single-use credential-access
   attempt and performs no secret resolution, brokerage, protected-artifact access, endpoint
   access, delivery, network operation, dispatch or execution.
+- ADR-157 establishes irreversible single-use credential-access lease consumption before one
+  trusted protected credential-materialization attempt. Claim and attempt commit before the
+  protected adapter call; success, known failure and uncertainty remain append-only, raw
+  credentials stay outside ordinary persistence and all post-materialization authority
+  declarations are false.
 
 ## 39. Assumptions
 

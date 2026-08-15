@@ -4,14 +4,80 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-206 |
-| Title | Bounded single-use workflow physical-transport credential-access authorization lease without secret resolution or delivery |
-| Status | Local validation complete |
-| Branch | `agent/workflow-credential-access-authorization-leases` |
-| Pull Request | Not opened |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-151, ADR-152, ADR-153, ADR-154, ADR-155, ADR-156 |
+| Task ID | ATLAS-IMP-207 |
+| Title | Atomic single-use workflow credential-access lease consumption and protected credential materialization |
+| Status | Review |
+| Branch | `agent/workflow-credential-materialization` |
+| Pull Request | [#220](https://github.com/ozdemirumit/Project_Atlas/pull/220) |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-153, ADR-154, ADR-155, ADR-156, ADR-157 |
 | Last Updated | 2026-08-15 |
-| Next Action | Complete live browser inspection, then open the PR and verify CI |
+| Next Action | Complete exact-head PR CI, SHA-locked merge and independent main CI |
+
+### ATLAS-IMP-207 Scope Rationale
+
+- IMP-206 grants one exact workload a 15-second, single-use credential-access lease but deliberately
+  opens no credential or protected artifact.
+- The next irreversible boundary must consume that lease before invoking any protected credential
+  materializer so crash, timeout or uncertainty can never make the lease reusable.
+- Credential delivery, endpoint/credential target-context binding, network use, dispatch and
+  execution remain independent later authorization boundaries.
+
+### ATLAS-IMP-207 Acceptance Criteria
+
+- Only the exact accessor workload and audience bound into the lease may request materialization.
+  The caller supplies lease ID/digest, code-owned policy, irreversible acknowledgements and
+  idempotency only; it cannot provide credential, secret, broker, target, artifact or runtime data.
+- PostgreSQL locks the complete assignment chain, takes the shared assignment fence, reads all
+  assignment revisions, proves the unique active/unexpired/unrevoked head, locks freshness and
+  lease evidence, then evaluates `clock_timestamp()`.
+- One unique append-only consumption claim and started attempt commit before the materializer is
+  called. Claim commit is the point of no return; failure, timeout, process loss, audit uncertainty
+  or protected-store uncertainty never restores or retries the lease.
+- Production fails closed without an approved protected credential materializer and store.
+  Development synthetic materialization verifies commitments and emits metadata without opening
+  or generating any credential or secret.
+- A known timely result is append-only and minimized. Late, invalid or cleanup-uncertain artifacts
+  are revoked/destroyed. Claim-without-result is outcome-uncertain and never auto-retried.
+- Claim, attempt and result contain 17 explicit authority fields, all exactly false. No credential,
+  protected-artifact, endpoint, network, delivery, dispatch, execution or mutation authority is
+  introduced.
+- Human API/UI reads are minimized and read-only through the existing username/password session
+  with no MFA, second login or authorized-browser prompt and no consume, retry, reveal, copy,
+  download or operational control.
+- Full local suites, real PostgreSQL concurrency/migration CI, live browser inspection, exact-head
+  PR CI, SHA-locked merge and independent main CI must pass.
+
+### ATLAS-IMP-207 Local Validation Evidence
+
+- Backend Ruff formatting/lint and strict MyPy passed across `1263` files; Alembic reports the
+  single head `20260815_0130`.
+- Before independent review, the complete backend suite passed `2143` tests with `16` expected
+  environment skips. The complete frontend suite passed `671` tests across `95` files and the
+  production Vite build completed successfully.
+- After review fixes, the combined credential materialization and authorization regression suite
+  passed `36` backend tests with one expected local PostgreSQL skip. Frontend TypeScript, ESLint
+  and `14` realistic backend-contract presentation tests passed.
+- Independent review findings were closed: both required audits precede irreversible claim;
+  successful artifacts are revoked/destroyed on audit or persistence uncertainty; timely receipts
+  remain recordable after lease expiry; artifact lifetime and attempt windows are bounded; API and
+  frontend inventory shapes agree; and all internal failures map to one non-oracle response.
+- Live browser validation at `http://127.0.0.1:5264` used the normal `atlas-demo` / `local-demo`
+  username/password login. Refreshing the workflow workspace and navigating to Installed MCPs kept
+  the same signed-in session; no MFA, second login or `authorized browser session` prompt appeared.
+  Credential-materialization outcome evidence remained minimized and read-only with no consume,
+  retry, reveal, copy, download or operational control.
+- CI performs the latest `0129 -> head` migration round trip and runs the live PostgreSQL
+  credential-materialization concurrency, append-only and claim-before-materializer test.
+
+### ATLAS-IMP-206 Delivery Evidence
+
+- PR [#219](https://github.com/ozdemirumit/Project_Atlas/pull/219) was SHA-locked at
+  `8bcfe3788d44472cccce040ac6f478a58326748f` and squash-merged as
+  `d16e1a76cd35e3ad41edcd2603e2b848d7b8fdae`.
+- Exact-head PR CI run `31868723874` completed successfully for backend and frontend, including
+  migration round-trip and real PostgreSQL credential-access authorization integration tests.
+- The merge commit independently passed `main` CI run `31869249066`; local `main` was
+  fast-forwarded to the verified merge commit before IMP-207 branched.
 
 ### ATLAS-IMP-206 Scope Rationale
 

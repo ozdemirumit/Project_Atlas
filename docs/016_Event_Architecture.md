@@ -370,6 +370,16 @@ It grants only credential-access authority for a future one-way consumer and per
 resolution, brokerage, protected-artifact access, endpoint access, delivery or network operation.
 Humans may inspect minimized lease evidence through the existing username/password session only.
 
+Credential materialization is a separate two-phase crash-safe boundary. PostgreSQL first locks the
+complete assignment chain, freshness admission and credential-access lease, takes the shared
+assignment fence, evaluates database time and atomically appends one irreversible consumption
+claim plus started attempt. Only after that commit may a trusted protected materializer resolve
+the exact deployment-owned credential and create an encrypted, exact-accessor-bound artifact
+outside ordinary persistence. Known results contain minimized receipt metadata only; a
+claim-without-result is outcome-uncertain and is never retried automatically. Claim, attempt and
+result grant zero authority and expose no credential, secret locator, artifact access, endpoint,
+network, delivery, dispatch or execution capability.
+
 ### 10.2 Publication State
 
 Outbox records track:

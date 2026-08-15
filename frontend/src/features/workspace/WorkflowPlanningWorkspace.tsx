@@ -33,6 +33,7 @@ import {
   listWorkflowDispatchOutboxPublicationLeases,
   listWorkflowEndpointResolutionAuthorizationLeases,
   listWorkflowPhysicalTransportCredentialAccessAuthorizationLeases,
+  listWorkflowPhysicalTransportCredentialMaterializations,
   listWorkflowPhysicalTransportCredentialAssignmentSnapshots,
   listWorkflowPhysicalTransportCredentialAssignmentFreshnessAdmissions,
   listWorkflowPhysicalTransportEndpointMaterializations,
@@ -198,6 +199,16 @@ export default function WorkflowPlanningWorkspace({
       siteId,
     ],
     queryFn: () => listWorkflowPhysicalTransportEndpointMaterializations({ scope }),
+    retry: false,
+  });
+  const credentialMaterializationQuery = useQuery({
+    queryKey: [
+      "workflow-physical-transport-credential-materializations",
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: () => listWorkflowPhysicalTransportCredentialMaterializations({ scope }),
     retry: false,
   });
   const targetQuery = useQuery({
@@ -651,6 +662,10 @@ export default function WorkflowPlanningWorkspace({
   const endpointMaterializationErrorStatus =
     endpointMaterializationQuery.error instanceof ApiRequestError
       ? endpointMaterializationQuery.error.status
+      : undefined;
+  const credentialMaterializationErrorStatus =
+    credentialMaterializationQuery.error instanceof ApiRequestError
+      ? credentialMaterializationQuery.error.status
       : undefined;
   const eventEnvelopes = eventEnvelopesForAdmission;
   const transportAdmissions = transportAdmissionsForArtifacts;
@@ -2138,6 +2153,163 @@ export default function WorkflowPlanningWorkspace({
             This read-only inventory confirms one-way lease consumption and minimized outcome
             evidence only. It exposes no endpoint coordinates, credentials, protected storage
             access, network access, or operational authority.
+          </span>
+        </div>
+      </section>
+
+      <section
+        className="workflow-physical-route-binding-band"
+        aria-labelledby="workflow-credential-materialization-title"
+      >
+        <div className="workflow-section-heading">
+          <div>
+            <p className="eyebrow">PROTECTED CREDENTIAL EVIDENCE</p>
+            <h2 id="workflow-credential-materialization-title">
+              Credential materialization outcomes
+            </h2>
+          </div>
+          <span>Read only</span>
+        </div>
+        {credentialMaterializationQuery.isLoading && (
+          <div className="workflow-empty-state" role="status">
+            <RefreshCw className="spin" size={18} />
+            <span>Loading credential materialization evidence...</span>
+          </div>
+        )}
+        {credentialMaterializationQuery.isError && (
+          <div className="inline-error" role="alert">
+            <div>
+              <strong>
+                {credentialMaterializationErrorStatus === 401
+                  ? "Your session has expired"
+                  : credentialMaterializationErrorStatus === 403
+                    ? "Credential materialization evidence permission is missing"
+                    : "Credential materialization evidence is unavailable"}
+              </strong>
+              <span>
+                {credentialMaterializationErrorStatus === 401
+                  ? "Sign in again to continue."
+                  : credentialMaterializationErrorStatus === 403
+                    ? "Your current role or scope cannot inspect credential materialization evidence."
+                    : "No materialization result or operational state is inferred from this failed read."}
+              </span>
+            </div>
+            {credentialMaterializationErrorStatus !== 401 &&
+              credentialMaterializationErrorStatus !== 403 && (
+                <button
+                  className="secondary-action"
+                  type="button"
+                  aria-label="Retry credential materialization evidence read"
+                  onClick={() => void credentialMaterializationQuery.refetch()}
+                >
+                  <RefreshCw size={16} />
+                  Retry
+                </button>
+              )}
+          </div>
+        )}
+        {credentialMaterializationQuery.isSuccess &&
+          credentialMaterializationQuery.data
+            .physical_transport_credential_materializations.length === 0 && (
+            <div className="workflow-empty-state" role="status">
+              <Database size={19} />
+              <span>No credential materialization outcomes are recorded in this scope.</span>
+            </div>
+          )}
+        {credentialMaterializationQuery.isSuccess &&
+          credentialMaterializationQuery.data
+            .physical_transport_credential_materializations.length > 0 && (
+            <ol
+              className="workflow-step-preview workflow-physical-route-binding-list"
+              aria-label="Credential materialization outcomes"
+            >
+              {credentialMaterializationQuery.data.physical_transport_credential_materializations.map(
+                (materialization) => {
+                  const outcomeLabel =
+                    materialization.outcome === "materialized_protected"
+                      ? "Protected result recorded"
+                      : materialization.outcome === "failed_closed_consumed"
+                        ? "Materialization failed closed"
+                        : "Outcome uncertain";
+                  return (
+                    <li key={materialization.materialization_id}>
+                      {materialization.outcome === "materialized_protected" ? (
+                        <ShieldCheck size={18} />
+                      ) : (
+                        <Ban size={18} />
+                      )}
+                      <div>
+                        <strong>
+                          <code title={materialization.materialization_id}>
+                            {safeHolderIdentifier(materialization.materialization_id)}
+                          </code>
+                          <span
+                            className={`state-badge ${
+                              materialization.outcome === "materialized_protected"
+                                ? "neutral"
+                                : "warning"
+                            }`}
+                          >
+                            {outcomeLabel}
+                          </span>
+                        </strong>
+                        <div className="workflow-physical-route-binding-grid">
+                          <span>
+                            Authorization lease <code title={materialization.lease_id}>{safeHolderIdentifier(materialization.lease_id)}</code>
+                          </span>
+                          <span>
+                            Freshness admission <code title={materialization.freshness_admission_id}>{safeHolderIdentifier(materialization.freshness_admission_id)}</code>
+                          </span>
+                          <span>
+                            Assignment revision <code title={materialization.assignment_revision}>{safeHolderIdentifier(materialization.assignment_revision)}</code>
+                          </span>
+                          <span>
+                            Credential generation {materialization.credential_generation} | rotation epoch {materialization.rotation_epoch}
+                          </span>
+                          <span>
+                            Organization {materialization.scope.organization_id} | environment {materialization.scope.environment_id} | site {materialization.scope.site_id}
+                          </span>
+                          <span>
+                            Accessor workload <code title={materialization.accessor_subject_id}>{safeHolderIdentifier(materialization.accessor_subject_id)}</code>
+                          </span>
+                          <span>
+                            Policy <code title={materialization.policy_id}>{safeHolderIdentifier(materialization.policy_id)}</code> v{materialization.policy_version}
+                          </span>
+                          <span>
+                            Consumed {formatTimestamp(materialization.consumed_at)} | lease consumed true
+                          </span>
+                          <span>
+                            Recorded {materialization.recorded_at === null ? "No known result" : formatTimestamp(materialization.recorded_at)}
+                          </span>
+                          <span>
+                            Protected storage verified {String(materialization.protected_storage_verified)} | raw credential disclosed false
+                          </span>
+                          <span>
+                            Integrity reference <code title={materialization.integrity_reference}>{safeHolderIdentifier(materialization.integrity_reference)}</code>
+                          </span>
+                          <span className="workflow-physical-route-binding-authority">
+                            Authority endpoint resolution false | protected artifact access false |
+                            route selection false | route binding false | credential selection false |
+                            credential assignment binding false | credential access false |
+                            credential brokerage false | credential resolution false | credential
+                            delivery false | network access false | readiness probe false |
+                            publication false | delivery false | dispatch false | execution false |
+                            infrastructure mutation false
+                          </span>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                },
+              )}
+            </ol>
+          )}
+        <div className="workflow-safety-boundary" role="note">
+          <LockKeyhole size={18} />
+          <span>
+            This normal-session inventory is read-only. It exposes minimized lineage and outcome
+            evidence only, with no credential content, protected-artifact access, materialization
+            action, retry operation, delivery, network, dispatch, execution, or mutation authority.
           </span>
         </div>
       </section>

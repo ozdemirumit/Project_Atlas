@@ -938,6 +938,53 @@ export type WorkflowPhysicalTransportEndpointMaterializationInventory = {
   durable: boolean;
 };
 
+export type WorkflowPhysicalTransportCredentialMaterializationAuthority = {
+  endpoint_resolution_authorized: false;
+  protected_artifact_access_authorized: false;
+  route_selection_authorized: false;
+  route_binding_authorized: false;
+  credential_selection_authorized: false;
+  credential_assignment_binding_authorized: false;
+  credential_access_authorized: false;
+  credential_brokerage_authorized: false;
+  credential_resolution_authorized: false;
+  credential_delivery_authorized: false;
+  network_access_authorized: false;
+  readiness_probe_authorized: false;
+  publication_authorized: false;
+  delivery_authorized: false;
+  dispatch_authorized: false;
+  execution_authorized: false;
+  infrastructure_mutation_authorized: false;
+};
+
+export type WorkflowPhysicalTransportCredentialMaterialization = {
+  materialization_id: string;
+  lease_id: string;
+  freshness_admission_id: string;
+  assignment_revision: string;
+  credential_generation: number;
+  rotation_epoch: number;
+  policy_id: string;
+  policy_version: "1.0";
+  scope: WorkflowRunPlan["scope"];
+  accessor_subject_id: string;
+  consumed_at: string;
+  recorded_at: string | null;
+  outcome: "materialized_protected" | "failed_closed_consumed" | "uncertain_consumed";
+  lease_consumed: true;
+  protected_storage_verified: boolean;
+  raw_credential_disclosed: false;
+  authority: WorkflowPhysicalTransportCredentialMaterializationAuthority;
+  integrity_reference: string;
+};
+
+export type WorkflowPhysicalTransportCredentialMaterializationInventory = {
+  physical_transport_credential_materializations: WorkflowPhysicalTransportCredentialMaterialization[];
+  server_time: string;
+  durable: boolean;
+};
+
 export type WorkflowPhysicalTransportCredentialAssignmentSnapshotAuthority = {
   endpoint_resolution_authorized: false;
   protected_artifact_access_authorized: false;
@@ -1766,6 +1813,50 @@ const physicalTransportEndpointMaterializationFields = [
 ] as const;
 const physicalTransportEndpointMaterializationInventoryFields = [
   "physical_transport_endpoint_materializations",
+  "server_time",
+  "durable",
+] as const;
+const physicalTransportCredentialMaterializationAuthorityFields = [
+  "endpoint_resolution_authorized",
+  "protected_artifact_access_authorized",
+  "route_selection_authorized",
+  "route_binding_authorized",
+  "credential_selection_authorized",
+  "credential_assignment_binding_authorized",
+  "credential_access_authorized",
+  "credential_brokerage_authorized",
+  "credential_resolution_authorized",
+  "credential_delivery_authorized",
+  "network_access_authorized",
+  "readiness_probe_authorized",
+  "publication_authorized",
+  "delivery_authorized",
+  "dispatch_authorized",
+  "execution_authorized",
+  "infrastructure_mutation_authorized",
+] as const;
+const physicalTransportCredentialMaterializationFields = [
+  "materialization_id",
+  "lease_id",
+  "freshness_admission_id",
+  "assignment_revision",
+  "credential_generation",
+  "rotation_epoch",
+  "policy_id",
+  "policy_version",
+  "scope",
+  "accessor_subject_id",
+  "consumed_at",
+  "recorded_at",
+  "outcome",
+  "lease_consumed",
+  "protected_storage_verified",
+  "raw_credential_disclosed",
+  "authority",
+  "integrity_reference",
+] as const;
+const physicalTransportCredentialMaterializationInventoryFields = [
+  "physical_transport_credential_materializations",
   "server_time",
   "durable",
 ] as const;
@@ -3200,6 +3291,72 @@ function isPhysicalTransportEndpointMaterialization(
   );
 }
 
+function hasZeroPhysicalTransportCredentialMaterializationAuthority(
+  value: unknown,
+): value is WorkflowPhysicalTransportCredentialMaterializationAuthority {
+  return (
+    isObject(value) &&
+    hasExactKeys(value, physicalTransportCredentialMaterializationAuthorityFields) &&
+    physicalTransportCredentialMaterializationAuthorityFields.every(
+      (field) => value[field] === false,
+    )
+  );
+}
+
+function isPhysicalTransportCredentialMaterialization(
+  value: unknown,
+  scope: WorkflowScope,
+  serverTime: string,
+): value is WorkflowPhysicalTransportCredentialMaterialization {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, physicalTransportCredentialMaterializationFields) ||
+    !isExactScope(value.scope) ||
+    containsCredentialMaterial(value) ||
+    !isTimestamp(value.consumed_at) ||
+    (value.recorded_at !== null && !isTimestamp(value.recorded_at))
+  ) {
+    return false;
+  }
+  const materializationScope = value.scope;
+  const consumedAt = Date.parse(value.consumed_at);
+  const recordedAt = value.recorded_at === null ? null : Date.parse(value.recorded_at);
+  const outcomeIsConsistent =
+    (value.outcome === "materialized_protected" &&
+      recordedAt !== null &&
+      value.protected_storage_verified === true) ||
+    (value.outcome === "failed_closed_consumed" &&
+      recordedAt !== null &&
+      value.protected_storage_verified === false) ||
+    (value.outcome === "uncertain_consumed" &&
+      recordedAt === null &&
+      value.protected_storage_verified === false);
+  return (
+    isStableIdentifier(value.materialization_id) &&
+    isStableIdentifier(value.lease_id) &&
+    isStableIdentifier(value.freshness_admission_id) &&
+    isStableIdentifier(value.assignment_revision) &&
+    Number.isSafeInteger(value.credential_generation) &&
+    Number(value.credential_generation) >= 1 &&
+    Number.isSafeInteger(value.rotation_epoch) &&
+    Number(value.rotation_epoch) >= 1 &&
+    value.policy_id === "policy.workflow-event-physical-transport-credential-materialization" &&
+    value.policy_version === "1.0" &&
+    materializationScope.organization_id === scope.organizationId &&
+    materializationScope.environment_id === scope.environmentId &&
+    materializationScope.site_id === scope.siteId &&
+    isStableIdentifier(value.accessor_subject_id) &&
+    consumedAt <= Date.parse(serverTime) &&
+    (recordedAt === null ||
+      (recordedAt >= consumedAt && recordedAt <= Date.parse(serverTime))) &&
+    outcomeIsConsistent &&
+    value.lease_consumed === true &&
+    value.raw_credential_disclosed === false &&
+    hasZeroPhysicalTransportCredentialMaterializationAuthority(value.authority) &&
+    isStableIdentifier(value.integrity_reference)
+  );
+}
+
 function hasZeroPhysicalTransportCredentialAssignmentSnapshotAuthority(
   value: unknown,
 ): value is WorkflowPhysicalTransportCredentialAssignmentSnapshotAuthority {
@@ -4239,6 +4396,63 @@ export async function listWorkflowPhysicalTransportEndpointMaterializations(inpu
     leaseIds.add(materialization.lease_id);
   }
   return data as WorkflowPhysicalTransportEndpointMaterializationInventory;
+}
+
+export async function listWorkflowPhysicalTransportCredentialMaterializations(input: {
+  scope: WorkflowScope;
+}): Promise<WorkflowPhysicalTransportCredentialMaterializationInventory> {
+  const response = await apiFetch(
+    "/api/v1/workflows/physical-transport-credential-materializations",
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(
+    response,
+    "Workflow physical transport credential materialization retrieval failed",
+  );
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, physicalTransportCredentialMaterializationInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    !Array.isArray(data.physical_transport_credential_materializations) ||
+    data.physical_transport_credential_materializations.length > 256 ||
+    !isTimestamp(data.server_time) ||
+    typeof data.durable !== "boolean"
+  ) {
+    throw new ApiRequestError(
+      "Workflow physical transport credential materialization response was unsafe",
+      response.status,
+    );
+  }
+  const serverTime = data.server_time;
+  if (
+    !data.physical_transport_credential_materializations.every((materialization) =>
+      isPhysicalTransportCredentialMaterialization(materialization, input.scope, serverTime),
+    )
+  ) {
+    throw new ApiRequestError(
+      "Workflow physical transport credential materialization response was unsafe",
+      response.status,
+    );
+  }
+  const materializationIds = new Set<string>();
+  const leaseIds = new Set<string>();
+  for (const materialization of data.physical_transport_credential_materializations) {
+    if (
+      !isObject(materialization) ||
+      typeof materialization.materialization_id !== "string" ||
+      typeof materialization.lease_id !== "string" ||
+      materializationIds.has(materialization.materialization_id) ||
+      leaseIds.has(materialization.lease_id)
+    ) {
+      throw new ApiRequestError(
+        "Workflow physical transport credential materialization response was unsafe",
+        response.status,
+      );
+    }
+    materializationIds.add(materialization.materialization_id);
+    leaseIds.add(materialization.lease_id);
+  }
+  return data as WorkflowPhysicalTransportCredentialMaterializationInventory;
 }
 
 export async function listWorkflowPhysicalTransportCredentialAssignmentSnapshots(): Promise<WorkflowPhysicalTransportCredentialAssignmentSnapshotInventory> {

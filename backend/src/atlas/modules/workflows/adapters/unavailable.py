@@ -61,6 +61,13 @@ from atlas.modules.workflows.application.credential_assignment_snapshot_ports im
     WorkflowTransportCredentialAssignmentSnapshotRequest,
     WorkflowTransportCredentialAssignmentSnapshotResult,
 )
+from atlas.modules.workflows.application.credential_materialization_ports import (
+    WorkflowEventPhysicalTransportCredentialMaterializationClaimRequest,
+    WorkflowEventPhysicalTransportCredentialMaterializationClaimResult,
+    WorkflowEventPhysicalTransportCredentialMaterializationError,
+    WorkflowEventPhysicalTransportCredentialMaterializationResultRequest,
+    WorkflowEventPhysicalTransportCredentialMaterializationResultWrite,
+)
 from atlas.modules.workflows.application.endpoint_materialization_ports import (
     WorkflowEventPhysicalTransportEndpointMaterializationClaimRequest,
     WorkflowEventPhysicalTransportEndpointMaterializationClaimResult,
@@ -136,8 +143,11 @@ from atlas.modules.workflows.domain import (
     WorkflowEventByteArtifact,
     WorkflowEventLogicalChannelBinding,
     WorkflowEventPhysicalTransportCredentialAccessAuthorizationLease,
+    WorkflowEventPhysicalTransportCredentialAccessLeaseConsumptionClaim,
     WorkflowEventPhysicalTransportCredentialAssignmentBinding,
     WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmission,
+    WorkflowEventPhysicalTransportCredentialMaterializationAttempt,
+    WorkflowEventPhysicalTransportCredentialMaterializationResult,
     WorkflowEventPhysicalTransportEndpointMaterializationAttempt,
     WorkflowEventPhysicalTransportEndpointMaterializationResult,
     WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease,
@@ -662,6 +672,43 @@ class UnavailableWorkflowPlanRepository:
     ) -> WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease | None:
         self._raise_endpoint_resolution_authorization()
 
+    async def get_credential_access_authorization_lease_by_id(
+        self, *, authorization_lease_id: str
+    ) -> WorkflowEventPhysicalTransportCredentialAccessAuthorizationLease | None:
+        self._raise_credential_materialization()
+
+    async def get_credential_materialization_claim_by_lease(
+        self, *, authorization_lease_id: str
+    ) -> WorkflowEventPhysicalTransportCredentialAccessLeaseConsumptionClaim | None:
+        self._raise_credential_materialization()
+
+    async def get_credential_materialization_attempt_by_lease(
+        self, *, authorization_lease_id: str
+    ) -> WorkflowEventPhysicalTransportCredentialMaterializationAttempt | None:
+        self._raise_credential_materialization()
+
+    async def list_credential_materialization_attempts(
+        self, *, scope: WorkflowScope, limit: int
+    ) -> tuple[WorkflowEventPhysicalTransportCredentialMaterializationAttempt, ...]:
+        self._raise_credential_materialization()
+
+    async def get_credential_materialization_result_by_lease(
+        self, *, authorization_lease_id: str
+    ) -> WorkflowEventPhysicalTransportCredentialMaterializationResult | None:
+        self._raise_credential_materialization()
+
+    async def claim_credential_materialization(
+        self,
+        request: WorkflowEventPhysicalTransportCredentialMaterializationClaimRequest,
+    ) -> WorkflowEventPhysicalTransportCredentialMaterializationClaimResult:
+        self._raise_credential_materialization()
+
+    async def record_credential_materialization_result(
+        self,
+        request: WorkflowEventPhysicalTransportCredentialMaterializationResultRequest,
+    ) -> WorkflowEventPhysicalTransportCredentialMaterializationResultWrite:
+        self._raise_credential_materialization()
+
     async def get_endpoint_resolution_authorization_lease_by_id(
         self, *, authorization_lease_id: str
     ) -> WorkflowEventPhysicalTransportEndpointResolutionAuthorizationLease | None:
@@ -906,4 +953,11 @@ class UnavailableWorkflowPlanRepository:
         raise WorkflowEventPhysicalTransportEndpointMaterializationError(
             "workflow_endpoint_materialization_repository_unavailable",
             "Durable workflow endpoint materialization storage is not configured.",
+        )
+
+    @staticmethod
+    def _raise_credential_materialization() -> NoReturn:
+        raise WorkflowEventPhysicalTransportCredentialMaterializationError(
+            "workflow_credential_materialization_repository_unavailable",
+            "Durable workflow credential materialization storage is not configured.",
         )

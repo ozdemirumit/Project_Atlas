@@ -68,6 +68,9 @@ WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_ASSIGNMENT_FRESHNESS_ADMISSION_READ = (
 WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_ACCESS_AUTHORIZATION_LEASE_READ = (
     "workflow.physical-transport-credential-access-authorization-leases.read"
 )
+WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_MATERIALIZATION_READ = (
+    "workflow.physical-transport-credential-materializations.read"
+)
 WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMISSION_READ = (
     "workflow.physical-transport-route-freshness-admissions.read"
 )
@@ -1823,6 +1826,20 @@ def workflow_physical_transport_endpoint_materialization_scope(
     )
 
 
+def workflow_physical_transport_credential_materialization_scope(
+    organization_id: str,
+    environment: str,
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.workflow",
+        resource_id="resource.workflow.physical-transport-credential-materializations",
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
 def investigation_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -2109,6 +2126,13 @@ def build_development_authorization_service(
             description=(
                 "Read minimized immutable workflow physical transport credential-access "
                 "authorization leases."
+            ),
+        ),
+        PermissionDefinition(
+            permission_id=WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_MATERIALIZATION_READ,
+            description=(
+                "Read minimized immutable workflow physical transport protected credential "
+                "materialization outcomes."
             ),
         ),
         PermissionDefinition(
@@ -3012,6 +3036,7 @@ def build_development_authorization_service(
                 WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_ASSIGNMENT_BINDING_READ,
                 WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_ASSIGNMENT_FRESHNESS_ADMISSION_READ,
                 WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_ACCESS_AUTHORIZATION_LEASE_READ,
+                WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_MATERIALIZATION_READ,
                 WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMISSION_READ,
                 WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_RESOLUTION_AUTHORIZATION_LEASE_READ,
                 WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_MATERIALIZATION_READ,
@@ -5205,6 +5230,19 @@ def build_development_authorization_service(
                         settings.development_organization_id,
                         settings.environment,
                     )
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id=(
+                    "assignment.development.workflow-physical-transport-credential-materializations"
+                ),
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=workflow_physical_transport_credential_materialization_scope(
+                    settings.development_organization_id,
+                    settings.environment,
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),
             ),
