@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-210 |
 | Title | Atomic single-use target-context access lease consumption and paired protected artifact opening without delivery or runtime authority |
-| Status | Implementation and local verification complete; delivery pending |
+| Status | Pull request opened; exact-head CI pending |
 | Branch | `agent/protected-target-context-artifact-opening` |
-| Pull Request | Not opened |
+| Pull Request | [#223](https://github.com/ozdemirumit/Project_Atlas/pull/223) |
 | Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-152, ADR-157, ADR-158, ADR-159, ADR-160 |
 | Last Updated | 2026-08-16 |
-| Next Action | Open the IMP-210 pull request, pass exact-head PostgreSQL CI, merge by SHA and verify independent `main` CI |
+| Next Action | Pass exact-head PostgreSQL CI for PR #223, merge by SHA and verify independent `main` CI |
 
 ### ATLAS-IMP-210 Scope Rationale
 
