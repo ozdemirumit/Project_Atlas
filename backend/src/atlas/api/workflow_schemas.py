@@ -30,6 +30,7 @@ from atlas.modules.workflows.domain import (
     WorkflowEventPhysicalTransportEndpointResolutionLeaseConsumptionClaim,
     WorkflowEventPhysicalTransportRouteBinding,
     WorkflowEventPhysicalTransportRouteFreshnessAdmission,
+    WorkflowEventPhysicalTransportTargetContextBinding,
     WorkflowEventTransportAdmission,
     WorkflowEventTransportCompatibilityAdmission,
     WorkflowExecutionAttempt,
@@ -2050,6 +2051,111 @@ class WorkflowEventPhysicalTransportCredentialMaterializationResponse(BaseModel)
 
 class WorkflowEventPhysicalTransportCredentialMaterializationInventoryResponse(BaseModel):
     data: WorkflowEventPhysicalTransportCredentialMaterializationInventoryData
+    meta: ResponseMeta
+
+
+class CreateWorkflowEventPhysicalTransportTargetContextBindingInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    endpoint_materialization_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    endpoint_materialization_digest: str = Field(
+        min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$"
+    )
+    credential_materialization_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    credential_materialization_digest: str = Field(
+        min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$"
+    )
+    policy_id: Literal["policy.workflow-event-physical-transport-target-context-binding"]
+    policy_version: Literal["1.0"]
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class WorkflowEventPhysicalTransportTargetContextBindingAuthorityData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    endpoint_resolution_authorized: Literal[False]
+    protected_artifact_access_authorized: Literal[False]
+    route_selection_authorized: Literal[False]
+    route_binding_authorized: Literal[False]
+    credential_selection_authorized: Literal[False]
+    credential_assignment_binding_authorized: Literal[False]
+    credential_access_authorized: Literal[False]
+    credential_brokerage_authorized: Literal[False]
+    credential_resolution_authorized: Literal[False]
+    credential_delivery_authorized: Literal[False]
+    network_access_authorized: Literal[False]
+    readiness_probe_authorized: Literal[False]
+    publication_authorized: Literal[False]
+    delivery_authorized: Literal[False]
+    dispatch_authorized: Literal[False]
+    execution_authorized: Literal[False]
+    infrastructure_mutation_authorized: Literal[False]
+
+
+class WorkflowEventPhysicalTransportTargetContextBindingData(BaseModel):
+    """Human-safe immutable binding evidence without protected target material."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    binding_id: str
+    endpoint_materialization_id: str
+    credential_materialization_id: str
+    state: Literal["bound"]
+    effective_state: Literal["active", "expired"]
+    scope: WorkflowScopeData
+    binder_subject_id: str
+    bound_at: datetime
+    joint_usable_until: datetime
+    policy_reference: str
+    target_context_schema_reference: str
+    authority: WorkflowEventPhysicalTransportTargetContextBindingAuthorityData
+
+    @classmethod
+    def from_domain(
+        cls,
+        binding: WorkflowEventPhysicalTransportTargetContextBinding,
+        *,
+        evaluated_at: datetime,
+    ) -> WorkflowEventPhysicalTransportTargetContextBindingData:
+        return cls(
+            binding_id=binding.binding_id,
+            endpoint_materialization_id=binding.endpoint_materialization_id,
+            credential_materialization_id=binding.credential_materialization_id,
+            state=binding.state.value,
+            effective_state=binding.effective_state(evaluated_at=evaluated_at).value,
+            scope=WorkflowScopeData.model_validate(binding.scope.canonical_value()),
+            binder_subject_id=binding.binder_subject_id,
+            bound_at=binding.bound_at,
+            joint_usable_until=binding.joint_usable_until,
+            policy_reference=f"{binding.policy_id}:{binding.policy_version}",
+            target_context_schema_reference=(
+                f"{binding.target_context_schema_id}:{binding.target_context_schema_version}"
+            ),
+            authority=(
+                WorkflowEventPhysicalTransportTargetContextBindingAuthorityData.model_validate(
+                    binding.authority.canonical_value()
+                )
+            ),
+        )
+
+
+class WorkflowEventPhysicalTransportTargetContextBindingInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    physical_transport_target_context_bindings: list[
+        WorkflowEventPhysicalTransportTargetContextBindingData
+    ] = Field(max_length=256)
+    server_time: datetime
+    durable: bool
+
+
+class WorkflowEventPhysicalTransportTargetContextBindingResponse(BaseModel):
+    data: WorkflowEventPhysicalTransportTargetContextBindingData
+    meta: ResponseMeta
+
+
+class WorkflowEventPhysicalTransportTargetContextBindingInventoryResponse(BaseModel):
+    data: WorkflowEventPhysicalTransportTargetContextBindingInventoryData
     meta: ResponseMeta
 
 

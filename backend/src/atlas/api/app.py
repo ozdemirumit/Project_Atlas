@@ -1571,6 +1571,8 @@ from atlas.modules.workflows.application import (
     WorkflowEventPhysicalTransportRouteBindingService,
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionRepository,
     WorkflowEventPhysicalTransportRouteFreshnessAdmissionService,
+    WorkflowEventPhysicalTransportTargetContextBindingRepository,
+    WorkflowEventPhysicalTransportTargetContextBindingService,
     WorkflowEventTransportAdmissionRepository,
     WorkflowEventTransportAdmissionService,
     WorkflowEventTransportCompatibilityAdmissionRepository,
@@ -1609,6 +1611,7 @@ class _WorkflowCredentialAccessAuthorizationNoStoreMiddleware(BaseHTTPMiddleware
         {
             "/api/v1/workflows/physical-transport-credential-access-authorization-leases",
             "/api/v1/workflows/physical-transport-credential-materializations",
+            "/api/v1/workflows/physical-transport-target-context-bindings",
         }
     )
 
@@ -2030,6 +2033,9 @@ def create_app(
     ) = None,
     workflow_event_physical_transport_credential_materialization_service: (
         WorkflowEventPhysicalTransportCredentialMaterializationService | None
+    ) = None,
+    workflow_event_physical_transport_target_context_binding_service: (
+        WorkflowEventPhysicalTransportTargetContextBindingService | None
     ) = None,
     workflow_transport_profile_snapshot_service: WorkflowTransportProfileSnapshotService
     | None = None,
@@ -6547,6 +6553,34 @@ def create_app(
         resolved_credential_materialization_service = (
             workflow_event_physical_transport_credential_materialization_service
         )
+    if workflow_event_physical_transport_target_context_binding_service is None:
+        target_context_binding_repository_methods = (
+            "bind_target_context",
+            "list_target_context_bindings",
+        )
+        if not all(
+            callable(getattr(workflow_repository, method_name, None))
+            for method_name in target_context_binding_repository_methods
+        ):
+            raise ValueError(
+                "workflow planning repository does not implement protected transport "
+                "target-context bindings; inject workflow_event_physical_transport_target_"
+                "context_binding_service explicitly"
+            )
+        target_context_binding_repository = cast(
+            WorkflowEventPhysicalTransportTargetContextBindingRepository,
+            workflow_repository,
+        )
+        resolved_target_context_binding_service = (
+            WorkflowEventPhysicalTransportTargetContextBindingService(
+                binding_repository=target_context_binding_repository,
+                audit_sink=resolved_audit_sink,
+            )
+        )
+    else:
+        resolved_target_context_binding_service = (
+            workflow_event_physical_transport_target_context_binding_service
+        )
     configured_transport_route_selection_heads = (
         _deployment_event_transport_route_selection_heads(
             resolved_settings,
@@ -6948,6 +6982,10 @@ def create_app(
         )
         app.state.workflow_credential_materialization_repository = (
             resolved_credential_materialization_service.repository
+        )
+        app.state.workflow_target_context_binding_service = resolved_target_context_binding_service
+        app.state.workflow_target_context_binding_repository = (
+            resolved_target_context_binding_service.repository
         )
         app.state.workflow_transport_route_selection_heads = (
             configured_transport_route_selection_heads

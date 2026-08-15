@@ -147,7 +147,7 @@ class FakeTargetContextBindingRepository:
     def _build_binding(
         request: WorkflowEventPhysicalTransportTargetContextBindingRequest,
     ) -> WorkflowEventPhysicalTransportTargetContextBinding:
-        bound_at = request.requested_at + timedelta(seconds=1)
+        bound_at = request.requested_at
         values: dict[str, object] = {
             "binding_id": "workflow-physical-transport-target-context-binding.imp-208",
             "physical_transport_route_binding_id": "workflow-route-binding.imp-208",
