@@ -254,6 +254,20 @@ from atlas.modules.workflows.application.service import (
     WorkflowAccessContext,
     WorkflowPlanningService,
 )
+from atlas.modules.workflows.application.target_context_binding_ports import (
+    WorkflowEventPhysicalTransportTargetContextBindingError,
+    WorkflowEventPhysicalTransportTargetContextBindingRepository,
+    WorkflowEventPhysicalTransportTargetContextBindingRequest,
+    WorkflowEventPhysicalTransportTargetContextBindingResult,
+    WorkflowEventPhysicalTransportTargetContextBindingStatus,
+)
+from atlas.modules.workflows.application.target_context_bindings import (
+    WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_BINDER_AUDIENCE,
+    WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_BINDER_SUBJECT,
+    WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_BINDING_PRODUCER,
+    WorkflowEventPhysicalTransportTargetContextBindingService,
+    WorkflowPhysicalTransportTargetContextBinderContext,
+)
 from atlas.modules.workflows.application.transport_admission_ports import (
     WorkflowEventTransportAdmissionError,
     WorkflowEventTransportAdmissionIdempotencyRecord,
@@ -335,6 +349,9 @@ __all__ = [
     "WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_BINDING_PRODUCER",
     "WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMISSION_PRODUCER",
     "WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMITTER_AUDIENCE",
+    "WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_BINDER_AUDIENCE",
+    "WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_BINDER_SUBJECT",
+    "WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_BINDING_PRODUCER",
     "WORKFLOW_TRANSPORT_COMPATIBILITY_ADMISSION_PRODUCER",
     "WORKFLOW_TRANSPORT_COMPATIBILITY_ADMITTER_AUDIENCE",
     "WORKFLOW_TRANSPORT_CREDENTIAL_ASSIGNMENT_REGISTRY_AUDIENCE",
@@ -429,6 +446,12 @@ __all__ = [
     "WorkflowEventPhysicalTransportRouteFreshnessAdmissionResult",
     "WorkflowEventPhysicalTransportRouteFreshnessAdmissionService",
     "WorkflowEventPhysicalTransportRouteFreshnessAdmissionStatus",
+    "WorkflowEventPhysicalTransportTargetContextBindingError",
+    "WorkflowEventPhysicalTransportTargetContextBindingRepository",
+    "WorkflowEventPhysicalTransportTargetContextBindingRequest",
+    "WorkflowEventPhysicalTransportTargetContextBindingResult",
+    "WorkflowEventPhysicalTransportTargetContextBindingService",
+    "WorkflowEventPhysicalTransportTargetContextBindingStatus",
     "WorkflowEventTransportAdmissionError",
     "WorkflowEventTransportAdmissionIdempotencyRecord",
     "WorkflowEventTransportAdmissionRepository",
@@ -472,6 +495,7 @@ __all__ = [
     "WorkflowPhysicalTransportEndpointResolverContext",
     "WorkflowPhysicalTransportRouteBinderContext",
     "WorkflowPhysicalTransportRouteFreshnessAdmitterContext",
+    "WorkflowPhysicalTransportTargetContextBinderContext",
     "WorkflowPlanCancellationIdempotencyRecord",
     "WorkflowPlanCancellationRequest",
     "WorkflowPlanCancellationResult",
