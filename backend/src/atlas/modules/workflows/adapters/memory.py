@@ -75,6 +75,14 @@ from atlas.modules.workflows.application.credential_assignment_snapshot_ports im
     WorkflowTransportCredentialAssignmentSnapshotStatus,
     validate_workflow_transport_credential_assignment_snapshot_request,
 )
+from atlas.modules.workflows.application.credential_materialization_ports import (
+    WorkflowEventPhysicalTransportCredentialMaterializationClaimRequest,
+    WorkflowEventPhysicalTransportCredentialMaterializationClaimResult,
+    WorkflowEventPhysicalTransportCredentialMaterializationClaimStatus,
+    WorkflowEventPhysicalTransportCredentialMaterializationResultRequest,
+    WorkflowEventPhysicalTransportCredentialMaterializationResultStatus,
+    WorkflowEventPhysicalTransportCredentialMaterializationResultWrite,
+)
 from atlas.modules.workflows.application.endpoint_materialization_ports import (
     WorkflowEventPhysicalTransportEndpointMaterializationClaimRequest,
     WorkflowEventPhysicalTransportEndpointMaterializationClaimResult,
@@ -155,9 +163,14 @@ from atlas.modules.workflows.domain import (
     WorkflowEventLogicalChannelBinding,
     WorkflowEventLogicalChannelBindingState,
     WorkflowEventPhysicalTransportCredentialAccessAuthorizationLease,
+    WorkflowEventPhysicalTransportCredentialAccessLeaseConsumptionClaim,
     WorkflowEventPhysicalTransportCredentialAssignmentBinding,
     WorkflowEventPhysicalTransportCredentialAssignmentBindingState,
     WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmission,
+    WorkflowEventPhysicalTransportCredentialMaterializationAttempt,
+    WorkflowEventPhysicalTransportCredentialMaterializationAttemptState,
+    WorkflowEventPhysicalTransportCredentialMaterializationAuthority,
+    WorkflowEventPhysicalTransportCredentialMaterializationResult,
     WorkflowEventPhysicalTransportEndpointMaterializationAttempt,
     WorkflowEventPhysicalTransportEndpointMaterializationAttemptState,
     WorkflowEventPhysicalTransportEndpointMaterializationAuthority,
@@ -190,6 +203,7 @@ from atlas.modules.workflows.domain import (
     canonical_json_byte_count,
     canonical_json_bytes,
     code_owned_workflow_event_physical_transport_credential_assignment_binding_policy,
+    code_owned_workflow_event_physical_transport_credential_materialization_policy,
     code_owned_workflow_event_physical_transport_endpoint_materialization_policy,
     code_owned_workflow_event_physical_transport_endpoint_resolution_authorization_policy,
     code_owned_workflow_event_physical_transport_route_freshness_policy,
@@ -312,6 +326,15 @@ class InMemoryWorkflowPlanRepository:
         self._credential_access_authorization_requests: dict[
             tuple[WorkflowScope, str, str],
             WorkflowTransportCredentialAccessAuthorizationLeaseIdempotencyRecord,
+        ] = {}
+        self._credential_materialization_claims: dict[
+            str, WorkflowEventPhysicalTransportCredentialAccessLeaseConsumptionClaim
+        ] = {}
+        self._credential_materialization_attempts: dict[
+            str, WorkflowEventPhysicalTransportCredentialMaterializationAttempt
+        ] = {}
+        self._credential_materialization_results: dict[
+            str, WorkflowEventPhysicalTransportCredentialMaterializationResult
         ] = {}
         self._route_selection_heads: dict[
             tuple[WorkflowScope, str], DeploymentEventTransportRouteSelectionHead
@@ -2055,6 +2078,237 @@ class InMemoryWorkflowPlanRepository:
             return WorkflowTransportCredentialAccessAuthorizationLeaseResult(
                 WorkflowTransportCredentialAccessAuthorizationLeaseStatus.AUTHORIZED,
                 lease,
+            )
+
+    async def get_credential_access_authorization_lease_by_id(
+        self, *, authorization_lease_id: str
+    ) -> WorkflowEventPhysicalTransportCredentialAccessAuthorizationLease | None:
+        async with self._lock:
+            return next(
+                (
+                    lease
+                    for lease in self._credential_access_authorization_leases.values()
+                    if lease.authorization_lease_id == authorization_lease_id
+                ),
+                None,
+            )
+
+    async def get_credential_materialization_claim_by_lease(
+        self, *, authorization_lease_id: str
+    ) -> WorkflowEventPhysicalTransportCredentialAccessLeaseConsumptionClaim | None:
+        async with self._lock:
+            return self._credential_materialization_claims.get(authorization_lease_id)
+
+    async def get_credential_materialization_attempt_by_lease(
+        self, *, authorization_lease_id: str
+    ) -> WorkflowEventPhysicalTransportCredentialMaterializationAttempt | None:
+        async with self._lock:
+            return self._credential_materialization_attempts.get(authorization_lease_id)
+
+    async def list_credential_materialization_attempts(
+        self, *, scope: WorkflowScope, limit: int
+    ) -> tuple[WorkflowEventPhysicalTransportCredentialMaterializationAttempt, ...]:
+        capped = min(max(limit, 0), 256)
+        async with self._lock:
+            attempts = sorted(
+                (
+                    attempt
+                    for attempt in self._credential_materialization_attempts.values()
+                    if attempt.scope == scope
+                ),
+                key=lambda attempt: (attempt.started_at, attempt.attempt_id),
+                reverse=True,
+            )
+            return tuple(attempts[:capped])
+
+    async def get_credential_materialization_result_by_lease(
+        self, *, authorization_lease_id: str
+    ) -> WorkflowEventPhysicalTransportCredentialMaterializationResult | None:
+        async with self._lock:
+            return self._credential_materialization_results.get(authorization_lease_id)
+
+    async def claim_credential_materialization(
+        self,
+        request: WorkflowEventPhysicalTransportCredentialMaterializationClaimRequest,
+    ) -> WorkflowEventPhysicalTransportCredentialMaterializationClaimResult:
+        statuses = WorkflowEventPhysicalTransportCredentialMaterializationClaimStatus
+        async with self._lock:
+            prior = self._credential_materialization_claims.get(request.authorization_lease_id)
+            if prior is not None:
+                attempt = self._credential_materialization_attempts.get(
+                    request.authorization_lease_id
+                )
+                result = self._credential_materialization_results.get(
+                    request.authorization_lease_id
+                )
+                exact = bool(
+                    prior.claim_id == request.claim_id
+                    and prior.attempt_id == request.attempt_id
+                    and prior.materialization_id == request.materialization_id
+                    and prior.authorization_lease_digest == request.authorization_lease_digest
+                    and prior.scope == request.scope
+                    and prior.accessor_subject_id == request.accessor_subject_id
+                    and prior.request_fingerprint == request.request_fingerprint
+                    and prior.idempotency_digest == request.idempotency_digest
+                )
+                if exact:
+                    status = (
+                        statuses.REPLAY_COMPLETED
+                        if result is not None
+                        else statuses.CLAIM_ONLY_UNCERTAIN
+                    )
+                    return WorkflowEventPhysicalTransportCredentialMaterializationClaimResult(
+                        status, prior, attempt, result
+                    )
+                status = (
+                    statuses.IDEMPOTENCY_CONFLICT
+                    if prior.idempotency_digest == request.idempotency_digest
+                    else statuses.ALREADY_CONSUMED
+                )
+                return WorkflowEventPhysicalTransportCredentialMaterializationClaimResult(
+                    status, None, None, None
+                )
+            if any(
+                claim.idempotency_digest == request.idempotency_digest
+                for claim in self._credential_materialization_claims.values()
+            ):
+                return WorkflowEventPhysicalTransportCredentialMaterializationClaimResult(
+                    statuses.IDEMPOTENCY_CONFLICT, None, None, None
+                )
+
+            observed_at = datetime.now(UTC)
+            lease = next(
+                (
+                    value
+                    for value in self._credential_access_authorization_leases.values()
+                    if value.authorization_lease_id == request.authorization_lease_id
+                ),
+                None,
+            )
+            freshness = self._credential_assignment_freshness_admissions.get(
+                request.expected_freshness_admission_id
+            )
+            binding = next(
+                (
+                    value
+                    for value in self._credential_assignment_bindings.values()
+                    if value.binding_id == request.expected_credential_assignment_binding_id
+                ),
+                None,
+            )
+            snapshot = next(
+                (
+                    value
+                    for value in self._credential_assignment_snapshots.values()
+                    if value.snapshot_id == request.expected_credential_assignment_snapshot_id
+                ),
+                None,
+            )
+            head = self._memory_credential_assignment_head(request.expected_assignment_id)
+            if not self._credential_materialization_evidence_matches(
+                lease=lease,
+                freshness=freshness,
+                binding=binding,
+                snapshot=snapshot,
+                head=head,
+                request=request,
+                observed_at=observed_at,
+            ):
+                return WorkflowEventPhysicalTransportCredentialMaterializationClaimResult(
+                    statuses.EVIDENCE_CONFLICT, None, None, None
+                )
+            assert lease is not None
+            claim = self._credential_materialization_claim(request, claimed_at=observed_at)
+            attempt = self._credential_materialization_attempt(
+                request,
+                claim=claim,
+                started_at=observed_at,
+                lease_valid_until=lease.valid_until,
+            )
+            self._credential_materialization_claims[request.authorization_lease_id] = claim
+            self._credential_materialization_attempts[request.authorization_lease_id] = attempt
+            return WorkflowEventPhysicalTransportCredentialMaterializationClaimResult(
+                statuses.CLAIMED, claim, attempt, None
+            )
+
+    async def record_credential_materialization_result(
+        self,
+        request: WorkflowEventPhysicalTransportCredentialMaterializationResultRequest,
+    ) -> WorkflowEventPhysicalTransportCredentialMaterializationResultWrite:
+        statuses = WorkflowEventPhysicalTransportCredentialMaterializationResultStatus
+        result = request.result
+        async with self._lock:
+            prior = self._credential_materialization_results.get(result.authorization_lease_id)
+            if prior is not None:
+                return WorkflowEventPhysicalTransportCredentialMaterializationResultWrite(
+                    statuses.REPLAY if prior == result else statuses.CONFLICT,
+                    prior if prior == result else None,
+                )
+            claim = self._credential_materialization_claims.get(result.authorization_lease_id)
+            attempt = self._credential_materialization_attempts.get(result.authorization_lease_id)
+            lease = next(
+                (
+                    value
+                    for value in self._credential_access_authorization_leases.values()
+                    if value.authorization_lease_id == result.authorization_lease_id
+                ),
+                None,
+            )
+            freshness = (
+                None
+                if attempt is None
+                else self._credential_assignment_freshness_admissions.get(
+                    attempt.freshness_admission_id
+                )
+            )
+            binding = (
+                None
+                if attempt is None
+                else next(
+                    (
+                        value
+                        for value in self._credential_assignment_bindings.values()
+                        if value.binding_id
+                        == attempt.physical_transport_credential_assignment_binding_id
+                    ),
+                    None,
+                )
+            )
+            snapshot = (
+                None
+                if attempt is None
+                else next(
+                    (
+                        value
+                        for value in self._credential_assignment_snapshots.values()
+                        if value.snapshot_id == attempt.credential_assignment_snapshot_id
+                    ),
+                    None,
+                )
+            )
+            head = (
+                None
+                if attempt is None
+                else self._memory_credential_assignment_head(attempt.assignment_id)
+            )
+            observed_at = datetime.now(UTC)
+            if not self._credential_materialization_result_evidence_matches(
+                claim=claim,
+                attempt=attempt,
+                lease=lease,
+                freshness=freshness,
+                binding=binding,
+                snapshot=snapshot,
+                head=head,
+                request=request,
+                observed_at=observed_at,
+            ):
+                return WorkflowEventPhysicalTransportCredentialMaterializationResultWrite(
+                    statuses.CONFLICT, None
+                )
+            self._credential_materialization_results[result.authorization_lease_id] = result
+            return WorkflowEventPhysicalTransportCredentialMaterializationResultWrite(
+                statuses.RECORDED, result
             )
 
     async def get_current_route_selection_head(
@@ -4207,6 +4461,330 @@ class InMemoryWorkflowPlanRepository:
                 if name != "credential_access_authorized"
             )
         )
+
+    @staticmethod
+    def _credential_materialization_evidence_matches(
+        *,
+        lease: WorkflowEventPhysicalTransportCredentialAccessAuthorizationLease | None,
+        freshness: WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmission | None,
+        binding: WorkflowEventPhysicalTransportCredentialAssignmentBinding | None,
+        snapshot: EventPhysicalTransportCredentialAssignmentSnapshot | None,
+        head: DeploymentPhysicalTransportCredentialAssignment | None,
+        request: WorkflowEventPhysicalTransportCredentialMaterializationClaimRequest,
+        observed_at: datetime,
+    ) -> bool:
+        if any(value is None for value in (lease, freshness, binding, snapshot, head)):
+            return False
+        assert lease is not None
+        assert freshness is not None
+        assert binding is not None
+        assert snapshot is not None
+        assert head is not None
+        policy = code_owned_workflow_event_physical_transport_credential_materialization_policy()
+        return bool(
+            lease.issued_at <= observed_at < lease.valid_until
+            and freshness.evaluated_at <= observed_at < freshness.valid_until
+            and lease.authorization_lease_id == request.authorization_lease_id
+            and lease.canonical_digest == request.authorization_lease_digest
+            and lease.freshness_admission_id
+            == freshness.freshness_admission_id
+            == request.expected_freshness_admission_id
+            and lease.freshness_admission_digest
+            == freshness.canonical_digest
+            == request.expected_freshness_admission_digest
+            and freshness.valid_until == request.expected_freshness_valid_until
+            and lease.physical_transport_credential_assignment_binding_id
+            == freshness.physical_transport_credential_assignment_binding_id
+            == binding.binding_id
+            == request.expected_credential_assignment_binding_id
+            and lease.physical_transport_credential_assignment_binding_digest
+            == freshness.physical_transport_credential_assignment_binding_digest
+            == binding.canonical_digest
+            == request.expected_credential_assignment_binding_digest
+            and lease.credential_assignment_snapshot_id
+            == freshness.credential_assignment_snapshot_id
+            == binding.credential_assignment_snapshot_id
+            == snapshot.snapshot_id
+            == request.expected_credential_assignment_snapshot_id
+            and lease.credential_assignment_snapshot_digest
+            == freshness.credential_assignment_snapshot_digest
+            == binding.credential_assignment_snapshot_digest
+            == snapshot.canonical_digest
+            == request.expected_credential_assignment_snapshot_digest
+            and lease.assignment_id
+            == freshness.assignment_id
+            == snapshot.assignment_id
+            == head.assignment_id
+            == request.expected_assignment_id
+            and lease.assignment_revision
+            == freshness.assignment_revision
+            == snapshot.assignment_revision
+            == head.assignment_revision
+            == request.expected_assignment_revision
+            and lease.source_assignment_digest
+            == freshness.source_assignment_digest
+            == snapshot.source_assignment_digest
+            == head.canonical_digest
+            == request.expected_source_assignment_digest
+            and lease.credential_generation
+            == freshness.credential_generation
+            == snapshot.credential_generation
+            == head.credential_generation
+            == request.expected_credential_generation
+            and lease.rotation_epoch
+            == freshness.rotation_epoch
+            == snapshot.rotation_epoch
+            == head.rotation_epoch
+            == request.expected_rotation_epoch
+            and lease.assignment_activated_at
+            == freshness.assignment_activated_at
+            == snapshot.activated_at
+            == head.activated_at
+            == request.expected_assignment_activated_at
+            and lease.assignment_expires_at
+            == freshness.assignment_expires_at
+            == snapshot.expires_at
+            == head.expires_at
+            == request.expected_assignment_expires_at
+            and lease.assignment_active
+            == freshness.assignment_active
+            == head.active
+            == request.expected_assignment_active
+            is True
+            and lease.assignment_non_revoked
+            == freshness.assignment_non_revoked
+            == snapshot.source_non_revoked
+            is True
+            and head.revoked == request.expected_assignment_revoked is False
+            and lease.scope
+            == freshness.scope
+            == binding.scope
+            == snapshot.scope
+            == head.scope
+            == request.scope
+            and lease.accessor_subject_id == request.accessor_subject_id
+            and lease.state.value == request.expected_lease_state == "authorized_unconsumed"
+            and lease.authority.credential_access_authorized
+            == request.expected_credential_access_authorized
+            is True
+            and not any(
+                value is not False
+                for name, value in lease.authority.canonical_value().items()
+                if name != "credential_access_authorized"
+            )
+            and not any(
+                value is not False for value in freshness.authority.canonical_value().values()
+            )
+            and not any(
+                value is not False for value in binding.authority.canonical_value().values()
+            )
+            and not any(
+                value is not False for value in snapshot.authority.canonical_value().values()
+            )
+            and policy.policy_id == request.expected_materialization_policy_id
+            and policy.policy_version == request.expected_materialization_policy_version
+            and policy.canonical_digest == request.expected_materialization_policy_digest
+            and request.irreversible_consumption_acknowledged
+            and request.uncertain_outcome_requires_new_authorization_acknowledged
+        )
+
+    @classmethod
+    def _credential_materialization_result_evidence_matches(
+        cls,
+        *,
+        claim: WorkflowEventPhysicalTransportCredentialAccessLeaseConsumptionClaim | None,
+        attempt: WorkflowEventPhysicalTransportCredentialMaterializationAttempt | None,
+        lease: WorkflowEventPhysicalTransportCredentialAccessAuthorizationLease | None,
+        freshness: WorkflowEventPhysicalTransportCredentialAssignmentFreshnessAdmission | None,
+        binding: WorkflowEventPhysicalTransportCredentialAssignmentBinding | None,
+        snapshot: EventPhysicalTransportCredentialAssignmentSnapshot | None,
+        head: DeploymentPhysicalTransportCredentialAssignment | None,
+        request: WorkflowEventPhysicalTransportCredentialMaterializationResultRequest,
+        observed_at: datetime,
+    ) -> bool:
+        if any(
+            value is None for value in (claim, attempt, lease, freshness, binding, snapshot, head)
+        ):
+            return False
+        assert claim is not None
+        assert attempt is not None
+        assert lease is not None
+        assert freshness is not None
+        assert binding is not None
+        assert snapshot is not None
+        assert head is not None
+        result = request.result
+        return bool(
+            lease.issued_at <= observed_at < lease.valid_until
+            and freshness.evaluated_at <= observed_at < freshness.valid_until
+            and result.completed_at < lease.valid_until
+            and result.completed_at < freshness.valid_until
+            and (result.usable_until is None or result.usable_until <= lease.valid_until)
+            and request.expected_lease_valid_until == lease.valid_until
+            and claim.canonical_digest == request.expected_claim_digest
+            and attempt.canonical_digest == request.expected_attempt_digest
+            and result.consumption_claim_id == claim.claim_id == attempt.consumption_claim_id
+            and result.consumption_claim_digest == claim.canonical_digest
+            and result.attempt_id == attempt.attempt_id
+            and result.attempt_digest == attempt.canonical_digest
+            and result.materialization_id == claim.materialization_id == attempt.materialization_id
+            and result.authorization_lease_id
+            == claim.authorization_lease_id
+            == attempt.authorization_lease_id
+            == lease.authorization_lease_id
+            and result.authorization_lease_digest
+            == claim.authorization_lease_digest
+            == attempt.authorization_lease_digest
+            == lease.canonical_digest
+            and result.freshness_admission_id
+            == claim.freshness_admission_id
+            == attempt.freshness_admission_id
+            == freshness.freshness_admission_id
+            and result.freshness_admission_digest
+            == claim.freshness_admission_digest
+            == attempt.freshness_admission_digest
+            == freshness.canonical_digest
+            and attempt.physical_transport_credential_assignment_binding_id == binding.binding_id
+            and attempt.physical_transport_credential_assignment_binding_digest
+            == binding.canonical_digest
+            and result.credential_assignment_snapshot_id
+            == attempt.credential_assignment_snapshot_id
+            == snapshot.snapshot_id
+            and result.credential_assignment_snapshot_digest
+            == attempt.credential_assignment_snapshot_digest
+            == snapshot.canonical_digest
+            and result.assignment_id
+            == attempt.assignment_id
+            == head.assignment_id
+            == request.expected_assignment_id
+            and result.assignment_revision
+            == attempt.assignment_revision
+            == head.assignment_revision
+            == request.expected_assignment_revision
+            and attempt.source_assignment_digest
+            == head.canonical_digest
+            == request.expected_source_assignment_digest
+            and result.credential_generation
+            == attempt.credential_generation
+            == head.credential_generation
+            == request.expected_credential_generation
+            and result.rotation_epoch
+            == attempt.rotation_epoch
+            == head.rotation_epoch
+            == request.expected_rotation_epoch
+            and head.active
+            and not head.revoked
+            and head.activated_at <= observed_at < head.expires_at
+            and result.scope
+            == claim.scope
+            == attempt.scope
+            == lease.scope
+            == freshness.scope
+            == binding.scope
+            == snapshot.scope
+            == head.scope
+            and result.accessor_subject_id
+            == claim.accessor_subject_id
+            == attempt.accessor_subject_id
+            == lease.accessor_subject_id
+            and result.policy_id == attempt.policy_id
+            and result.policy_version == attempt.policy_version
+            and result.policy_digest == attempt.policy_digest
+            and not any(value is not False for value in result.authority.canonical_value().values())
+        )
+
+    @classmethod
+    def _credential_materialization_claim(
+        cls,
+        request: WorkflowEventPhysicalTransportCredentialMaterializationClaimRequest,
+        *,
+        claimed_at: datetime,
+    ) -> WorkflowEventPhysicalTransportCredentialAccessLeaseConsumptionClaim:
+        values: dict[str, Any] = {
+            "claim_id": request.claim_id,
+            "authorization_lease_id": request.authorization_lease_id,
+            "authorization_lease_digest": request.authorization_lease_digest,
+            "freshness_admission_id": request.expected_freshness_admission_id,
+            "freshness_admission_digest": request.expected_freshness_admission_digest,
+            "attempt_id": request.attempt_id,
+            "materialization_id": request.materialization_id,
+            "scope": request.scope,
+            "accessor_subject_id": request.accessor_subject_id,
+            "claimed_at": claimed_at,
+            "request_fingerprint": request.request_fingerprint,
+            "idempotency_digest": request.idempotency_digest,
+            "authority": WorkflowEventPhysicalTransportCredentialMaterializationAuthority(),
+        }
+        return WorkflowEventPhysicalTransportCredentialAccessLeaseConsumptionClaim(
+            **values,
+            canonical_digest=canonical_digest(cls._credential_materialization_payload(values)),
+        )
+
+    @classmethod
+    def _credential_materialization_attempt(
+        cls,
+        request: WorkflowEventPhysicalTransportCredentialMaterializationClaimRequest,
+        *,
+        claim: WorkflowEventPhysicalTransportCredentialAccessLeaseConsumptionClaim,
+        started_at: datetime,
+        lease_valid_until: datetime,
+    ) -> WorkflowEventPhysicalTransportCredentialMaterializationAttempt:
+        values: dict[str, Any] = {
+            "attempt_id": request.attempt_id,
+            "materialization_id": request.materialization_id,
+            "consumption_claim_id": claim.claim_id,
+            "authorization_lease_id": request.authorization_lease_id,
+            "authorization_lease_digest": request.authorization_lease_digest,
+            "freshness_admission_id": request.expected_freshness_admission_id,
+            "freshness_admission_digest": request.expected_freshness_admission_digest,
+            "physical_transport_credential_assignment_binding_id": (
+                request.expected_credential_assignment_binding_id
+            ),
+            "physical_transport_credential_assignment_binding_digest": (
+                request.expected_credential_assignment_binding_digest
+            ),
+            "credential_assignment_snapshot_id": request.expected_credential_assignment_snapshot_id,
+            "credential_assignment_snapshot_digest": (
+                request.expected_credential_assignment_snapshot_digest
+            ),
+            "assignment_id": request.expected_assignment_id,
+            "assignment_revision": request.expected_assignment_revision,
+            "source_assignment_digest": request.expected_source_assignment_digest,
+            "credential_generation": request.expected_credential_generation,
+            "rotation_epoch": request.expected_rotation_epoch,
+            "scope": request.scope,
+            "accessor_subject_id": request.accessor_subject_id,
+            "policy_id": request.expected_materialization_policy_id,
+            "policy_version": request.expected_materialization_policy_version,
+            "policy_digest": request.expected_materialization_policy_digest,
+            "started_at": started_at,
+            "freshness_valid_until": request.expected_freshness_valid_until,
+            "lease_valid_until": lease_valid_until,
+            "state": (
+                WorkflowEventPhysicalTransportCredentialMaterializationAttemptState
+            ).MATERIALIZATION_STARTED,
+            "authority": WorkflowEventPhysicalTransportCredentialMaterializationAuthority(),
+        }
+        return WorkflowEventPhysicalTransportCredentialMaterializationAttempt(
+            **values,
+            canonical_digest=canonical_digest(cls._credential_materialization_payload(values)),
+        )
+
+    @staticmethod
+    def _credential_materialization_payload(values: dict[str, Any]) -> dict[str, Any]:
+        return {
+            key: value.canonical_value()
+            if isinstance(
+                value,
+                (WorkflowScope, WorkflowEventPhysicalTransportCredentialMaterializationAuthority),
+            )
+            else value.value
+            if isinstance(value, Enum)
+            else value.isoformat()
+            if isinstance(value, datetime)
+            else value
+            for key, value in values.items()
+        }
 
     @classmethod
     def _endpoint_materialization_claim(
