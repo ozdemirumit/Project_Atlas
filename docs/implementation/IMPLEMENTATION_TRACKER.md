@@ -4,14 +4,52 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-215 |
-| Title | Atomic single-use consumer-side protected target-context capsule opening lease consumption without runtime, delivery, execution or infrastructure mutation authority |
-| Status | Validation In Progress |
-| Branch | `agent/protected-capsule-opening-consumption` |
+| Task ID | ATLAS-IMP-216 |
+| Title | Bounded single-use protected resident-context access authorization without handle creation, injection, network, execution or infrastructure mutation authority |
+| Status | In Progress |
+| Branch | `agent/protected-resident-context-access-authorization` |
 | Pull Request | Not opened |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-159, ADR-160, ADR-161, ADR-162, ADR-163, ADR-164, ADR-165 |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160, ADR-161, ADR-162, ADR-163, ADR-164, ADR-165, ADR-166 |
 | Last Updated | 2026-08-16 |
-| Next Action | Complete independent review, full regression, exact-head PR CI, SHA-locked merge and merged-main CI for ADR-165 |
+| Next Action | Define ADR-166 and implement the smallest fail-closed resident-context access-authorization vertical slice |
+
+### ATLAS-IMP-216 Scope Rationale
+
+- IMP-215 may establish one short-lived, non-bearer protected resident context inside the exact
+  consumer boundary, but its success evidence grants no later access or runtime authority.
+- The next smallest boundary authorizes only one future request to consume a short-lived access
+  lease. It does not return a handle, inject context, create a connection or call a connector.
+- Issuance must prove that the exact successful opening lineage and signed resident-context
+  lifetime remain current while keeping resident-context identity and material inside the protected
+  boundary.
+
+### ATLAS-IMP-216 Acceptance Criteria
+
+- Only the exact bound consumer workload and audience may request authorization for its own
+  successful IMP-215 result. Human sessions, personal tokens, AI agents and generic workflow
+  services fail closed.
+- Caller input is limited to opening result ID/digest, code-owned policy identity and idempotency
+  metadata. Resident-context, lifetime, boundary, attestor and authority fields are server-derived.
+- Only canonical `opened_in_protected_consumer_boundary` evidence with a timely signed receipt,
+  verified target-context pair, closed protected source and zeroized source capsule is eligible.
+- A fresh signed, nonce-bound, metadata-only protected-boundary lifecycle attestation proves the
+  exact resident context remains present, non-bearer, unrevoked, unconsumed and usable.
+- The authorization lease is immutable, single-use, non-renewable, non-transferable, at most one
+  second and strictly bounded by the signed resident-context `usable_until` timestamp and fresh
+  attestation deadline.
+- Claim and lease are append-only, exact-lineage and idempotent. PostgreSQL revalidates the complete
+  ADR-160 through ADR-165 chain, database time, current destination fence and all deadlines under
+  canonical locks before atomic append.
+- The lease grants only the dedicated future resident-context access-consumption request authority.
+  Protected-artifact access and all route, credential, network, publication, delivery, dispatch,
+  execution and infrastructure-mutation authorities remain false.
+- Workload POST and normal username/password session GET are minimized, non-oracle and `no-store`.
+  The human UI is read-only and exposes no authorize, access, retrieve, reveal, inject, connect,
+  dispatch, execute or mutate control.
+- Production requires PostgreSQL and the trusted protected-boundary lifecycle attestor; there is no
+  process-memory, permissive or caller-asserted fallback.
+- Actual lease consumption, runtime-handle creation, resident-context access or injection remains a
+  separately designed future boundary.
 
 ### ATLAS-IMP-215 Scope Rationale
 
@@ -82,6 +120,16 @@
   review repairs. Live desktop and mobile inspection confirmed the read-only target-context
   capsule-opening presentation has no operational controls, overflow or browser-console errors and
   fails closed when protected backend state is unavailable.
+
+### ATLAS-IMP-215 Delivery Evidence
+
+- PR [#228](https://github.com/ozdemirumit/Project_Atlas/pull/228) exact head
+  `c24d485d622cf02e6b57aa181ef882c1a4938b9f` passed Continuous Integration run
+  `31942090382`, including PostgreSQL integration, backend and frontend jobs.
+- PR #228 was SHA-locked and squash-merged to `main` as
+  `3ea49182781d8f7b0233d99137c7e5e28f467ce2`.
+- The exact merged `main` commit passed independent Continuous Integration run `31942676313`,
+  including PostgreSQL integration, backend, frontend and migration round-trip gates.
 
 ### ATLAS-IMP-214 Delivery Evidence
 
