@@ -15,7 +15,7 @@ from typing import Any, cast
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import Boolean, Table, text
+from sqlalchemy import Boolean, Table, null, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -884,9 +884,10 @@ def _live_uncertain_result_values(
             values[name] = "opening_outcome_uncertain"
         elif name in {"opening_deadline", "recorded_at"}:
             values[name] = attempt["opening_deadline"]
+        elif name == "opening_receipt_payload":
+            values[name] = null()
         elif name in {
             "opening_receipt_digest",
-            "opening_receipt_payload",
             "protected_resident_context_id",
             "protected_resident_context_digest",
             "protected_resident_context_created_at",
