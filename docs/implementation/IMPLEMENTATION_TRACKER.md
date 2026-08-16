@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-212 |
 | Title | Bounded single-use protected target-context capsule handoff authorization lease without retrieval, unsealing, transfer, delivery or runtime authority |
-| Status | Implementation and local verification complete; pull request pending |
+| Status | Review; pull request open and exact-head CI pending |
 | Branch | `agent/protected-capsule-handoff-authorization-lease` |
-| Pull Request | Not opened |
+| Pull Request | [#225](https://github.com/ozdemirumit/Project_Atlas/pull/225) |
 | Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-158, ADR-159, ADR-160, ADR-161, ADR-162 |
 | Last Updated | 2026-08-16 |
-| Next Action | Commit the verified implementation, open the pull request and complete exact-head CI |
+| Next Action | Complete exact-head CI, SHA-locked merge and independent `main` CI |
 
 ### ATLAS-IMP-212 Scope Rationale
 
