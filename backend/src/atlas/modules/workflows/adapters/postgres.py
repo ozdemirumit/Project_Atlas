@@ -80,6 +80,9 @@ from atlas.core.persistence.models import (
     WorkflowProtectedResidentContextAccessAuthorizationLeaseModel,
     WorkflowProtectedResidentContextAccessConsumptionClaimModel,
     WorkflowProtectedResidentContextAccessResultModel,
+    WorkflowProtectedRuntimeContextInjectionAuthorizationClaimModel,
+    WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseModel,
+    WorkflowProtectedRuntimeContextInjectionDestinationHeadModel,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel,
@@ -249,6 +252,19 @@ from atlas.modules.workflows.application.protected_resident_context_access_consu
     WorkflowProtectedResidentContextTrustedAccessorReceiptSignatureVerifier,
     build_workflow_protected_resident_context_trusted_accessor_instruction,
     validate_workflow_protected_resident_context_access_consumption_claim_request,
+)
+from atlas.modules.workflows.application.protected_runtime_context_injection_authorization_ports import (  # noqa: E501
+    WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseRequest,
+    WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseResult,
+    WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseStatus,
+    WorkflowProtectedRuntimeContextInjectionAuthorizationPreflightRequest,
+    WorkflowProtectedRuntimeContextInjectionAuthorizationPreflightResult,
+    WorkflowProtectedRuntimeContextInjectionAuthorizationPreflightStatus,
+    WorkflowProtectedRuntimeContextInjectionAuthorizationPresentation,
+    WorkflowProtectedRuntimeContextInjectionAuthorizationPresentationState,
+    WorkflowProtectedRuntimeContextInjectionAuthorizationSource,
+    WorkflowProtectedRuntimeHandleLifecycleAttestation,
+    validate_workflow_protected_runtime_context_injection_authorization_request,
 )
 from atlas.modules.workflows.application.publication_lease_ports import (
     WorkflowOutboxPublicationLeaseAcquireIdempotencyRecord,
@@ -463,6 +479,10 @@ from atlas.modules.workflows.domain import (
     WorkflowProtectedResidentContextAccessConsumptionFailureClass,
     WorkflowProtectedResidentContextAccessConsumptionResult,
     WorkflowProtectedResidentContextAccessConsumptionResultState,
+    WorkflowProtectedResidentContextTrustedAccessorReceipt,
+    WorkflowProtectedRuntimeContextInjectionAuthorizationClaim,
+    WorkflowProtectedRuntimeContextInjectionAuthorizationLease,
+    WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseState,
     WorkflowProtectedTargetContextCapsuleLifecycleAttestation,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBinding,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBindingAuthority,
@@ -505,6 +525,7 @@ from atlas.modules.workflows.domain import (
     code_owned_workflow_event_physical_transport_target_context_binding_policy,
     code_owned_workflow_event_transport_admission_policy,
     code_owned_workflow_protected_resident_context_access_consumption_policy,
+    code_owned_workflow_protected_runtime_context_injection_authorization_policy,
     code_owned_workflow_protected_transport_target_context_capsule_consumer_binding_policy,
     select_deployment_physical_transport_credential_assignment_head,
 )
@@ -699,6 +720,31 @@ class _ProtectedResidentContextAccessConsumptionLockedSources:
     consumption_claims: tuple[WorkflowProtectedResidentContextAccessConsumptionClaimModel, ...]
     attempt: WorkflowProtectedResidentContextAccessAttemptModel | None
     result: WorkflowProtectedResidentContextAccessResultModel | None
+    first_observed_at: datetime
+    observed_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class _ProtectedRuntimeContextInjectionAuthorizationLockedSources:
+    destination_head: WorkflowProtectedRuntimeContextInjectionDestinationHeadModel | None
+    opening_authorization_lease: (
+        WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseModel | None
+    )
+    opening_authorization_claim: (
+        WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationClaimModel | None
+    )
+    opening_consumption_claim: (
+        WorkflowProtectedTransportTargetContextCapsuleOpeningConsumptionClaimModel | None
+    )
+    opening_attempt: WorkflowProtectedTransportTargetContextCapsuleOpeningAttemptModel | None
+    opening_result: WorkflowProtectedTransportTargetContextCapsuleOpeningResultModel | None
+    access_authorization_lease: WorkflowProtectedResidentContextAccessAuthorizationLeaseModel | None
+    access_authorization_claim: WorkflowProtectedResidentContextAccessAuthorizationClaimModel | None
+    access_consumption_claim: WorkflowProtectedResidentContextAccessConsumptionClaimModel | None
+    access_attempt: WorkflowProtectedResidentContextAccessAttemptModel | None
+    access_result: WorkflowProtectedResidentContextAccessResultModel | None
+    existing_leases: tuple[WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseModel, ...]
+    idempotency_claim: WorkflowProtectedRuntimeContextInjectionAuthorizationClaimModel | None
     first_observed_at: datetime
     observed_at: datetime
 
@@ -5967,6 +6013,320 @@ class PostgreSQLWorkflowPlanRepository:
             )
         return tuple(self._protected_resident_context_access_result_from_row(row) for row in rows)
 
+    async def preflight_protected_runtime_context_injection_authorization(
+        self,
+        request: WorkflowProtectedRuntimeContextInjectionAuthorizationPreflightRequest,
+    ) -> WorkflowProtectedRuntimeContextInjectionAuthorizationPreflightResult:
+        statuses = WorkflowProtectedRuntimeContextInjectionAuthorizationPreflightStatus
+        result_type = WorkflowProtectedRuntimeContextInjectionAuthorizationPreflightResult
+        async with self._sessions() as session:
+            locked = await self._lock_protected_runtime_context_injection_authorization_rows(
+                session,
+                access_result_id=request.access_result_id,
+                scope=request.scope,
+                consumer_subject_id=request.consumer_subject_id,
+                consumer_audience=request.consumer_audience,
+                idempotency_key=request.idempotency_key,
+            )
+            claim = locked.idempotency_claim
+            leases = locked.existing_leases
+            observed_at = locked.observed_at
+            if claim is None:
+                await session.rollback()
+                return result_type(
+                    statuses.ALREADY_AUTHORIZED if leases else statuses.NONE,
+                    None,
+                    observed_at,
+                )
+            if (
+                claim.idempotency_digest != request.idempotency_digest
+                or claim.request_fingerprint != request.request_fingerprint
+                or claim.access_result_id != request.access_result_id
+                or claim.access_result_digest != request.access_result_digest
+                or claim.policy_id != request.policy_id
+                or claim.policy_version != request.policy_version
+                or claim.policy_digest != request.policy_digest
+                or claim.organization_id != request.scope.organization_id
+                or claim.environment_id != request.scope.environment_id
+                or claim.site_id != request.scope.site_id
+                or claim.consumer_subject_id != request.consumer_subject_id
+                or claim.consumer_audience != request.consumer_audience
+            ):
+                await session.rollback()
+                return result_type(statuses.IDEMPOTENCY_CONFLICT, None, observed_at)
+            row = next(
+                (
+                    item
+                    for item in leases
+                    if item.authorization_lease_id == claim.authorization_lease_id
+                ),
+                None,
+            )
+            if row is None:
+                await session.rollback()
+                return result_type(statuses.EVIDENCE_CONFLICT, None, observed_at)
+            if any(
+                item is None
+                for item in (
+                    locked.access_result,
+                    locked.access_attempt,
+                    locked.access_consumption_claim,
+                    locked.access_authorization_lease,
+                    locked.access_authorization_claim,
+                )
+            ):
+                await session.rollback()
+                return result_type(statuses.EVIDENCE_CONFLICT, None, observed_at)
+            assert locked.access_result is not None
+            assert locked.access_attempt is not None
+            assert locked.access_consumption_claim is not None
+            assert locked.access_authorization_lease is not None
+            assert locked.access_authorization_claim is not None
+            try:
+                stored_claim = self._protected_runtime_context_injection_claim_from_row(claim)
+                lease = self._protected_runtime_context_injection_lease_from_row(row)
+                attestation = self._protected_runtime_context_injection_attestation_from_row(row)
+                source = self._protected_runtime_context_injection_source_from_rows(
+                    result_row=locked.access_result,
+                    attempt_row=locked.access_attempt,
+                    claim_row=locked.access_consumption_claim,
+                    authorization_lease_row=locked.access_authorization_lease,
+                    authorization_claim_row=locked.access_authorization_claim,
+                    receipt_verifier=request.offline_accessor_receipt_signature_verifier,
+                )
+                lifecycle_signature_valid = (
+                    request.offline_signature_verifier.verify_runtime_handle_lifecycle_attestation(
+                        attestation
+                    )
+                )
+            except Exception:
+                await session.rollback()
+                return result_type(statuses.EVIDENCE_CONFLICT, None, observed_at)
+            exact = bool(
+                source is not None
+                and lifecycle_signature_valid is True
+                and self._protected_runtime_context_injection_locked_lineage_matches(
+                    locked=locked,
+                    source=source,
+                )
+                and stored_claim.claim_id == lease.claim_id
+                and stored_claim.canonical_digest == lease.claim_digest
+                and stored_claim.access_result_id == lease.access_result_id
+                and stored_claim.protected_runtime_handle_id == lease.protected_runtime_handle_id
+                and source.result.access_id == lease.access_result_id
+                and source.result.canonical_digest == lease.access_result_digest
+                and source.protected_runtime_handle_id == lease.protected_runtime_handle_id
+                and source.protected_runtime_handle_digest == lease.protected_runtime_handle_digest
+                and source.result.recorded_at
+                <= row.pre_attestation_observed_at
+                <= attestation.observed_at
+                <= lease.issued_at
+                < attestation.valid_until
+            )
+            await session.rollback()
+            if not exact:
+                return result_type(statuses.EVIDENCE_CONFLICT, None, observed_at)
+            return result_type(statuses.REPLAY, lease, observed_at)
+
+    async def get_protected_runtime_context_injection_authorization_source(
+        self, *, access_result_id: str
+    ) -> WorkflowProtectedRuntimeContextInjectionAuthorizationSource | None:
+        return await self._get_protected_runtime_context_injection_authorization_source(
+            access_result_id=access_result_id,
+            receipt_verifier=(self._protected_resident_context_access_receipt_signature_verifier),
+        )
+
+    async def _get_protected_runtime_context_injection_authorization_source(
+        self,
+        *,
+        access_result_id: str,
+        receipt_verifier: WorkflowProtectedResidentContextTrustedAccessorReceiptSignatureVerifier
+        | None,
+    ) -> WorkflowProtectedRuntimeContextInjectionAuthorizationSource | None:
+        async with self._sessions() as session:
+            result_row = await session.get(
+                WorkflowProtectedResidentContextAccessResultModel, access_result_id
+            )
+            if result_row is None:
+                return None
+            attempt_row = await session.get(
+                WorkflowProtectedResidentContextAccessAttemptModel,
+                result_row.attempt_id,
+            )
+            claim_row = await session.get(
+                WorkflowProtectedResidentContextAccessConsumptionClaimModel,
+                result_row.consumption_claim_id,
+            )
+            authorization_lease_row = await session.get(
+                WorkflowProtectedResidentContextAccessAuthorizationLeaseModel,
+                result_row.authorization_lease_id,
+            )
+            authorization_claim_row = cast(
+                WorkflowProtectedResidentContextAccessAuthorizationClaimModel | None,
+                await session.scalar(
+                    select(WorkflowProtectedResidentContextAccessAuthorizationClaimModel).where(
+                        WorkflowProtectedResidentContextAccessAuthorizationClaimModel.access_authorization_lease_id
+                        == result_row.authorization_lease_id
+                    )
+                ),
+            )
+        return self._protected_runtime_context_injection_source_from_rows(
+            result_row=result_row,
+            attempt_row=attempt_row,
+            claim_row=claim_row,
+            authorization_lease_row=authorization_lease_row,
+            authorization_claim_row=authorization_claim_row,
+            receipt_verifier=receipt_verifier,
+        )
+
+    async def authorize_protected_runtime_context_injection(
+        self,
+        request: WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseRequest,
+    ) -> WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseResult:
+        statuses = WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseStatus
+        result_type = WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseResult
+        async with self._sessions() as session:
+            locked = await self._lock_protected_runtime_context_injection_authorization_sources(
+                session, request=request
+            )
+            try:
+                working = self._protected_runtime_context_injection_retimed_request(
+                    request, issued_at=locked.observed_at
+                )
+            except (TypeError, ValueError):
+                await session.rollback()
+                return result_type(statuses.EVIDENCE_CONFLICT, None)
+            replay = self._protected_runtime_context_injection_replay(
+                request=working, locked=locked
+            )
+            if replay is not None:
+                await session.rollback()
+                return replay
+            if not self._protected_runtime_context_injection_evidence_matches(
+                request=working, locked=locked
+            ):
+                await session.rollback()
+                return result_type(statuses.EVIDENCE_CONFLICT, None)
+            if locked.existing_leases:
+                await session.rollback()
+                return result_type(statuses.ALREADY_AUTHORIZED, None)
+            audit_payload = {
+                "schema_id": "audit.workflow-protected-runtime-context-injection-authorization",
+                "schema_version": "1.0",
+                "authorization_lease_id": working.candidate.authorization_lease_id,
+                "access_result_id": working.candidate.access_result_id,
+                "request_fingerprint": working.request_fingerprint,
+                "scope": working.scope.canonical_value(),
+                "consumer_subject_id": working.consumer_subject_id,
+                "protected_runtime_context_injection_authority_granted": True,
+                "prior_authority_granted": False,
+            }
+            if (
+                canonical_digest(audit_payload)
+                != working.candidate_claim.authorization_audit_digest
+            ):
+                await session.rollback()
+                return result_type(statuses.EVIDENCE_CONFLICT, None)
+            try:
+                session.add(
+                    self._protected_runtime_context_injection_lease_model(
+                        lease=working.candidate,
+                        attestation=working.lifecycle_attestation,
+                        pre_attestation_observed_at=(working.pre_attestation_observed_at),
+                    )
+                )
+                await session.flush()
+                session.add(
+                    self._protected_runtime_context_injection_claim_model(
+                        claim=working.candidate_claim,
+                        authorization_lease_id=working.candidate.authorization_lease_id,
+                        idempotency_key=working.idempotency_key,
+                        audit_payload=audit_payload,
+                        pre_attestation_observed_at=(working.pre_attestation_observed_at),
+                    )
+                )
+                await session.commit()
+                return result_type(statuses.AUTHORIZED, working.candidate, locked.observed_at)
+            except IntegrityError:
+                await session.rollback()
+
+        async with self._sessions() as session:
+            retry_locked = (
+                await self._lock_protected_runtime_context_injection_authorization_sources(
+                    session, request=request
+                )
+            )
+            try:
+                retry = self._protected_runtime_context_injection_retimed_request(
+                    request, issued_at=retry_locked.observed_at
+                )
+            except (TypeError, ValueError):
+                await session.rollback()
+                return result_type(statuses.EVIDENCE_CONFLICT, None)
+            replay = self._protected_runtime_context_injection_replay(
+                request=retry, locked=retry_locked
+            )
+            current = self._protected_runtime_context_injection_evidence_matches(
+                request=retry, locked=retry_locked
+            )
+            existing = bool(retry_locked.existing_leases)
+            await session.rollback()
+            if replay is not None:
+                return replay
+            if current and existing:
+                return result_type(statuses.ALREADY_AUTHORIZED, None)
+        return result_type(statuses.EVIDENCE_CONFLICT, None)
+
+    async def list_protected_runtime_context_injection_authorization_presentations(
+        self,
+        *,
+        scope: WorkflowScope,
+        authorization_lease_ids: tuple[str, ...] | None = None,
+        limit: int = 256,
+    ) -> tuple[WorkflowProtectedRuntimeContextInjectionAuthorizationPresentation, ...]:
+        if authorization_lease_ids == ():
+            return ()
+        lease_model = WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseModel
+        statement = select(lease_model, func.statement_timestamp()).where(
+            lease_model.organization_id == scope.organization_id,
+            lease_model.environment_id == scope.environment_id,
+            lease_model.site_id == scope.site_id,
+        )
+        if authorization_lease_ids is not None:
+            statement = statement.where(
+                lease_model.authorization_lease_id.in_(authorization_lease_ids)
+            )
+        async with self._sessions() as session:
+            rows = (
+                await session.execute(
+                    statement.order_by(
+                        lease_model.issued_at.desc(),
+                        lease_model.authorization_lease_id,
+                    ).limit(max(1, min(limit, 256)))
+                )
+            ).all()
+        presentations: list[WorkflowProtectedRuntimeContextInjectionAuthorizationPresentation] = []
+        for row in rows:
+            lease = self._protected_runtime_context_injection_lease_from_row(row[0])
+            evaluated_at = cast(datetime, row[1])
+            active = lease.is_active(evaluated_at=evaluated_at, consumed=False)
+            presentations.append(
+                WorkflowProtectedRuntimeContextInjectionAuthorizationPresentation(
+                    lease=lease,
+                    consumed=False,
+                    evaluated_at=evaluated_at,
+                    effective_state=(
+                        WorkflowProtectedRuntimeContextInjectionAuthorizationPresentationState.ACTIVE
+                        if active
+                        else (
+                            WorkflowProtectedRuntimeContextInjectionAuthorizationPresentationState.EXPIRED
+                        )
+                    ),
+                    protected_runtime_context_injection_authority_granted=active,
+                )
+            )
+        return tuple(presentations)
+
     async def authorize_target_context_capsule_opening(
         self,
         request: WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseRequest,
@@ -6387,6 +6747,1321 @@ class PostgreSQLWorkflowPlanRepository:
                 ).all()
             )
         return tuple(self._target_context_capsule_opening_result_from_row(row) for row in rows)
+
+    async def _lock_protected_runtime_context_injection_authorization_sources(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseRequest,
+    ) -> _ProtectedRuntimeContextInjectionAuthorizationLockedSources:
+        return await self._lock_protected_runtime_context_injection_authorization_rows(
+            session,
+            access_result_id=request.source.result.access_id,
+            scope=request.scope,
+            consumer_subject_id=request.consumer_subject_id,
+            consumer_audience=request.consumer_audience,
+            idempotency_key=request.idempotency_key,
+        )
+
+    async def _lock_protected_runtime_context_injection_authorization_rows(
+        self,
+        session: AsyncSession,
+        *,
+        access_result_id: str,
+        scope: WorkflowScope,
+        consumer_subject_id: str,
+        consumer_audience: str,
+        idempotency_key: str,
+    ) -> _ProtectedRuntimeContextInjectionAuthorizationLockedSources:
+        first_observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+        policy = code_owned_workflow_protected_runtime_context_injection_authorization_policy()
+        seed_access_result = await session.get(
+            WorkflowProtectedResidentContextAccessResultModel,
+            access_result_id,
+        )
+        seed_access_authorization_lease = (
+            await session.get(
+                WorkflowProtectedResidentContextAccessAuthorizationLeaseModel,
+                seed_access_result.authorization_lease_id,
+            )
+            if seed_access_result is not None
+            else None
+        )
+        destination_head = await session.get(
+            WorkflowProtectedRuntimeContextInjectionDestinationHeadModel,
+            policy.destination_deployment_id,
+            with_for_update=True,
+        )
+        opening_authorization_lease = (
+            await session.get(
+                WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseModel,
+                seed_access_authorization_lease.opening_authorization_lease_id,
+                with_for_update=True,
+            )
+            if seed_access_authorization_lease is not None
+            else None
+        )
+        opening_authorization_claim = cast(
+            WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationClaimModel | None,
+            await session.scalar(
+                select(WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationClaimModel)
+                .where(
+                    WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationClaimModel.authorization_lease_id
+                    == seed_access_authorization_lease.opening_authorization_lease_id
+                )
+                .with_for_update()
+            )
+            if seed_access_authorization_lease is not None
+            else None,
+        )
+        opening_consumption_claim = (
+            await session.get(
+                WorkflowProtectedTransportTargetContextCapsuleOpeningConsumptionClaimModel,
+                seed_access_authorization_lease.opening_consumption_claim_id,
+                with_for_update=True,
+            )
+            if seed_access_authorization_lease is not None
+            else None
+        )
+        opening_attempt = (
+            await session.get(
+                WorkflowProtectedTransportTargetContextCapsuleOpeningAttemptModel,
+                seed_access_authorization_lease.opening_attempt_id,
+                with_for_update=True,
+            )
+            if seed_access_authorization_lease is not None
+            else None
+        )
+        opening_result = (
+            await session.get(
+                WorkflowProtectedTransportTargetContextCapsuleOpeningResultModel,
+                seed_access_authorization_lease.opening_id,
+                with_for_update=True,
+            )
+            if seed_access_authorization_lease is not None
+            else None
+        )
+        access_authorization_lease = (
+            await session.get(
+                WorkflowProtectedResidentContextAccessAuthorizationLeaseModel,
+                seed_access_result.authorization_lease_id,
+                with_for_update=True,
+            )
+            if seed_access_result is not None
+            else None
+        )
+        access_authorization_claim = cast(
+            WorkflowProtectedResidentContextAccessAuthorizationClaimModel | None,
+            await session.scalar(
+                select(WorkflowProtectedResidentContextAccessAuthorizationClaimModel)
+                .where(
+                    WorkflowProtectedResidentContextAccessAuthorizationClaimModel.access_authorization_lease_id
+                    == access_authorization_lease.access_authorization_lease_id
+                )
+                .with_for_update()
+            )
+            if access_authorization_lease is not None
+            else None,
+        )
+        access_consumption_claim = (
+            await session.get(
+                WorkflowProtectedResidentContextAccessConsumptionClaimModel,
+                seed_access_result.consumption_claim_id,
+                with_for_update=True,
+            )
+            if seed_access_result is not None
+            else None
+        )
+        access_attempt = (
+            await session.get(
+                WorkflowProtectedResidentContextAccessAttemptModel,
+                seed_access_result.attempt_id,
+                with_for_update=True,
+            )
+            if seed_access_result is not None
+            else None
+        )
+        access_result = await session.get(
+            WorkflowProtectedResidentContextAccessResultModel,
+            access_result_id,
+            with_for_update=True,
+            populate_existing=True,
+        )
+        lease_identity = (
+            or_(
+                WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseModel.access_result_id
+                == access_result_id,
+                WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseModel.protected_runtime_handle_id
+                == access_result.protected_runtime_handle_id,
+            )
+            if access_result is not None
+            else (
+                WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseModel.access_result_id
+                == access_result_id
+            )
+        )
+        existing_leases = tuple(
+            (
+                await session.scalars(
+                    select(WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseModel)
+                    .where(lease_identity)
+                    .order_by(
+                        WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseModel.authorization_lease_id
+                    )
+                    .with_for_update()
+                )
+            ).all()
+        )
+        scope_id = self._protected_runtime_context_injection_idempotency_scope(
+            scope, consumer_subject_id, consumer_audience
+        )
+        idempotency_claim = cast(
+            WorkflowProtectedRuntimeContextInjectionAuthorizationClaimModel | None,
+            await session.scalar(
+                select(WorkflowProtectedRuntimeContextInjectionAuthorizationClaimModel)
+                .where(
+                    WorkflowProtectedRuntimeContextInjectionAuthorizationClaimModel.idempotency_scope_id
+                    == scope_id,
+                    WorkflowProtectedRuntimeContextInjectionAuthorizationClaimModel.idempotency_key
+                    == idempotency_key,
+                )
+                .with_for_update()
+            ),
+        )
+        observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+        return _ProtectedRuntimeContextInjectionAuthorizationLockedSources(
+            destination_head=destination_head,
+            opening_authorization_lease=opening_authorization_lease,
+            opening_authorization_claim=opening_authorization_claim,
+            opening_consumption_claim=opening_consumption_claim,
+            opening_attempt=opening_attempt,
+            opening_result=opening_result,
+            access_authorization_lease=access_authorization_lease,
+            access_authorization_claim=access_authorization_claim,
+            access_consumption_claim=access_consumption_claim,
+            access_attempt=access_attempt,
+            access_result=access_result,
+            existing_leases=existing_leases,
+            idempotency_claim=idempotency_claim,
+            first_observed_at=first_observed_at,
+            observed_at=observed_at,
+        )
+
+    @classmethod
+    def _protected_runtime_context_injection_locked_lineage_matches(
+        cls,
+        *,
+        locked: _ProtectedRuntimeContextInjectionAuthorizationLockedSources,
+        source: WorkflowProtectedRuntimeContextInjectionAuthorizationSource,
+    ) -> bool:
+        if any(
+            item is None
+            for item in (
+                locked.destination_head,
+                locked.opening_authorization_lease,
+                locked.opening_authorization_claim,
+                locked.opening_consumption_claim,
+                locked.opening_attempt,
+                locked.opening_result,
+            )
+        ):
+            return False
+        assert locked.destination_head is not None
+        assert locked.opening_authorization_lease is not None
+        assert locked.opening_authorization_claim is not None
+        assert locked.opening_consumption_claim is not None
+        assert locked.opening_attempt is not None
+        assert locked.opening_result is not None
+        policy = code_owned_workflow_protected_runtime_context_injection_authorization_policy()
+        destination_head_payload = {
+            "destination_boundary_id": policy.destination_boundary_id,
+            "destination_deployment_id": policy.destination_deployment_id,
+            "destination_generation": policy.destination_generation,
+            "destination_fencing_token_digest": policy.destination_fencing_token_digest,
+            "policy_digest": policy.canonical_digest,
+        }
+        try:
+            opening_lease = cls._target_context_capsule_opening_lease_from_row(
+                locked.opening_authorization_lease
+            )
+            opening_claim = cls._target_context_capsule_opening_consumption_claim_from_row(
+                locked.opening_consumption_claim
+            )
+            opening_attempt = cls._target_context_capsule_opening_attempt_from_row(
+                locked.opening_attempt
+            )
+            opening_result = cls._target_context_capsule_opening_result_from_row(
+                locked.opening_result
+            )
+            opening_authorization_claim_valid = (
+                cls._target_context_capsule_opening_authorization_claim_row_matches(
+                    locked.opening_authorization_claim,
+                    opening_lease=opening_lease,
+                )
+            )
+        except Exception:
+            return False
+        access_lease = source.access_authorization_lease
+        return bool(
+            locked.destination_head.destination_boundary_id == policy.destination_boundary_id
+            and locked.destination_head.destination_deployment_id
+            == policy.destination_deployment_id
+            and locked.destination_head.destination_generation == policy.destination_generation
+            and locked.destination_head.destination_fencing_token_digest
+            == policy.destination_fencing_token_digest
+            and locked.destination_head.policy_digest == policy.canonical_digest
+            and locked.destination_head.current is True
+            and locked.destination_head.payload == destination_head_payload
+            and locked.destination_head.canonical_digest
+            == canonical_digest(destination_head_payload)
+            and access_lease.opening_authorization_lease_id == opening_lease.authorization_lease_id
+            and access_lease.opening_authorization_lease_digest == opening_lease.canonical_digest
+            and access_lease.opening_consumption_claim_id == opening_claim.claim_id
+            and access_lease.opening_consumption_claim_digest == opening_claim.canonical_digest
+            and access_lease.opening_attempt_id == opening_attempt.attempt_id
+            and access_lease.opening_attempt_digest == opening_attempt.canonical_digest
+            and access_lease.opening_id == opening_result.opening_id
+            and access_lease.opening_result_digest == opening_result.canonical_digest
+            and opening_authorization_claim_valid
+        )
+
+    @classmethod
+    def _protected_runtime_context_injection_evidence_matches(
+        cls,
+        *,
+        request: WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseRequest,
+        locked: _ProtectedRuntimeContextInjectionAuthorizationLockedSources,
+    ) -> bool:
+        if any(
+            item is None
+            for item in (
+                locked.destination_head,
+                locked.opening_authorization_lease,
+                locked.opening_authorization_claim,
+                locked.opening_consumption_claim,
+                locked.opening_attempt,
+                locked.opening_result,
+                locked.access_authorization_lease,
+                locked.access_authorization_claim,
+                locked.access_consumption_claim,
+                locked.access_attempt,
+                locked.access_result,
+            )
+        ):
+            return False
+        assert locked.destination_head is not None
+        assert locked.opening_authorization_lease is not None
+        assert locked.opening_authorization_claim is not None
+        assert locked.opening_consumption_claim is not None
+        assert locked.opening_attempt is not None
+        assert locked.opening_result is not None
+        assert locked.access_authorization_lease is not None
+        assert locked.access_authorization_claim is not None
+        assert locked.access_consumption_claim is not None
+        assert locked.access_attempt is not None
+        assert locked.access_result is not None
+        source = cls._protected_runtime_context_injection_source_from_rows(
+            result_row=locked.access_result,
+            attempt_row=locked.access_attempt,
+            claim_row=locked.access_consumption_claim,
+            authorization_lease_row=locked.access_authorization_lease,
+            authorization_claim_row=locked.access_authorization_claim,
+            receipt_verifier=request.offline_accessor_receipt_signature_verifier,
+        )
+        if source is None or not cls._protected_runtime_context_injection_locked_lineage_matches(
+            locked=locked,
+            source=source,
+        ):
+            return False
+        candidate = request.candidate
+        candidate_claim = request.candidate_claim
+        attestation = request.lifecycle_attestation
+        policy = code_owned_workflow_protected_runtime_context_injection_authorization_policy()
+        destination_head_payload = {
+            "destination_boundary_id": policy.destination_boundary_id,
+            "destination_deployment_id": policy.destination_deployment_id,
+            "destination_generation": policy.destination_generation,
+            "destination_fencing_token_digest": policy.destination_fencing_token_digest,
+            "policy_digest": policy.canonical_digest,
+        }
+        unsafe_attestation = (
+            attestation.runtime_handle_is_bearer_capability,
+            attestation.raw_context_included,
+            attestation.runtime_handle_material_included,
+            attestation.runtime_payload_included,
+            attestation.runtime_handle_locator_included,
+            attestation.endpoint_included,
+            attestation.credential_included,
+            attestation.secret_included,
+            attestation.bearer_token_included,
+            attestation.provider_payload_included,
+            attestation.handle_lookup_authorized,
+            attestation.handle_retrieval_authorized,
+            attestation.handle_use_authorized,
+            attestation.runtime_use_authorized,
+            attestation.runtime_context_injection_authorized,
+            attestation.injection_consumption_outstanding,
+            attestation.connector_activity_authorized,
+            attestation.network_activity_authorized,
+            attestation.readiness_probe_authorized,
+            attestation.publication_authorized,
+            attestation.delivery_authorized,
+            attestation.dispatch_authorized,
+            attestation.execution_authorized,
+            attestation.infrastructure_mutation_authorized,
+        )
+        try:
+            validate_workflow_protected_runtime_context_injection_authorization_request(request)
+            signature_valid = (
+                request.offline_signature_verifier.verify_runtime_handle_lifecycle_attestation(
+                    attestation
+                )
+            )
+            opening_lease = cls._target_context_capsule_opening_lease_from_row(
+                locked.opening_authorization_lease
+            )
+            opening_claim = cls._target_context_capsule_opening_consumption_claim_from_row(
+                locked.opening_consumption_claim
+            )
+            opening_attempt = cls._target_context_capsule_opening_attempt_from_row(
+                locked.opening_attempt
+            )
+            opening_result = cls._target_context_capsule_opening_result_from_row(
+                locked.opening_result
+            )
+            opening_authorization_claim_valid = (
+                cls._target_context_capsule_opening_authorization_claim_row_matches(
+                    locked.opening_authorization_claim,
+                    opening_lease=opening_lease,
+                )
+            )
+            access_authorization_claim = (
+                cls._protected_resident_context_access_authorization_claim_from_row(
+                    locked.access_authorization_claim
+                )
+            )
+        except Exception:
+            return False
+        access_lease = source.access_authorization_lease
+        source_result = source.result
+        source_attempt = source.attempt
+        source_claim = source.consumption_claim
+        exact_attestation = all(
+            getattr(attestation, name) == value
+            for name, value in {
+                "access_result_id": source_result.access_id,
+                "access_result_digest": source_result.canonical_digest,
+                "access_attempt_id": source_attempt.attempt_id,
+                "access_attempt_digest": source_attempt.canonical_digest,
+                "access_consumption_claim_id": source_claim.claim_id,
+                "access_consumption_claim_digest": source_claim.canonical_digest,
+                "access_authorization_lease_id": access_lease.authorization_lease_id,
+                "access_authorization_lease_digest": access_lease.canonical_digest,
+                "accessor_receipt_digest": source.accessor_receipt_digest,
+                "accessor_receipt_signing_key_id": source.accessor_receipt_signing_key_id,
+                "protected_runtime_handle_id": source.protected_runtime_handle_id,
+                "protected_runtime_handle_digest": source.protected_runtime_handle_digest,
+                "protected_runtime_handle_created_at": source.protected_runtime_handle_created_at,
+                "protected_runtime_handle_usable_until": (
+                    source.protected_runtime_handle_usable_until
+                ),
+                "destination_boundary_id": policy.destination_boundary_id,
+                "destination_deployment_id": policy.destination_deployment_id,
+                "destination_generation": policy.destination_generation,
+                "destination_fencing_token_digest": policy.destination_fencing_token_digest,
+                "runtime_handle_profile_id": policy.runtime_handle_profile_id,
+                "runtime_handle_profile_version": policy.runtime_handle_profile_version,
+                "runtime_handle_profile_digest": policy.runtime_handle_profile_digest,
+                "injector_contract_id": policy.required_injector_contract_id,
+                "injector_contract_version": policy.required_injector_contract_version,
+                "injector_id": policy.approved_injector_id,
+                "injector_version": policy.approved_injector_version,
+                "runtime_slot_profile_id": policy.runtime_slot_profile_id,
+                "runtime_slot_profile_version": policy.runtime_slot_profile_version,
+                "runtime_slot_profile_digest": policy.runtime_slot_profile_digest,
+                "scope": request.scope,
+                "consumer_subject_id": request.consumer_subject_id,
+                "consumer_audience": request.consumer_audience,
+                "consumer_contract_id": policy.consumer_contract_id,
+                "consumer_contract_version": policy.consumer_contract_version,
+                "purpose_id": policy.purpose_id,
+                "request_nonce_digest": request.expected_request_nonce_digest,
+            }.items()
+        )
+        return bool(
+            locked.first_observed_at <= locked.observed_at
+            and locked.destination_head.destination_boundary_id == policy.destination_boundary_id
+            and locked.destination_head.destination_deployment_id
+            == policy.destination_deployment_id
+            and locked.destination_head.destination_generation == policy.destination_generation
+            and locked.destination_head.destination_fencing_token_digest
+            == policy.destination_fencing_token_digest
+            and locked.destination_head.policy_digest == policy.canonical_digest
+            and locked.destination_head.current is True
+            and locked.destination_head.payload == destination_head_payload
+            and locked.destination_head.canonical_digest
+            == canonical_digest(destination_head_payload)
+            and source == request.source
+            and source_result.recorded_at <= locked.first_observed_at
+            and source_result.recorded_at <= request.pre_attestation_observed_at
+            and request.pre_attestation_observed_at <= attestation.observed_at
+            and attestation.observed_at <= locked.first_observed_at
+            and locked.observed_at < source.protected_runtime_handle_usable_until
+            and source_result.state.value == policy.required_access_result_state
+            and source_result.failure_class is None
+            and source_result.completed_at is not None
+            and source_result.completed_at < source_result.access_deadline
+            and source_result.completed_at <= source_result.recorded_at
+            and source_result.protected_runtime_handle_is_bearer_capability is False
+            and source_result.protected_resident_context_consumed is True
+            and source_result.runtime_handle_established_in_protected_boundary is True
+            and source_result.runtime_handle_absence_confirmed is False
+            and source_result.outcome_known is True
+            and access_lease.opening_authorization_lease_id == opening_lease.authorization_lease_id
+            and access_lease.opening_authorization_lease_digest == opening_lease.canonical_digest
+            and access_lease.opening_consumption_claim_id == opening_claim.claim_id
+            and access_lease.opening_consumption_claim_digest == opening_claim.canonical_digest
+            and access_lease.opening_attempt_id == opening_attempt.attempt_id
+            and access_lease.opening_attempt_digest == opening_attempt.canonical_digest
+            and access_lease.opening_id == opening_result.opening_id
+            and access_lease.opening_result_digest == opening_result.canonical_digest
+            and opening_authorization_claim_valid
+            and locked.access_authorization_claim.access_authorization_lease_id
+            == access_lease.authorization_lease_id
+            and access_authorization_claim.claim_id == access_lease.claim_id
+            and access_authorization_claim.canonical_digest == access_lease.claim_digest
+            and candidate.access_result_id == source_result.access_id
+            and candidate.access_result_digest == source_result.canonical_digest
+            and candidate.claim_id == candidate_claim.claim_id
+            and candidate.claim_digest == candidate_claim.canonical_digest
+            and candidate.issued_at == locked.observed_at
+            and candidate.issued_at < candidate.valid_until
+            and candidate.valid_until <= candidate.issued_at + timedelta(seconds=1)
+            and candidate.valid_until <= candidate.effective_until
+            and candidate.effective_until <= source.protected_runtime_handle_usable_until
+            and candidate.effective_until <= attestation.valid_until
+            and candidate.lifecycle_attestation_id == attestation.attestation_id
+            and candidate.lifecycle_attestation_digest == attestation.canonical_digest
+            and candidate.lifecycle_attestation_valid_until == attestation.valid_until
+            and candidate.injector_contract_id == policy.required_injector_contract_id
+            and candidate.injector_contract_version == policy.required_injector_contract_version
+            and candidate.injector_id == policy.approved_injector_id
+            and candidate.injector_version == policy.approved_injector_version
+            and candidate.runtime_slot_profile_id == policy.runtime_slot_profile_id
+            and candidate.runtime_slot_profile_version == policy.runtime_slot_profile_version
+            and candidate.runtime_slot_profile_digest == policy.runtime_slot_profile_digest
+            and candidate.protected_runtime_context_injection_authority_granted is True
+            and candidate_claim.protected_runtime_context_injection_authority_granted is False
+            and cls._protected_runtime_context_injection_prior_authority_is_zero(candidate)
+            and cls._protected_runtime_context_injection_prior_authority_is_zero(candidate_claim)
+            and request.expected_policy_digest == policy.canonical_digest
+            and request.expected_validity_window_seconds == policy.maximum_lifetime_seconds
+            and request.scope == source_result.scope
+            and request.consumer_subject_id == policy.consumer_subject_id
+            and request.consumer_audience == policy.consumer_audience
+            and attestation.attestor_id == policy.required_attestor_id
+            and attestation.attestor_version == policy.required_attestor_version
+            and attestation.signing_key_id == policy.verification_signing_key_id
+            and attestation.observed_at < attestation.valid_until
+            and locked.observed_at < attestation.valid_until
+            and attestation.valid_until <= source.protected_runtime_handle_usable_until
+            and attestation.runtime_handle_present is True
+            and attestation.runtime_handle_unexpired is True
+            and attestation.runtime_handle_unrevoked is True
+            and attestation.runtime_handle_undestroyed is True
+            and attestation.runtime_handle_uninjected is True
+            and attestation.runtime_handle_unused is True
+            and attestation.destination_generation_current is True
+            and attestation.destination_fence_current is True
+            and attestation.injector_profile_eligible is True
+            and attestation.runtime_slot_profile_eligible is True
+            and not any(unsafe_attestation)
+            and exact_attestation
+            and signature_valid is True
+        )
+
+    @staticmethod
+    def _protected_runtime_context_injection_retimed_request(
+        request: WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseRequest,
+        *,
+        issued_at: datetime,
+    ) -> WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseRequest:
+        effective_until = min(
+            request.source.protected_runtime_handle_usable_until,
+            request.lifecycle_attestation.valid_until,
+        )
+        valid_until = min(issued_at + timedelta(seconds=1), effective_until)
+        claim_payload = request.candidate_claim.digest_payload()
+        claim_payload["claimed_at"] = issued_at.isoformat()
+        claim = dataclass_replace(
+            request.candidate_claim,
+            claimed_at=issued_at,
+            canonical_digest=canonical_digest(claim_payload),
+        )
+        lease_payload = request.candidate.digest_payload()
+        lease_payload.update(
+            claim_digest=claim.canonical_digest,
+            issued_at=issued_at.isoformat(),
+            valid_until=valid_until.isoformat(),
+            effective_until=effective_until.isoformat(),
+        )
+        lease = dataclass_replace(
+            request.candidate,
+            claim_digest=claim.canonical_digest,
+            issued_at=issued_at,
+            valid_until=valid_until,
+            effective_until=effective_until,
+            canonical_digest=canonical_digest(lease_payload),
+        )
+        return dataclass_replace(
+            request,
+            requested_at=issued_at,
+            candidate_claim=claim,
+            candidate=lease,
+        )
+
+    @classmethod
+    def _protected_runtime_context_injection_replay(
+        cls,
+        *,
+        request: WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseRequest,
+        locked: _ProtectedRuntimeContextInjectionAuthorizationLockedSources,
+    ) -> WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseResult | None:
+        statuses = WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseStatus
+        result_type = WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseResult
+        claim_row = locked.idempotency_claim
+        if claim_row is None:
+            return None
+        if (
+            claim_row.idempotency_digest != request.idempotency_digest
+            or claim_row.request_fingerprint != request.request_fingerprint
+            or claim_row.access_result_id != request.source.result.access_id
+            or claim_row.access_result_digest != request.source.result.canonical_digest
+            or claim_row.protected_runtime_handle_id != request.source.protected_runtime_handle_id
+            or claim_row.organization_id != request.scope.organization_id
+            or claim_row.environment_id != request.scope.environment_id
+            or claim_row.site_id != request.scope.site_id
+            or claim_row.consumer_subject_id != request.consumer_subject_id
+            or claim_row.consumer_audience != request.consumer_audience
+        ):
+            return result_type(statuses.IDEMPOTENCY_CONFLICT, None)
+        row = next(
+            (
+                item
+                for item in locked.existing_leases
+                if item.authorization_lease_id == claim_row.authorization_lease_id
+            ),
+            None,
+        )
+        if row is None:
+            return result_type(statuses.EVIDENCE_CONFLICT, None)
+        if any(
+            item is None
+            for item in (
+                locked.access_result,
+                locked.access_attempt,
+                locked.access_consumption_claim,
+                locked.access_authorization_lease,
+                locked.access_authorization_claim,
+            )
+        ):
+            return result_type(statuses.EVIDENCE_CONFLICT, None)
+        assert locked.access_result is not None
+        assert locked.access_attempt is not None
+        assert locked.access_consumption_claim is not None
+        assert locked.access_authorization_lease is not None
+        assert locked.access_authorization_claim is not None
+        try:
+            claim = cls._protected_runtime_context_injection_claim_from_row(claim_row)
+            lease = cls._protected_runtime_context_injection_lease_from_row(row)
+            attestation = cls._protected_runtime_context_injection_attestation_from_row(row)
+            source = cls._protected_runtime_context_injection_source_from_rows(
+                result_row=locked.access_result,
+                attempt_row=locked.access_attempt,
+                claim_row=locked.access_consumption_claim,
+                authorization_lease_row=locked.access_authorization_lease,
+                authorization_claim_row=locked.access_authorization_claim,
+                receipt_verifier=request.offline_accessor_receipt_signature_verifier,
+            )
+            lifecycle_signature_valid = (
+                request.offline_signature_verifier.verify_runtime_handle_lifecycle_attestation(
+                    attestation
+                )
+            )
+        except Exception:
+            return result_type(statuses.EVIDENCE_CONFLICT, None)
+        if (
+            source is None
+            or lifecycle_signature_valid is not True
+            or not cls._protected_runtime_context_injection_locked_lineage_matches(
+                locked=locked,
+                source=source,
+            )
+            or claim.claim_id != lease.claim_id
+            or claim.canonical_digest != lease.claim_digest
+            or claim.access_result_id != lease.access_result_id
+            or claim.protected_runtime_handle_id != lease.protected_runtime_handle_id
+            or source.result.access_id != lease.access_result_id
+            or source.result.canonical_digest != lease.access_result_digest
+            or source.protected_runtime_handle_id != lease.protected_runtime_handle_id
+            or source.protected_runtime_handle_digest != lease.protected_runtime_handle_digest
+            or not source.result.recorded_at
+            <= row.pre_attestation_observed_at
+            <= attestation.observed_at
+            <= lease.issued_at
+            < attestation.valid_until
+        ):
+            return result_type(statuses.EVIDENCE_CONFLICT, None)
+        return result_type(statuses.REPLAY, lease, locked.observed_at)
+
+    @staticmethod
+    def _protected_runtime_context_injection_idempotency_scope(
+        scope: WorkflowScope,
+        subject_id: str,
+        audience: str,
+    ) -> str:
+        return canonical_digest(
+            {
+                "scope": scope.canonical_value(),
+                "subject_id": subject_id,
+                "audience": audience,
+            }
+        )
+
+    @staticmethod
+    def _protected_runtime_context_injection_prior_authority_is_zero(value: Any) -> bool:
+        return all(
+            getattr(value, name) is False
+            for name in value.__dataclass_fields__
+            if name.endswith("_authorized")
+            or name == "protected_resident_context_access_authority_granted"
+        )
+
+    @staticmethod
+    def _protected_runtime_context_injection_authority_columns(value: Any) -> dict[str, bool]:
+        columns = {
+            name.replace("_authorized", "_authority_granted"): bool(getattr(value, name))
+            for name in value.__dataclass_fields__
+            if name.endswith("_authorized")
+        }
+        columns["protected_resident_context_access_authority_granted"] = bool(
+            value.protected_resident_context_access_authority_granted
+        )
+        columns["protected_runtime_context_injection_authority_granted"] = bool(
+            value.protected_runtime_context_injection_authority_granted
+        )
+        return columns
+
+    @classmethod
+    def _protected_runtime_context_injection_lease_model(
+        cls,
+        *,
+        lease: WorkflowProtectedRuntimeContextInjectionAuthorizationLease,
+        attestation: WorkflowProtectedRuntimeHandleLifecycleAttestation,
+        pre_attestation_observed_at: datetime,
+    ) -> WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseModel:
+        columns = {
+            column.name
+            for column in (
+                WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseModel.__table__.columns
+            )
+        }
+        values: dict[str, object] = {
+            name: getattr(lease, name)
+            for name in lease.__dataclass_fields__
+            if name in columns
+            and name not in {"scope", "state", "canonical_digest"}
+            and not name.endswith("_authorized")
+            and not name.endswith("_authority_granted")
+        }
+        values.update(
+            organization_id=lease.scope.organization_id,
+            environment_id=lease.scope.environment_id,
+            site_id=lease.scope.site_id,
+            state=lease.state.value,
+            pre_attestation_observed_at=pre_attestation_observed_at,
+            lifecycle_attestation_observed_at=attestation.observed_at,
+            lifecycle_attestor_id=attestation.attestor_id,
+            lifecycle_attestor_version=attestation.attestor_version,
+            lifecycle_signing_key_id=attestation.signing_key_id,
+            lifecycle_profile_digest=canonical_digest(
+                {
+                    "attestor_id": attestation.attestor_id,
+                    "attestor_version": attestation.attestor_version,
+                    "signing_key_id": attestation.signing_key_id,
+                }
+            ),
+            request_nonce_digest=attestation.request_nonce_digest,
+            runtime_handle_present=attestation.runtime_handle_present,
+            runtime_handle_is_bearer_capability=(attestation.runtime_handle_is_bearer_capability),
+            runtime_handle_unexpired=attestation.runtime_handle_unexpired,
+            runtime_handle_unrevoked=attestation.runtime_handle_unrevoked,
+            runtime_handle_undestroyed=attestation.runtime_handle_undestroyed,
+            runtime_handle_uninjected=attestation.runtime_handle_uninjected,
+            runtime_handle_unused=attestation.runtime_handle_unused,
+            injection_consumption_outstanding=(attestation.injection_consumption_outstanding),
+            destination_generation_current=attestation.destination_generation_current,
+            destination_fence_current=attestation.destination_fence_current,
+            injector_profile_eligible=attestation.injector_profile_eligible,
+            runtime_slot_profile_eligible=attestation.runtime_slot_profile_eligible,
+            **cls._protected_runtime_context_injection_authority_columns(lease),
+            canonical_digest=lease.canonical_digest,
+            payload=lease.digest_payload(),
+            lifecycle_attestation_payload={
+                **attestation.digest_payload(),
+                "canonical_digest": attestation.canonical_digest,
+            },
+        )
+        return WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseModel(**values)
+
+    @classmethod
+    def _protected_runtime_context_injection_claim_model(
+        cls,
+        *,
+        claim: WorkflowProtectedRuntimeContextInjectionAuthorizationClaim,
+        authorization_lease_id: str,
+        idempotency_key: str,
+        audit_payload: dict[str, object],
+        pre_attestation_observed_at: datetime,
+    ) -> WorkflowProtectedRuntimeContextInjectionAuthorizationClaimModel:
+        columns = {
+            column.name
+            for column in (
+                WorkflowProtectedRuntimeContextInjectionAuthorizationClaimModel.__table__.columns
+            )
+        }
+        values: dict[str, object] = {
+            name: getattr(claim, name)
+            for name in claim.__dataclass_fields__
+            if name in columns
+            and name not in {"scope", "canonical_digest"}
+            and not name.endswith("_authorized")
+            and not name.endswith("_authority_granted")
+        }
+        values.update(
+            authorization_lease_id=authorization_lease_id,
+            organization_id=claim.scope.organization_id,
+            environment_id=claim.scope.environment_id,
+            site_id=claim.scope.site_id,
+            idempotency_scope_id=cls._protected_runtime_context_injection_idempotency_scope(
+                claim.scope, claim.consumer_subject_id, claim.consumer_audience
+            ),
+            idempotency_key=idempotency_key,
+            pre_attestation_observed_at=pre_attestation_observed_at,
+            **cls._protected_runtime_context_injection_authority_columns(claim),
+            canonical_digest=claim.canonical_digest,
+            payload=claim.digest_payload(),
+            authorization_audit_payload=audit_payload,
+        )
+        return WorkflowProtectedRuntimeContextInjectionAuthorizationClaimModel(**values)
+
+    @classmethod
+    def _protected_runtime_context_injection_lease_from_row(
+        cls,
+        row: WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseModel,
+    ) -> WorkflowProtectedRuntimeContextInjectionAuthorizationLease:
+        payload = dict(row.payload)
+        payload["scope"] = WorkflowScope(**cast(dict[str, str], payload["scope"]))
+        payload["state"] = WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseState(
+            str(payload["state"])
+        )
+        payload["access_result_state"] = (
+            WorkflowProtectedResidentContextAccessConsumptionResultState(
+                str(payload["access_result_state"])
+            )
+        )
+        for name, value in tuple(payload.items()):
+            if (
+                value is not None
+                and isinstance(value, str)
+                and (name.endswith("_at") or name.endswith("_until") or name.endswith("_deadline"))
+            ):
+                payload[name] = datetime.fromisoformat(value)
+        lease = WorkflowProtectedRuntimeContextInjectionAuthorizationLease(
+            **cast(Any, payload), canonical_digest=row.canonical_digest
+        )
+        attestation = cls._protected_runtime_context_injection_attestation_from_row(row)
+        if (
+            attestation.attestation_id != lease.lifecycle_attestation_id
+            or attestation.canonical_digest != lease.lifecycle_attestation_digest
+            or attestation.observed_at != row.lifecycle_attestation_observed_at
+            or attestation.valid_until != lease.lifecycle_attestation_valid_until
+            or not lease.access_result_recorded_at
+            <= row.pre_attestation_observed_at
+            <= attestation.observed_at
+            <= lease.issued_at
+            or attestation.access_result_id != lease.access_result_id
+            or attestation.access_result_digest != lease.access_result_digest
+            or attestation.protected_runtime_handle_id != lease.protected_runtime_handle_id
+            or attestation.protected_runtime_handle_digest != lease.protected_runtime_handle_digest
+            or attestation.destination_boundary_id != lease.destination_boundary_id
+            or attestation.destination_deployment_id != lease.destination_deployment_id
+            or attestation.destination_generation != lease.destination_generation
+            or attestation.destination_fencing_token_digest
+            != lease.destination_fencing_token_digest
+            or attestation.injector_contract_id != lease.injector_contract_id
+            or attestation.injector_contract_version != lease.injector_contract_version
+            or attestation.injector_id != lease.injector_id
+            or attestation.injector_version != lease.injector_version
+            or attestation.runtime_slot_profile_id != lease.runtime_slot_profile_id
+            or attestation.runtime_slot_profile_version != lease.runtime_slot_profile_version
+            or attestation.runtime_slot_profile_digest != lease.runtime_slot_profile_digest
+        ):
+            raise ValueError("runtime context injection attestation lineage mismatch")
+        cls._protected_runtime_context_injection_assert_row_matches(row, lease)
+        return lease
+
+    @staticmethod
+    def _protected_runtime_context_injection_attestation_from_row(
+        row: WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseModel,
+    ) -> WorkflowProtectedRuntimeHandleLifecycleAttestation:
+        payload = dict(row.lifecycle_attestation_payload)
+        digest = str(payload.pop("canonical_digest"))
+        payload["scope"] = WorkflowScope(**cast(dict[str, str], payload["scope"]))
+        for name, value in tuple(payload.items()):
+            if (
+                value is not None
+                and isinstance(value, str)
+                and (name.endswith("_at") or name.endswith("_until") or name.endswith("_deadline"))
+            ):
+                payload[name] = datetime.fromisoformat(value)
+        attestation = WorkflowProtectedRuntimeHandleLifecycleAttestation(
+            **cast(Any, payload), canonical_digest=digest
+        )
+        unsafe = (
+            attestation.runtime_handle_is_bearer_capability,
+            attestation.raw_context_included,
+            attestation.runtime_handle_material_included,
+            attestation.runtime_payload_included,
+            attestation.runtime_handle_locator_included,
+            attestation.endpoint_included,
+            attestation.credential_included,
+            attestation.secret_included,
+            attestation.bearer_token_included,
+            attestation.provider_payload_included,
+            attestation.handle_lookup_authorized,
+            attestation.handle_retrieval_authorized,
+            attestation.handle_use_authorized,
+            attestation.runtime_use_authorized,
+            attestation.runtime_context_injection_authorized,
+            attestation.injection_consumption_outstanding,
+            attestation.connector_activity_authorized,
+            attestation.network_activity_authorized,
+            attestation.readiness_probe_authorized,
+            attestation.publication_authorized,
+            attestation.delivery_authorized,
+            attestation.dispatch_authorized,
+            attestation.execution_authorized,
+            attestation.infrastructure_mutation_authorized,
+        )
+        if (
+            digest != row.lifecycle_attestation_digest
+            or digest != canonical_digest(attestation.digest_payload())
+            or attestation.attestor_id != row.lifecycle_attestor_id
+            or attestation.attestor_version != row.lifecycle_attestor_version
+            or attestation.signing_key_id != row.lifecycle_signing_key_id
+            or attestation.request_nonce_digest != row.request_nonce_digest
+            or attestation.runtime_handle_present is not True
+            or attestation.runtime_handle_unexpired is not True
+            or attestation.runtime_handle_unrevoked is not True
+            or attestation.runtime_handle_undestroyed is not True
+            or attestation.runtime_handle_uninjected is not True
+            or attestation.runtime_handle_unused is not True
+            or attestation.destination_generation_current is not True
+            or attestation.destination_fence_current is not True
+            or attestation.injector_profile_eligible is not True
+            or attestation.runtime_slot_profile_eligible is not True
+            or any(unsafe)
+        ):
+            raise ValueError("runtime context injection attestation is unsafe")
+        return attestation
+
+    @classmethod
+    def _protected_runtime_context_injection_claim_from_row(
+        cls,
+        row: WorkflowProtectedRuntimeContextInjectionAuthorizationClaimModel,
+    ) -> WorkflowProtectedRuntimeContextInjectionAuthorizationClaim:
+        payload = dict(row.payload)
+        payload["scope"] = WorkflowScope(**cast(dict[str, str], payload["scope"]))
+        payload["access_result_state"] = (
+            WorkflowProtectedResidentContextAccessConsumptionResultState(
+                str(payload["access_result_state"])
+            )
+        )
+        for name, value in tuple(payload.items()):
+            if (
+                value is not None
+                and isinstance(value, str)
+                and (name.endswith("_at") or name.endswith("_until") or name.endswith("_deadline"))
+            ):
+                payload[name] = datetime.fromisoformat(value)
+        claim = WorkflowProtectedRuntimeContextInjectionAuthorizationClaim(
+            **cast(Any, payload), canonical_digest=row.canonical_digest
+        )
+        if (
+            row.authorization_audit_digest
+            != canonical_digest(dict(row.authorization_audit_payload))
+            or not claim.access_result_recorded_at
+            <= row.pre_attestation_observed_at
+            <= claim.claimed_at
+        ):
+            raise ValueError("runtime context injection authorization audit digest mismatch")
+        cls._protected_runtime_context_injection_assert_row_matches(row, claim)
+        return claim
+
+    @classmethod
+    def _protected_runtime_context_injection_assert_row_matches(cls, row: Any, value: Any) -> None:
+        scalar_names = (
+            name
+            for name in value.__dataclass_fields__
+            if name not in {"scope", "state", "canonical_digest"} and hasattr(row, name)
+        )
+        if (
+            any(getattr(row, name) != getattr(value, name) for name in scalar_names)
+            or row.organization_id != value.scope.organization_id
+            or row.environment_id != value.scope.environment_id
+            or row.site_id != value.scope.site_id
+            or (hasattr(row, "state") and row.state != value.state.value)
+            or row.canonical_digest != value.canonical_digest
+            or row.payload != value.digest_payload()
+            or {
+                name: bool(getattr(row, name))
+                for name in cls._protected_runtime_context_injection_authority_columns(value)
+            }
+            != cls._protected_runtime_context_injection_authority_columns(value)
+        ):
+            raise ValueError("runtime context injection authorization row mismatch")
+
+    @staticmethod
+    def _target_context_capsule_opening_authorization_claim_row_matches(
+        row: WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationClaimModel,
+        *,
+        opening_lease: WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLease,
+    ) -> bool:
+        expected_audit_payload = {
+            "schema_id": "audit.workflow-target-context-capsule-opening-authorization",
+            "schema_version": "1.0",
+            "authorization_lease_id": opening_lease.authorization_lease_id,
+            "handoff_id": opening_lease.handoff_id,
+            "request_fingerprint": row.request_fingerprint,
+            "scope": opening_lease.scope.canonical_value(),
+            "consumer_subject_id": opening_lease.consumer_subject_id,
+            "target_context_capsule_opening_authorized": True,
+            "target_context_capsule_handoff_authorized": False,
+            "operational_authority_granted": False,
+        }
+        expected_payload = {
+            "authorization_lease_id": row.authorization_lease_id,
+            "handoff_id": row.handoff_id,
+            "consumer_receipt_id": row.consumer_receipt_id,
+            "sealed_capsule_id": row.sealed_capsule_id,
+            "scope": {
+                "organization_id": row.organization_id,
+                "environment_id": row.environment_id,
+                "site_id": row.site_id,
+            },
+            "consumer_subject_id": row.consumer_subject_id,
+            "consumer_audience": row.consumer_audience,
+            "request_fingerprint": row.request_fingerprint,
+            "authorization_audit_digest": row.authorization_audit_digest,
+            "claimed_at": row.claimed_at.isoformat(),
+        }
+        expected_claim_id = (
+            "workflow-target-context-capsule-opening-authorization-claim."
+            f"{row.canonical_digest[:24]}"
+        )
+        return bool(
+            row.authorization_lease_id == opening_lease.authorization_lease_id
+            and row.handoff_id == opening_lease.handoff_id
+            and row.consumer_receipt_id == opening_lease.consumer_receipt_id
+            and row.sealed_capsule_id == opening_lease.sealed_capsule_id
+            and row.organization_id == opening_lease.scope.organization_id
+            and row.environment_id == opening_lease.scope.environment_id
+            and row.site_id == opening_lease.scope.site_id
+            and row.consumer_subject_id == opening_lease.consumer_subject_id
+            and row.consumer_audience == opening_lease.consumer_audience
+            and row.idempotency_scope_id
+            == PostgreSQLWorkflowPlanRepository._target_context_capsule_opening_idempotency_scope(
+                opening_lease.scope,
+                opening_lease.consumer_subject_id,
+                opening_lease.consumer_audience,
+            )
+            and row.claimed_at == opening_lease.issued_at
+            and dict(row.payload) == expected_payload
+            and row.canonical_digest == canonical_digest(expected_payload)
+            and row.claim_id == expected_claim_id
+            and dict(row.authorization_audit_payload) == expected_audit_payload
+            and row.authorization_audit_digest == canonical_digest(expected_audit_payload)
+        )
+
+    @classmethod
+    def _protected_resident_context_access_authorization_claim_from_row(
+        cls,
+        row: WorkflowProtectedResidentContextAccessAuthorizationClaimModel,
+    ) -> WorkflowProtectedResidentContextAccessAuthorizationClaim:
+        payload = dict(row.payload)
+        payload["scope"] = WorkflowScope(**cast(dict[str, str], payload["scope"]))
+        payload["opening_result_state"] = (
+            WorkflowProtectedTransportTargetContextCapsuleOpeningResultState(
+                str(payload["opening_result_state"])
+            )
+        )
+        for name, value in tuple(payload.items()):
+            if (
+                value is not None
+                and isinstance(value, str)
+                and (name.endswith("_at") or name.endswith("_until") or name.endswith("_deadline"))
+            ):
+                payload[name] = datetime.fromisoformat(value)
+        claim = WorkflowProtectedResidentContextAccessAuthorizationClaim(
+            **cast(Any, payload), canonical_digest=row.canonical_digest
+        )
+        scalar_names = (
+            name
+            for name in claim.__dataclass_fields__
+            if name not in {"scope", "canonical_digest"} and hasattr(row, name)
+        )
+        if (
+            any(getattr(row, name) != getattr(claim, name) for name in scalar_names)
+            or row.organization_id != claim.scope.organization_id
+            or row.environment_id != claim.scope.environment_id
+            or row.site_id != claim.scope.site_id
+            or dict(row.payload) != claim.digest_payload()
+            or row.authorization_audit_digest
+            != canonical_digest(dict(row.authorization_audit_payload))
+        ):
+            raise ValueError("resident context access authorization claim row mismatch")
+        return claim
+
+    @classmethod
+    def _protected_runtime_context_injection_source_from_rows(
+        cls,
+        *,
+        result_row: WorkflowProtectedResidentContextAccessResultModel,
+        attempt_row: WorkflowProtectedResidentContextAccessAttemptModel | None,
+        claim_row: WorkflowProtectedResidentContextAccessConsumptionClaimModel | None,
+        authorization_lease_row: (
+            WorkflowProtectedResidentContextAccessAuthorizationLeaseModel | None
+        ),
+        authorization_claim_row: (
+            WorkflowProtectedResidentContextAccessAuthorizationClaimModel | None
+        ),
+        receipt_verifier: (
+            WorkflowProtectedResidentContextTrustedAccessorReceiptSignatureVerifier | None
+        ) = None,
+    ) -> WorkflowProtectedRuntimeContextInjectionAuthorizationSource | None:
+        if (
+            attempt_row is None
+            or claim_row is None
+            or authorization_lease_row is None
+            or authorization_claim_row is None
+            or result_row.accessor_receipt_payload is None
+        ):
+            return None
+        try:
+            result = cls._protected_resident_context_access_result_from_row(result_row)
+            attempt = cls._protected_resident_context_access_attempt_from_row(attempt_row)
+            claim = cls._protected_resident_context_access_consumption_claim_from_row(claim_row)
+            access_lease = cls._resident_context_access_lease_from_row(authorization_lease_row)
+            access_authorization_claim = (
+                cls._protected_resident_context_access_authorization_claim_from_row(
+                    authorization_claim_row
+                )
+            )
+            receipt = cls._protected_runtime_context_injection_receipt_from_row(result_row)
+            instruction = build_workflow_protected_resident_context_trusted_accessor_instruction(
+                attempt
+            )
+            assert result.completed_at is not None
+            assert result.protected_runtime_handle_id is not None
+            assert result.protected_runtime_handle_digest is not None
+            assert result.protected_runtime_handle_created_at is not None
+            assert result.protected_runtime_handle_usable_until is not None
+            assert result.accessor_receipt_digest is not None
+        except Exception:
+            return None
+        if receipt_verifier is None:
+            return None
+        policy = code_owned_workflow_protected_runtime_context_injection_authorization_policy()
+        shared_access_lineage_names = tuple(
+            name
+            for name in access_authorization_claim.__dataclass_fields__
+            if hasattr(access_lease, name)
+            and name not in {"claim_id", "canonical_digest"}
+            and not name.endswith("_authorized")
+            and name != "protected_resident_context_access_authority_granted"
+        )
+        expected_access_authorization_audit = {
+            "schema_id": "audit.workflow-protected-resident-context-access-authorization",
+            "schema_version": "1.0",
+            "authorization_lease_id": access_lease.authorization_lease_id,
+            "opening_id": access_lease.opening_id,
+            "request_fingerprint": access_authorization_claim.request_fingerprint,
+            "scope": access_lease.scope.canonical_value(),
+            "consumer_subject_id": access_lease.consumer_subject_id,
+            "protected_resident_context_access_authority_granted": True,
+            "operational_authority_granted": False,
+        }
+        if (
+            result.state.value != policy.required_access_result_state
+            or result.failure_class is not None
+            or result.attempt_id != attempt.attempt_id
+            or result.attempt_digest != attempt.canonical_digest
+            or result.consumption_claim_id != claim.claim_id
+            or result.consumption_claim_digest != claim.canonical_digest
+            or result.authorization_lease_id != access_lease.authorization_lease_id
+            or result.authorization_lease_digest != access_lease.canonical_digest
+            or authorization_claim_row.access_authorization_lease_id
+            != access_lease.authorization_lease_id
+            or access_authorization_claim.claim_id != access_lease.claim_id
+            or access_authorization_claim.canonical_digest != access_lease.claim_digest
+            or any(
+                getattr(access_authorization_claim, name) != getattr(access_lease, name)
+                for name in shared_access_lineage_names
+            )
+            or authorization_claim_row.idempotency_scope_id
+            != cls._protected_resident_context_access_idempotency_scope(
+                access_lease.scope,
+                access_lease.consumer_subject_id,
+                access_lease.consumer_audience,
+            )
+            or authorization_claim_row.idempotency_key
+            != access_authorization_claim.idempotency_digest
+            or access_authorization_claim.claimed_at != access_lease.issued_at
+            or dict(authorization_claim_row.authorization_audit_payload)
+            != expected_access_authorization_audit
+            or access_authorization_claim.authorization_audit_digest
+            != canonical_digest(expected_access_authorization_audit)
+            or result.accessor_receipt_digest != receipt.canonical_digest
+            or receipt.instruction_digest != instruction.canonical_digest
+            or receipt.access_id != result.access_id
+            or receipt.attempt_id != attempt.attempt_id
+            or receipt.consumption_claim_id != claim.claim_id
+            or receipt.authorization_lease_id != access_lease.authorization_lease_id
+            or receipt.authorization_lease_digest != access_lease.canonical_digest
+            or receipt.protected_resident_context_id != result.protected_resident_context_id
+            or receipt.protected_resident_context_digest != result.protected_resident_context_digest
+            or receipt.accessor_contract_id != attempt.required_accessor_contract_id
+            or receipt.accessor_contract_version != attempt.required_accessor_contract_version
+            or receipt.accessor_id != result.accessor_id
+            or receipt.accessor_version != result.accessor_version
+            or receipt.protected_runtime_handle_id != result.protected_runtime_handle_id
+            or receipt.protected_runtime_handle_digest != result.protected_runtime_handle_digest
+            or receipt.protected_runtime_handle_created_at
+            != result.protected_runtime_handle_created_at
+            or receipt.protected_runtime_handle_usable_until
+            != result.protected_runtime_handle_usable_until
+            or receipt.runtime_handle_profile_id != result.runtime_handle_profile_id
+            or receipt.runtime_handle_profile_version != result.runtime_handle_profile_version
+            or receipt.runtime_handle_profile_digest != result.runtime_handle_profile_digest
+            or receipt.state is not result.state
+            or receipt.failure_class is not result.failure_class
+            or receipt.protected_runtime_handle_is_bearer_capability
+            is not result.protected_runtime_handle_is_bearer_capability
+            or receipt.protected_resident_context_consumed
+            is not result.protected_resident_context_consumed
+            or receipt.runtime_handle_established_in_protected_boundary
+            is not result.runtime_handle_established_in_protected_boundary
+            or receipt.runtime_handle_absence_confirmed
+            is not result.runtime_handle_absence_confirmed
+            or receipt.completed_at != result.completed_at
+            or receipt.access_deadline != result.access_deadline
+            or receipt.protected_resident_context_usable_until
+            != result.protected_resident_context_usable_until
+            or result.completed_at >= result.access_deadline
+            or result.completed_at > result.recorded_at
+            or result.protected_runtime_handle_created_at != result.completed_at
+            or result.protected_runtime_handle_created_at
+            >= result.protected_runtime_handle_usable_until
+            or result.protected_runtime_handle_usable_until
+            > result.protected_resident_context_usable_until
+            or result.protected_runtime_handle_is_bearer_capability is not False
+            or result.protected_resident_context_consumed is not True
+            or result.runtime_handle_established_in_protected_boundary is not True
+            or result.runtime_handle_absence_confirmed is not False
+            or result.outcome_known is not True
+            or result.consumer_subject_id != policy.consumer_subject_id
+            or result.consumer_audience != policy.consumer_audience
+            or result.consumer_contract_id != policy.consumer_contract_id
+            or result.consumer_contract_version != policy.consumer_contract_version
+            or result.runtime_handle_profile_id != policy.runtime_handle_profile_id
+            or result.runtime_handle_profile_version != policy.runtime_handle_profile_version
+            or result.runtime_handle_profile_digest != policy.runtime_handle_profile_digest
+            or attempt.destination_boundary_id != policy.destination_boundary_id
+            or attempt.destination_deployment_id != policy.destination_deployment_id
+            or attempt.destination_generation != policy.destination_generation
+            or attempt.destination_fencing_token_digest != policy.destination_fencing_token_digest
+            or receipt.destination_boundary_id != policy.destination_boundary_id
+            or receipt.destination_deployment_id != policy.destination_deployment_id
+            or receipt.destination_generation != policy.destination_generation
+            or receipt.destination_fencing_token_digest != policy.destination_fencing_token_digest
+            or receipt.signing_key_id != attempt.verification_signing_key_id
+            or receipt_verifier.verify_receipt(receipt) is not True
+            or any(result.authority.canonical_value().values())
+            or any(attempt.authority.canonical_value().values())
+            or any(claim.authority.canonical_value().values())
+        ):
+            return None
+        return WorkflowProtectedRuntimeContextInjectionAuthorizationSource(
+            result=result,
+            attempt=attempt,
+            consumption_claim=claim,
+            access_authorization_lease=access_lease,
+            accessor_receipt=receipt,
+            protected_runtime_handle_id=result.protected_runtime_handle_id,
+            protected_runtime_handle_digest=result.protected_runtime_handle_digest,
+            protected_runtime_handle_created_at=result.protected_runtime_handle_created_at,
+            protected_runtime_handle_usable_until=result.protected_runtime_handle_usable_until,
+            protected_resident_context_usable_until=(
+                result.protected_resident_context_usable_until
+            ),
+            destination_boundary_id=attempt.destination_boundary_id,
+            destination_deployment_id=attempt.destination_deployment_id,
+            destination_generation=attempt.destination_generation,
+            destination_fencing_token_digest=attempt.destination_fencing_token_digest,
+            runtime_handle_profile_id=result.runtime_handle_profile_id,
+            runtime_handle_profile_version=result.runtime_handle_profile_version,
+            runtime_handle_profile_digest=result.runtime_handle_profile_digest,
+            consumer_subject_id=result.consumer_subject_id,
+            consumer_audience=result.consumer_audience,
+            consumer_contract_id=result.consumer_contract_id,
+            consumer_contract_version=result.consumer_contract_version,
+            accessor_receipt_digest=result.accessor_receipt_digest,
+            accessor_receipt_signing_key_id=receipt.signing_key_id,
+            accessor_receipt_signature_algorithm=receipt.signature_algorithm,
+            accessor_receipt_integrity_signature=receipt.integrity_signature,
+        )
+
+    @staticmethod
+    def _protected_runtime_context_injection_receipt_from_row(
+        row: WorkflowProtectedResidentContextAccessResultModel,
+    ) -> WorkflowProtectedResidentContextTrustedAccessorReceipt:
+        if row.accessor_receipt_payload is None:
+            raise ValueError("resident context accessor receipt payload is absent")
+        payload = dict(row.accessor_receipt_payload)
+        digest = str(payload.pop("canonical_digest"))
+        payload["state"] = WorkflowProtectedResidentContextAccessConsumptionResultState(
+            str(payload["state"])
+        )
+        if payload.get("failure_class") is not None:
+            payload["failure_class"] = (
+                WorkflowProtectedResidentContextAccessConsumptionFailureClass(
+                    str(payload["failure_class"])
+                )
+            )
+        for name, value in tuple(payload.items()):
+            if (
+                value is not None
+                and isinstance(value, str)
+                and (name.endswith("_at") or name.endswith("_until") or name.endswith("_deadline"))
+            ):
+                payload[name] = datetime.fromisoformat(value)
+        receipt = WorkflowProtectedResidentContextTrustedAccessorReceipt(
+            **cast(Any, payload), canonical_digest=digest
+        )
+        if digest != row.accessor_receipt_digest:
+            raise ValueError("resident context accessor receipt digest mismatch")
+        return receipt
 
     async def _lock_protected_resident_context_access_consumption_sources(
         self,

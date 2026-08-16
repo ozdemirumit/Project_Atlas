@@ -269,6 +269,7 @@ from atlas.modules.authorization.application.bootstrap import (
     WORKFLOW_PLAN_READ,
     WORKFLOW_PROTECTED_RESIDENT_CONTEXT_ACCESS_AUTHORIZATION_READ,
     WORKFLOW_PROTECTED_RESIDENT_CONTEXT_ACCESS_CONSUMPTION_READ,
+    WORKFLOW_PROTECTED_RUNTIME_CONTEXT_INJECTION_AUTHORIZATION_READ,
     WORKFLOW_TRANSPORT_COMPATIBILITY_ADMISSION_READ,
     WORKFLOW_TRANSPORT_CREDENTIAL_ASSIGNMENT_SNAPSHOT_READ,
     WORKFLOW_TRANSPORT_PROFILE_READ,
@@ -393,6 +394,7 @@ from atlas.modules.authorization.application.bootstrap import (
     workflow_physical_transport_target_context_capsule_handoff_scope,
     workflow_physical_transport_target_context_capsule_opening_authorization_lease_scope,
     workflow_physical_transport_target_context_capsule_opening_scope,
+    workflow_protected_runtime_context_injection_authorization_scope,
     workflow_scope,
     workflow_transport_compatibility_admission_scope,
     workflow_transport_credential_assignment_snapshot_scope,
@@ -3814,6 +3816,44 @@ async def authorize_workflow_protected_resident_context_access_consumption_read(
             permission_id=WORKFLOW_PROTECTED_RESIDENT_CONTEXT_ACCESS_CONSUMPTION_READ,
             resource_type="resource.workflow.protected-resident-context-access-consumption",
             scope=workflow_protected_resident_context_access_consumption_scope(
+                subject.organization_id, settings.environment
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_workflow_protected_runtime_context_injection_authorization_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    """Authorize the ADR-168 minimized inventory for a normal human session."""
+
+    if subject.kind is not SubjectKind.HUMAN:
+        raise AtlasError(
+            status=403,
+            code="human_identity_required",
+            title="Human identity required",
+            detail="This read-only inventory is available only to an authenticated human.",
+        )
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=WORKFLOW_PROTECTED_RUNTIME_CONTEXT_INJECTION_AUTHORIZATION_READ,
+            resource_type=("resource.workflow.protected-runtime-context-injection-authorization"),
+            scope=workflow_protected_runtime_context_injection_authorization_scope(
                 subject.organization_id, settings.environment
             ),
             correlation_id=str(request.state.correlation_id),

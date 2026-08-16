@@ -12706,3 +12706,495 @@ class WorkflowProtectedResidentContextAccessConsumptionResult:
 
     def canonical_value(self) -> dict[str, object]:
         return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+
+class WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseState(StrEnum):
+    AUTHORIZED_UNCONSUMED = "authorized_unconsumed"
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedRuntimeContextInjectionAuthorizationPolicy:
+    policy_id: str
+    policy_version: str
+    consumer_subject_id: str
+    consumer_audience: str
+    consumer_contract_id: str
+    consumer_contract_version: str
+    purpose_id: str
+    required_access_result_state: str
+    required_attestor_id: str
+    required_attestor_version: str
+    required_injector_contract_id: str
+    required_injector_contract_version: str
+    approved_injector_id: str
+    approved_injector_version: str
+    destination_boundary_id: str
+    destination_deployment_id: str
+    destination_generation: int
+    destination_fencing_token_digest: str
+    runtime_handle_profile_id: str
+    runtime_handle_profile_version: str
+    runtime_handle_profile_digest: str
+    runtime_slot_profile_id: str
+    runtime_slot_profile_version: str
+    runtime_slot_profile_digest: str
+    verification_signing_key_id: str
+    maximum_lifetime_seconds: int
+    single_use_required: bool
+    renewable_allowed: bool
+    transferable_allowed: bool
+    bearer_capability_allowed: bool
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        expected = (
+            code_owned_workflow_protected_runtime_context_injection_authorization_policy_values()
+        )
+        if any(getattr(self, name) != value for name, value in expected.items()):
+            raise ValueError("runtime context injection authorization policy is not code-owned")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("runtime context injection authorization policy digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return _target_context_capsule_handoff_consumption_payload(self)
+
+
+def code_owned_workflow_protected_runtime_context_injection_authorization_policy_values() -> dict[
+    str, object
+]:
+    access = code_owned_workflow_protected_resident_context_access_consumption_policy()
+    runtime_slot_profile = {
+        "approved_injector_id": "injector.workflow-protected-runtime-context",
+        "approved_injector_version": "1.0",
+        "destination_boundary_id": access.destination_boundary_id,
+        "destination_deployment_id": access.destination_deployment_id,
+        "destination_fencing_token_digest": access.destination_fencing_token_digest,
+        "destination_generation": access.destination_generation,
+        "required_injector_contract_id": ("contract.workflow-protected-runtime-context-injector"),
+        "required_injector_contract_version": "1.0",
+        "runtime_handle_profile_digest": access.runtime_handle_profile_digest,
+        "runtime_slot_profile_id": "profile.workflow-protected-runtime-context-slot",
+        "runtime_slot_profile_version": "1.0",
+    }
+    return {
+        "policy_id": "policy.workflow-protected-runtime-context-injection-authorization",
+        "policy_version": "1.0",
+        "consumer_subject_id": access.consumer_subject_id,
+        "consumer_audience": access.consumer_audience,
+        "consumer_contract_id": access.consumer_contract_id,
+        "consumer_contract_version": access.consumer_contract_version,
+        "purpose_id": "purpose.workflow-protected-runtime-context-injection-evaluation",
+        "required_access_result_state": (
+            WorkflowProtectedResidentContextAccessConsumptionResultState.HANDLE_ESTABLISHED_IN_PROTECTED_BOUNDARY.value
+        ),
+        "required_attestor_id": "attestor.workflow-protected-runtime-handle-lifecycle",
+        "required_attestor_version": "1.0",
+        "required_injector_contract_id": runtime_slot_profile["required_injector_contract_id"],
+        "required_injector_contract_version": runtime_slot_profile[
+            "required_injector_contract_version"
+        ],
+        "approved_injector_id": runtime_slot_profile["approved_injector_id"],
+        "approved_injector_version": runtime_slot_profile["approved_injector_version"],
+        "destination_boundary_id": access.destination_boundary_id,
+        "destination_deployment_id": access.destination_deployment_id,
+        "destination_generation": access.destination_generation,
+        "destination_fencing_token_digest": access.destination_fencing_token_digest,
+        "runtime_handle_profile_id": access.runtime_handle_profile_id,
+        "runtime_handle_profile_version": access.runtime_handle_profile_version,
+        "runtime_handle_profile_digest": access.runtime_handle_profile_digest,
+        "runtime_slot_profile_id": runtime_slot_profile["runtime_slot_profile_id"],
+        "runtime_slot_profile_version": runtime_slot_profile["runtime_slot_profile_version"],
+        "runtime_slot_profile_digest": canonical_digest(runtime_slot_profile),
+        "verification_signing_key_id": ("key.workflow-protected-runtime-handle-lifecycle.v1"),
+        "maximum_lifetime_seconds": 1,
+        "single_use_required": True,
+        "renewable_allowed": False,
+        "transferable_allowed": False,
+        "bearer_capability_allowed": False,
+    }
+
+
+def code_owned_workflow_protected_runtime_context_injection_authorization_policy() -> (
+    WorkflowProtectedRuntimeContextInjectionAuthorizationPolicy
+):
+    values = code_owned_workflow_protected_runtime_context_injection_authorization_policy_values()
+    return WorkflowProtectedRuntimeContextInjectionAuthorizationPolicy(
+        **cast(Any, values), canonical_digest=canonical_digest(values)
+    )
+
+
+def _require_protected_runtime_context_injection_authority(
+    instance: (
+        WorkflowProtectedRuntimeContextInjectionAuthorizationClaim
+        | WorkflowProtectedRuntimeContextInjectionAuthorizationLease
+    ),
+    *,
+    injection_granted: bool,
+) -> None:
+    if (
+        any(
+            getattr(instance, name) is not False
+            for name in _PROTECTED_RESIDENT_CONTEXT_OPERATIONAL_AUTHORITY_FIELDS
+        )
+        or instance.protected_resident_context_access_authority_granted is not False
+    ):
+        raise ValueError("runtime context injection authorization grants prior authority")
+    if instance.protected_runtime_context_injection_authority_granted is not injection_granted:
+        raise ValueError("runtime context injection authority declaration is invalid")
+
+
+def _validate_protected_runtime_context_injection_source(
+    instance: (
+        WorkflowProtectedRuntimeContextInjectionAuthorizationClaim
+        | WorkflowProtectedRuntimeContextInjectionAuthorizationLease
+    ),
+) -> None:
+    policy = code_owned_workflow_protected_runtime_context_injection_authorization_policy()
+    if (
+        instance.access_result_state
+        is not (
+            WorkflowProtectedResidentContextAccessConsumptionResultState.HANDLE_ESTABLISHED_IN_PROTECTED_BOUNDARY
+        )
+        or any(
+            value.tzinfo is None
+            for value in (
+                instance.access_completed_at,
+                instance.access_result_recorded_at,
+                instance.access_deadline,
+                instance.protected_runtime_handle_created_at,
+                instance.protected_runtime_handle_usable_until,
+                instance.protected_resident_context_usable_until,
+            )
+        )
+        or not instance.access_completed_at < instance.access_deadline
+        or instance.protected_runtime_handle_created_at != instance.access_completed_at
+        or not instance.access_completed_at <= instance.access_result_recorded_at
+        or not instance.protected_runtime_handle_created_at
+        < instance.protected_runtime_handle_usable_until
+        or instance.protected_runtime_handle_usable_until
+        > instance.protected_resident_context_usable_until
+        or instance.protected_runtime_handle_is_bearer_capability is not False
+        or instance.protected_resident_context_consumed is not True
+        or instance.runtime_handle_established_in_protected_boundary is not True
+        or instance.access_outcome_known is not True
+        or instance.destination_boundary_id != policy.destination_boundary_id
+        or instance.destination_deployment_id != policy.destination_deployment_id
+        or instance.destination_generation != policy.destination_generation
+        or instance.destination_fencing_token_digest != policy.destination_fencing_token_digest
+        or instance.runtime_handle_profile_id != policy.runtime_handle_profile_id
+        or instance.runtime_handle_profile_version != policy.runtime_handle_profile_version
+        or instance.runtime_handle_profile_digest != policy.runtime_handle_profile_digest
+        or instance.consumer_subject_id != policy.consumer_subject_id
+        or instance.consumer_audience != policy.consumer_audience
+        or instance.consumer_contract_id != policy.consumer_contract_id
+        or instance.consumer_contract_version != policy.consumer_contract_version
+        or instance.purpose_id != policy.purpose_id
+        or instance.policy_id != policy.policy_id
+        or instance.policy_version != policy.policy_version
+        or instance.policy_digest != policy.canonical_digest
+    ):
+        raise ValueError("protected runtime context injection authorization source is ineligible")
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedRuntimeContextInjectionAuthorizationClaim:
+    claim_id: str
+    access_result_id: str
+    access_result_digest: str
+    access_attempt_id: str
+    access_attempt_digest: str
+    access_consumption_claim_id: str
+    access_consumption_claim_digest: str
+    access_authorization_lease_id: str
+    access_authorization_lease_digest: str
+    accessor_receipt_digest: str
+    access_result_state: WorkflowProtectedResidentContextAccessConsumptionResultState
+    access_completed_at: datetime
+    access_result_recorded_at: datetime
+    access_deadline: datetime
+    protected_runtime_handle_id: str
+    protected_runtime_handle_digest: str
+    protected_runtime_handle_created_at: datetime
+    protected_runtime_handle_usable_until: datetime
+    protected_runtime_handle_is_bearer_capability: bool
+    protected_resident_context_usable_until: datetime
+    protected_resident_context_consumed: bool
+    runtime_handle_established_in_protected_boundary: bool
+    access_outcome_known: bool
+    destination_boundary_id: str
+    destination_deployment_id: str
+    destination_generation: int
+    destination_fencing_token_digest: str
+    runtime_handle_profile_id: str
+    runtime_handle_profile_version: str
+    runtime_handle_profile_digest: str
+    scope: WorkflowScope
+    consumer_subject_id: str
+    consumer_audience: str
+    consumer_contract_id: str
+    consumer_contract_version: str
+    purpose_id: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    request_fingerprint: str
+    idempotency_digest: str
+    authorization_audit_digest: str
+    claimed_at: datetime
+    endpoint_resolution_authorized: bool = False
+    route_selection_authorized: bool = False
+    route_binding_authorized: bool = False
+    credential_selection_authorized: bool = False
+    credential_assignment_binding_authorized: bool = False
+    credential_access_authorized: bool = False
+    credential_brokerage_authorized: bool = False
+    credential_resolution_authorized: bool = False
+    protected_artifact_access_authorized: bool = False
+    credential_delivery_authorized: bool = False
+    network_access_authorized: bool = False
+    readiness_probe_authorized: bool = False
+    publication_authorized: bool = False
+    delivery_authorized: bool = False
+    dispatch_authorized: bool = False
+    execution_authorized: bool = False
+    infrastructure_mutation_authorized: bool = False
+    target_context_capsule_handoff_authorized: bool = False
+    target_context_capsule_opening_authorized: bool = False
+    protected_resident_context_access_authority_granted: bool = False
+    protected_runtime_context_injection_authority_granted: bool = False
+    canonical_digest: str = ""
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.claim_id,
+            self.access_result_id,
+            self.access_attempt_id,
+            self.access_consumption_claim_id,
+            self.access_authorization_lease_id,
+            self.protected_runtime_handle_id,
+            self.destination_boundary_id,
+            self.destination_deployment_id,
+            self.runtime_handle_profile_id,
+            self.runtime_handle_profile_version,
+            self.consumer_subject_id,
+            self.consumer_audience,
+            self.consumer_contract_id,
+            self.consumer_contract_version,
+            self.purpose_id,
+            self.policy_id,
+            self.policy_version,
+        ):
+            _require_identifier(value, name="runtime context injection claim identifier")
+        for value in (
+            self.access_result_digest,
+            self.access_attempt_digest,
+            self.access_consumption_claim_digest,
+            self.access_authorization_lease_digest,
+            self.accessor_receipt_digest,
+            self.protected_runtime_handle_digest,
+            self.destination_fencing_token_digest,
+            self.runtime_handle_profile_digest,
+            self.policy_digest,
+            self.request_fingerprint,
+            self.idempotency_digest,
+            self.authorization_audit_digest,
+            self.canonical_digest,
+        ):
+            _require_digest(value, name="runtime context injection claim digest")
+        _validate_protected_runtime_context_injection_source(self)
+        if (
+            self.claimed_at.tzinfo is None
+            or not self.access_result_recorded_at
+            <= self.claimed_at
+            < self.protected_runtime_handle_usable_until
+        ):
+            raise ValueError("runtime context injection claim time is outside handle lifetime")
+        _require_protected_runtime_context_injection_authority(self, injection_granted=False)
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("runtime context injection authorization claim digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return _target_context_capsule_handoff_consumption_payload(self)
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedRuntimeContextInjectionAuthorizationLease:
+    authorization_lease_id: str
+    claim_id: str
+    claim_digest: str
+    access_result_id: str
+    access_result_digest: str
+    access_attempt_id: str
+    access_attempt_digest: str
+    access_consumption_claim_id: str
+    access_consumption_claim_digest: str
+    access_authorization_lease_id: str
+    access_authorization_lease_digest: str
+    accessor_receipt_digest: str
+    access_result_state: WorkflowProtectedResidentContextAccessConsumptionResultState
+    access_completed_at: datetime
+    access_result_recorded_at: datetime
+    access_deadline: datetime
+    protected_runtime_handle_id: str
+    protected_runtime_handle_digest: str
+    protected_runtime_handle_created_at: datetime
+    protected_runtime_handle_usable_until: datetime
+    protected_runtime_handle_is_bearer_capability: bool
+    protected_resident_context_usable_until: datetime
+    protected_resident_context_consumed: bool
+    runtime_handle_established_in_protected_boundary: bool
+    access_outcome_known: bool
+    destination_boundary_id: str
+    destination_deployment_id: str
+    destination_generation: int
+    destination_fencing_token_digest: str
+    runtime_handle_profile_id: str
+    runtime_handle_profile_version: str
+    runtime_handle_profile_digest: str
+    scope: WorkflowScope
+    consumer_subject_id: str
+    consumer_audience: str
+    consumer_contract_id: str
+    consumer_contract_version: str
+    purpose_id: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    lifecycle_attestation_id: str
+    lifecycle_attestation_digest: str
+    lifecycle_attestation_valid_until: datetime
+    injector_contract_id: str
+    injector_contract_version: str
+    injector_id: str
+    injector_version: str
+    runtime_slot_profile_id: str
+    runtime_slot_profile_version: str
+    runtime_slot_profile_digest: str
+    issued_at: datetime
+    valid_until: datetime
+    effective_until: datetime
+    single_use: bool
+    renewable: bool
+    transferable: bool
+    lease_is_bearer_capability: bool
+    state: WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseState
+    endpoint_resolution_authorized: bool = False
+    route_selection_authorized: bool = False
+    route_binding_authorized: bool = False
+    credential_selection_authorized: bool = False
+    credential_assignment_binding_authorized: bool = False
+    credential_access_authorized: bool = False
+    credential_brokerage_authorized: bool = False
+    credential_resolution_authorized: bool = False
+    protected_artifact_access_authorized: bool = False
+    credential_delivery_authorized: bool = False
+    network_access_authorized: bool = False
+    readiness_probe_authorized: bool = False
+    publication_authorized: bool = False
+    delivery_authorized: bool = False
+    dispatch_authorized: bool = False
+    execution_authorized: bool = False
+    infrastructure_mutation_authorized: bool = False
+    target_context_capsule_handoff_authorized: bool = False
+    target_context_capsule_opening_authorized: bool = False
+    protected_resident_context_access_authority_granted: bool = False
+    protected_runtime_context_injection_authority_granted: bool = True
+    canonical_digest: str = ""
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.authorization_lease_id,
+            self.claim_id,
+            self.access_result_id,
+            self.access_attempt_id,
+            self.access_consumption_claim_id,
+            self.access_authorization_lease_id,
+            self.protected_runtime_handle_id,
+            self.destination_boundary_id,
+            self.destination_deployment_id,
+            self.runtime_handle_profile_id,
+            self.runtime_handle_profile_version,
+            self.consumer_subject_id,
+            self.consumer_audience,
+            self.consumer_contract_id,
+            self.consumer_contract_version,
+            self.purpose_id,
+            self.policy_id,
+            self.policy_version,
+            self.lifecycle_attestation_id,
+            self.injector_contract_id,
+            self.injector_contract_version,
+            self.injector_id,
+            self.injector_version,
+            self.runtime_slot_profile_id,
+            self.runtime_slot_profile_version,
+        ):
+            _require_identifier(value, name="runtime context injection lease identifier")
+        for value in (
+            self.claim_digest,
+            self.access_result_digest,
+            self.access_attempt_digest,
+            self.access_consumption_claim_digest,
+            self.access_authorization_lease_digest,
+            self.accessor_receipt_digest,
+            self.protected_runtime_handle_digest,
+            self.destination_fencing_token_digest,
+            self.runtime_handle_profile_digest,
+            self.policy_digest,
+            self.lifecycle_attestation_digest,
+            self.runtime_slot_profile_digest,
+            self.canonical_digest,
+        ):
+            _require_digest(value, name="runtime context injection lease digest")
+        _validate_protected_runtime_context_injection_source(self)
+        policy = code_owned_workflow_protected_runtime_context_injection_authorization_policy()
+        if (
+            any(
+                value.tzinfo is None
+                for value in (
+                    self.lifecycle_attestation_valid_until,
+                    self.issued_at,
+                    self.valid_until,
+                    self.effective_until,
+                )
+            )
+            or not self.access_result_recorded_at <= self.issued_at < self.valid_until
+            or self.valid_until - self.issued_at
+            > timedelta(seconds=policy.maximum_lifetime_seconds)
+            or self.valid_until > self.effective_until
+            or self.effective_until > self.protected_runtime_handle_usable_until
+            or self.effective_until > self.lifecycle_attestation_valid_until
+            or self.injector_contract_id != policy.required_injector_contract_id
+            or self.injector_contract_version != policy.required_injector_contract_version
+            or self.injector_id != policy.approved_injector_id
+            or self.injector_version != policy.approved_injector_version
+            or self.runtime_slot_profile_id != policy.runtime_slot_profile_id
+            or self.runtime_slot_profile_version != policy.runtime_slot_profile_version
+            or self.runtime_slot_profile_digest != policy.runtime_slot_profile_digest
+            or self.single_use is not policy.single_use_required
+            or self.renewable is not policy.renewable_allowed
+            or self.transferable is not policy.transferable_allowed
+            or self.lease_is_bearer_capability is not policy.bearer_capability_allowed
+            or self.state
+            is not (
+                WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseState.AUTHORIZED_UNCONSUMED
+            )
+        ):
+            raise ValueError("runtime context injection authorization lease is invalid")
+        _require_protected_runtime_context_injection_authority(self, injection_granted=True)
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("runtime context injection authorization lease digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return _target_context_capsule_handoff_consumption_payload(self)
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+    def is_active(self, *, evaluated_at: datetime, consumed: bool = False) -> bool:
+        if evaluated_at.tzinfo is None:
+            raise ValueError("runtime context injection lease evaluation time must be aware")
+        return not consumed and self.issued_at <= evaluated_at < self.valid_until

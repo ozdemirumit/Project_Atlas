@@ -4,14 +4,94 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-217 |
-| Title | Atomic single-use protected resident-context access lease consumption and non-bearer protected runtime-handle materialization without injection, network, execution or infrastructure mutation authority |
-| Status | In Review |
-| Branch | `agent/protected-resident-context-access-consumption` |
-| Pull Request | [#230](https://github.com/ozdemirumit/Project_Atlas/pull/230) (draft) |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160, ADR-161, ADR-162, ADR-163, ADR-164, ADR-165, ADR-166, ADR-167 |
+| Task ID | ATLAS-IMP-218 |
+| Title | Bounded single-use protected runtime-context injection authorization without injection, handle use, network, execution or infrastructure mutation authority |
+| Status | In Progress |
+| Branch | `agent/protected-runtime-context-injection-authorization` |
+| Pull Request | [PR #231](https://github.com/ozdemirumit/Project_Atlas/pull/231) |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160, ADR-161, ADR-162, ADR-163, ADR-164, ADR-165, ADR-166, ADR-167, ADR-168 |
 | Last Updated | 2026-08-16 |
-| Next Action | Complete independent review and exact-head CI, then mark PR #230 ready and merge by reviewed SHA |
+| Next Action | Complete final live UI validation, exact-head PR CI, SHA-locked merge and independent main CI verification |
+
+### ATLAS-IMP-218 Scope Rationale
+
+- IMP-217 may establish one short-lived, non-bearer runtime-context handle inside the exact
+  protected consumer boundary, but its success evidence grants no handle lookup, injection or
+  runtime-use authority.
+- The next smallest boundary authorizes only one future request to consume an injection lease. It
+  does not inject context, retrieve or use a handle, use a runtime, create a connection, probe
+  readiness or call a connector.
+- Issuance must prove that the exact canonical handle remains current and eligible for one exact
+  code-owned injector/runtime-slot profile while disclosing no handle identity, locator, material
+  or bearer capability to ordinary Atlas processes.
+
+### ATLAS-IMP-218 Acceptance Criteria
+
+- Only the exact protected consumer workload and audience bound through the canonical ADR-167
+  `handle_established_in_protected_boundary` result may request authorization. Human sessions,
+  personal tokens, AI agents and every other workload fail closed on POST.
+- Caller input is limited to the ADR-167 result ID and digest, code-owned policy identity and
+  idempotency metadata. Handle, destination, fence, attestor, injector, runtime-slot, lifetime and
+  authority fields are server-derived; visible identifiers and integrity references are never
+  authority.
+- Only one canonical timely signed ADR-167 success result with exact append-only ADR-160 through
+  ADR-167 lineage is eligible. Known failure, uncertainty, pending, late, unsigned or malformed
+  evidence fails closed.
+- Fresh signed, server-nonce-bound and metadata-only handle lifecycle/injection-eligibility
+  evidence proves the exact handle remains present, unexpired, unrevoked, uninjected, unused and
+  non-bearer; destination generation and fence remain current; and the exact code-owned injector/
+  runtime-slot profile is eligible.
+- Durable exact replay is classified before attestor I/O and returns the same minimized state.
+  Changed or competing replay fails closed, and expired or later-consumed replay projects zero
+  effective injection-request authority.
+- PostgreSQL locks the complete lineage in canonical oldest-to-newest order, performs full
+  currentness and signature revalidation, obtains two authoritative database-time observations
+  and atomically appends one idempotency claim and one authorization lease without external I/O in
+  the transaction.
+- The lease is append-only, single-use, non-renewable, non-transferable, non-bearer, valid for at
+  most one second and strictly bounded by signed handle and attestation deadlines.
+- Only `protected_runtime_context_injection_authority_granted` is effectively true, and only while
+  the lease is active and no canonical future consumption claim exists. The idempotency claim and
+  every expired or consumed projection grant no authority; the existing 20 authority fields remain
+  exactly false.
+- Production requires PostgreSQL and the trusted protected-boundary lifecycle/injection-
+  eligibility attestor. There is no process-memory, permissive, caller-asserted or unguarded
+  synthetic fallback.
+- Workload POST and normal username/password session GET are minimized, non-oracle, zero-
+  disclosure and `no-store`. Human GET is read-only and requires no MFA, second login or
+  authorized-browser-session prompt.
+- IMP-218 performs no injection, handle retrieval or use, runtime use, network or connector call,
+  readiness probe, publication, delivery, dispatch, execution or infrastructure mutation. Actual
+  injection-authorization consumption remains a separately designed future boundary.
+
+### ATLAS-IMP-218 Verification Evidence
+
+- Ruff format/check passed across `1482` backend source, test and migration files.
+- Full MyPy passed across `1340` source and test files with no issues.
+- IMP-218 plus adjacent IMP-217/API-health regression coverage passed `131` tests; two live
+  PostgreSQL tests were skipped locally because `ATLAS_TEST_POSTGRES_DSN` is not configured and
+  remain enrolled in the DSN-enabled CI integration job.
+- Post-review composition and persistence coverage passed `14` focused tests; the single live
+  PostgreSQL test was skipped locally for the same DSN reason.
+- Frontend ESLint and TypeScript checks passed. The workspace suite passed all `525` pre-review
+  tests, and the final IMP-218 contract subset passed `6` tests out of the expanded `527`-test
+  file with all unrelated cases intentionally skipped.
+- The production frontend build completed successfully. Alembic reports the single head
+  `20260816_0141`.
+- Live username/password browser validation confirmed the read-only IMP-218 section at
+  `#/workspace/workflows`, zero operation controls, fail-closed unavailable state without a
+  configured durable repository and no browser console errors.
+- Independent security and integration findings were addressed: replay verifies persisted
+  lifecycle and accessor-receipt signatures offline; complete access/opening lineage is
+  reconstructed canonically; pre-attestation database chronology is preserved; production trust
+  boundaries are injectable while defaults remain fail-closed; and the dedicated read permission
+  uses an independent C1 resource scope.
+- The current destination generation/fence head is locked with `FOR UPDATE` and may advance
+  independently, while authorization claims and leases preserve immutable point-in-time snapshots.
+  Claim/lease identity is protected by unique and deferred composite constraints.
+- IMP-218 creates no consumption record. A later consumption boundary will add the canonical
+  consumed projection; until then no canonical consumption claim can exist and every lease expires
+  within at most one second.
 
 ### ATLAS-IMP-217 Scope Rationale
 
@@ -85,6 +165,16 @@
   completion after result recording time.
 - Both IMP-217 live PostgreSQL authorization and consumption tests are explicitly enrolled in the
   DSN-enabled CI integration job rather than relying on the DSN-free full-suite invocation.
+
+### ATLAS-IMP-217 Delivery Evidence
+
+- Merged through [PR #230](https://github.com/ozdemirumit/Project_Atlas/pull/230) from exact reviewed
+  head `619dc3f4a09699b7bda129674db5b2a81a051c6a` to `main` merge
+  `5b089abb8b4a2fa4b5dea3f463e53464fcbf593c`.
+- Exact-head [PR CI run 31956483875](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31956483875)
+  passed all required gates before the SHA-locked merge.
+- Independent [main CI run 31957154851](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31957154851)
+  passed all required gates for the exact merge commit.
 
 ### ATLAS-IMP-216 Delivery Evidence
 
