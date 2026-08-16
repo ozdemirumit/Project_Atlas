@@ -12233,7 +12233,8 @@ class PostgreSQLWorkflowPlanRepository:
             "authority": WorkflowProtectedTransportTargetContextCapsuleOpeningAuthority(),
         }
         return WorkflowProtectedTransportTargetContextCapsuleOpeningConsumptionClaim(
-            **cast(Any, values), canonical_digest=canonical_digest(values)
+            **cast(Any, values),
+            canonical_digest=canonical_digest(cls._target_context_capsule_opening_payload(values)),
         )
 
     @classmethod
@@ -12302,8 +12303,26 @@ class PostgreSQLWorkflowPlanRepository:
             "authority": WorkflowProtectedTransportTargetContextCapsuleOpeningAuthority(),
         }
         return WorkflowProtectedTransportTargetContextCapsuleOpeningAttempt(
-            **cast(Any, values), canonical_digest=canonical_digest(values)
+            **cast(Any, values),
+            canonical_digest=canonical_digest(cls._target_context_capsule_opening_payload(values)),
         )
+
+    @staticmethod
+    def _target_context_capsule_opening_payload(
+        values: dict[str, object],
+    ) -> dict[str, object]:
+        return {
+            name: (
+                value.isoformat()
+                if isinstance(value, datetime)
+                else value.value
+                if isinstance(value, Enum)
+                else value.canonical_value()
+                if hasattr(value, "canonical_value")
+                else value
+            )
+            for name, value in values.items()
+        }
 
     @classmethod
     def _target_context_capsule_opening_consumption_claim_model(

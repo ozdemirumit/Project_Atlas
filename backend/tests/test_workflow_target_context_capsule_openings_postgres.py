@@ -183,6 +183,30 @@ def test_repository_rejects_resident_context_beyond_persisted_source_limit() -> 
 
 
 @pytest.mark.asyncio
+async def test_repository_builds_json_canonical_claim_and_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = await _captured_claim_request(
+        monkeypatch,
+        idempotency_key=f"canonical-{uuid4().hex}",
+    )
+    claimed_at = datetime.now(UTC)
+    claim = PostgreSQLWorkflowPlanRepository._target_context_capsule_opening_consumption_claim(
+        request,
+        claimed_at=claimed_at,
+    )
+    attempt = PostgreSQLWorkflowPlanRepository._target_context_capsule_opening_attempt(
+        request,
+        claim=claim,
+        started_at=claimed_at,
+        opening_deadline=claimed_at + timedelta(milliseconds=100),
+    )
+
+    assert claim.canonical_digest == canonical_digest(claim.digest_payload())
+    assert attempt.canonical_digest == canonical_digest(attempt.digest_payload())
+
+
+@pytest.mark.asyncio
 async def test_live_postgres_constraints_concurrency_lineage_append_only_and_claim_only_when_configured() -> (  # noqa: E501
     None
 ):
@@ -672,7 +696,9 @@ def _live_lease_values(*, seed: str, table: Table) -> dict[str, object]:
     values: dict[str, object] = {}
     for column in table.columns:
         name = column.name
-        if hasattr(policy, name):
+        if name == "canonical_digest":
+            values[name] = _live_digest(seed, name)
+        elif hasattr(policy, name):
             values[name] = getattr(policy, name)
         elif name == "state":
             values[name] = "authorized_unconsumed"
