@@ -30,6 +30,14 @@ from atlas.modules.workflows.adapters.target_context_capsule_lifecycle_attestors
     DenyAllWorkflowProtectedTargetContextCapsuleLifecycleSignatureVerifier,
     UnavailableWorkflowProtectedTargetContextCapsuleLifecycleStatusAttestor,
 )
+from atlas.modules.workflows.adapters.target_context_capsule_opening_adapters import (
+    DenyAllWorkflowProtectedTargetContextCapsuleOpeningAttestationSignatureVerifier,
+    SyntheticWorkflowProtectedTargetContextCapsuleOpeningAttestors,
+    SyntheticWorkflowProtectedTargetContextCapsuleTrustedOpener,
+    UnavailableWorkflowProtectedTargetContextCapsuleOpenabilityAttestor,
+    UnavailableWorkflowProtectedTargetContextCapsuleOpeningCustodyAttestor,
+    UnavailableWorkflowProtectedTargetContextCapsuleTrustedOpener,
+)
 from atlas.modules.workflows.adapters.unavailable import UnavailableWorkflowPlanRepository
 
 __all__ = [
@@ -37,9 +45,12 @@ __all__ = [
     "DenyAllWorkflowProtectedTargetContextCapsuleDestinationCustodySignatureVerifier",
     "DenyAllWorkflowProtectedTargetContextCapsuleHandoffAttestationSignatureVerifier",
     "DenyAllWorkflowProtectedTargetContextCapsuleLifecycleSignatureVerifier",
+    "DenyAllWorkflowProtectedTargetContextCapsuleOpeningAttestationSignatureVerifier",
     "InMemoryWorkflowPlanRepository",
     "SyntheticWorkflowPhysicalTransportEndpointMaterializer",
     "SyntheticWorkflowPhysicalTransportTargetContextArtifactOpener",
+    "SyntheticWorkflowProtectedTargetContextCapsuleOpeningAttestors",
+    "SyntheticWorkflowProtectedTargetContextCapsuleTrustedOpener",
     "UnavailableWorkflowPhysicalTransportEndpointMaterializer",
     "UnavailableWorkflowPhysicalTransportTargetContextArtifactOpener",
     "UnavailableWorkflowPlanRepository",
@@ -48,6 +59,9 @@ __all__ = [
     "UnavailableWorkflowProtectedTargetContextCapsuleDestinationCustodyAttestor",
     "UnavailableWorkflowProtectedTargetContextCapsuleHandoffLifecycleAttestor",
     "UnavailableWorkflowProtectedTargetContextCapsuleLifecycleStatusAttestor",
+    "UnavailableWorkflowProtectedTargetContextCapsuleOpenabilityAttestor",
+    "UnavailableWorkflowProtectedTargetContextCapsuleOpeningCustodyAttestor",
     "UnavailableWorkflowProtectedTargetContextCapsuleSealedHandoffAdapter",
+    "UnavailableWorkflowProtectedTargetContextCapsuleTrustedOpener",
     "UnavailableWorkflowProtectedTargetContextConsumerBoundaryAcceptanceAttestor",
 ]
