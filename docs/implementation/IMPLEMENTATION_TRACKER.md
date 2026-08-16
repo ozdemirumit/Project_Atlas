@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-217 |
 | Title | Atomic single-use protected resident-context access lease consumption and non-bearer protected runtime-handle materialization without injection, network, execution or infrastructure mutation authority |
-| Status | In Progress |
+| Status | In Review |
 | Branch | `agent/protected-resident-context-access-consumption` |
-| Pull Request | Not opened |
+| Pull Request | [#230](https://github.com/ozdemirumit/Project_Atlas/pull/230) (draft) |
 | Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160, ADR-161, ADR-162, ADR-163, ADR-164, ADR-165, ADR-166, ADR-167 |
 | Last Updated | 2026-08-16 |
-| Next Action | Implement the ADR-167 domain, application and durable PostgreSQL boundary with focused tests |
+| Next Action | Complete independent review and exact-head CI, then mark PR #230 ready and merge by reviewed SHA |
 
 ### ATLAS-IMP-217 Scope Rationale
 
@@ -56,6 +56,18 @@
   The human UI is read-only and requires no MFA or second authorized-browser-session prompt.
 - Runtime-handle lookup, retrieval, injection or use; network and connector calls; publication,
   dispatch, execution and infrastructure mutation remain outside this slice.
+
+### ATLAS-IMP-217 Verification Evidence
+
+- Local Ruff format/check passed across `1473` backend source, test and migration files.
+- Full MyPy passed across `1332` source and test files with no issues.
+- ADR-166/ADR-167 regression suite passed `96` tests; two live PostgreSQL tests were skipped
+  locally because `ATLAS_TEST_POSTGRES_DSN` is not configured and remain covered by CI.
+- Post-security-fix IMP-217 suite passed `62` tests; one live PostgreSQL test was skipped locally.
+- Frontend ESLint and TypeScript checks passed, and the workspace UI suite passed all `521` tests.
+- Alembic reports the single head `20260816_0140`.
+- Independent security review findings were addressed: no autonomous cleanup, uncertain protected
+  consumption is represented as unknown, and signed receipts deny every forbidden return/effect.
 
 ### ATLAS-IMP-216 Delivery Evidence
 
