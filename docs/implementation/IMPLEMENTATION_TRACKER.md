@@ -4,14 +4,55 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-212 |
-| Title | Bounded single-use protected target-context capsule handoff authorization lease without retrieval, unsealing, transfer, delivery or runtime authority |
-| Status | Review; pull request open and exact-head CI pending |
-| Branch | `agent/protected-capsule-handoff-authorization-lease` |
-| Pull Request | [#225](https://github.com/ozdemirumit/Project_Atlas/pull/225) |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-158, ADR-159, ADR-160, ADR-161, ADR-162 |
+| Task ID | ATLAS-IMP-213 |
+| Title | Atomic single-use protected target-context capsule handoff-authorization lease consumption and sealed protected-boundary capsule handoff without unsealing, runtime, execution or infrastructure mutation authority |
+| Status | In Progress |
+| Branch | `agent/protected-capsule-handoff-consumption` |
+| Pull Request | Not opened |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-158, ADR-159, ADR-160, ADR-161, ADR-162, ADR-163 |
 | Last Updated | 2026-08-16 |
-| Next Action | Complete exact-head CI, SHA-locked merge and independent `main` CI |
+| Next Action | Implement the accepted ADR-163 domain, persistence, API, UI and verification boundary |
+
+### ATLAS-IMP-213 Scope Rationale
+
+- IMP-212 authorizes one exact consumer to request a one-time capsule handoff but performs no
+  handoff and leaves the immutable lease unconsumed.
+- The next smallest irreversible boundary commits a unique consumption claim before invoking a
+  trusted sealed-capsule handoff adapter, so crash or uncertainty cannot make a used lease reusable.
+- The handoff keeps the capsule sealed and creates only non-bearer receipt evidence. Consumer-side
+  retrieval, unsealing, runtime use and every operational authority remain deferred.
+
+### ATLAS-IMP-213 Acceptance Criteria
+
+- Only the exact code-owned capsule consumer subject/audience may consume its own lease. Caller
+  input is limited to lease identity/digest, code-owned policy, two irreversible acknowledgements
+  and idempotency metadata.
+- Fresh signed capsule-lifecycle and consumer-boundary acceptance attestations are verified before
+  the transaction and offline again while locks are held; they contain no protected material or
+  retrievable coordinates.
+- PostgreSQL revalidates the complete authoritative lineage and all deadlines twice, then atomically
+  appends one consumption claim and one started attempt before any trusted adapter call.
+- The durable claim is the point of no return. After commit, success, known failure, crash or
+  uncertainty permanently consumes the lease and never permits automatic retry or replacement.
+- The trusted adapter may transfer only the still-sealed capsule inside the exact protected
+  boundary and returns only a signed minimized receipt. No capsule bytes, locator, endpoint,
+  credential, secret, access token or provider payload enters ordinary platform paths.
+- Claim, attempt and result set the dedicated handoff field and all 17 operational authority fields
+  exactly false. Handoff success is historical evidence, not unsealing, runtime or delivery power.
+- Production requires PostgreSQL, an approved trusted adapter, protected store and destination;
+  there is no memory fallback. Development may use only a deterministic no-I/O synthetic adapter.
+- Workload POST and normal-session human GET are minimized, non-oracle and `no-store`. The UI is
+  read-only with no handoff/retry/reveal/unseal/delivery/runtime control and no MFA, second login or
+  authorized-browser prompt.
+- Full local suites, PostgreSQL concurrency/migration CI, live desktop/mobile inspection,
+  independent review, exact-head PR CI, SHA-locked merge and independent `main` CI must pass.
+
+### ATLAS-IMP-212 Delivery Evidence
+
+- Completed through [PR #225](https://github.com/ozdemirumit/Project_Atlas/pull/225) at merge
+  `eeb92dffdfd1837680427fab3aa1319a430339c8`.
+- Exact-head PR run `31923569495` and independent `main` run `31924021075` passed all backend,
+  frontend, migration round-trip and PostgreSQL integration gates.
 
 ### ATLAS-IMP-212 Scope Rationale
 
