@@ -8,7 +8,7 @@
 | Title | Atomic single-use protected runtime-context use-authorization lease consumption without context use, runtime activation, network, connector, dispatch, execution or infrastructure mutation authority |
 | Status | In Progress |
 | Branch | `agent/protected-runtime-context-use-consumption` |
-| Pull Request | Pending |
+| Pull Request | [#234](https://github.com/ozdemirumit/Project_Atlas/pull/234) |
 | Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-171 |
 | Last Updated | 2026-08-17 |
 | Next Action | Deliver the completed ADR-171 boundary through PR, exact-head CI, merge and independent `main` CI |
