@@ -1529,8 +1529,12 @@ from atlas.modules.upgrade.adapters.memory import InMemoryUpgradeSimulationRepos
 from atlas.modules.upgrade.adapters.postgres import PostgreSQLUpgradeSimulationRepository
 from atlas.modules.upgrade.application.service import UpgradeService
 from atlas.modules.workflows.adapters import (
+    DenyAllWorkflowProtectedTargetContextCapsuleHandoffAttestationSignatureVerifier,
     DenyAllWorkflowProtectedTargetContextCapsuleLifecycleSignatureVerifier,
+    UnavailableWorkflowProtectedTargetContextCapsuleHandoffLifecycleAttestor,
     UnavailableWorkflowProtectedTargetContextCapsuleLifecycleStatusAttestor,
+    UnavailableWorkflowProtectedTargetContextCapsuleSealedHandoffAdapter,
+    UnavailableWorkflowProtectedTargetContextConsumerBoundaryAcceptanceAttestor,
 )
 from atlas.modules.workflows.adapters.credential_materialization_synthetic import (
     SyntheticWorkflowPhysicalTransportCredentialMaterializer,
@@ -1598,9 +1602,11 @@ from atlas.modules.workflows.application import (
     WorkflowPlanRepository,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseRepository,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseService,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffService,
     WorkflowRunMaterializationRepository,
     WorkflowRunMaterializationService,
     WorkflowTargetContextAccessAuthorizationLeaseRepository,
+    WorkflowTargetContextCapsuleHandoffRepository,
     WorkflowTransportCredentialAccessAuthorizationLeaseRepository,
     WorkflowTransportCredentialAssignmentBindingRepository,
     WorkflowTransportCredentialAssignmentFreshnessAdmissionRepository,
@@ -1647,6 +1653,7 @@ class _WorkflowCredentialAccessAuthorizationNoStoreMiddleware(BaseHTTPMiddleware
                 "/api/v1/workflows/"
                 "physical-transport-target-context-capsule-handoff-authorization-leases"
             ),
+            "/api/v1/workflows/physical-transport-target-context-capsule-handoffs",
         }
     )
 
@@ -1714,6 +1721,44 @@ class _UnavailableWorkflowTargetContextCapsuleHandoffAuthorizationLeaseRepositor
         self, *_: object, **__: object
     ) -> None:
         raise RuntimeError("target-context capsule handoff repository is unavailable")
+
+
+class _UnavailableWorkflowTargetContextCapsuleHandoffRepository:
+    """Fail-closed capsule handoff placeholder with no memory fallback."""
+
+    @property
+    def durable(self) -> bool:
+        return False
+
+    async def get_authoritative_time(self) -> datetime:
+        raise RuntimeError("target-context capsule handoff consumption is unavailable")
+
+    async def get_target_context_capsule_handoff_authorization_lease_by_id(
+        self, *_: object, **__: object
+    ) -> None:
+        raise RuntimeError("target-context capsule handoff consumption is unavailable")
+
+    async def get_target_context_capsule_consumer_binding_by_id(
+        self, *_: object, **__: object
+    ) -> None:
+        raise RuntimeError("target-context capsule handoff consumption is unavailable")
+
+    async def lookup_target_context_capsule_handoff_replay(self, *_: object, **__: object) -> None:
+        raise RuntimeError("target-context capsule handoff consumption is unavailable")
+
+    async def claim_target_context_capsule_handoff(self, *_: object, **__: object) -> None:
+        raise RuntimeError("target-context capsule handoff consumption is unavailable")
+
+    async def record_target_context_capsule_handoff_result(self, *_: object, **__: object) -> None:
+        raise RuntimeError("target-context capsule handoff consumption is unavailable")
+
+    async def list_target_context_capsule_handoff_attempts(self, *_: object, **__: object) -> None:
+        raise RuntimeError("target-context capsule handoff consumption is unavailable")
+
+    async def get_target_context_capsule_handoff_results_by_handoff_ids(
+        self, *_: object, **__: object
+    ) -> None:
+        raise RuntimeError("target-context capsule handoff consumption is unavailable")
 
 
 class _ConfiguredDeploymentEventTransportProfileRegistry:
@@ -2132,6 +2177,9 @@ def create_app(
     ) = None,
     workflow_protected_transport_target_context_capsule_handoff_authorization_lease_service: (
         WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseService | None
+    ) = None,
+    workflow_protected_transport_target_context_capsule_handoff_service: (
+        WorkflowProtectedTransportTargetContextCapsuleHandoffService | None
     ) = None,
     workflow_transport_profile_snapshot_service: WorkflowTransportProfileSnapshotService
     | None = None,
@@ -6822,6 +6870,48 @@ def create_app(
         resolved_target_context_capsule_handoff_authorization_lease_service = (
             workflow_protected_transport_target_context_capsule_handoff_authorization_lease_service
         )
+    if workflow_protected_transport_target_context_capsule_handoff_service is None:
+        target_context_capsule_handoff_consumption_methods = (
+            "get_authoritative_time",
+            "get_target_context_capsule_handoff_authorization_lease_by_id",
+            "get_target_context_capsule_consumer_binding_by_id",
+            "lookup_target_context_capsule_handoff_replay",
+            "claim_target_context_capsule_handoff",
+            "record_target_context_capsule_handoff_result",
+            "list_target_context_capsule_handoff_attempts",
+            "get_target_context_capsule_handoff_results_by_handoff_ids",
+        )
+        if isinstance(workflow_repository, PostgreSQLWorkflowPlanRepository) and all(
+            callable(getattr(workflow_repository, method_name, None))
+            for method_name in target_context_capsule_handoff_consumption_methods
+        ):
+            target_context_capsule_handoff_consumption_repository = cast(
+                WorkflowTargetContextCapsuleHandoffRepository,
+                workflow_repository,
+            )
+        else:
+            target_context_capsule_handoff_consumption_repository = cast(
+                WorkflowTargetContextCapsuleHandoffRepository,
+                _UnavailableWorkflowTargetContextCapsuleHandoffRepository(),
+            )
+        resolved_target_context_capsule_handoff_service = WorkflowProtectedTransportTargetContextCapsuleHandoffService(  # noqa: E501
+            repository=target_context_capsule_handoff_consumption_repository,
+            lifecycle_attestor=(
+                UnavailableWorkflowProtectedTargetContextCapsuleHandoffLifecycleAttestor()
+            ),
+            acceptance_attestor=(
+                UnavailableWorkflowProtectedTargetContextConsumerBoundaryAcceptanceAttestor()
+            ),
+            attestation_signature_verifier=(
+                DenyAllWorkflowProtectedTargetContextCapsuleHandoffAttestationSignatureVerifier()
+            ),
+            adapter=UnavailableWorkflowProtectedTargetContextCapsuleSealedHandoffAdapter(),
+            audit_sink=resolved_audit_sink,
+        )
+    else:
+        resolved_target_context_capsule_handoff_service = (
+            workflow_protected_transport_target_context_capsule_handoff_service
+        )
     configured_transport_route_selection_heads = (
         _deployment_event_transport_route_selection_heads(
             resolved_settings,
@@ -7251,6 +7341,12 @@ def create_app(
         )
         app.state.workflow_target_context_capsule_handoff_authorization_lease_repository = (
             resolved_target_context_capsule_handoff_authorization_lease_service.repository
+        )
+        app.state.workflow_target_context_capsule_handoff_service = (
+            resolved_target_context_capsule_handoff_service
+        )
+        app.state.workflow_target_context_capsule_handoff_repository = (
+            resolved_target_context_capsule_handoff_service.repository
         )
         app.state.workflow_transport_route_selection_heads = (
             configured_transport_route_selection_heads

@@ -39,6 +39,7 @@ import {
   listWorkflowPhysicalTransportTargetContextArtifactOpenings,
   listWorkflowPhysicalTransportTargetContextCapsuleConsumerBindings,
   listWorkflowPhysicalTransportTargetContextCapsuleHandoffAuthorizationLeases,
+  listWorkflowPhysicalTransportTargetContextCapsuleHandoffs,
   listWorkflowPhysicalTransportTargetContextBindings,
   listWorkflowPhysicalTransportCredentialAssignmentSnapshots,
   listWorkflowPhysicalTransportCredentialAssignmentFreshnessAdmissions,
@@ -266,6 +267,16 @@ export default function WorkflowPlanningWorkspace({
     ],
     queryFn: () =>
       listWorkflowPhysicalTransportTargetContextCapsuleHandoffAuthorizationLeases({ scope }),
+    retry: false,
+  });
+  const targetContextCapsuleHandoffQuery = useQuery({
+    queryKey: [
+      "workflow-physical-transport-target-context-capsule-handoffs",
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: () => listWorkflowPhysicalTransportTargetContextCapsuleHandoffs({ scope }),
     retry: false,
   });
   const targetQuery = useQuery({
@@ -743,6 +754,10 @@ export default function WorkflowPlanningWorkspace({
   const targetContextCapsuleHandoffAuthorizationLeaseErrorStatus =
     targetContextCapsuleHandoffAuthorizationLeaseQuery.error instanceof ApiRequestError
       ? targetContextCapsuleHandoffAuthorizationLeaseQuery.error.status
+      : undefined;
+  const targetContextCapsuleHandoffErrorStatus =
+    targetContextCapsuleHandoffQuery.error instanceof ApiRequestError
+      ? targetContextCapsuleHandoffQuery.error.status
       : undefined;
   const eventEnvelopes = eventEnvelopesForAdmission;
   const transportAdmissions = transportAdmissionsForArtifacts;
@@ -3033,6 +3048,167 @@ export default function WorkflowPlanningWorkspace({
             This evidence authorizes only a later request to a separate handoff-consumption
             boundary. It does not retrieve, reveal, unseal, copy, transfer, deliver, inject,
             connect, probe, publish, dispatch, execute, or mutate infrastructure.
+          </span>
+        </div>
+      </section>
+
+      <section
+        className="workflow-physical-route-binding-band workflow-target-context-opening-band"
+        aria-labelledby="workflow-target-context-capsule-handoff-title"
+      >
+        <div className="workflow-section-heading">
+          <div>
+            <p className="eyebrow">SEALED HANDOFF EVIDENCE</p>
+            <h2 id="workflow-target-context-capsule-handoff-title">
+              Target-context capsule handoffs
+            </h2>
+          </div>
+          <span>Read only</span>
+        </div>
+        {targetContextCapsuleHandoffQuery.isLoading && (
+          <div className="workflow-empty-state" role="status">
+            <RefreshCw className="spin" size={18} />
+            <span>Loading sealed capsule handoff evidence...</span>
+          </div>
+        )}
+        {targetContextCapsuleHandoffQuery.isError && (
+          <div className="workflow-inline-error" role="alert">
+            <AlertTriangle aria-hidden="true" size={18} />
+            <div>
+              <strong>
+                {targetContextCapsuleHandoffErrorStatus === 401
+                  ? "Your session has expired"
+                  : targetContextCapsuleHandoffErrorStatus === 403
+                    ? "Capsule handoff evidence permission is missing"
+                    : "Capsule handoff evidence is unavailable"}
+              </strong>
+              <span>
+                {targetContextCapsuleHandoffErrorStatus === 401
+                  ? "Sign in again to continue."
+                  : targetContextCapsuleHandoffErrorStatus === 403
+                    ? "Your current role or scope cannot inspect sealed capsule handoff evidence."
+                    : "No handoff result, capsule state, or operational authority is inferred from this failed read."}
+              </span>
+            </div>
+          </div>
+        )}
+        {targetContextCapsuleHandoffQuery.isSuccess &&
+          targetContextCapsuleHandoffQuery.data
+            .physical_transport_target_context_capsule_handoffs.length === 0 && (
+            <div className="workflow-empty-state" role="status">
+              <LockKeyhole size={19} />
+              <span>No sealed capsule handoffs are recorded in this scope.</span>
+            </div>
+          )}
+        {targetContextCapsuleHandoffQuery.isSuccess &&
+          targetContextCapsuleHandoffQuery.data
+            .physical_transport_target_context_capsule_handoffs.length > 0 && (
+            <ol
+              className="workflow-step-preview workflow-physical-route-binding-list workflow-target-context-opening-list"
+              aria-label="Target-context capsule handoffs"
+            >
+              {targetContextCapsuleHandoffQuery.data.physical_transport_target_context_capsule_handoffs.map(
+                (handoff) => (
+                  <li key={handoff.handoff_id}>
+                    {handoff.result_state === "handed_off_sealed" ? (
+                      <ShieldCheck size={18} />
+                    ) : handoff.result_state === "handoff_failed" ? (
+                      <Ban size={18} />
+                    ) : (
+                      <FileClock size={18} />
+                    )}
+                    <div>
+                      <strong>
+                        <code title={handoff.handoff_id}>
+                          {safeHolderIdentifier(handoff.handoff_id)}
+                        </code>
+                        <span
+                          className={`state-badge ${
+                            handoff.result_state === "handed_off_sealed"
+                              ? "passed"
+                              : handoff.result_state === "handoff_failed"
+                                ? "failed"
+                                : "warning"
+                          }`}
+                        >
+                          {readableKind(handoff.result_state)}
+                        </span>
+                      </strong>
+                      <div className="workflow-physical-route-binding-grid">
+                        <span>
+                          Organization {handoff.scope.organization_id} | environment{" "}
+                          {handoff.scope.environment_id} | site {handoff.scope.site_id}
+                        </span>
+                        <span>
+                          Attempt state {readableKind(handoff.attempt_state)} | result state{" "}
+                          {readableKind(handoff.result_state)}
+                        </span>
+                        <span>
+                          Started {formatTimestamp(handoff.started_at)}
+                          {handoff.completed_at === null
+                            ? " | completion not recorded"
+                            : ` | completed ${formatTimestamp(handoff.completed_at)}`}
+                        </span>
+                        <span>
+                          Consumer contract{" "}
+                          <code title={handoff.consumer_contract_id}>
+                            {safeHolderIdentifier(handoff.consumer_contract_id)}
+                          </code>{" "}
+                          v{handoff.consumer_contract_version}
+                        </span>
+                        <span>
+                          Purpose{" "}
+                          <code title={handoff.purpose_id}>
+                            {safeHolderIdentifier(handoff.purpose_id)}
+                          </code>
+                        </span>
+                        <span>
+                          Trusted adapter{" "}
+                          <code title={handoff.adapter_contract_id}>
+                            {safeHolderIdentifier(handoff.adapter_contract_id)}
+                          </code>{" "}
+                          v{handoff.adapter_contract_version}
+                        </span>
+                        <span>
+                          Sealed capsule handed off {handoff.sealed_capsule_handed_off ? "true" : "false"}
+                          {" | "}consumer receipt bearer capability{" "}
+                          {handoff.consumer_receipt_is_bearer_capability ? "true" : "false"}
+                        </span>
+                        <span>
+                          Policy{" "}
+                          <code title={handoff.policy.policy_id}>
+                            {safeHolderIdentifier(handoff.policy.policy_id)}
+                          </code>{" "}
+                          v{handoff.policy.policy_version}
+                        </span>
+                        <span>
+                          Integrity reference{" "}
+                          <code title={handoff.integrity_reference}>
+                            {safeHolderIdentifier(handoff.integrity_reference)}
+                          </code>
+                        </span>
+                        <span className="workflow-physical-route-binding-authority workflow-target-context-opening-zero-authority">
+                          All authorities false: target-context capsule handoff false | endpoint
+                          resolution false | route selection false | route binding false | credential
+                          selection false | credential assignment binding false | credential access
+                          false | credential brokerage false | credential resolution false |
+                          protected artifact access false | credential delivery false | network
+                          access false | readiness probe false | publication false | delivery false |
+                          dispatch false | execution false | infrastructure mutation false
+                        </span>
+                      </div>
+                    </div>
+                  </li>
+                ),
+              )}
+            </ol>
+          )}
+        <div className="workflow-safety-boundary" role="note">
+          <LockKeyhole size={18} />
+          <span>
+            This is historical sealed-handoff evidence only. It grants no authority to retrieve,
+            reveal, unseal, decrypt, copy, deliver, connect, probe, publish, dispatch, execute, or
+            mutate infrastructure.
           </span>
         </div>
       </section>

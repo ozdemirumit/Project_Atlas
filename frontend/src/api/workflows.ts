@@ -1212,6 +1212,61 @@ export type WorkflowPhysicalTransportTargetContextCapsuleHandoffAuthorizationLea
   durable: true;
 };
 
+export type WorkflowPhysicalTransportTargetContextCapsuleHandoffPolicy = {
+  policy_id: "policy.workflow-protected-transport-target-context-capsule-handoff-consumption";
+  policy_version: "1.0";
+};
+
+export type WorkflowPhysicalTransportTargetContextCapsuleHandoffAuthority = {
+  target_context_capsule_handoff_authorized: false;
+  endpoint_resolution_authorized: false;
+  route_selection_authorized: false;
+  route_binding_authorized: false;
+  credential_selection_authorized: false;
+  credential_assignment_binding_authorized: false;
+  credential_access_authorized: false;
+  credential_brokerage_authorized: false;
+  credential_resolution_authorized: false;
+  protected_artifact_access_authorized: false;
+  credential_delivery_authorized: false;
+  network_access_authorized: false;
+  readiness_probe_authorized: false;
+  publication_authorized: false;
+  delivery_authorized: false;
+  dispatch_authorized: false;
+  execution_authorized: false;
+  infrastructure_mutation_authorized: false;
+};
+
+export type WorkflowPhysicalTransportTargetContextCapsuleHandoff = {
+  handoff_id: string;
+  scope: WorkflowRunPlan["scope"];
+  attempt_state: "started" | "completed";
+  result_state:
+    | "pending"
+    | "handed_off_sealed"
+    | "handoff_failed"
+    | "handoff_outcome_uncertain";
+  started_at: string;
+  completed_at: string | null;
+  consumer_contract_id: string;
+  consumer_contract_version: string;
+  purpose_id: string;
+  adapter_contract_id: string;
+  adapter_contract_version: string;
+  sealed_capsule_handed_off: boolean;
+  consumer_receipt_is_bearer_capability: false;
+  policy: WorkflowPhysicalTransportTargetContextCapsuleHandoffPolicy;
+  authority: WorkflowPhysicalTransportTargetContextCapsuleHandoffAuthority;
+  integrity_reference: string;
+};
+
+export type WorkflowPhysicalTransportTargetContextCapsuleHandoffInventory = {
+  physical_transport_target_context_capsule_handoffs: WorkflowPhysicalTransportTargetContextCapsuleHandoff[];
+  server_time: string;
+  durable: true;
+};
+
 export type WorkflowPhysicalTransportCredentialAssignmentSnapshotAuthority = {
   endpoint_resolution_authorized: false;
   protected_artifact_access_authorized: false;
@@ -2292,6 +2347,53 @@ const physicalTransportTargetContextCapsuleHandoffAuthorizationLeaseFields = [
 ] as const;
 const physicalTransportTargetContextCapsuleHandoffAuthorizationLeaseInventoryFields = [
   "physical_transport_target_context_capsule_handoff_authorization_leases",
+  "server_time",
+  "durable",
+] as const;
+const physicalTransportTargetContextCapsuleHandoffPolicyFields = [
+  "policy_id",
+  "policy_version",
+] as const;
+const physicalTransportTargetContextCapsuleHandoffAuthorityFields = [
+  "target_context_capsule_handoff_authorized",
+  "endpoint_resolution_authorized",
+  "route_selection_authorized",
+  "route_binding_authorized",
+  "credential_selection_authorized",
+  "credential_assignment_binding_authorized",
+  "credential_access_authorized",
+  "credential_brokerage_authorized",
+  "credential_resolution_authorized",
+  "protected_artifact_access_authorized",
+  "credential_delivery_authorized",
+  "network_access_authorized",
+  "readiness_probe_authorized",
+  "publication_authorized",
+  "delivery_authorized",
+  "dispatch_authorized",
+  "execution_authorized",
+  "infrastructure_mutation_authorized",
+] as const;
+const physicalTransportTargetContextCapsuleHandoffFields = [
+  "handoff_id",
+  "scope",
+  "attempt_state",
+  "result_state",
+  "started_at",
+  "completed_at",
+  "consumer_contract_id",
+  "consumer_contract_version",
+  "purpose_id",
+  "adapter_contract_id",
+  "adapter_contract_version",
+  "sealed_capsule_handed_off",
+  "consumer_receipt_is_bearer_capability",
+  "policy",
+  "authority",
+  "integrity_reference",
+] as const;
+const physicalTransportTargetContextCapsuleHandoffInventoryFields = [
+  "physical_transport_target_context_capsule_handoffs",
   "server_time",
   "durable",
 ] as const;
@@ -4113,6 +4215,92 @@ function isPhysicalTransportTargetContextCapsuleHandoffAuthorizationLease(
   );
 }
 
+function hasZeroPhysicalTransportTargetContextCapsuleHandoffAuthority(
+  value: unknown,
+): value is WorkflowPhysicalTransportTargetContextCapsuleHandoffAuthority {
+  return (
+    isObject(value) &&
+    hasExactKeys(value, physicalTransportTargetContextCapsuleHandoffAuthorityFields) &&
+    physicalTransportTargetContextCapsuleHandoffAuthorityFields.every(
+      (field) => value[field] === false,
+    )
+  );
+}
+
+function isTargetContextCapsuleHandoffPolicy(
+  value: unknown,
+): value is WorkflowPhysicalTransportTargetContextCapsuleHandoffPolicy {
+  return (
+    isObject(value) &&
+    hasExactKeys(value, physicalTransportTargetContextCapsuleHandoffPolicyFields) &&
+    value.policy_id ===
+      "policy.workflow-protected-transport-target-context-capsule-handoff-consumption" &&
+    value.policy_version === "1.0"
+  );
+}
+
+function isPhysicalTransportTargetContextCapsuleHandoff(
+  value: unknown,
+  scope: WorkflowScope,
+  serverTime: string,
+): value is WorkflowPhysicalTransportTargetContextCapsuleHandoff {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, physicalTransportTargetContextCapsuleHandoffFields) ||
+    !isExactScope(value.scope) ||
+    containsCredentialMaterial(value) ||
+    !isTimezoneAwareTimestamp(value.started_at) ||
+    (value.completed_at !== null && !isTimezoneAwareTimestamp(value.completed_at))
+  ) {
+    return false;
+  }
+  const handoffScope = value.scope;
+  const startedAt = Date.parse(value.started_at);
+  const completedAt = value.completed_at === null ? null : Date.parse(value.completed_at);
+  const evaluatedAt = Date.parse(serverTime);
+  const stateIsConsistent =
+    (value.attempt_state === "started" &&
+      value.result_state === "pending" &&
+      completedAt === null &&
+      value.sealed_capsule_handed_off === false) ||
+    (value.attempt_state === "started" &&
+      value.result_state === "handoff_outcome_uncertain" &&
+      completedAt === null &&
+      value.sealed_capsule_handed_off === false) ||
+    (value.attempt_state === "completed" &&
+      value.result_state === "handoff_outcome_uncertain" &&
+      completedAt !== null &&
+      value.sealed_capsule_handed_off === false) ||
+    (value.attempt_state === "completed" &&
+      value.result_state === "handed_off_sealed" &&
+      completedAt !== null &&
+      value.sealed_capsule_handed_off === true) ||
+    (value.attempt_state === "completed" &&
+      value.result_state === "handoff_failed" &&
+      completedAt !== null &&
+      value.sealed_capsule_handed_off === false);
+  return (
+    isStableIdentifier(value.handoff_id) &&
+    handoffScope.organization_id === scope.organizationId &&
+    handoffScope.environment_id === scope.environmentId &&
+    handoffScope.site_id === scope.siteId &&
+    startedAt <= evaluatedAt &&
+    (completedAt === null || (completedAt >= startedAt && completedAt <= evaluatedAt)) &&
+    stateIsConsistent &&
+    value.consumer_contract_id ===
+      "contract.workflow-protected-transport-target-context-capsule-consumer" &&
+    value.consumer_contract_version === "1.0" &&
+    value.purpose_id ===
+      "purpose.workflow-protected-transport-target-context-capsule-handoff-evaluation" &&
+    isIdentifier(value.adapter_contract_id) &&
+    value.adapter_contract_version === "1.0" &&
+    value.consumer_receipt_is_bearer_capability === false &&
+    isTargetContextCapsuleHandoffPolicy(value.policy) &&
+    hasZeroPhysicalTransportTargetContextCapsuleHandoffAuthority(value.authority) &&
+    isStableIdentifier(value.integrity_reference)
+  );
+}
+
 function hasZeroPhysicalTransportCredentialAssignmentSnapshotAuthority(
   value: unknown,
 ): value is WorkflowPhysicalTransportCredentialAssignmentSnapshotAuthority {
@@ -5494,6 +5682,59 @@ export async function listWorkflowPhysicalTransportTargetContextCapsuleHandoffAu
     leaseIds.add(lease.authorization_lease_id);
   }
   return data as WorkflowPhysicalTransportTargetContextCapsuleHandoffAuthorizationLeaseInventory;
+}
+
+export async function listWorkflowPhysicalTransportTargetContextCapsuleHandoffs(input: {
+  scope: WorkflowScope;
+}): Promise<WorkflowPhysicalTransportTargetContextCapsuleHandoffInventory> {
+  const response = await apiFetch(
+    "/api/v1/workflows/physical-transport-target-context-capsule-handoffs",
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(
+    response,
+    "Workflow physical transport target-context capsule handoff retrieval failed",
+  );
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, physicalTransportTargetContextCapsuleHandoffInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    !Array.isArray(data.physical_transport_target_context_capsule_handoffs) ||
+    data.physical_transport_target_context_capsule_handoffs.length > 256 ||
+    !isTimezoneAwareTimestamp(data.server_time) ||
+    data.durable !== true
+  ) {
+    throw new ApiRequestError(
+      "Workflow physical transport target-context capsule handoff response was unsafe",
+      response.status,
+    );
+  }
+  const serverTime = data.server_time;
+  if (
+    !data.physical_transport_target_context_capsule_handoffs.every((handoff) =>
+      isPhysicalTransportTargetContextCapsuleHandoff(handoff, input.scope, serverTime),
+    )
+  ) {
+    throw new ApiRequestError(
+      "Workflow physical transport target-context capsule handoff response was unsafe",
+      response.status,
+    );
+  }
+  const handoffIds = new Set<string>();
+  for (const handoff of data.physical_transport_target_context_capsule_handoffs) {
+    if (
+      !isObject(handoff) ||
+      typeof handoff.handoff_id !== "string" ||
+      handoffIds.has(handoff.handoff_id)
+    ) {
+      throw new ApiRequestError(
+        "Workflow physical transport target-context capsule handoff response was unsafe",
+        response.status,
+      );
+    }
+    handoffIds.add(handoff.handoff_id);
+  }
+  return data as WorkflowPhysicalTransportTargetContextCapsuleHandoffInventory;
 }
 
 export async function listWorkflowPhysicalTransportCredentialAssignmentSnapshots(): Promise<WorkflowPhysicalTransportCredentialAssignmentSnapshotInventory> {

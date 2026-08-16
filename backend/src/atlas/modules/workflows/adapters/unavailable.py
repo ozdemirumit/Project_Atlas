@@ -134,6 +134,15 @@ from atlas.modules.workflows.application.target_context_capsule_consumer_binding
     WorkflowTargetContextCapsuleConsumerBindingRequest,
     WorkflowTargetContextCapsuleConsumerBindingResult,
 )
+from atlas.modules.workflows.application.target_context_capsule_handoff_ports import (
+    WorkflowProtectedTransportTargetContextCapsuleHandoffError,
+    WorkflowTargetContextCapsuleHandoffClaimRequest,
+    WorkflowTargetContextCapsuleHandoffClaimResult,
+    WorkflowTargetContextCapsuleHandoffReplayLookup,
+    WorkflowTargetContextCapsuleHandoffReplayLookupRequest,
+    WorkflowTargetContextCapsuleHandoffResultRequest,
+    WorkflowTargetContextCapsuleHandoffResultWrite,
+)
 from atlas.modules.workflows.application.transport_admission_ports import (
     WorkflowEventTransportAdmissionError,
     WorkflowEventTransportAdmissionIdempotencyRecord,
@@ -192,7 +201,9 @@ from atlas.modules.workflows.domain import (
     WorkflowOrchestrationLease,
     WorkflowOutboxPublicationLease,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBinding,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffAttempt,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLease,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffResult,
     WorkflowRunPlan,
     WorkflowScope,
 )
@@ -907,6 +918,36 @@ class UnavailableWorkflowPlanRepository:
         del handoff_authorization_lease_id
         self._raise_target_context_capsule_handoff_authorization()
 
+    async def lookup_target_context_capsule_handoff_replay(
+        self, request: WorkflowTargetContextCapsuleHandoffReplayLookupRequest
+    ) -> WorkflowTargetContextCapsuleHandoffReplayLookup:
+        del request
+        self._raise_target_context_capsule_handoff_consumption()
+
+    async def claim_target_context_capsule_handoff(
+        self, request: WorkflowTargetContextCapsuleHandoffClaimRequest
+    ) -> WorkflowTargetContextCapsuleHandoffClaimResult:
+        del request
+        self._raise_target_context_capsule_handoff_consumption()
+
+    async def record_target_context_capsule_handoff_result(
+        self, request: WorkflowTargetContextCapsuleHandoffResultRequest
+    ) -> WorkflowTargetContextCapsuleHandoffResultWrite:
+        del request
+        self._raise_target_context_capsule_handoff_consumption()
+
+    async def list_target_context_capsule_handoff_attempts(
+        self, *, scope: WorkflowScope, limit: int = 256
+    ) -> tuple[WorkflowProtectedTransportTargetContextCapsuleHandoffAttempt, ...]:
+        del scope, limit
+        self._raise_target_context_capsule_handoff_consumption()
+
+    async def get_target_context_capsule_handoff_results_by_handoff_ids(
+        self, *, scope: WorkflowScope, handoff_ids: tuple[str, ...]
+    ) -> tuple[WorkflowProtectedTransportTargetContextCapsuleHandoffResult, ...]:
+        del scope, handoff_ids
+        self._raise_target_context_capsule_handoff_consumption()
+
     async def acquire_publication_lease(
         self, request: WorkflowOutboxPublicationLeaseAcquireRequest
     ) -> WorkflowOutboxPublicationLeaseAcquireResult:
@@ -1136,4 +1177,11 @@ class UnavailableWorkflowPlanRepository:
         raise WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseError(
             "workflow_target_context_capsule_handoff_repository_unavailable",
             "Durable target-context capsule handoff authorization storage is not configured.",
+        )
+
+    @staticmethod
+    def _raise_target_context_capsule_handoff_consumption() -> NoReturn:
+        raise WorkflowProtectedTransportTargetContextCapsuleHandoffError(
+            "target_context_capsule_handoff_repository_unavailable",
+            "Durable target-context capsule handoff consumption storage is not configured.",
         )

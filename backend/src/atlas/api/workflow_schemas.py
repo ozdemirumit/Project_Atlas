@@ -42,7 +42,9 @@ from atlas.modules.workflows.domain import (
     WorkflowOrchestrationLease,
     WorkflowOutboxPublicationLease,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBinding,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffAttempt,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLease,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffResult,
     WorkflowRunPlan,
 )
 
@@ -2700,6 +2702,146 @@ class WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseInv
     BaseModel
 ):
     data: WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseInventoryData
+    meta: ResponseMeta
+
+
+class CreateWorkflowProtectedTransportTargetContextCapsuleHandoffInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    authorization_lease_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    authorization_lease_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    policy_id: Literal[
+        "policy.workflow-protected-transport-target-context-capsule-handoff-consumption"
+    ]
+    policy_version: Literal["1.0"]
+    irreversible_consumption_acknowledged: Literal[True]
+    uncertain_outcome_requires_new_authorization_acknowledged: Literal[True]
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class WorkflowProtectedTransportTargetContextCapsuleHandoffPolicyData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    policy_id: Literal[
+        "policy.workflow-protected-transport-target-context-capsule-handoff-consumption"
+    ]
+    policy_version: Literal["1.0"]
+
+
+class WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorityData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target_context_capsule_handoff_authorized: Literal[False]
+    endpoint_resolution_authorized: Literal[False]
+    route_selection_authorized: Literal[False]
+    route_binding_authorized: Literal[False]
+    credential_selection_authorized: Literal[False]
+    credential_assignment_binding_authorized: Literal[False]
+    credential_access_authorized: Literal[False]
+    credential_brokerage_authorized: Literal[False]
+    credential_resolution_authorized: Literal[False]
+    protected_artifact_access_authorized: Literal[False]
+    credential_delivery_authorized: Literal[False]
+    network_access_authorized: Literal[False]
+    readiness_probe_authorized: Literal[False]
+    publication_authorized: Literal[False]
+    delivery_authorized: Literal[False]
+    dispatch_authorized: Literal[False]
+    execution_authorized: Literal[False]
+    infrastructure_mutation_authorized: Literal[False]
+
+
+class WorkflowProtectedTransportTargetContextCapsuleHandoffData(BaseModel):
+    """Minimized non-bearer handoff presentation without protected lineage."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    handoff_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    scope: WorkflowScopeData
+    attempt_state: Literal["started", "completed"]
+    result_state: Literal[
+        "pending",
+        "handed_off_sealed",
+        "handoff_failed",
+        "handoff_outcome_uncertain",
+    ]
+    started_at: datetime
+    completed_at: datetime | None
+    consumer_contract_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    consumer_contract_version: str = Field(min_length=1, max_length=64)
+    purpose_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    adapter_contract_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    adapter_contract_version: str = Field(min_length=1, max_length=64)
+    sealed_capsule_handed_off: bool
+    consumer_receipt_is_bearer_capability: Literal[False]
+    policy: WorkflowProtectedTransportTargetContextCapsuleHandoffPolicyData
+    authority: WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorityData
+    integrity_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+
+    @classmethod
+    def from_domain(
+        cls,
+        attempt: WorkflowProtectedTransportTargetContextCapsuleHandoffAttempt,
+        result: WorkflowProtectedTransportTargetContextCapsuleHandoffResult | None,
+        *,
+        evaluated_at: datetime,
+    ) -> WorkflowProtectedTransportTargetContextCapsuleHandoffData:
+        if evaluated_at.tzinfo is None:
+            raise ValueError("handoff presentation time must be timezone-aware")
+        result_state = (
+            result.state.value
+            if result is not None
+            else "pending"
+            if evaluated_at < attempt.handoff_deadline
+            else "handoff_outcome_uncertain"
+        )
+        return cls(
+            handoff_id=attempt.handoff_id,
+            scope=WorkflowScopeData.model_validate(attempt.scope.canonical_value()),
+            attempt_state="completed" if result is not None else "started",
+            result_state=result_state,
+            started_at=attempt.started_at,
+            completed_at=None if result is None else result.completed_at,
+            consumer_contract_id=attempt.consumer_contract_id,
+            consumer_contract_version=attempt.consumer_contract_version,
+            purpose_id=attempt.purpose_id,
+            adapter_contract_id=attempt.adapter_contract_id,
+            adapter_contract_version=attempt.adapter_contract_version,
+            sealed_capsule_handed_off=(
+                False if result is None else result.sealed_capsule_handed_off
+            ),
+            consumer_receipt_is_bearer_capability=False,
+            policy=WorkflowProtectedTransportTargetContextCapsuleHandoffPolicyData(
+                policy_id=attempt.policy_id,
+                policy_version=attempt.policy_version,
+            ),
+            authority=WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorityData.model_validate(
+                attempt.authority.canonical_value()
+            ),
+            integrity_reference=(
+                "integrity.workflow-target-context-capsule-handoff."
+                f"{sha256(attempt.handoff_id.encode('utf-8')).hexdigest()[:24]}"
+            ),
+        )
+
+
+class WorkflowProtectedTransportTargetContextCapsuleHandoffInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    physical_transport_target_context_capsule_handoffs: list[
+        WorkflowProtectedTransportTargetContextCapsuleHandoffData
+    ] = Field(max_length=256)
+    server_time: datetime
+    durable: Literal[True]
+
+
+class WorkflowProtectedTransportTargetContextCapsuleHandoffResponse(BaseModel):
+    data: WorkflowProtectedTransportTargetContextCapsuleHandoffData
+    meta: ResponseMeta
+
+
+class WorkflowProtectedTransportTargetContextCapsuleHandoffInventoryResponse(BaseModel):
+    data: WorkflowProtectedTransportTargetContextCapsuleHandoffInventoryData
     meta: ResponseMeta
 
 
