@@ -29,7 +29,10 @@
   and idempotency metadata.
 - Fresh signed capsule-lifecycle and consumer-boundary acceptance attestations are verified before
   the transaction and offline again while locks are held; they contain no protected material or
-  retrievable coordinates.
+  retrievable coordinates. The destination attestation binds exact boundary/deployment identity,
+  generation, fence, custody contract, approved adapter/key head and trusted profile digest.
+- Durable exact replay is classified before any attestor call. Existing claim/attempt state never
+  triggers fresh attestation or adapter I/O and becomes uncertain when its immutable deadline passes.
 - PostgreSQL revalidates the complete authoritative lineage and all deadlines twice, then atomically
   appends one consumption claim and one started attempt before any trusted adapter call.
 - The durable claim is the point of no return. After commit, success, known failure, crash or
@@ -37,6 +40,11 @@
 - The trusted adapter may transfer only the still-sealed capsule inside the exact protected
   boundary and returns only a signed minimized receipt. No capsule bytes, locator, endpoint,
   credential, secret, access token or provider payload enters ordinary platform paths.
+- The attempt stores a server-derived handoff deadline bounded by the lease and every source and
+  attestation deadline. Adapter transfer and a successful receipt must occur strictly before it.
+- Success/known failure requires a trusted signed receipt. Observed uncertainty may append explicit
+  receipts-free evidence; crash-only claim/attempt state is presented as pending before its
+  deadline and derived uncertain afterward without fabricating a receipt or completion time.
 - Claim, attempt and result set the dedicated handoff field and all 17 operational authority fields
   exactly false. Handoff success is historical evidence, not unsealing, runtime or delivery power.
 - Production requires PostgreSQL, an approved trusted adapter, protected store and destination;

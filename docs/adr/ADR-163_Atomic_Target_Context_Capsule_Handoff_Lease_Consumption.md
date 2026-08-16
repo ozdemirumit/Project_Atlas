@@ -73,14 +73,25 @@ Before opening the database transaction, Atlas obtains two independently signed,
 metadata-only attestations:
 
 - capsule lifecycle and handoff eligibility for the exact lease, binding and sealed capsule; and
-- consumer-boundary acceptance eligibility for the exact subject, audience, contract, purpose and
-  capsule schema.
+- consumer-boundary acceptance eligibility for the exact subject, audience, contract, purpose,
+  capsule schema, destination-boundary identity, deployment identity, generation, fencing token,
+  custody contract and approved adapter profile.
+
+Before either attestor is called, Atlas performs a durable exact-replay preflight. An existing
+trustworthy terminal result is returned directly. An existing matching claim or attempt returns
+`pending` before its immutable handoff deadline and `handoff_outcome_uncertain` at or after that
+deadline. Replay performs no attestor or adapter call. Only a request with no matching durable
+claim proceeds to fresh attestation; the transaction repeats replay classification under lock to
+close races.
 
 Neither attestation may contain capsule bytes, a protected-store locator, destination coordinate,
 endpoint, credential, secret, bearer token or provider payload. Unavailable, unsigned, malformed,
 expired, mismatched, revoked, destroyed, already handed-off or negative evidence fails closed.
 
-Attestations are verified before the transaction and again offline while locks are held. No
+The consumer-boundary attestation must also bind the approved adapter ID/version, verification
+signing-key ID and trusted destination-profile digest. These values are server-derived from the
+code-owned trusted destination and adapter profile; callers cannot supply them. Attestations are
+verified before the transaction and again offline while locks are held. No
 protected-store, handoff adapter, broker, DNS, TLS, socket, proxy, provider or other external I/O
 may occur inside the database transaction.
 
@@ -91,10 +102,18 @@ locks and revalidates the complete target-context materialization, pending event
 credential-assignment, opening, consumer-binding and handoff-authorization lineages; the exact
 fresh attestations; any prior claim, attempt or result; and the scoped idempotency claim.
 
-PostgreSQL evaluates database time after locks are held. The one-second lease, capsule,
+PostgreSQL evaluates database time after locks are held. The exact destination identity,
+deployment, generation, fence, custody contract, adapter profile, verification key and trusted
+profile digest must match the server-derived trusted profile. The one-second lease, capsule,
 consumer-binding, opening, outbox, route, assignment and both attestation deadlines must still be
 valid and agree exactly. Cancellation, publication, quarantine, supersession, ambiguity, drift,
 expiry, revocation, destruction, prior handoff or integrity failure fails closed.
+
+The started attempt stores one immutable `handoff_deadline`, equal to or earlier than the minimum
+of the lease, capsule, binding, opening, protected-material and both attestation deadlines. The
+code-owned policy requires a minimum remaining handoff budget at claim commit and never extends or
+shortens an expired source to manufacture eligibility. The deadline, destination profile and exact
+adapter contract are included in the attempt canonical digest.
 
 Code-owned consumption-authorization audit evidence is stored with the claim in the same
 transaction. Atlas then reads database time again and repeats all database-resident currentness,
@@ -112,11 +131,16 @@ the committed attempt. It verifies the sealed capsule and exact destination comm
 protected boundary, transfers the capsule without unsealing or decrypting it, and returns a signed,
 minimized receipt.
 
-The receipt may identify the opaque attempt and consumer-receipt lineage, schema/profile, trusted
-adapter contract, completion time, `usable_until`, source-retention or cleanup state and canonical
-integrity. It contains no capsule contents, locator, endpoint, credential, secret, destination
-coordinate, access token or provider payload. The consumer receipt ID is evidence, not a bearer
-capability.
+The adapter instruction contains the immutable handoff deadline, exact destination identity,
+deployment, generation, fence, custody contract, adapter contract, verification key and trusted
+profile digest. The adapter must validate those commitments and protected-boundary time
+immediately before movement. It must not begin or report success at or after the deadline.
+
+The receipt binds the same destination and adapter commitments and may identify the opaque attempt
+and consumer-receipt lineage, schema/profile, completion time, `usable_until`, source-retention or
+cleanup state and canonical integrity. It contains no capsule contents, locator, endpoint,
+credential, secret, destination coordinate, access token or provider payload. The consumer receipt
+ID is evidence, not a bearer capability.
 
 Production fails closed without an approved trusted adapter, protected store and destination
 boundary. Development may use a deterministic synthetic adapter that validates fixed commitments
@@ -125,11 +149,19 @@ dispatch, execution or infrastructure operation.
 
 ### Outcomes, Replay And Recovery
 
-A timely verified receipt appends one `handed_off_sealed` result. A known adapter rejection appends
+A verified receipt completed strictly before `handoff_deadline` appends one `handed_off_sealed`
+result. A known adapter rejection appends
 one minimized `handoff_failed` result only when the signed receipt proves no handoff occurred and
 cleanup state is trustworthy. Timeout, crash, invalid or late receipt, persistence ambiguity,
 audit uncertainty, destination uncertainty or cleanup uncertainty produces
 `handoff_outcome_uncertain`.
+
+Success and known-failure results require a trusted signed receipt. For an observed timeout,
+invalid receipt or other local uncertainty, Atlas may append a distinct code-owned uncertainty
+result that explicitly contains no trusted receipt. A process crash may leave only the durable
+claim and started attempt. Reads and exact replay derive `pending` while database time is before
+the immutable handoff deadline and derive `handoff_outcome_uncertain` at or after it; a derived
+uncertain view has no fabricated receipt and no completion timestamp.
 
 After claim commit Atlas never retries the adapter, restores the lease, creates a replacement
 claim or issues a second handoff for the same lease, binding or capsule. Exact replay returns the
@@ -144,8 +176,10 @@ any unsealing or runtime use. No result authorizes automatic operational action.
 Production uses PostgreSQL and has no memory fallback. It stores three append-only groups:
 
 - handoff lease-consumption claims, unique by lease, consumer binding and sealed capsule;
-- handoff attempts, unique by claim and exact trusted adapter/destination contract; and
-- handoff results, unique by attempt and signed terminal receipt.
+- handoff attempts, unique by claim and exact trusted adapter/destination contract, with immutable
+  handoff deadline; and
+- handoff results, unique by attempt, distinguishing trusted signed receipt evidence from explicit
+  code-owned receipts-free uncertainty evidence.
 
 Database constraints enforce code-owned identities, policy, acknowledgements, one claim per lease,
 one attempt per claim, one result per attempt, canonical integrity, non-bearer declarations and all
