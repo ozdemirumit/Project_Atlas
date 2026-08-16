@@ -4,14 +4,60 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-211 |
-| Title | Immutable protected target-context capsule consumer binding without handoff, unsealing, delivery, network or runtime authority |
-| Status | Local implementation and verification complete; PR pending |
-| Branch | `agent/protected-capsule-consumer-binding` |
+| Task ID | ATLAS-IMP-212 |
+| Title | Bounded single-use protected target-context capsule handoff authorization lease without retrieval, unsealing, transfer, delivery or runtime authority |
+| Status | Architecture accepted; implementation in progress |
+| Branch | `agent/protected-capsule-handoff-authorization-lease` |
 | Pull Request | Not opened |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-158, ADR-159, ADR-160, ADR-161 |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-158, ADR-159, ADR-160, ADR-161, ADR-162 |
 | Last Updated | 2026-08-16 |
-| Next Action | Open the exact-head PR, pass real PostgreSQL CI, merge by SHA and verify independent `main` CI |
+| Next Action | Implement the code-owned one-second handoff lease, PostgreSQL evidence, workload API and read-only human presentation |
+
+### ATLAS-IMP-212 Scope Rationale
+
+- IMP-211 immutably binds one sealed capsule to one exact future consumer contract and purpose,
+  but remains zero-authority evidence and cannot be used as a lease or bearer capability.
+- The next smallest safe boundary grants that exact consumer one bounded authorization to request
+  a later independent handoff-consumption operation without retrieving, moving or unsealing the
+  capsule.
+- A fresh signed capsule lifecycle attestation and the complete current transport lineage are
+  required because historical binding success cannot prove present capsule availability.
+
+### ATLAS-IMP-212 Acceptance Criteria
+
+- Only `service.workflow-protected-transport-target-context-capsule-consumer` authenticated for
+  `audience.workflow-protected-transport-target-context-capsule-consumer` may request issuance for
+  itself. Human sessions, personal tokens, AI agents, binders, openers, publishers and every other
+  workload fail closed.
+- Caller input is limited to consumer-binding ID/digest, code-owned policy ID/version and
+  idempotency. Consumer, contract, purpose, scope, capsule, outbox, event, route, assignment,
+  attestor, lifetime, protected-store, endpoint, credential, broker, network and runtime fields
+  are server-derived and cannot be overridden.
+- Atlas obtains one fresh independently signed, nonce-bound and metadata-only capsule lifecycle
+  attestation before the transaction. Offline verification inside the transaction proves the
+  exact binding/capsule lineage and usable, sealed, non-revoked, non-destroyed and non-bearer state.
+- PostgreSQL follows the established target-context lock/fence order and revalidates the complete
+  materialization, target-context, opening, consumer-binding, pending event, route and credential-
+  assignment lineages, current heads and full-window deadlines before and after precommit audit.
+- The code-owned lease lifetime is exactly one second. Each consumer binding and capsule may
+  produce at most one append-only, single-use, non-renewable, non-transferable and non-bearer
+  `authorized_unconsumed` lease. Expiry cannot create renewal or replacement authority.
+- Exact replay reacquires fresh lifecycle evidence and current locks and returns the same minimized
+  lease only while it and all sources remain valid. Changed, competing, expired, cancelled,
+  published, quarantined, revoked, destroyed, superseded, ambiguous or drifted evidence fails
+  closed and cannot create a second lease.
+- Only the dedicated `target_context_capsule_handoff_authorized` declaration is true. All existing
+  17 operational authority fields remain exactly false; general delivery and protected-artifact-
+  access authority cannot be reused as handoff authority.
+- Issuance performs no capsule retrieval, handoff, unsealing, decryption, transfer, delivery,
+  endpoint or credential reveal, broker, DNS, TLS, socket, proxy, network, readiness, provider,
+  publication, dispatch, execution or infrastructure-mutation call. Production has no memory
+  fallback.
+- Workload POST and normal-session human GET use minimized non-oracle `no-store` contracts. Human
+  UI is read-only through one username/password login, with no MFA, second prompt, capsule or
+  binding identity, sensitive lifecycle evidence or operational controls.
+- Full local suites, real PostgreSQL concurrency/migration CI, live desktop/mobile inspection,
+  exact-head PR CI, SHA-locked merge and independent `main` CI must pass.
 
 ### ATLAS-IMP-211 Scope Rationale
 
@@ -47,6 +93,15 @@
   or operational controls.
 - Full local suites, real PostgreSQL concurrency/migration CI, live desktop/mobile inspection,
   exact-head PR CI, SHA-locked merge and independent main CI must pass.
+
+### ATLAS-IMP-211 Delivery Evidence
+
+- PR [#224](https://github.com/ozdemirumit/Project_Atlas/pull/224) was SHA-locked at
+  `be90ab478866af283495c0714ddcff237754f90d` and squash-merged as
+  `6b3166a0ce02d5109f88e93e9d14d118cf53d7eb`.
+- Exact-head PR CI run `31917290105` completed successfully for backend and frontend, including
+  migration round-trip and real PostgreSQL target-context capsule consumer-binding tests.
+- The merge commit independently passed `main` CI run `31917805206` before IMP-212 branched.
 
 ### ATLAS-IMP-211 Local Verification
 

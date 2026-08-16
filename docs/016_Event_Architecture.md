@@ -436,6 +436,22 @@ changed or competing replay fails closed. Capsule handoff authorization, handoff
 unsealing, delivery, runtime injection and all subsequent transport operations remain separate,
 explicitly deferred boundaries.
 
+Target-context capsule handoff authorization is the next independent append-only lease boundary.
+Only the exact consumer workload and audience recorded by the consumer binding may submit the
+binding ID and digest, code-owned policy ID and version, and idempotency metadata. A fresh signed,
+nonce-bound and metadata-only capsule lifecycle attestation is obtained before the database
+transaction. PostgreSQL then follows the canonical target-context lock order and revalidates the
+complete binding, opening, event, route and credential-assignment lineage, current heads and
+fences, lifecycle evidence and the full code-owned one-second window.
+
+The transaction appends one immutable `target_context_capsule_handoff_authorized` lease, scoped
+idempotency claim and code-owned audit evidence. The lease is single-use, non-renewable,
+non-transferable and non-bearer. Its dedicated `target_context_capsule_handoff_authorized`
+declaration is true only for a later separate consumption request; all existing 17 operational
+authority declarations remain false. Issuance performs no capsule retrieval, handoff, unsealing,
+delivery, network, publication, dispatch, execution or mutation. Lease consumption and every
+runtime operation remain explicitly deferred.
+
 ### 10.2 Publication State
 
 Outbox records track:
@@ -830,3 +846,4 @@ This document is ready to enter Review when:
 | 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |
 | 1.1.0 | 2026-08-15 | Workflow Architecture | Added atomic paired target-context artifact-opening event boundary and zero-authority capsule lineage |
 | 1.2.0 | 2026-08-16 | Workflow Architecture | Added immutable zero-authority target-context capsule consumer-binding event boundary |
+| 1.3.0 | 2026-08-16 | Workflow Architecture | Added bounded single-use target-context capsule handoff-authorization lease boundary |
