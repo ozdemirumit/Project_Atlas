@@ -654,6 +654,16 @@ MVP workflows do not execute C3 through C5 capabilities.
   target-context capsule lineage. Raw values never enter ordinary platform layers, claim-only
   uncertainty is never retried, all 17 outcome authority fields are false, and capsule identity
   grants no endpoint reveal, credential delivery, network or runtime authority.
+- ADR-161 establishes one immutable append-only consumer binding from an exact successful ADR-160
+  opening result to a server-derived future consumer workload, versioned contract, code-owned
+  purpose and exact pending outbox/event lineage. Only the dedicated binder workload and audience
+  may submit the opening-result ID and digest, policy ID and version, and idempotency metadata.
+  PostgreSQL revalidates `opened_protected`, confirmed cleanup, non-bearer capsule status and
+  deadline, the complete target-context lineage, pending-outbox liveness, and authoritative current
+  route and credential-assignment heads before appending the unique binding. Exact replay is stable
+  and side-effect free; changed or competing binding fails closed. The boundary makes no protected-
+  store, opener, broker or network call, all 17 authority fields remain false, and capsule handoff
+  authorization, unsealing, delivery, runtime, dispatch, execution and mutation are deferred.
 
 ## 39. Assumptions
 
@@ -690,3 +700,4 @@ This document is ready to enter Review when:
 | 0.2.0 | 2026-08-03 | Workflow Platform Owner | Added durable workflow model, state machine, step contracts, retries, idempotency, cancellation, policy, approval, compensation, migration, and MVP workflows |
 | 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |
 | 1.1.0 | 2026-08-15 | Workflow Architecture | Added atomic single-use target-context artifact opening and sealed zero-authority capsule lineage |
+| 1.2.0 | 2026-08-16 | Workflow Architecture | Added immutable zero-authority target-context capsule consumer binding |

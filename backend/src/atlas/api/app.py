@@ -1611,6 +1611,12 @@ from atlas.modules.workflows.application.target_context_artifact_opening_ports i
 from atlas.modules.workflows.application.target_context_artifact_openings import (
     WorkflowEventPhysicalTransportTargetContextArtifactOpeningService,
 )
+from atlas.modules.workflows.application.target_context_capsule_consumer_binding_ports import (
+    WorkflowTargetContextCapsuleConsumerBindingRepository,
+)
+from atlas.modules.workflows.application.target_context_capsule_consumer_bindings import (
+    WorkflowProtectedTransportTargetContextCapsuleConsumerBindingService,
+)
 from atlas.modules.workflows.domain import (
     DeploymentEventTransportProfile,
     DeploymentEventTransportRoute,
@@ -1630,6 +1636,7 @@ class _WorkflowCredentialAccessAuthorizationNoStoreMiddleware(BaseHTTPMiddleware
             "/api/v1/workflows/physical-transport-target-context-bindings",
             ("/api/v1/workflows/physical-transport-target-context-access-authorization-leases"),
             "/api/v1/workflows/physical-transport-target-context-artifact-openings",
+            "/api/v1/workflows/physical-transport-target-context-capsule-consumer-bindings",
         }
     )
 
@@ -1659,6 +1666,20 @@ class _UnavailableWorkflowTargetContextArtifactOpeningRepository:
 
     async def get_authoritative_time(self) -> datetime:
         raise RuntimeError("target-context artifact opening repository is unavailable")
+
+
+class _UnavailableWorkflowTargetContextCapsuleConsumerBindingRepository:
+    """Fail-closed composition placeholder; it never falls back to memory state."""
+
+    @property
+    def durable(self) -> bool:
+        return False
+
+    async def bind_target_context_capsule_consumer(self, *_: object, **__: object) -> None:
+        raise RuntimeError("target-context capsule consumer binding repository is unavailable")
+
+    async def list_target_context_capsule_consumer_bindings(self, *_: object, **__: object) -> None:
+        raise RuntimeError("target-context capsule consumer binding repository is unavailable")
 
 
 class _ConfiguredDeploymentEventTransportProfileRegistry:
@@ -2071,6 +2092,9 @@ def create_app(
     ) = None,
     workflow_event_physical_transport_target_context_artifact_opening_service: (
         WorkflowEventPhysicalTransportTargetContextArtifactOpeningService | None
+    ) = None,
+    workflow_protected_transport_target_context_capsule_consumer_binding_service: (
+        WorkflowProtectedTransportTargetContextCapsuleConsumerBindingService | None
     ) = None,
     workflow_transport_profile_snapshot_service: WorkflowTransportProfileSnapshotService
     | None = None,
@@ -6695,6 +6719,33 @@ def create_app(
         resolved_target_context_artifact_opening_service = (
             workflow_event_physical_transport_target_context_artifact_opening_service
         )
+    if workflow_protected_transport_target_context_capsule_consumer_binding_service is None:
+        target_context_capsule_consumer_binding_repository_methods = (
+            "bind_target_context_capsule_consumer",
+            "list_target_context_capsule_consumer_bindings",
+        )
+        if all(
+            callable(getattr(workflow_repository, method_name, None))
+            for method_name in target_context_capsule_consumer_binding_repository_methods
+        ):
+            target_context_capsule_consumer_binding_repository = cast(
+                WorkflowTargetContextCapsuleConsumerBindingRepository,
+                workflow_repository,
+            )
+        else:
+            target_context_capsule_consumer_binding_repository = cast(
+                WorkflowTargetContextCapsuleConsumerBindingRepository,
+                _UnavailableWorkflowTargetContextCapsuleConsumerBindingRepository(),
+            )
+        resolved_target_context_capsule_consumer_binding_service = (
+            WorkflowProtectedTransportTargetContextCapsuleConsumerBindingService(
+                repository=target_context_capsule_consumer_binding_repository,
+            )
+        )
+    else:
+        resolved_target_context_capsule_consumer_binding_service = (
+            workflow_protected_transport_target_context_capsule_consumer_binding_service
+        )
     configured_transport_route_selection_heads = (
         _deployment_event_transport_route_selection_heads(
             resolved_settings,
@@ -7112,6 +7163,12 @@ def create_app(
         )
         app.state.workflow_target_context_artifact_opening_repository = (
             resolved_target_context_artifact_opening_service.repository
+        )
+        app.state.workflow_target_context_capsule_consumer_binding_service = (
+            resolved_target_context_capsule_consumer_binding_service
+        )
+        app.state.workflow_target_context_capsule_consumer_binding_repository = (
+            resolved_target_context_capsule_consumer_binding_service.repository
         )
         app.state.workflow_transport_route_selection_heads = (
             configured_transport_route_selection_heads

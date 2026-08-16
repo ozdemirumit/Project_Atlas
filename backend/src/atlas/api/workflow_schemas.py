@@ -41,6 +41,7 @@ from atlas.modules.workflows.domain import (
     WorkflowExecutionRun,
     WorkflowOrchestrationLease,
     WorkflowOutboxPublicationLease,
+    WorkflowProtectedTransportTargetContextCapsuleConsumerBinding,
     WorkflowRunPlan,
 )
 
@@ -2421,6 +2422,152 @@ class WorkflowEventPhysicalTransportTargetContextArtifactOpeningResponse(BaseMod
 
 class WorkflowEventPhysicalTransportTargetContextArtifactOpeningInventoryResponse(BaseModel):
     data: WorkflowEventPhysicalTransportTargetContextArtifactOpeningInventoryData
+    meta: ResponseMeta
+
+
+class CreateWorkflowProtectedTransportTargetContextCapsuleConsumerBindingInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    opening_result_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    opening_result_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    policy_id: Literal[
+        "policy.workflow-protected-transport-target-context-capsule-consumer-binding"
+    ]
+    policy_version: Literal["1.0"]
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class WorkflowProtectedTransportTargetContextCapsuleConsumerBindingAuthorityData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    endpoint_resolution_authorized: Literal[False]
+    route_selection_authorized: Literal[False]
+    route_binding_authorized: Literal[False]
+    credential_selection_authorized: Literal[False]
+    credential_assignment_binding_authorized: Literal[False]
+    credential_access_authorized: Literal[False]
+    credential_brokerage_authorized: Literal[False]
+    credential_resolution_authorized: Literal[False]
+    protected_artifact_access_authorized: Literal[False]
+    credential_delivery_authorized: Literal[False]
+    network_access_authorized: Literal[False]
+    readiness_probe_authorized: Literal[False]
+    publication_authorized: Literal[False]
+    delivery_authorized: Literal[False]
+    dispatch_authorized: Literal[False]
+    execution_authorized: Literal[False]
+    infrastructure_mutation_authorized: Literal[False]
+
+
+class WorkflowProtectedTransportTargetContextCapsuleConsumerBindingPolicyData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    policy_id: Literal[
+        "policy.workflow-protected-transport-target-context-capsule-consumer-binding"
+    ]
+    policy_version: Literal["1.0"]
+
+
+class WorkflowProtectedTransportTargetContextCapsuleConsumerBindingData(BaseModel):
+    """Minimized workload response without capsule or protected lineage."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    binding_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    binding_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    state: Literal["bound"]
+    bound_at: datetime
+    effective_until: datetime
+    policy: WorkflowProtectedTransportTargetContextCapsuleConsumerBindingPolicyData
+    authority: WorkflowProtectedTransportTargetContextCapsuleConsumerBindingAuthorityData
+
+    @classmethod
+    def from_domain(
+        cls,
+        binding: WorkflowProtectedTransportTargetContextCapsuleConsumerBinding,
+    ) -> WorkflowProtectedTransportTargetContextCapsuleConsumerBindingData:
+        return cls(
+            binding_id=binding.binding_id,
+            binding_digest=binding.canonical_digest,
+            state=binding.state.value,
+            bound_at=binding.bound_at,
+            effective_until=binding.effective_until,
+            policy=WorkflowProtectedTransportTargetContextCapsuleConsumerBindingPolicyData(
+                policy_id=binding.policy_id,
+                policy_version=binding.policy_version,
+            ),
+            authority=(
+                WorkflowProtectedTransportTargetContextCapsuleConsumerBindingAuthorityData.model_validate(
+                    binding.authority.canonical_value()
+                )
+            ),
+        )
+
+
+class WorkflowProtectedTransportTargetContextCapsuleConsumerBindingInventoryItemData(BaseModel):
+    """Human-safe immutable binding evidence without capsule or transport internals."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    binding_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    scope: WorkflowScopeData
+    state: Literal["bound"]
+    bound_at: datetime
+    effective_until: datetime
+    consumer_contract_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    consumer_contract_version: str = Field(min_length=1, max_length=64)
+    purpose_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    policy: WorkflowProtectedTransportTargetContextCapsuleConsumerBindingPolicyData
+    authority: WorkflowProtectedTransportTargetContextCapsuleConsumerBindingAuthorityData
+    integrity_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+
+    @classmethod
+    def from_domain(
+        cls,
+        binding: WorkflowProtectedTransportTargetContextCapsuleConsumerBinding,
+    ) -> WorkflowProtectedTransportTargetContextCapsuleConsumerBindingInventoryItemData:
+        return cls(
+            binding_id=binding.binding_id,
+            scope=WorkflowScopeData.model_validate(binding.scope.canonical_value()),
+            state=binding.state.value,
+            bound_at=binding.bound_at,
+            effective_until=binding.effective_until,
+            consumer_contract_id=binding.consumer_contract_id,
+            consumer_contract_version=binding.consumer_contract_version,
+            purpose_id=binding.purpose_id,
+            policy=WorkflowProtectedTransportTargetContextCapsuleConsumerBindingPolicyData(
+                policy_id=binding.policy_id,
+                policy_version=binding.policy_version,
+            ),
+            authority=(
+                WorkflowProtectedTransportTargetContextCapsuleConsumerBindingAuthorityData.model_validate(
+                    binding.authority.canonical_value()
+                )
+            ),
+            integrity_reference=(
+                "integrity.workflow-target-context-capsule-consumer-binding."
+                f"{sha256(binding.binding_id.encode('utf-8')).hexdigest()[:24]}"
+            ),
+        )
+
+
+class WorkflowProtectedTransportTargetContextCapsuleConsumerBindingInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    physical_transport_target_context_capsule_consumer_bindings: list[
+        WorkflowProtectedTransportTargetContextCapsuleConsumerBindingInventoryItemData
+    ] = Field(max_length=256)
+    server_time: datetime
+    durable: bool
+
+
+class WorkflowProtectedTransportTargetContextCapsuleConsumerBindingResponse(BaseModel):
+    data: WorkflowProtectedTransportTargetContextCapsuleConsumerBindingData
+    meta: ResponseMeta
+
+
+class WorkflowProtectedTransportTargetContextCapsuleConsumerBindingInventoryResponse(BaseModel):
+    data: WorkflowProtectedTransportTargetContextCapsuleConsumerBindingInventoryData
     meta: ResponseMeta
 
 

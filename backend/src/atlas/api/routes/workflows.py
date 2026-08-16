@@ -22,6 +22,7 @@ from atlas.api.security import (
     authorize_workflow_physical_transport_target_context_access_authorization_lease_read,
     authorize_workflow_physical_transport_target_context_artifact_opening_read,
     authorize_workflow_physical_transport_target_context_binding_read,
+    authorize_workflow_physical_transport_target_context_capsule_consumer_binding_read,
     authorize_workflow_plan_cancel,
     authorize_workflow_plan_create,
     authorize_workflow_plan_read,
@@ -38,6 +39,7 @@ from atlas.api.security import (
     workflow_physical_transport_route_freshness_admitter_subject,
     workflow_physical_transport_target_context_accessor_subject,
     workflow_physical_transport_target_context_binder_subject,
+    workflow_physical_transport_target_context_capsule_binder_subject,
     workflow_transport_compatibility_admitter_subject,
     workflow_transport_credential_assignment_registry_subject,
     workflow_transport_profile_registry_subject,
@@ -66,6 +68,7 @@ from atlas.api.workflow_schemas import (
     CreateWorkflowEventPhysicalTransportTargetContextBindingInput,
     CreateWorkflowEventTransportCompatibilityAdmissionInput,
     CreateWorkflowPlanInput,
+    CreateWorkflowProtectedTransportTargetContextCapsuleConsumerBindingInput,
     EventPhysicalTransportCredentialAssignmentSnapshotData,
     EventPhysicalTransportCredentialAssignmentSnapshotInventoryData,
     EventPhysicalTransportCredentialAssignmentSnapshotInventoryResponse,
@@ -180,6 +183,11 @@ from atlas.api.workflow_schemas import (
     WorkflowOutboxPublicationLeaseResponse,
     WorkflowPlanInventoryData,
     WorkflowPlanInventoryResponse,
+    WorkflowProtectedTransportTargetContextCapsuleConsumerBindingData,
+    WorkflowProtectedTransportTargetContextCapsuleConsumerBindingInventoryData,
+    WorkflowProtectedTransportTargetContextCapsuleConsumerBindingInventoryItemData,
+    WorkflowProtectedTransportTargetContextCapsuleConsumerBindingInventoryResponse,
+    WorkflowProtectedTransportTargetContextCapsuleConsumerBindingResponse,
     WorkflowRunPlanData,
     WorkflowRunPlanResponse,
 )
@@ -295,6 +303,14 @@ from atlas.modules.workflows.application.target_context_artifact_opening_ports i
 from atlas.modules.workflows.application.target_context_artifact_openings import (
     WorkflowEventPhysicalTransportTargetContextArtifactOpeningService,
 )
+from atlas.modules.workflows.application.target_context_capsule_consumer_binding_ports import (
+    WorkflowProtectedTransportTargetContextCapsuleConsumerBindingError,
+)
+from atlas.modules.workflows.application.target_context_capsule_consumer_bindings import (
+    WORKFLOW_PROTECTED_TRANSPORT_TARGET_CONTEXT_CAPSULE_BINDER_AUDIENCE,
+    WorkflowProtectedTransportTargetContextCapsuleBinderContext,
+    WorkflowProtectedTransportTargetContextCapsuleConsumerBindingService,
+)
 from atlas.modules.workflows.application.transport_admission_ports import (
     WorkflowEventTransportAdmissionError,
 )
@@ -341,6 +357,7 @@ from atlas.modules.workflows.domain import (
     WorkflowOrchestrationLease,
     WorkflowOrchestrationLeaseEffectiveState,
     WorkflowOutboxPublicationLease,
+    WorkflowProtectedTransportTargetContextCapsuleConsumerBinding,
     WorkflowRunPlan,
     WorkflowScope,
     canonical_digest,
@@ -961,6 +978,27 @@ def _raise_physical_transport_target_context_artifact_opening(
         title="Workflow target-context artifact opening unavailable",
         detail="The target-context artifact opening request cannot be completed.",
         retryable=False,
+    ) from error
+
+
+def _raise_physical_transport_target_context_capsule_consumer_binding(
+    error: WorkflowProtectedTransportTargetContextCapsuleConsumerBindingError,
+) -> NoReturn:
+    unavailable = "repository" in error.code or "durable" in error.code
+    raise AtlasError(
+        status=503 if unavailable else 409,
+        code=(
+            "workflow_target_context_capsule_consumer_binding_service_unavailable"
+            if unavailable
+            else "workflow_target_context_capsule_consumer_binding_unavailable"
+        ),
+        title=(
+            "Workflow target-context capsule consumer binding service unavailable"
+            if unavailable
+            else "Workflow target-context capsule consumer binding unavailable"
+        ),
+        detail=("The target-context capsule consumer binding request cannot be completed."),
+        retryable=unavailable,
     ) from error
 
 
@@ -1750,6 +1788,18 @@ def _physical_transport_target_context_artifact_opening_response(
     _no_store(response)
     return WorkflowEventPhysicalTransportTargetContextArtifactOpeningResponse(
         data=WorkflowEventPhysicalTransportTargetContextArtifactOpeningData.from_domain(result),
+        meta=_meta(request),
+    )
+
+
+def _physical_transport_target_context_capsule_consumer_binding_response(
+    binding: WorkflowProtectedTransportTargetContextCapsuleConsumerBinding,
+    request: Request,
+    response: Response,
+) -> WorkflowProtectedTransportTargetContextCapsuleConsumerBindingResponse:
+    _no_store(response)
+    return WorkflowProtectedTransportTargetContextCapsuleConsumerBindingResponse(
+        data=WorkflowProtectedTransportTargetContextCapsuleConsumerBindingData.from_domain(binding),
         meta=_meta(request),
     )
 
@@ -5518,6 +5568,128 @@ async def create_workflow_physical_transport_target_context_artifact_opening(
         ) from error
     return _physical_transport_target_context_artifact_opening_response(
         result,
+        request,
+        response,
+    )
+
+
+@router.get(
+    "/physical-transport-target-context-capsule-consumer-bindings",
+    response_model=(WorkflowProtectedTransportTargetContextCapsuleConsumerBindingInventoryResponse),
+)
+async def list_workflow_physical_transport_target_context_capsule_consumer_bindings(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_workflow_physical_transport_target_context_capsule_consumer_binding_read),
+    ],
+) -> WorkflowProtectedTransportTargetContextCapsuleConsumerBindingInventoryResponse:
+    del decision
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    service = cast(
+        WorkflowProtectedTransportTargetContextCapsuleConsumerBindingService,
+        request.app.state.workflow_target_context_capsule_consumer_binding_service,
+    )
+    try:
+        bindings = await service.list_bindings(scope=scope, limit=256)
+        server_time = datetime.now(UTC)
+        binding_ids = {binding.binding_id for binding in bindings}
+        if (
+            len(binding_ids) != len(bindings)
+            or any(binding.scope != scope for binding in bindings)
+            or server_time.tzinfo is None
+        ):
+            raise WorkflowProtectedTransportTargetContextCapsuleConsumerBindingError(
+                "target_context_capsule_consumer_binding_repository_scope_violation"
+            )
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_target_context_capsule_consumer_binding_service_unavailable",
+            title="Workflow target-context capsule consumer binding service unavailable",
+            detail="Target-context capsule consumer binding metadata is temporarily unavailable.",
+            retryable=True,
+        ) from error
+    _no_store(response)
+    return WorkflowProtectedTransportTargetContextCapsuleConsumerBindingInventoryResponse(
+        data=WorkflowProtectedTransportTargetContextCapsuleConsumerBindingInventoryData(
+            physical_transport_target_context_capsule_consumer_bindings=[
+                WorkflowProtectedTransportTargetContextCapsuleConsumerBindingInventoryItemData.from_domain(
+                    binding
+                )
+                for binding in sorted(bindings, key=lambda value: value.binding_id)
+            ],
+            server_time=server_time,
+            durable=service.durable,
+        ),
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    "/physical-transport-target-context-capsule-consumer-bindings",
+    response_model=WorkflowProtectedTransportTargetContextCapsuleConsumerBindingResponse,
+    status_code=201,
+)
+async def create_workflow_physical_transport_target_context_capsule_consumer_binding(
+    payload: CreateWorkflowProtectedTransportTargetContextCapsuleConsumerBindingInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[
+        AuthenticatedSubject,
+        Depends(workflow_physical_transport_target_context_capsule_binder_subject),
+    ],
+) -> WorkflowProtectedTransportTargetContextCapsuleConsumerBindingResponse:
+    service = cast(
+        WorkflowProtectedTransportTargetContextCapsuleConsumerBindingService,
+        request.app.state.workflow_target_context_capsule_consumer_binding_service,
+    )
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    try:
+        binding = await service.bind(
+            opening_result_id=payload.opening_result_id,
+            opening_result_digest=payload.opening_result_digest,
+            policy_id=payload.policy_id,
+            policy_version=payload.policy_version,
+            idempotency_key=payload.idempotency_key,
+            context=WorkflowProtectedTransportTargetContextCapsuleBinderContext(
+                subject_id=subject.subject_id,
+                actor_type=subject.kind.value,
+                authentication_method=subject.authentication_method.value,
+                credential_audience=(
+                    WORKFLOW_PROTECTED_TRANSPORT_TARGET_CONTEXT_CAPSULE_BINDER_AUDIENCE
+                ),
+                scope=scope,
+                correlation_id=str(request.state.correlation_id),
+                decision_id=(
+                    "decision.workflow-protected-transport-target-context-capsule-binder-"
+                    "authenticated"
+                ),
+                requested_at=datetime.now(UTC),
+            ),
+        )
+    except WorkflowProtectedTransportTargetContextCapsuleConsumerBindingError as error:
+        _raise_physical_transport_target_context_capsule_consumer_binding(error)
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_target_context_capsule_consumer_binding_service_unavailable",
+            title="Workflow target-context capsule consumer binding service unavailable",
+            detail="The target-context capsule consumer binding request cannot be completed.",
+            retryable=True,
+        ) from error
+    return _physical_transport_target_context_capsule_consumer_binding_response(
+        binding,
         request,
         response,
     )

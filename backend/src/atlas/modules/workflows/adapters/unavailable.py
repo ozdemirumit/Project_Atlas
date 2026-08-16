@@ -126,6 +126,11 @@ from atlas.modules.workflows.application.target_context_binding_ports import (
     WorkflowEventPhysicalTransportTargetContextBindingRequest,
     WorkflowEventPhysicalTransportTargetContextBindingResult,
 )
+from atlas.modules.workflows.application.target_context_capsule_consumer_binding_ports import (
+    WorkflowProtectedTransportTargetContextCapsuleConsumerBindingError,
+    WorkflowTargetContextCapsuleConsumerBindingRequest,
+    WorkflowTargetContextCapsuleConsumerBindingResult,
+)
 from atlas.modules.workflows.application.transport_admission_ports import (
     WorkflowEventTransportAdmissionError,
     WorkflowEventTransportAdmissionIdempotencyRecord,
@@ -183,6 +188,7 @@ from atlas.modules.workflows.domain import (
     WorkflowExecutionRun,
     WorkflowOrchestrationLease,
     WorkflowOutboxPublicationLease,
+    WorkflowProtectedTransportTargetContextCapsuleConsumerBinding,
     WorkflowRunPlan,
     WorkflowScope,
 )
@@ -863,6 +869,16 @@ class UnavailableWorkflowPlanRepository:
     ) -> tuple[WorkflowEventPhysicalTransportTargetContextArtifactOpeningResult, ...]:
         self._raise_target_context_artifact_opening()
 
+    async def bind_target_context_capsule_consumer(
+        self, request: WorkflowTargetContextCapsuleConsumerBindingRequest
+    ) -> WorkflowTargetContextCapsuleConsumerBindingResult:
+        self._raise_target_context_capsule_consumer_binding()
+
+    async def list_target_context_capsule_consumer_bindings(
+        self, *, scope: WorkflowScope, limit: int
+    ) -> tuple[WorkflowProtectedTransportTargetContextCapsuleConsumerBinding, ...]:
+        self._raise_target_context_capsule_consumer_binding()
+
     async def acquire_publication_lease(
         self, request: WorkflowOutboxPublicationLeaseAcquireRequest
     ) -> WorkflowOutboxPublicationLeaseAcquireResult:
@@ -1078,4 +1094,11 @@ class UnavailableWorkflowPlanRepository:
         raise WorkflowEventPhysicalTransportTargetContextArtifactOpeningError(
             "workflow_target_context_artifact_opening_repository_unavailable",
             "Durable target-context artifact opening storage is not configured.",
+        )
+
+    @staticmethod
+    def _raise_target_context_capsule_consumer_binding() -> NoReturn:
+        raise WorkflowProtectedTransportTargetContextCapsuleConsumerBindingError(
+            "workflow_target_context_capsule_consumer_binding_repository_unavailable",
+            "Durable target-context capsule consumer binding storage is not configured.",
         )

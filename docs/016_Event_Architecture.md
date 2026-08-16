@@ -411,6 +411,31 @@ false; they grant no endpoint reveal, credential delivery, network, readiness, p
 delivery, dispatch, execution or mutation authority. Event payloads must omit raw artifacts,
 capsule material, protected-store locators and sensitive internal currentness evidence.
 
+Target-context capsule consumer binding is the next independent append-only event boundary. A
+dedicated binder workload and audience may request it using only one successful opening-result ID
+and digest, the code-owned binding policy ID and version, and idempotency metadata. The platform
+derives the sealed capsule lineage, future consumer workload and audience, versioned consumer
+contract, code-owned purpose, pending outbox, event artifact, route and credential-assignment
+lineage from authoritative server-side state. Caller-supplied capsule, consumer, outbox, event,
+route, credential, broker or runtime fields are prohibited.
+
+The transaction accepts only one canonical `opened_protected`, cleanup-confirmed, non-revoked,
+non-bearer capsule with sufficient remaining lifetime. It locks and revalidates the complete
+opening, target-context and materialization chains, the exact live pending outbox and event
+artifact, and the authoritative current route and credential-assignment heads. It then appends one
+immutable `target_context_capsule_consumer_bound` record and its code-owned audit evidence.
+Production persistence is PostgreSQL-only; unique constraints and append-only triggers prevent a
+second consumer binding for the opening result or capsule.
+
+The consumer binding is evidence, not a transport command or bearer capability. Event and human
+presentation omit capsule identity and digest, raw artifacts, endpoints, credentials, protected-
+store locators and internal fence evidence. All 17 authority declarations remain false. The
+boundary performs no protected-store, opener, broker, DNS, TLS, socket, provider, publication,
+delivery, dispatch, execution or mutation call. Exact replay returns the same binding without I/O;
+changed or competing replay fails closed. Capsule handoff authorization, handoff consumption,
+unsealing, delivery, runtime injection and all subsequent transport operations remain separate,
+explicitly deferred boundaries.
+
 ### 10.2 Publication State
 
 Outbox records track:
@@ -804,3 +829,4 @@ This document is ready to enter Review when:
 | 0.2.0 | 2026-08-03 | Architecture Owner | Added canonical envelope, producer ownership, delivery semantics, schema governance, replay, security, failure handling, testing, and initial event catalog |
 | 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |
 | 1.1.0 | 2026-08-15 | Workflow Architecture | Added atomic paired target-context artifact-opening event boundary and zero-authority capsule lineage |
+| 1.2.0 | 2026-08-16 | Workflow Architecture | Added immutable zero-authority target-context capsule consumer-binding event boundary |
