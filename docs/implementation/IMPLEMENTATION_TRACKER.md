@@ -4,14 +4,83 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-218 |
-| Title | Bounded single-use protected runtime-context injection authorization without injection, handle use, network, execution or infrastructure mutation authority |
+| Task ID | ATLAS-IMP-219 |
+| Title | Atomic protected runtime-context injection lease consumption and inert protected-slot injection without runtime use, network, execution or infrastructure mutation authority |
 | Status | In Progress |
-| Branch | `agent/protected-runtime-context-injection-authorization` |
-| Pull Request | [PR #231](https://github.com/ozdemirumit/Project_Atlas/pull/231) |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160, ADR-161, ADR-162, ADR-163, ADR-164, ADR-165, ADR-166, ADR-167, ADR-168 |
+| Branch | `agent/protected-runtime-context-injection-consumption` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-169 |
 | Last Updated | 2026-08-16 |
-| Next Action | Complete final live UI validation, exact-head PR CI, SHA-locked merge and independent main CI verification |
+| Next Action | Deliver the completed ADR-169 slice through pull request, exact-head CI, merge and independent `main` CI |
+
+### ATLAS-IMP-219 Scope Rationale
+
+- IMP-218 grants only one future request to consume a one-second injection authorization lease and
+  performs no handle or runtime operation.
+- The next smallest functional boundary must consume that lease before a trusted protected injector
+  may atomically place inert context into one exact slot.
+- Consumption and injection remain one application operation so no caller-visible claim or attempt
+  identifier can become a bearer capability, while the durable commit and injector call remain
+  transactionally separated.
+
+### ATLAS-IMP-219 Acceptance Criteria
+
+- Only the exact protected consumer workload and audience may POST. Human sessions, personal
+  tokens, AI agents, MCP tools, generic workers and injector identities fail closed.
+- Caller input is limited to lease identity, code-owned policy, two irreversible acknowledgements
+  and idempotency metadata. Handle, slot, destination, injector, deadline and authority fields are
+  server-derived.
+- Durable replay is classified before attestor or injector I/O. Exact terminal, pending and
+  uncertain replay never invokes the injector again; changed or competing replay fails closed.
+- Fresh signed evidence binds the exact handle, destination fence, slot commitment and
+  pre-generation while proving the handle is unused/uninjected and the slot is empty/inert.
+- PostgreSQL canonically locks the complete lineage plus mutable destination and slot heads, obtains
+  two database-time observations and commits one claim and started attempt as the irreversible
+  point of no return before injector I/O.
+- The trusted injector performs one protected-side atomic compare-and-swap over the exact handle,
+  destination and slot pre-generation. Success advances the slot generation and creates inert
+  context without starting or using a runtime.
+- Known success or failure requires a timely signed receipt that binds the instruction, handle and
+  slot commitments, pre/post generation, fence, deadline and every forbidden side effect as false.
+  Every partial, late, invalid, crash or ambiguous outcome is uncertain.
+- Claim commit permanently consumes the lease and handle lineage for every outcome. There is no
+  automatic retry, authority restoration, cleanup, rollback, replacement or remediation.
+- Claims, attempts and results are append-only evidence with all operational authority fields
+  false. Injection success grants no runtime-use, network, connector, readiness, dispatch,
+  execution or infrastructure-mutation authority.
+- ADR-168 GET projection derives `consumed=true` and zero effective authority from the canonical
+  claim. Workload POST and username/password-session GET remain minimized, non-oracle and
+  `no-store`; the human UI is strictly read-only and requires no MFA or second login.
+- Production fails closed without PostgreSQL, trusted attestors, receipt verifier and trusted
+  injector. Ordinary Atlas code, API, UI, logs and audit exports never receive handle or slot
+  locator/material.
+
+### ATLAS-IMP-219 Verification Evidence
+
+- Full backend regression passed `2719` tests; `38` environment-dependent tests were skipped only
+  for unavailable Windows symlink support or an unconfigured local `ATLAS_TEST_POSTGRES_DSN`.
+- Ruff format/check passed across `1493` backend source, test and migration files. Full MyPy passed
+  across `1350` source and test files with no issues.
+- The focused PostgreSQL repository and adjacent ADR-168 regression suite passed `44` tests; the
+  two live PostgreSQL tests remain enrolled in the DSN-enabled CI job.
+- Frontend ESLint and TypeScript checks passed. The workflow workspace suite passed all `534`
+  tests, and the production Vite build completed successfully.
+- Alembic reports the single head `20260816_0142`.
+- Live username/password browser validation confirmed the read-only IMP-219 section at
+  `#/workspace/workflows`, zero operation controls, fail-closed unavailable state without a
+  configured durable repository and no browser console errors.
+- Review fixes preserve metadata-only lifecycle evidence with zero injection authority and keep
+  verifier binding compatible with legacy repository construction used by the ADR-168 test suite.
+
+### ATLAS-IMP-218 Delivery Evidence
+
+- Merged through [PR #231](https://github.com/ozdemirumit/Project_Atlas/pull/231) from exact reviewed
+  head `5bb57dabddf86d5cb7d4bdcb1448e465e477b76d` to `main` merge
+  `3e48a7808290100d3707260c2e9ed66ffee24501`.
+- Exact-head [PR CI run 31963909903](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31963909903)
+  passed backend in 12m39s and frontend in 8m53s, including the live PostgreSQL integration test.
+- Independent [main CI run 31964597200](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31964597200)
+  passed backend in 12m15s and frontend in 7m48s for the exact merge commit.
 
 ### ATLAS-IMP-218 Scope Rationale
 

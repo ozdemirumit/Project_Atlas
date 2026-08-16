@@ -80,9 +80,13 @@ from atlas.core.persistence.models import (
     WorkflowProtectedResidentContextAccessAuthorizationLeaseModel,
     WorkflowProtectedResidentContextAccessConsumptionClaimModel,
     WorkflowProtectedResidentContextAccessResultModel,
+    WorkflowProtectedRuntimeContextInjectionAttemptModel,
     WorkflowProtectedRuntimeContextInjectionAuthorizationClaimModel,
     WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseModel,
+    WorkflowProtectedRuntimeContextInjectionConsumptionClaimModel,
     WorkflowProtectedRuntimeContextInjectionDestinationHeadModel,
+    WorkflowProtectedRuntimeContextInjectionResultModel,
+    WorkflowProtectedRuntimeContextInjectionSlotHeadModel,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel,
@@ -265,6 +269,22 @@ from atlas.modules.workflows.application.protected_runtime_context_injection_aut
     WorkflowProtectedRuntimeContextInjectionAuthorizationSource,
     WorkflowProtectedRuntimeHandleLifecycleAttestation,
     validate_workflow_protected_runtime_context_injection_authorization_request,
+)
+from atlas.modules.workflows.application.protected_runtime_context_injection_consumption_ports import (  # noqa: E501
+    WorkflowProtectedRuntimeContextInjectionConsumptionClaimRequest,
+    WorkflowProtectedRuntimeContextInjectionConsumptionClaimStatus,
+    WorkflowProtectedRuntimeContextInjectionConsumptionClaimWrite,
+    WorkflowProtectedRuntimeContextInjectionConsumptionError,
+    WorkflowProtectedRuntimeContextInjectionConsumptionReplayLookup,
+    WorkflowProtectedRuntimeContextInjectionConsumptionReplayLookupRequest,
+    WorkflowProtectedRuntimeContextInjectionConsumptionReplayStatus,
+    WorkflowProtectedRuntimeContextInjectionConsumptionResultRequest,
+    WorkflowProtectedRuntimeContextInjectionConsumptionResultWrite,
+    WorkflowProtectedRuntimeContextInjectionConsumptionResultWriteStatus,
+    WorkflowProtectedRuntimeContextInjectionConsumptionSource,
+    WorkflowProtectedRuntimeContextTrustedInjectorReceiptSignatureVerifier,
+    build_workflow_protected_runtime_context_trusted_injector_instruction,
+    validate_workflow_protected_runtime_context_injection_consumption_claim_request,
 )
 from atlas.modules.workflows.application.publication_lease_ports import (
     WorkflowOutboxPublicationLeaseAcquireIdempotencyRecord,
@@ -483,6 +503,14 @@ from atlas.modules.workflows.domain import (
     WorkflowProtectedRuntimeContextInjectionAuthorizationClaim,
     WorkflowProtectedRuntimeContextInjectionAuthorizationLease,
     WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseState,
+    WorkflowProtectedRuntimeContextInjectionConsumptionAttempt,
+    WorkflowProtectedRuntimeContextInjectionConsumptionAttemptState,
+    WorkflowProtectedRuntimeContextInjectionConsumptionAuthority,
+    WorkflowProtectedRuntimeContextInjectionConsumptionClaim,
+    WorkflowProtectedRuntimeContextInjectionConsumptionFailureClass,
+    WorkflowProtectedRuntimeContextInjectionConsumptionResult,
+    WorkflowProtectedRuntimeContextInjectionConsumptionResultState,
+    WorkflowProtectedRuntimeContextTrustedInjectorReceipt,
     WorkflowProtectedTargetContextCapsuleLifecycleAttestation,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBinding,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBindingAuthority,
@@ -526,6 +554,7 @@ from atlas.modules.workflows.domain import (
     code_owned_workflow_event_transport_admission_policy,
     code_owned_workflow_protected_resident_context_access_consumption_policy,
     code_owned_workflow_protected_runtime_context_injection_authorization_policy,
+    code_owned_workflow_protected_runtime_context_injection_consumption_policy,
     code_owned_workflow_protected_transport_target_context_capsule_consumer_binding_policy,
     select_deployment_physical_transport_credential_assignment_head,
 )
@@ -749,6 +778,24 @@ class _ProtectedRuntimeContextInjectionAuthorizationLockedSources:
     observed_at: datetime
 
 
+@dataclass(frozen=True, slots=True)
+class _ProtectedRuntimeContextInjectionConsumptionLockedSources:
+    authorization_lease: WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseModel | None
+    authorization_claim: WorkflowProtectedRuntimeContextInjectionAuthorizationClaimModel | None
+    access_result: WorkflowProtectedResidentContextAccessResultModel | None
+    access_attempt: WorkflowProtectedResidentContextAccessAttemptModel | None
+    access_consumption_claim: WorkflowProtectedResidentContextAccessConsumptionClaimModel | None
+    access_authorization_lease: WorkflowProtectedResidentContextAccessAuthorizationLeaseModel | None
+    access_authorization_claim: WorkflowProtectedResidentContextAccessAuthorizationClaimModel | None
+    destination_head: WorkflowProtectedRuntimeContextInjectionDestinationHeadModel | None
+    slot_head: WorkflowProtectedRuntimeContextInjectionSlotHeadModel | None
+    consumption_claims: tuple[WorkflowProtectedRuntimeContextInjectionConsumptionClaimModel, ...]
+    attempt: WorkflowProtectedRuntimeContextInjectionAttemptModel | None
+    result: WorkflowProtectedRuntimeContextInjectionResultModel | None
+    first_observed_at: datetime
+    observed_at: datetime
+
+
 class PostgreSQLWorkflowPlanRepository:
     def __init__(
         self,
@@ -760,6 +807,9 @@ class PostgreSQLWorkflowPlanRepository:
         self._sessions = session_factory or async_sessionmaker(engine, expire_on_commit=False)
         self._protected_resident_context_access_receipt_signature_verifier: (
             WorkflowProtectedResidentContextTrustedAccessorReceiptSignatureVerifier | None
+        ) = None
+        self._protected_runtime_context_injection_receipt_signature_verifier: (
+            WorkflowProtectedRuntimeContextTrustedInjectorReceiptSignatureVerifier | None
         ) = None
 
     @classmethod
@@ -778,6 +828,21 @@ class PostgreSQLWorkflowPlanRepository:
         if current is not None and current is not verifier:
             raise ValueError("protected resident-context receipt verifier is already bound")
         self._protected_resident_context_access_receipt_signature_verifier = verifier
+
+    def bind_protected_runtime_context_injection_receipt_signature_verifier(
+        self,
+        verifier: WorkflowProtectedRuntimeContextTrustedInjectorReceiptSignatureVerifier,
+    ) -> None:
+        current = getattr(
+            self,
+            "_protected_runtime_context_injection_receipt_signature_verifier",
+            None,
+        )
+        if current is not None and current is not verifier:
+            raise ValueError(
+                "protected runtime-context injection receipt verifier is already bound"
+            )
+        self._protected_runtime_context_injection_receipt_signature_verifier = verifier
 
     async def get_authoritative_time(self) -> datetime:
         async with self._sessions() as session:
@@ -6284,10 +6349,17 @@ class PostgreSQLWorkflowPlanRepository:
         authorization_lease_ids: tuple[str, ...] | None = None,
         limit: int = 256,
     ) -> tuple[WorkflowProtectedRuntimeContextInjectionAuthorizationPresentation, ...]:
+        # Regression guard: consumed=False is no longer a hard-coded projection.
         if authorization_lease_ids == ():
             return ()
         lease_model = WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseModel
-        statement = select(lease_model, func.statement_timestamp()).where(
+        consumed = exists(
+            select(WorkflowProtectedRuntimeContextInjectionConsumptionClaimModel.claim_id).where(
+                WorkflowProtectedRuntimeContextInjectionConsumptionClaimModel.authorization_lease_id
+                == lease_model.authorization_lease_id
+            )
+        )
+        statement = select(lease_model, consumed, func.statement_timestamp()).where(
             lease_model.organization_id == scope.organization_id,
             lease_model.environment_id == scope.environment_id,
             lease_model.site_id == scope.site_id,
@@ -6308,12 +6380,13 @@ class PostgreSQLWorkflowPlanRepository:
         presentations: list[WorkflowProtectedRuntimeContextInjectionAuthorizationPresentation] = []
         for row in rows:
             lease = self._protected_runtime_context_injection_lease_from_row(row[0])
-            evaluated_at = cast(datetime, row[1])
-            active = lease.is_active(evaluated_at=evaluated_at, consumed=False)
+            lease_consumed = bool(row[1])
+            evaluated_at = cast(datetime, row[2])
+            active = lease.is_active(evaluated_at=evaluated_at, consumed=lease_consumed)
             presentations.append(
                 WorkflowProtectedRuntimeContextInjectionAuthorizationPresentation(
                     lease=lease,
-                    consumed=False,
+                    consumed=lease_consumed,
                     evaluated_at=evaluated_at,
                     effective_state=(
                         WorkflowProtectedRuntimeContextInjectionAuthorizationPresentationState.ACTIVE
@@ -6326,6 +6399,300 @@ class PostgreSQLWorkflowPlanRepository:
                 )
             )
         return tuple(presentations)
+
+    async def get_protected_runtime_context_injection_consumption_source(
+        self, *, authorization_lease_id: str
+    ) -> WorkflowProtectedRuntimeContextInjectionConsumptionSource | None:
+        async with self._sessions() as session:
+            row = await session.get(
+                WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseModel,
+                authorization_lease_id,
+            )
+            if row is None:
+                return None
+            try:
+                lease = self._protected_runtime_context_injection_lease_from_row(row)
+            except Exception:
+                return None
+        source = await self._get_protected_runtime_context_injection_authorization_source(
+            access_result_id=lease.access_result_id,
+            receipt_verifier=self._protected_resident_context_access_receipt_signature_verifier,
+        )
+        if source is None:
+            return None
+        return WorkflowProtectedRuntimeContextInjectionConsumptionSource(
+            authorization_lease=lease,
+            authorization_source=source,
+        )
+
+    async def lookup_protected_runtime_context_injection_consumption_replay(
+        self,
+        request: WorkflowProtectedRuntimeContextInjectionConsumptionReplayLookupRequest,
+    ) -> WorkflowProtectedRuntimeContextInjectionConsumptionReplayLookup:
+        scope_id = self._protected_runtime_context_injection_consumption_idempotency_scope(
+            request.scope, request.consumer_subject_id, request.consumer_audience
+        )
+        async with self._sessions() as session:
+            observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+            claims = tuple(
+                (
+                    await session.scalars(
+                        select(WorkflowProtectedRuntimeContextInjectionConsumptionClaimModel).where(
+                            or_(
+                                WorkflowProtectedRuntimeContextInjectionConsumptionClaimModel.authorization_lease_id
+                                == request.authorization_lease_id,
+                                and_(
+                                    WorkflowProtectedRuntimeContextInjectionConsumptionClaimModel.idempotency_scope_id
+                                    == scope_id,
+                                    WorkflowProtectedRuntimeContextInjectionConsumptionClaimModel.idempotency_digest
+                                    == request.idempotency_digest,
+                                ),
+                            )
+                        )
+                    )
+                ).all()
+            )
+            return await self._protected_runtime_context_injection_consumption_replay_from_rows(
+                session,
+                request=request,
+                claims=claims,
+                observed_at=observed_at,
+                for_update=False,
+            )
+
+    async def claim_protected_runtime_context_injection_consumption(
+        self, request: WorkflowProtectedRuntimeContextInjectionConsumptionClaimRequest
+    ) -> WorkflowProtectedRuntimeContextInjectionConsumptionClaimWrite:
+        statuses = WorkflowProtectedRuntimeContextInjectionConsumptionClaimStatus
+        result_type = WorkflowProtectedRuntimeContextInjectionConsumptionClaimWrite
+        try:
+            validate_workflow_protected_runtime_context_injection_consumption_claim_request(request)
+        except Exception:
+            return result_type(statuses.EVIDENCE_CONFLICT, None, None, None)
+        async with self._sessions() as session:
+            locked = await self._lock_protected_runtime_context_injection_consumption_sources(
+                session, request=request
+            )
+            replay = await self._protected_runtime_context_injection_consumption_locked_replay(
+                session, request=request, locked=locked
+            )
+            if replay is not None:
+                await session.rollback()
+                return replay
+            if not self._protected_runtime_context_injection_consumption_request_is_valid(
+                request=request, locked=locked
+            ):
+                await session.rollback()
+                return result_type(statuses.EVIDENCE_CONFLICT, None, None, None)
+            claim = self._protected_runtime_context_injection_consumption_claim(
+                request, claimed_at=locked.observed_at
+            )
+            deadline = self._protected_runtime_context_injection_consumption_deadline(
+                request, started_at=locked.observed_at
+            )
+            if deadline is None:
+                await session.rollback()
+                return result_type(statuses.EVIDENCE_CONFLICT, None, None, None)
+            attempt = self._protected_runtime_context_injection_consumption_attempt(
+                request,
+                claim=claim,
+                started_at=locked.observed_at,
+                injection_deadline=deadline,
+            )
+            precommit_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+            if (
+                precommit_at >= attempt.injection_deadline
+                or not self._protected_runtime_context_injection_consumption_request_is_valid(
+                    request=request,
+                    locked=dataclass_replace(locked, observed_at=precommit_at),
+                )
+            ):
+                await session.rollback()
+                return result_type(statuses.EVIDENCE_CONFLICT, None, None, None)
+            try:
+                slot_updated = await self._cas_protected_runtime_context_injection_slot_head(
+                    session,
+                    locked=locked,
+                    expected_state="empty_inert",
+                    next_state="outcome_uncertain",
+                    next_generation=attempt.runtime_slot_pre_generation,
+                )
+                if not slot_updated:
+                    await session.rollback()
+                    return result_type(statuses.EVIDENCE_CONFLICT, None, None, None)
+                session.add(
+                    self._protected_runtime_context_injection_consumption_claim_model(
+                        request, claim=claim
+                    )
+                )
+                await session.flush()
+                session.add(
+                    self._protected_runtime_context_injection_attempt_model(
+                        request, attempt=attempt
+                    )
+                )
+                await session.flush()
+                await session.commit()
+                return result_type(statuses.CLAIMED, claim, attempt, None)
+            except IntegrityError:
+                await session.rollback()
+        replay_request = WorkflowProtectedRuntimeContextInjectionConsumptionReplayLookupRequest(
+            authorization_lease_id=request.source.authorization_lease.authorization_lease_id,
+            scope=request.scope,
+            consumer_subject_id=request.consumer_subject_id,
+            consumer_audience=request.consumer_audience,
+            policy_id=request.expected_policy_id,
+            policy_version=request.expected_policy_version,
+            policy_digest=request.expected_policy_digest,
+            idempotency_digest=request.idempotency_digest,
+            request_fingerprint=request.request_fingerprint,
+            injection_id=request.injection_id,
+        )
+        lookup = await self.lookup_protected_runtime_context_injection_consumption_replay(
+            replay_request
+        )
+        replay_statuses = WorkflowProtectedRuntimeContextInjectionConsumptionReplayStatus
+        mapping = {
+            replay_statuses.TERMINAL: statuses.REPLAY_COMPLETED,
+            replay_statuses.CLAIM_ONLY_PENDING: statuses.CLAIM_ONLY_PENDING,
+            replay_statuses.CLAIM_ONLY_UNCERTAIN: statuses.CLAIM_ONLY_UNCERTAIN,
+            replay_statuses.IDEMPOTENCY_CONFLICT: statuses.IDEMPOTENCY_CONFLICT,
+            replay_statuses.ALREADY_CONSUMED: statuses.ALREADY_CONSUMED,
+        }
+        return result_type(
+            mapping.get(lookup.status, statuses.EVIDENCE_CONFLICT),
+            None,
+            lookup.attempt,
+            lookup.result,
+        )
+
+    async def record_protected_runtime_context_injection_consumption_result(
+        self, request: WorkflowProtectedRuntimeContextInjectionConsumptionResultRequest
+    ) -> WorkflowProtectedRuntimeContextInjectionConsumptionResultWrite:
+        statuses = WorkflowProtectedRuntimeContextInjectionConsumptionResultWriteStatus
+        result_type = WorkflowProtectedRuntimeContextInjectionConsumptionResultWrite
+        result = request.result
+        async with self._sessions() as session:
+            claim_row = await session.get(
+                WorkflowProtectedRuntimeContextInjectionConsumptionClaimModel,
+                result.consumption_claim_id,
+                with_for_update=True,
+            )
+            attempt_row = await session.get(
+                WorkflowProtectedRuntimeContextInjectionAttemptModel,
+                result.attempt_id,
+                with_for_update=True,
+            )
+            existing = await session.get(
+                WorkflowProtectedRuntimeContextInjectionResultModel,
+                result.result_id,
+                with_for_update=True,
+            )
+            if existing is not None:
+                stored = self._protected_runtime_context_injection_result_from_row(existing)
+                await session.rollback()
+                exact = stored.canonical_digest == result.canonical_digest
+                return result_type(
+                    statuses.REPLAY if exact else statuses.CONFLICT,
+                    stored if exact else None,
+                )
+            slot_row = await session.get(
+                WorkflowProtectedRuntimeContextInjectionSlotHeadModel,
+                (result.destination_deployment_id, result.runtime_slot_commitment),
+                with_for_update=True,
+            )
+            observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+            if not self._protected_runtime_context_injection_result_matches(
+                request=request,
+                claim_row=claim_row,
+                attempt_row=attempt_row,
+                slot_row=slot_row,
+                observed_at=observed_at,
+            ):
+                await session.rollback()
+                return result_type(statuses.CONFLICT, None)
+            try:
+                if not await self._finalize_protected_runtime_context_injection_slot_head(
+                    session, result=result, slot_row=slot_row
+                ):
+                    await session.rollback()
+                    return result_type(statuses.CONFLICT, None)
+                assert claim_row is not None
+                assert attempt_row is not None
+                session.add(
+                    self._protected_runtime_context_injection_result_model(
+                        request, claim_row=claim_row, attempt_row=attempt_row
+                    )
+                )
+                await session.commit()
+                return result_type(statuses.RECORDED, result)
+            except IntegrityError:
+                await session.rollback()
+        async with self._sessions() as session:
+            existing = await session.get(
+                WorkflowProtectedRuntimeContextInjectionResultModel, result.result_id
+            )
+        if existing is None:
+            return result_type(statuses.CONFLICT, None)
+        stored = self._protected_runtime_context_injection_result_from_row(existing)
+        exact = stored.canonical_digest == result.canonical_digest
+        return result_type(
+            statuses.REPLAY if exact else statuses.CONFLICT,
+            stored if exact else None,
+        )
+
+    async def list_protected_runtime_context_injection_consumption_attempts(
+        self, *, scope: WorkflowScope, limit: int = 256
+    ) -> tuple[WorkflowProtectedRuntimeContextInjectionConsumptionAttempt, ...]:
+        async with self._sessions() as session:
+            rows = tuple(
+                (
+                    await session.scalars(
+                        select(WorkflowProtectedRuntimeContextInjectionAttemptModel)
+                        .where(
+                            WorkflowProtectedRuntimeContextInjectionAttemptModel.organization_id
+                            == scope.organization_id,
+                            WorkflowProtectedRuntimeContextInjectionAttemptModel.environment_id
+                            == scope.environment_id,
+                            WorkflowProtectedRuntimeContextInjectionAttemptModel.site_id
+                            == scope.site_id,
+                        )
+                        .order_by(
+                            WorkflowProtectedRuntimeContextInjectionAttemptModel.started_at.desc(),
+                            WorkflowProtectedRuntimeContextInjectionAttemptModel.attempt_id,
+                        )
+                        .limit(max(1, min(limit, 1000)))
+                    )
+                ).all()
+            )
+        return tuple(
+            self._protected_runtime_context_injection_attempt_from_row(row) for row in rows
+        )
+
+    async def get_protected_runtime_context_injection_consumption_results(
+        self, *, scope: WorkflowScope, injection_ids: tuple[str, ...]
+    ) -> tuple[WorkflowProtectedRuntimeContextInjectionConsumptionResult, ...]:
+        if not injection_ids:
+            return ()
+        async with self._sessions() as session:
+            rows = tuple(
+                (
+                    await session.scalars(
+                        select(WorkflowProtectedRuntimeContextInjectionResultModel).where(
+                            WorkflowProtectedRuntimeContextInjectionResultModel.injection_id.in_(
+                                injection_ids
+                            ),
+                            WorkflowProtectedRuntimeContextInjectionResultModel.organization_id
+                            == scope.organization_id,
+                            WorkflowProtectedRuntimeContextInjectionResultModel.environment_id
+                            == scope.environment_id,
+                            WorkflowProtectedRuntimeContextInjectionResultModel.site_id
+                            == scope.site_id,
+                        )
+                    )
+                ).all()
+            )
+        return tuple(self._protected_runtime_context_injection_result_from_row(row) for row in rows)
 
     async def authorize_target_context_capsule_opening(
         self,
@@ -8062,6 +8429,1246 @@ class PostgreSQLWorkflowPlanRepository:
         if digest != row.accessor_receipt_digest:
             raise ValueError("resident context accessor receipt digest mismatch")
         return receipt
+
+    def _protected_runtime_context_injection_consumption_request_is_valid(
+        self,
+        *,
+        request: WorkflowProtectedRuntimeContextInjectionConsumptionClaimRequest,
+        locked: _ProtectedRuntimeContextInjectionConsumptionLockedSources,
+    ) -> bool:
+        required = (
+            locked.authorization_lease,
+            locked.authorization_claim,
+            locked.access_result,
+            locked.access_attempt,
+            locked.access_consumption_claim,
+            locked.access_authorization_lease,
+            locked.access_authorization_claim,
+            locked.destination_head,
+            locked.slot_head,
+        )
+        if (
+            any(value is None for value in required)
+            or locked.consumption_claims
+            or locked.attempt is not None
+            or locked.result is not None
+        ):
+            return False
+        assert locked.authorization_lease is not None
+        assert locked.authorization_claim is not None
+        assert locked.access_result is not None
+        assert locked.access_attempt is not None
+        assert locked.access_consumption_claim is not None
+        assert locked.access_authorization_lease is not None
+        assert locked.access_authorization_claim is not None
+        assert locked.destination_head is not None
+        assert locked.slot_head is not None
+        try:
+            validate_workflow_protected_runtime_context_injection_consumption_claim_request(request)
+            lease = self._protected_runtime_context_injection_lease_from_row(
+                locked.authorization_lease
+            )
+            authorization_claim = self._protected_runtime_context_injection_claim_from_row(
+                locked.authorization_claim
+            )
+            source = self._protected_runtime_context_injection_source_from_rows(
+                result_row=locked.access_result,
+                attempt_row=locked.access_attempt,
+                claim_row=locked.access_consumption_claim,
+                authorization_lease_row=locked.access_authorization_lease,
+                authorization_claim_row=locked.access_authorization_claim,
+                receipt_verifier=(
+                    self._protected_resident_context_access_receipt_signature_verifier
+                ),
+            )
+            lifecycle_verifier = request.offline_lifecycle_signature_verifier
+            lifecycle_valid = lifecycle_verifier.verify_runtime_handle_lifecycle_attestation(
+                request.lifecycle_attestation
+            )
+            readiness_verifier = request.offline_slot_readiness_signature_verifier
+            readiness_valid = readiness_verifier.verify_runtime_slot_readiness_attestation(
+                request.slot_readiness_attestation
+            )
+        except Exception:
+            return False
+        policy = code_owned_workflow_protected_runtime_context_injection_consumption_policy()
+        lifecycle = request.lifecycle_attestation
+        readiness = request.slot_readiness_attestation
+        destination = locked.destination_head
+        slot = locked.slot_head
+        minimum = timedelta(milliseconds=request.minimum_remaining_budget_milliseconds)
+        expected_audit = self._protected_runtime_context_injection_consumption_audit_payload(
+            request
+        )
+        unsafe_lifecycle = (
+            lifecycle.runtime_handle_is_bearer_capability,
+            lifecycle.raw_context_included,
+            lifecycle.runtime_handle_material_included,
+            lifecycle.runtime_payload_included,
+            lifecycle.runtime_handle_locator_included,
+            lifecycle.endpoint_included,
+            lifecycle.credential_included,
+            lifecycle.secret_included,
+            lifecycle.bearer_token_included,
+            lifecycle.provider_payload_included,
+            lifecycle.handle_lookup_authorized,
+            lifecycle.handle_retrieval_authorized,
+            lifecycle.handle_use_authorized,
+            lifecycle.runtime_use_authorized,
+            lifecycle.runtime_context_injection_authorized,
+            lifecycle.injection_consumption_outstanding,
+            lifecycle.connector_activity_authorized,
+            lifecycle.network_activity_authorized,
+            lifecycle.readiness_probe_authorized,
+            lifecycle.publication_authorized,
+            lifecycle.delivery_authorized,
+            lifecycle.dispatch_authorized,
+            lifecycle.execution_authorized,
+            lifecycle.infrastructure_mutation_authorized,
+        )
+        unsafe_readiness = (
+            readiness.raw_context_included,
+            readiness.runtime_handle_material_included,
+            readiness.runtime_payload_included,
+            readiness.runtime_slot_locator_included,
+            readiness.endpoint_included,
+            readiness.credential_included,
+            readiness.bearer_token_included,
+            readiness.connector_activity_authorized,
+            readiness.network_activity_authorized,
+            readiness.readiness_probe_authorized,
+            readiness.execution_authorized,
+            readiness.infrastructure_mutation_authorized,
+        )
+        return bool(
+            source is not None
+            and locked.first_observed_at <= locked.observed_at
+            and request.source.authorization_lease == lease
+            and request.source.authorization_source == source
+            and authorization_claim.claim_id == lease.claim_id
+            and authorization_claim.canonical_digest == lease.claim_digest
+            and locked.authorization_claim.authorization_lease_id == lease.authorization_lease_id
+            and lease.state.value == "authorized_unconsumed"
+            and lease.single_use
+            and not lease.renewable
+            and not lease.transferable
+            and not lease.lease_is_bearer_capability
+            and lease.protected_runtime_context_injection_authority_granted
+            and lease.issued_at <= locked.observed_at < lease.valid_until
+            and locked.observed_at + minimum <= lease.valid_until
+            and locked.observed_at + minimum <= lease.effective_until
+            and locked.observed_at + minimum <= lease.protected_runtime_handle_usable_until
+            and lifecycle.observed_at <= locked.observed_at
+            and readiness.observed_at <= locked.observed_at
+            and locked.observed_at + minimum <= lifecycle.valid_until
+            and locked.observed_at + minimum <= readiness.valid_until
+            and lifecycle_valid is True
+            and readiness_valid is True
+            and lifecycle.runtime_handle_present is True
+            and lifecycle.runtime_handle_unexpired is True
+            and lifecycle.runtime_handle_unrevoked is True
+            and lifecycle.runtime_handle_undestroyed is True
+            and lifecycle.runtime_handle_uninjected is True
+            and lifecycle.runtime_handle_unused is True
+            and lifecycle.destination_generation_current is True
+            and lifecycle.destination_fence_current is True
+            and lifecycle.injector_profile_eligible is True
+            and lifecycle.runtime_slot_profile_eligible is True
+            and not any(unsafe_lifecycle)
+            and readiness.exact_runtime_slot_confirmed is True
+            and readiness.runtime_slot_empty is True
+            and readiness.runtime_slot_inert is True
+            and readiness.runtime_slot_eligible is True
+            and readiness.atomic_compare_and_swap_supported is True
+            and readiness.destination_generation_current is True
+            and readiness.destination_fence_current is True
+            and readiness.injector_profile_eligible is True
+            and readiness.runtime_autostart_disabled is True
+            and not any(unsafe_readiness)
+            and lifecycle.attestor_id == request.expected_lifecycle_attestor_id
+            and lifecycle.attestor_version == request.expected_lifecycle_attestor_version
+            and readiness.attestor_id == request.expected_slot_readiness_attestor_id
+            and readiness.attestor_version == request.expected_slot_readiness_attestor_version
+            and readiness.signing_key_id
+            == request.expected_slot_readiness_verification_signing_key_id
+            and lease.injector_contract_id == request.expected_injector_contract_id
+            and lease.injector_contract_version == request.expected_injector_contract_version
+            and lease.injector_id == request.expected_injector_id
+            and lease.injector_version == request.expected_injector_version
+            and lease.runtime_slot_profile_id == request.expected_runtime_slot_profile_id
+            and lease.runtime_slot_profile_version == request.expected_runtime_slot_profile_version
+            and lease.runtime_slot_profile_digest == request.expected_runtime_slot_profile_digest
+            and request.expected_policy_id == policy.policy_id
+            and request.expected_policy_version == policy.policy_version
+            and request.expected_policy_digest == policy.canonical_digest
+            and destination.current is True
+            and destination.destination_boundary_id == lease.destination_boundary_id
+            and destination.destination_deployment_id == lease.destination_deployment_id
+            and destination.destination_generation == lease.destination_generation
+            and destination.destination_fencing_token_digest
+            == lease.destination_fencing_token_digest
+            and destination.payload
+            == {
+                "destination_boundary_id": destination.destination_boundary_id,
+                "destination_deployment_id": destination.destination_deployment_id,
+                "destination_generation": destination.destination_generation,
+                "destination_fencing_token_digest": destination.destination_fencing_token_digest,
+                "policy_digest": destination.policy_digest,
+            }
+            and destination.canonical_digest == canonical_digest(destination.payload)
+            and slot.current is True
+            and slot.slot_state == "empty_inert"
+            and slot.slot_generation == readiness.runtime_slot_pre_generation
+            and slot.runtime_slot_commitment == readiness.runtime_slot_commitment
+            and slot.destination_boundary_id == readiness.destination_boundary_id
+            and slot.destination_deployment_id == readiness.destination_deployment_id
+            and slot.destination_generation == readiness.destination_generation
+            and slot.destination_fencing_token_digest == readiness.destination_fencing_token_digest
+            and slot.runtime_slot_profile_digest == readiness.runtime_slot_profile_digest
+            and slot.payload == self._protected_runtime_context_injection_slot_payload(slot)
+            and slot.canonical_digest == canonical_digest(slot.payload)
+            and request.consumption_authorization_audit_payload == expected_audit
+            and request.consumption_authorization_audit_digest == canonical_digest(expected_audit)
+        )
+
+    @staticmethod
+    def _protected_runtime_context_injection_consumption_audit_payload(
+        request: WorkflowProtectedRuntimeContextInjectionConsumptionClaimRequest,
+    ) -> dict[str, object]:
+        lease = request.source.authorization_lease
+        readiness = request.slot_readiness_attestation
+        return {
+            "schema_id": "audit.workflow-protected-runtime-context-injection-consumption",
+            "schema_version": "1.0",
+            "event_type": "protected_runtime_context_injection_lease_consumption_authorized",
+            "claim_id": request.claim_id,
+            "attempt_id": request.attempt_id,
+            "injection_id": request.injection_id,
+            "authorization_lease_id": lease.authorization_lease_id,
+            "authorization_lease_digest": lease.canonical_digest,
+            "runtime_slot_commitment": readiness.runtime_slot_commitment,
+            "runtime_slot_pre_generation": readiness.runtime_slot_pre_generation,
+            "scope": request.scope.canonical_value(),
+            "consumer_subject_id": request.consumer_subject_id,
+            "consumer_audience": request.consumer_audience,
+            "policy_id": request.expected_policy_id,
+            "policy_version": request.expected_policy_version,
+            "policy_digest": request.expected_policy_digest,
+            "idempotency_digest": request.idempotency_digest,
+            "request_fingerprint": request.request_fingerprint,
+            "irreversible_consumption_acknowledged": True,
+            "uncertain_outcome_requires_new_authorization_acknowledged": True,
+        }
+
+    @staticmethod
+    def _protected_runtime_context_injection_consumption_deadline(
+        request: WorkflowProtectedRuntimeContextInjectionConsumptionClaimRequest,
+        *,
+        started_at: datetime,
+    ) -> datetime | None:
+        lease = request.source.authorization_lease
+        deadline = min(
+            lease.valid_until,
+            lease.effective_until,
+            lease.protected_runtime_handle_usable_until,
+            request.lifecycle_attestation.valid_until,
+            request.slot_readiness_attestation.valid_until,
+        )
+        minimum = timedelta(milliseconds=request.minimum_remaining_budget_milliseconds)
+        return deadline if started_at + minimum <= deadline else None
+
+    @staticmethod
+    def _protected_runtime_context_injection_consumption_claim(
+        request: WorkflowProtectedRuntimeContextInjectionConsumptionClaimRequest,
+        *,
+        claimed_at: datetime,
+    ) -> WorkflowProtectedRuntimeContextInjectionConsumptionClaim:
+        lease = request.source.authorization_lease
+        readiness = request.slot_readiness_attestation
+        policy = code_owned_workflow_protected_runtime_context_injection_consumption_policy()
+        values: dict[str, object] = {
+            "claim_id": request.claim_id,
+            "injection_id": request.injection_id,
+            "attempt_id": request.attempt_id,
+            "authorization_lease_id": lease.authorization_lease_id,
+            "authorization_lease_digest": lease.canonical_digest,
+            "protected_runtime_handle_digest": lease.protected_runtime_handle_digest,
+            "destination_boundary_id": lease.destination_boundary_id,
+            "destination_deployment_id": lease.destination_deployment_id,
+            "destination_generation": lease.destination_generation,
+            "destination_fencing_token_digest": lease.destination_fencing_token_digest,
+            "runtime_slot_commitment": readiness.runtime_slot_commitment,
+            "runtime_slot_pre_generation": readiness.runtime_slot_pre_generation,
+            "scope": request.scope,
+            "consumer_subject_id": request.consumer_subject_id,
+            "consumer_audience": request.consumer_audience,
+            "consumer_contract_id": policy.consumer_contract_id,
+            "consumer_contract_version": policy.consumer_contract_version,
+            "purpose_id": policy.purpose_id,
+            "policy_id": policy.policy_id,
+            "policy_version": policy.policy_version,
+            "policy_digest": policy.canonical_digest,
+            "irreversible_consumption_acknowledged": True,
+            "uncertain_outcome_requires_new_authorization_acknowledged": True,
+            "request_fingerprint": request.request_fingerprint,
+            "idempotency_digest": request.idempotency_digest,
+            "consumption_authorization_audit_digest": (
+                request.consumption_authorization_audit_digest
+            ),
+            "claimed_at": claimed_at,
+            "authority": WorkflowProtectedRuntimeContextInjectionConsumptionAuthority(),
+        }
+        return WorkflowProtectedRuntimeContextInjectionConsumptionClaim(
+            **cast(Any, values),
+            canonical_digest=canonical_digest(
+                PostgreSQLWorkflowPlanRepository._target_context_capsule_opening_payload(values)
+            ),
+        )
+
+    @staticmethod
+    def _protected_runtime_context_injection_consumption_attempt(
+        request: WorkflowProtectedRuntimeContextInjectionConsumptionClaimRequest,
+        *,
+        claim: WorkflowProtectedRuntimeContextInjectionConsumptionClaim,
+        started_at: datetime,
+        injection_deadline: datetime,
+    ) -> WorkflowProtectedRuntimeContextInjectionConsumptionAttempt:
+        lease = request.source.authorization_lease
+        lifecycle = request.lifecycle_attestation
+        readiness = request.slot_readiness_attestation
+        policy = code_owned_workflow_protected_runtime_context_injection_consumption_policy()
+        operation_digest = canonical_digest(
+            {
+                "injection_id": request.injection_id,
+                "attempt_id": request.attempt_id,
+                "authorization_lease_digest": lease.canonical_digest,
+                "runtime_slot_commitment": readiness.runtime_slot_commitment,
+            }
+        )
+        values: dict[str, object] = {
+            "attempt_id": request.attempt_id,
+            "injection_id": request.injection_id,
+            "consumption_claim_id": claim.claim_id,
+            "consumption_claim_digest": claim.canonical_digest,
+            "authorization_lease_id": lease.authorization_lease_id,
+            "authorization_lease_digest": lease.canonical_digest,
+            "protected_runtime_handle_digest": lease.protected_runtime_handle_digest,
+            "protected_operation_reference": (
+                f"protected-operation.runtime-context-injection.{operation_digest[:32]}"
+            ),
+            "destination_boundary_id": lease.destination_boundary_id,
+            "destination_deployment_id": lease.destination_deployment_id,
+            "destination_generation": lease.destination_generation,
+            "destination_fencing_token_digest": lease.destination_fencing_token_digest,
+            "runtime_slot_profile_id": policy.runtime_slot_profile_id,
+            "runtime_slot_profile_version": policy.runtime_slot_profile_version,
+            "runtime_slot_profile_digest": policy.runtime_slot_profile_digest,
+            "runtime_slot_commitment": readiness.runtime_slot_commitment,
+            "runtime_slot_pre_generation": readiness.runtime_slot_pre_generation,
+            "expected_runtime_slot_post_generation": readiness.runtime_slot_pre_generation + 1,
+            "required_injector_contract_id": policy.required_injector_contract_id,
+            "required_injector_contract_version": policy.required_injector_contract_version,
+            "approved_injector_id": policy.approved_injector_id,
+            "approved_injector_version": policy.approved_injector_version,
+            "receipt_verification_signing_key_id": policy.receipt_verification_signing_key_id,
+            "lifecycle_attestation_id": lifecycle.attestation_id,
+            "lifecycle_attestation_digest": lifecycle.canonical_digest,
+            "slot_readiness_attestation_id": readiness.attestation_id,
+            "slot_readiness_attestation_digest": readiness.canonical_digest,
+            "request_nonce_digest": request.expected_request_nonce_digest,
+            "scope": request.scope,
+            "consumer_subject_id": request.consumer_subject_id,
+            "consumer_audience": request.consumer_audience,
+            "consumer_contract_id": policy.consumer_contract_id,
+            "consumer_contract_version": policy.consumer_contract_version,
+            "purpose_id": policy.purpose_id,
+            "policy_id": policy.policy_id,
+            "policy_version": policy.policy_version,
+            "policy_digest": policy.canonical_digest,
+            "started_at": started_at,
+            "injection_deadline": injection_deadline,
+            "authorization_lease_valid_until": lease.valid_until,
+            "protected_runtime_handle_usable_until": lease.protected_runtime_handle_usable_until,
+            "lifecycle_attestation_valid_until": lifecycle.valid_until,
+            "slot_readiness_attestation_valid_until": readiness.valid_until,
+            "state": WorkflowProtectedRuntimeContextInjectionConsumptionAttemptState.STARTED,
+            "authority": WorkflowProtectedRuntimeContextInjectionConsumptionAuthority(),
+        }
+        return WorkflowProtectedRuntimeContextInjectionConsumptionAttempt(
+            **cast(Any, values),
+            canonical_digest=canonical_digest(
+                PostgreSQLWorkflowPlanRepository._target_context_capsule_opening_payload(values)
+            ),
+        )
+
+    @staticmethod
+    def _protected_runtime_context_injection_consumption_idempotency_scope(
+        scope: WorkflowScope, subject_id: str, audience: str
+    ) -> str:
+        return canonical_digest(
+            {
+                "scope": scope.canonical_value(),
+                "subject_id": subject_id,
+                "audience": audience,
+            }
+        )
+
+    @staticmethod
+    def _protected_runtime_context_injection_consumption_authority_columns(
+        authority: WorkflowProtectedRuntimeContextInjectionConsumptionAuthority,
+    ) -> dict[str, bool]:
+        return {
+            (
+                name
+                if name.endswith("_authority_granted")
+                else name.replace("_authorized", "_authority_granted")
+            ): bool(value)
+            for name, value in authority.canonical_value().items()
+        }
+
+    @staticmethod
+    def _protected_runtime_context_injection_slot_payload(
+        row: WorkflowProtectedRuntimeContextInjectionSlotHeadModel,
+    ) -> dict[str, object]:
+        return {
+            "destination_boundary_id": row.destination_boundary_id,
+            "destination_deployment_id": row.destination_deployment_id,
+            "destination_generation": row.destination_generation,
+            "destination_fencing_token_digest": row.destination_fencing_token_digest,
+            "runtime_slot_commitment": row.runtime_slot_commitment,
+            "runtime_slot_profile_digest": row.runtime_slot_profile_digest,
+            "slot_generation": row.slot_generation,
+            "slot_state": row.slot_state,
+        }
+
+    async def _cas_protected_runtime_context_injection_slot_head(
+        self,
+        session: AsyncSession,
+        *,
+        locked: _ProtectedRuntimeContextInjectionConsumptionLockedSources,
+        expected_state: str,
+        next_state: str,
+        next_generation: int,
+    ) -> bool:
+        row = locked.slot_head
+        if row is None:
+            return False
+        payload = {
+            **self._protected_runtime_context_injection_slot_payload(row),
+            "slot_generation": next_generation,
+            "slot_state": next_state,
+        }
+        changed = cast(
+            CursorResult[Any],
+            await session.execute(
+                update(WorkflowProtectedRuntimeContextInjectionSlotHeadModel)
+                .where(
+                    WorkflowProtectedRuntimeContextInjectionSlotHeadModel.destination_deployment_id
+                    == row.destination_deployment_id,
+                    WorkflowProtectedRuntimeContextInjectionSlotHeadModel.runtime_slot_commitment
+                    == row.runtime_slot_commitment,
+                    WorkflowProtectedRuntimeContextInjectionSlotHeadModel.destination_boundary_id
+                    == row.destination_boundary_id,
+                    WorkflowProtectedRuntimeContextInjectionSlotHeadModel.destination_generation
+                    == row.destination_generation,
+                    WorkflowProtectedRuntimeContextInjectionSlotHeadModel.destination_fencing_token_digest
+                    == row.destination_fencing_token_digest,
+                    WorkflowProtectedRuntimeContextInjectionSlotHeadModel.runtime_slot_profile_digest
+                    == row.runtime_slot_profile_digest,
+                    WorkflowProtectedRuntimeContextInjectionSlotHeadModel.slot_generation
+                    == row.slot_generation,
+                    WorkflowProtectedRuntimeContextInjectionSlotHeadModel.slot_state
+                    == expected_state,
+                    WorkflowProtectedRuntimeContextInjectionSlotHeadModel.current.is_(True),
+                    WorkflowProtectedRuntimeContextInjectionSlotHeadModel.canonical_digest
+                    == row.canonical_digest,
+                )
+                .values(
+                    slot_generation=next_generation,
+                    slot_state=next_state,
+                    canonical_digest=canonical_digest(payload),
+                    payload=payload,
+                )
+            ),
+        )
+        return changed.rowcount == 1
+
+    async def _finalize_protected_runtime_context_injection_slot_head(
+        self,
+        session: AsyncSession,
+        *,
+        result: WorkflowProtectedRuntimeContextInjectionConsumptionResult,
+        slot_row: WorkflowProtectedRuntimeContextInjectionSlotHeadModel | None,
+    ) -> bool:
+        if (
+            slot_row is None
+            or slot_row.slot_state != "outcome_uncertain"
+            or slot_row.slot_generation != result.runtime_slot_pre_generation
+        ):
+            return False
+        result_states = WorkflowProtectedRuntimeContextInjectionConsumptionResultState
+        if result.state is result_states.INJECTION_OUTCOME_UNCERTAIN:
+            return True
+        next_state = (
+            "inert_context_present"
+            if result.state is result_states.INJECTED_INTO_PROTECTED_RUNTIME_SLOT
+            else "empty_inert"
+        )
+        if result.runtime_slot_post_generation is None:
+            return False
+        locked = _ProtectedRuntimeContextInjectionConsumptionLockedSources(
+            authorization_lease=None,
+            authorization_claim=None,
+            access_result=None,
+            access_attempt=None,
+            access_consumption_claim=None,
+            access_authorization_lease=None,
+            access_authorization_claim=None,
+            destination_head=None,
+            slot_head=slot_row,
+            consumption_claims=(),
+            attempt=None,
+            result=None,
+            first_observed_at=result.recorded_at,
+            observed_at=result.recorded_at,
+        )
+        return await self._cas_protected_runtime_context_injection_slot_head(
+            session,
+            locked=locked,
+            expected_state="outcome_uncertain",
+            next_state=next_state,
+            next_generation=result.runtime_slot_post_generation,
+        )
+
+    @classmethod
+    def _protected_runtime_context_injection_consumption_model_values(
+        cls, model_type: Any, value: Any
+    ) -> dict[str, object]:
+        columns = {column.name for column in model_type.__table__.columns}
+        values: dict[str, object] = {
+            name: getattr(value, name)
+            for name in columns
+            if hasattr(value, name)
+            and name not in {"state", "failure_class", "canonical_digest", "payload"}
+            and not name.endswith("_authority_granted")
+        }
+        values.update(
+            **cls._protected_runtime_context_injection_consumption_authority_columns(
+                value.authority
+            ),
+            canonical_digest=value.canonical_digest,
+            payload=value.digest_payload(),
+        )
+        if hasattr(value, "scope"):
+            values.update(
+                organization_id=value.scope.organization_id,
+                environment_id=value.scope.environment_id,
+                site_id=value.scope.site_id,
+            )
+        if "state" in columns:
+            values["state"] = getattr(value.state, "value", value.state)
+        if "failure_class" in columns:
+            failure_class = value.failure_class
+            values["failure_class"] = (
+                None if failure_class is None else getattr(failure_class, "value", failure_class)
+            )
+        return values
+
+    @classmethod
+    def _protected_runtime_context_injection_consumption_claim_model(
+        cls,
+        request: WorkflowProtectedRuntimeContextInjectionConsumptionClaimRequest,
+        *,
+        claim: WorkflowProtectedRuntimeContextInjectionConsumptionClaim,
+    ) -> WorkflowProtectedRuntimeContextInjectionConsumptionClaimModel:
+        lease = request.source.authorization_lease
+        values = cls._protected_runtime_context_injection_consumption_model_values(
+            WorkflowProtectedRuntimeContextInjectionConsumptionClaimModel, claim
+        )
+        values.update(
+            authorization_claim_id=lease.claim_id,
+            authorization_claim_digest=lease.claim_digest,
+            access_result_id=lease.access_result_id,
+            access_result_digest=lease.access_result_digest,
+            runtime_handle_profile_digest=lease.runtime_handle_profile_digest,
+            runtime_slot_profile_digest=lease.runtime_slot_profile_digest,
+            authorization_lease_valid_until=lease.valid_until,
+            authorization_lease_effective_until=lease.effective_until,
+            protected_runtime_handle_usable_until=lease.protected_runtime_handle_usable_until,
+            idempotency_scope_id=cls._protected_runtime_context_injection_consumption_idempotency_scope(
+                claim.scope, claim.consumer_subject_id, claim.consumer_audience
+            ),
+            idempotency_key=request.idempotency_key,
+            consumption_authorization_audit_payload=(
+                request.consumption_authorization_audit_payload
+            ),
+        )
+        return WorkflowProtectedRuntimeContextInjectionConsumptionClaimModel(**values)
+
+    @classmethod
+    def _protected_runtime_context_injection_attempt_model(
+        cls,
+        request: WorkflowProtectedRuntimeContextInjectionConsumptionClaimRequest,
+        *,
+        attempt: WorkflowProtectedRuntimeContextInjectionConsumptionAttempt,
+    ) -> WorkflowProtectedRuntimeContextInjectionAttemptModel:
+        lease = request.source.authorization_lease
+        lifecycle = request.lifecycle_attestation
+        readiness = request.slot_readiness_attestation
+        instruction = build_workflow_protected_runtime_context_trusted_injector_instruction(attempt)
+        values = cls._protected_runtime_context_injection_consumption_model_values(
+            WorkflowProtectedRuntimeContextInjectionAttemptModel, attempt
+        )
+        values.update(
+            authorization_claim_id=lease.claim_id,
+            authorization_claim_digest=lease.claim_digest,
+            access_result_id=lease.access_result_id,
+            access_result_digest=lease.access_result_digest,
+            runtime_handle_profile_digest=lease.runtime_handle_profile_digest,
+            authorization_lease_effective_until=lease.effective_until,
+            claimed_at=attempt.started_at,
+            instruction_digest=instruction.canonical_digest,
+            lifecycle_signing_key_id=lifecycle.signing_key_id,
+            lifecycle_attestation_observed_at=lifecycle.observed_at,
+            slot_readiness_signing_key_id=readiness.signing_key_id,
+            slot_readiness_attestation_observed_at=readiness.observed_at,
+            lifecycle_attestation_payload={
+                **lifecycle.digest_payload(),
+                "canonical_digest": lifecycle.canonical_digest,
+            },
+            slot_readiness_attestation_payload={
+                **readiness.digest_payload(),
+                "canonical_digest": readiness.canonical_digest,
+            },
+        )
+        return WorkflowProtectedRuntimeContextInjectionAttemptModel(**values)
+
+    @classmethod
+    def _protected_runtime_context_injection_result_model(
+        cls,
+        request: WorkflowProtectedRuntimeContextInjectionConsumptionResultRequest,
+        *,
+        claim_row: WorkflowProtectedRuntimeContextInjectionConsumptionClaimModel,
+        attempt_row: WorkflowProtectedRuntimeContextInjectionAttemptModel,
+    ) -> WorkflowProtectedRuntimeContextInjectionResultModel:
+        result = request.result
+        values = cls._protected_runtime_context_injection_consumption_model_values(
+            WorkflowProtectedRuntimeContextInjectionResultModel, result
+        )
+        values.update(
+            organization_id=claim_row.organization_id,
+            environment_id=claim_row.environment_id,
+            site_id=claim_row.site_id,
+            consumer_subject_id=attempt_row.consumer_subject_id,
+            consumer_audience=attempt_row.consumer_audience,
+            consumer_contract_id=attempt_row.consumer_contract_id,
+            consumer_contract_version=attempt_row.consumer_contract_version,
+            purpose_id=attempt_row.purpose_id,
+            policy_id=attempt_row.policy_id,
+            policy_version=attempt_row.policy_version,
+            policy_digest=attempt_row.policy_digest,
+            approved_injector_id=result.injector_id,
+            approved_injector_version=result.injector_version,
+            protected_operation_reference=attempt_row.protected_operation_reference,
+            instruction_digest=attempt_row.instruction_digest,
+            receipt_verification_signing_key_id=(attempt_row.receipt_verification_signing_key_id),
+            claimed_at=claim_row.claimed_at,
+            started_at=attempt_row.started_at,
+            authorization_lease_consumed=True,
+            injector_receipt_payload=(
+                None
+                if request.receipt is None
+                else {
+                    **request.receipt.digest_payload(),
+                    "canonical_digest": request.receipt.canonical_digest,
+                }
+            ),
+        )
+        return WorkflowProtectedRuntimeContextInjectionResultModel(**values)
+
+    @classmethod
+    def _protected_runtime_context_injection_consumption_claim_from_row(
+        cls, row: WorkflowProtectedRuntimeContextInjectionConsumptionClaimModel
+    ) -> WorkflowProtectedRuntimeContextInjectionConsumptionClaim:
+        claim = cast(
+            WorkflowProtectedRuntimeContextInjectionConsumptionClaim,
+            cls._protected_runtime_context_injection_consumption_domain_from_payload(
+                row.payload,
+                row.canonical_digest,
+                "WorkflowProtectedRuntimeContextInjectionConsumptionClaim",
+            ),
+        )
+        if (
+            row.payload != claim.digest_payload()
+            or row.consumption_authorization_audit_digest
+            != canonical_digest(dict(row.consumption_authorization_audit_payload))
+        ):
+            cls._protected_runtime_context_injection_consumption_contract_violation()
+        cls._protected_runtime_context_injection_consumption_assert_row_matches(row, claim)
+        return claim
+
+    @classmethod
+    def _protected_runtime_context_injection_attempt_from_row(
+        cls, row: WorkflowProtectedRuntimeContextInjectionAttemptModel
+    ) -> WorkflowProtectedRuntimeContextInjectionConsumptionAttempt:
+        attempt = cast(
+            WorkflowProtectedRuntimeContextInjectionConsumptionAttempt,
+            cls._protected_runtime_context_injection_consumption_domain_from_payload(
+                row.payload,
+                row.canonical_digest,
+                "WorkflowProtectedRuntimeContextInjectionConsumptionAttempt",
+            ),
+        )
+        instruction = build_workflow_protected_runtime_context_trusted_injector_instruction(attempt)
+        if row.instruction_digest != instruction.canonical_digest:
+            cls._protected_runtime_context_injection_consumption_contract_violation()
+        cls._protected_runtime_context_injection_consumption_assert_row_matches(row, attempt)
+        return attempt
+
+    @classmethod
+    def _protected_runtime_context_injection_result_from_row(
+        cls, row: WorkflowProtectedRuntimeContextInjectionResultModel
+    ) -> WorkflowProtectedRuntimeContextInjectionConsumptionResult:
+        result = cast(
+            WorkflowProtectedRuntimeContextInjectionConsumptionResult,
+            cls._protected_runtime_context_injection_consumption_domain_from_payload(
+                row.payload,
+                row.canonical_digest,
+                "WorkflowProtectedRuntimeContextInjectionConsumptionResult",
+            ),
+        )
+        cls._protected_runtime_context_injection_consumption_assert_row_matches(row, result)
+        return result
+
+    @classmethod
+    def _protected_runtime_context_injection_consumption_domain_from_payload(
+        cls,
+        raw: dict[str, Any],
+        stored_digest: str,
+        class_name: str,
+    ) -> Any:
+        payload = dict(raw)
+        payload["scope"] = WorkflowScope(**cast(dict[str, str], payload["scope"]))
+        for name, value in tuple(payload.items()):
+            if (
+                value is not None
+                and isinstance(value, str)
+                and (name.endswith("_at") or name.endswith("_until") or name.endswith("_deadline"))
+            ):
+                payload[name] = datetime.fromisoformat(value)
+        if "authority" in payload:
+            payload["authority"] = WorkflowProtectedRuntimeContextInjectionConsumptionAuthority(
+                **cast(Any, payload["authority"])
+            )
+        if "state" in payload:
+            payload["state"] = (
+                WorkflowProtectedRuntimeContextInjectionConsumptionAttemptState(
+                    str(payload["state"])
+                )
+                if class_name.endswith("Attempt")
+                else WorkflowProtectedRuntimeContextInjectionConsumptionResultState(
+                    str(payload["state"])
+                )
+            )
+        if payload.get("failure_class") is not None:
+            payload["failure_class"] = (
+                WorkflowProtectedRuntimeContextInjectionConsumptionFailureClass(
+                    str(payload["failure_class"])
+                )
+            )
+        domain_types: dict[str, type[Any]] = {
+            "WorkflowProtectedRuntimeContextInjectionConsumptionClaim": (
+                WorkflowProtectedRuntimeContextInjectionConsumptionClaim
+            ),
+            "WorkflowProtectedRuntimeContextInjectionConsumptionAttempt": (
+                WorkflowProtectedRuntimeContextInjectionConsumptionAttempt
+            ),
+            "WorkflowProtectedRuntimeContextInjectionConsumptionResult": (
+                WorkflowProtectedRuntimeContextInjectionConsumptionResult
+            ),
+        }
+        value = domain_types[class_name](**cast(Any, payload), canonical_digest=stored_digest)
+        if canonical_digest(value.digest_payload()) != stored_digest:
+            cls._protected_runtime_context_injection_consumption_contract_violation()
+        return value
+
+    @classmethod
+    def _protected_runtime_context_injection_consumption_assert_row_matches(
+        cls, row: Any, value: Any
+    ) -> None:
+        scalar_names = (
+            name
+            for name in value.__dataclass_fields__
+            if name not in {"scope", "state", "failure_class", "authority", "canonical_digest"}
+            and hasattr(row, name)
+        )
+        failure_class = getattr(value, "failure_class", None)
+        if (
+            any(getattr(row, name) != getattr(value, name) for name in scalar_names)
+            or row.organization_id != value.scope.organization_id
+            or row.environment_id != value.scope.environment_id
+            or row.site_id != value.scope.site_id
+            or (hasattr(row, "state") and row.state != value.state.value)
+            or (
+                hasattr(row, "failure_class")
+                and row.failure_class != (None if failure_class is None else failure_class.value)
+            )
+            or row.canonical_digest != value.canonical_digest
+            or row.payload != value.digest_payload()
+            or {
+                name: bool(getattr(row, name))
+                for name in cls._protected_runtime_context_injection_consumption_authority_columns(
+                    value.authority
+                )
+            }
+            != cls._protected_runtime_context_injection_consumption_authority_columns(
+                value.authority
+            )
+        ):
+            cls._protected_runtime_context_injection_consumption_contract_violation()
+
+    @staticmethod
+    def _protected_runtime_context_injection_receipt_from_payload(
+        payload: dict[str, Any] | None,
+        digest: str | None,
+    ) -> WorkflowProtectedRuntimeContextTrustedInjectorReceipt | None:
+        if payload is None or digest is None:
+            return None
+        values = dict(payload)
+        stored_digest = str(values.pop("canonical_digest"))
+        values["state"] = WorkflowProtectedRuntimeContextInjectionConsumptionResultState(
+            str(values["state"])
+        )
+        if values.get("failure_class") is not None:
+            values["failure_class"] = (
+                WorkflowProtectedRuntimeContextInjectionConsumptionFailureClass(
+                    str(values["failure_class"])
+                )
+            )
+        for name in ("completed_at", "injection_deadline"):
+            values[name] = datetime.fromisoformat(str(values[name]))
+        receipt = WorkflowProtectedRuntimeContextTrustedInjectorReceipt(
+            **cast(Any, values), canonical_digest=stored_digest
+        )
+        if stored_digest != digest:
+            raise ValueError("runtime context injection receipt digest mismatch")
+        return receipt
+
+    def _protected_runtime_context_injection_result_matches(
+        self,
+        *,
+        request: WorkflowProtectedRuntimeContextInjectionConsumptionResultRequest,
+        claim_row: WorkflowProtectedRuntimeContextInjectionConsumptionClaimModel | None,
+        attempt_row: WorkflowProtectedRuntimeContextInjectionAttemptModel | None,
+        slot_row: WorkflowProtectedRuntimeContextInjectionSlotHeadModel | None,
+        observed_at: datetime,
+    ) -> bool:
+        if claim_row is None or attempt_row is None or slot_row is None:
+            return False
+        try:
+            claim = self._protected_runtime_context_injection_consumption_claim_from_row(claim_row)
+            attempt = self._protected_runtime_context_injection_attempt_from_row(attempt_row)
+            instruction = build_workflow_protected_runtime_context_trusted_injector_instruction(
+                attempt
+            )
+            result = request.result
+            receipt = request.receipt
+            verifier = self._protected_runtime_context_injection_receipt_signature_verifier
+            result_states = WorkflowProtectedRuntimeContextInjectionConsumptionResultState
+            uncertain = result.state is result_states.INJECTION_OUTCOME_UNCERTAIN
+            receipt_valid = (
+                receipt is None
+                and uncertain
+                and result.injector_receipt_digest is None
+                and result.completed_at is None
+                and result.recorded_at >= result.injection_deadline
+            ) or (
+                receipt is not None
+                and not uncertain
+                and receipt.canonical_digest == canonical_digest(receipt.digest_payload())
+                and verifier is not None
+                and verifier.verify_receipt(receipt) is True
+            )
+        except Exception:
+            return False
+        return bool(
+            receipt_valid
+            and result.canonical_digest == canonical_digest(result.digest_payload())
+            and result.injection_id == claim.injection_id == attempt.injection_id
+            and result.consumption_claim_id == claim.claim_id
+            and result.consumption_claim_digest == claim.canonical_digest
+            and result.attempt_id == attempt.attempt_id
+            and result.attempt_digest == attempt.canonical_digest
+            and result.authorization_lease_id == claim.authorization_lease_id
+            and result.authorization_lease_digest
+            == claim.authorization_lease_digest
+            == attempt.authorization_lease_digest
+            and result.protected_runtime_handle_digest
+            == claim.protected_runtime_handle_digest
+            == attempt.protected_runtime_handle_digest
+            and result.destination_boundary_id
+            == claim.destination_boundary_id
+            == attempt.destination_boundary_id
+            and result.destination_deployment_id
+            == claim.destination_deployment_id
+            == attempt.destination_deployment_id
+            and result.destination_generation
+            == claim.destination_generation
+            == attempt.destination_generation
+            and result.destination_fencing_token_digest
+            == claim.destination_fencing_token_digest
+            == attempt.destination_fencing_token_digest
+            and result.runtime_slot_commitment
+            == claim.runtime_slot_commitment
+            == attempt.runtime_slot_commitment
+            and result.runtime_slot_pre_generation
+            == claim.runtime_slot_pre_generation
+            == attempt.runtime_slot_pre_generation
+            and result.runtime_slot_profile_id == attempt.runtime_slot_profile_id
+            and result.runtime_slot_profile_version == attempt.runtime_slot_profile_version
+            and result.runtime_slot_profile_digest == attempt.runtime_slot_profile_digest
+            and result.injector_contract_id == attempt.required_injector_contract_id
+            and result.injector_contract_version == attempt.required_injector_contract_version
+            and result.injector_id == attempt.approved_injector_id
+            and result.injector_version == attempt.approved_injector_version
+            and claim.scope == attempt.scope
+            and claim.consumer_subject_id == attempt.consumer_subject_id
+            and claim.consumer_audience == attempt.consumer_audience
+            and claim.consumer_contract_id == attempt.consumer_contract_id
+            and claim.consumer_contract_version == attempt.consumer_contract_version
+            and claim.purpose_id == attempt.purpose_id
+            and claim.policy_id == attempt.policy_id
+            and claim.policy_version == attempt.policy_version
+            and claim.policy_digest == attempt.policy_digest
+            and result.injection_deadline == attempt.injection_deadline
+            and result.recorded_at <= observed_at
+            and request.expected_claim_digest == claim.canonical_digest
+            and request.expected_attempt_digest == attempt.canonical_digest
+            and slot_row.current is True
+            and slot_row.slot_state == "outcome_uncertain"
+            and slot_row.slot_generation == attempt.runtime_slot_pre_generation
+            and slot_row.destination_deployment_id == attempt.destination_deployment_id
+            and slot_row.runtime_slot_commitment == attempt.runtime_slot_commitment
+            and slot_row.payload == self._protected_runtime_context_injection_slot_payload(slot_row)
+            and slot_row.canonical_digest == canonical_digest(slot_row.payload)
+            and all(value is False for value in result.authority.canonical_value().values())
+            and (
+                receipt is None
+                or (
+                    receipt.instruction_digest == instruction.canonical_digest
+                    and receipt.protected_operation_reference
+                    == attempt.protected_operation_reference
+                    and receipt.runtime_slot_pre_generation == attempt.runtime_slot_pre_generation
+                    and receipt.runtime_slot_post_generation == result.runtime_slot_post_generation
+                    and receipt.injector_contract_id == result.injector_contract_id
+                    and receipt.injector_contract_version == result.injector_contract_version
+                    and receipt.injector_id == result.injector_id
+                    and receipt.injector_version == result.injector_version
+                    and receipt.state is result.state
+                    and receipt.failure_class is result.failure_class
+                    and receipt.protected_runtime_handle_consumed
+                    is result.protected_runtime_handle_consumed
+                    and receipt.inert_context_injected is result.inert_context_injected
+                    and receipt.runtime_slot_mutation_performed
+                    is result.runtime_slot_mutation_performed
+                    and receipt.completed_at == result.completed_at
+                    and receipt.injection_deadline == result.injection_deadline
+                    and receipt.signing_key_id == attempt.receipt_verification_signing_key_id
+                    and attempt.started_at <= receipt.completed_at
+                    and receipt.completed_at <= result.recorded_at
+                    and receipt.completed_at < attempt.injection_deadline
+                )
+            )
+        )
+
+    @staticmethod
+    def _protected_runtime_context_injection_consumption_contract_violation() -> NoReturn:
+        raise WorkflowProtectedRuntimeContextInjectionConsumptionError(
+            "protected_runtime_context_injection_consumption_repository_contract_violation"
+        )
+
+    async def _lock_protected_runtime_context_injection_consumption_sources(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowProtectedRuntimeContextInjectionConsumptionClaimRequest,
+    ) -> _ProtectedRuntimeContextInjectionConsumptionLockedSources:
+        first_observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+        lease_id = request.source.authorization_lease.authorization_lease_id
+        lease_hint = await session.get(
+            WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseModel, lease_id
+        )
+        access_result = access_attempt = access_consumption_claim = None
+        access_authorization_lease = access_authorization_claim = None
+        authorization_claim = authorization_lease = destination_head = slot_head = None
+        if lease_hint is not None:
+            access_result = await session.get(
+                WorkflowProtectedResidentContextAccessResultModel,
+                lease_hint.access_result_id,
+                with_for_update=True,
+            )
+            if access_result is not None:
+                access_authorization_claim = cast(
+                    WorkflowProtectedResidentContextAccessAuthorizationClaimModel | None,
+                    await session.scalar(
+                        select(WorkflowProtectedResidentContextAccessAuthorizationClaimModel)
+                        .where(
+                            WorkflowProtectedResidentContextAccessAuthorizationClaimModel.access_authorization_lease_id
+                            == access_result.authorization_lease_id
+                        )
+                        .with_for_update()
+                    ),
+                )
+                access_authorization_lease = await session.get(
+                    WorkflowProtectedResidentContextAccessAuthorizationLeaseModel,
+                    access_result.authorization_lease_id,
+                    with_for_update=True,
+                )
+                access_consumption_claim = await session.get(
+                    WorkflowProtectedResidentContextAccessConsumptionClaimModel,
+                    access_result.consumption_claim_id,
+                    with_for_update=True,
+                )
+                access_attempt = await session.get(
+                    WorkflowProtectedResidentContextAccessAttemptModel,
+                    access_result.attempt_id,
+                    with_for_update=True,
+                )
+            authorization_claim = await session.get(
+                WorkflowProtectedRuntimeContextInjectionAuthorizationClaimModel,
+                lease_hint.claim_id,
+                with_for_update=True,
+            )
+            authorization_lease = await session.get(
+                WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseModel,
+                lease_id,
+                with_for_update=True,
+                populate_existing=True,
+            )
+            destination_head = await session.get(
+                WorkflowProtectedRuntimeContextInjectionDestinationHeadModel,
+                lease_hint.destination_deployment_id,
+                with_for_update=True,
+            )
+            slot_head = await session.get(
+                WorkflowProtectedRuntimeContextInjectionSlotHeadModel,
+                (
+                    lease_hint.destination_deployment_id,
+                    request.slot_readiness_attestation.runtime_slot_commitment,
+                ),
+                with_for_update=True,
+            )
+        scope_id = self._protected_runtime_context_injection_consumption_idempotency_scope(
+            request.scope, request.consumer_subject_id, request.consumer_audience
+        )
+        claims = tuple(
+            (
+                await session.scalars(
+                    select(WorkflowProtectedRuntimeContextInjectionConsumptionClaimModel)
+                    .where(
+                        or_(
+                            WorkflowProtectedRuntimeContextInjectionConsumptionClaimModel.authorization_lease_id
+                            == lease_id,
+                            WorkflowProtectedRuntimeContextInjectionConsumptionClaimModel.protected_runtime_handle_digest
+                            == request.source.authorization_lease.protected_runtime_handle_digest,
+                            and_(
+                                WorkflowProtectedRuntimeContextInjectionConsumptionClaimModel.destination_deployment_id
+                                == request.slot_readiness_attestation.destination_deployment_id,
+                                WorkflowProtectedRuntimeContextInjectionConsumptionClaimModel.runtime_slot_commitment
+                                == request.slot_readiness_attestation.runtime_slot_commitment,
+                                WorkflowProtectedRuntimeContextInjectionConsumptionClaimModel.runtime_slot_pre_generation
+                                == request.slot_readiness_attestation.runtime_slot_pre_generation,
+                            ),
+                            WorkflowProtectedRuntimeContextInjectionConsumptionClaimModel.injection_id
+                            == request.injection_id,
+                            and_(
+                                WorkflowProtectedRuntimeContextInjectionConsumptionClaimModel.idempotency_scope_id
+                                == scope_id,
+                                WorkflowProtectedRuntimeContextInjectionConsumptionClaimModel.idempotency_key
+                                == request.idempotency_key,
+                            ),
+                        )
+                    )
+                    .with_for_update()
+                )
+            ).all()
+        )
+        attempt = cast(
+            WorkflowProtectedRuntimeContextInjectionAttemptModel | None,
+            await session.scalar(
+                select(WorkflowProtectedRuntimeContextInjectionAttemptModel)
+                .where(
+                    or_(
+                        WorkflowProtectedRuntimeContextInjectionAttemptModel.injection_id
+                        == request.injection_id,
+                        WorkflowProtectedRuntimeContextInjectionAttemptModel.authorization_lease_id
+                        == lease_id,
+                        WorkflowProtectedRuntimeContextInjectionAttemptModel.protected_runtime_handle_digest
+                        == request.source.authorization_lease.protected_runtime_handle_digest,
+                        and_(
+                            WorkflowProtectedRuntimeContextInjectionAttemptModel.destination_deployment_id
+                            == request.slot_readiness_attestation.destination_deployment_id,
+                            WorkflowProtectedRuntimeContextInjectionAttemptModel.runtime_slot_commitment
+                            == request.slot_readiness_attestation.runtime_slot_commitment,
+                            WorkflowProtectedRuntimeContextInjectionAttemptModel.runtime_slot_pre_generation
+                            == request.slot_readiness_attestation.runtime_slot_pre_generation,
+                        ),
+                    )
+                )
+                .with_for_update()
+            ),
+        )
+        result = cast(
+            WorkflowProtectedRuntimeContextInjectionResultModel | None,
+            await session.scalar(
+                select(WorkflowProtectedRuntimeContextInjectionResultModel)
+                .where(
+                    or_(
+                        WorkflowProtectedRuntimeContextInjectionResultModel.injection_id
+                        == request.injection_id,
+                        WorkflowProtectedRuntimeContextInjectionResultModel.authorization_lease_id
+                        == lease_id,
+                        WorkflowProtectedRuntimeContextInjectionResultModel.protected_runtime_handle_digest
+                        == request.source.authorization_lease.protected_runtime_handle_digest,
+                    )
+                )
+                .with_for_update()
+            ),
+        )
+        observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+        return _ProtectedRuntimeContextInjectionConsumptionLockedSources(
+            authorization_lease=authorization_lease,
+            authorization_claim=authorization_claim,
+            access_result=access_result,
+            access_attempt=access_attempt,
+            access_consumption_claim=access_consumption_claim,
+            access_authorization_lease=access_authorization_lease,
+            access_authorization_claim=access_authorization_claim,
+            destination_head=destination_head,
+            slot_head=slot_head,
+            consumption_claims=claims,
+            attempt=attempt,
+            result=result,
+            first_observed_at=first_observed_at,
+            observed_at=observed_at,
+        )
+
+    async def _protected_runtime_context_injection_consumption_locked_replay(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowProtectedRuntimeContextInjectionConsumptionClaimRequest,
+        locked: _ProtectedRuntimeContextInjectionConsumptionLockedSources,
+    ) -> WorkflowProtectedRuntimeContextInjectionConsumptionClaimWrite | None:
+        if not locked.consumption_claims:
+            return None
+        lookup = await self._protected_runtime_context_injection_consumption_replay_from_rows(
+            session,
+            request=WorkflowProtectedRuntimeContextInjectionConsumptionReplayLookupRequest(
+                authorization_lease_id=request.source.authorization_lease.authorization_lease_id,
+                scope=request.scope,
+                consumer_subject_id=request.consumer_subject_id,
+                consumer_audience=request.consumer_audience,
+                policy_id=request.expected_policy_id,
+                policy_version=request.expected_policy_version,
+                policy_digest=request.expected_policy_digest,
+                idempotency_digest=request.idempotency_digest,
+                request_fingerprint=request.request_fingerprint,
+                injection_id=request.injection_id,
+            ),
+            claims=locked.consumption_claims,
+            observed_at=locked.observed_at,
+            for_update=True,
+        )
+        statuses = WorkflowProtectedRuntimeContextInjectionConsumptionClaimStatus
+        replay_statuses = WorkflowProtectedRuntimeContextInjectionConsumptionReplayStatus
+        mapping = {
+            replay_statuses.TERMINAL: statuses.REPLAY_COMPLETED,
+            replay_statuses.CLAIM_ONLY_PENDING: statuses.CLAIM_ONLY_PENDING,
+            replay_statuses.CLAIM_ONLY_UNCERTAIN: statuses.CLAIM_ONLY_UNCERTAIN,
+            replay_statuses.IDEMPOTENCY_CONFLICT: statuses.IDEMPOTENCY_CONFLICT,
+            replay_statuses.ALREADY_CONSUMED: statuses.ALREADY_CONSUMED,
+        }
+        return WorkflowProtectedRuntimeContextInjectionConsumptionClaimWrite(
+            mapping.get(lookup.status, statuses.EVIDENCE_CONFLICT),
+            None,
+            lookup.attempt,
+            lookup.result,
+        )
+
+    async def _protected_runtime_context_injection_consumption_replay_from_rows(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowProtectedRuntimeContextInjectionConsumptionReplayLookupRequest,
+        claims: tuple[WorkflowProtectedRuntimeContextInjectionConsumptionClaimModel, ...],
+        observed_at: datetime,
+        for_update: bool,
+    ) -> WorkflowProtectedRuntimeContextInjectionConsumptionReplayLookup:
+        statuses = WorkflowProtectedRuntimeContextInjectionConsumptionReplayStatus
+        result_type = WorkflowProtectedRuntimeContextInjectionConsumptionReplayLookup
+        if not claims:
+            return result_type(statuses.NONE, None, None)
+        scope_id = self._protected_runtime_context_injection_consumption_idempotency_scope(
+            request.scope, request.consumer_subject_id, request.consumer_audience
+        )
+        row = next(
+            (
+                value
+                for value in claims
+                if value.idempotency_scope_id == scope_id
+                and value.idempotency_digest == request.idempotency_digest
+            ),
+            None,
+        )
+        if row is None:
+            return result_type(statuses.ALREADY_CONSUMED, None, None)
+        claim = self._protected_runtime_context_injection_consumption_claim_from_row(row)
+        if (
+            claim.request_fingerprint != request.request_fingerprint
+            or claim.authorization_lease_id != request.authorization_lease_id
+            or claim.injection_id != request.injection_id
+            or claim.scope != request.scope
+            or claim.consumer_subject_id != request.consumer_subject_id
+            or claim.consumer_audience != request.consumer_audience
+            or claim.policy_id != request.policy_id
+            or claim.policy_version != request.policy_version
+            or claim.policy_digest != request.policy_digest
+        ):
+            return result_type(statuses.IDEMPOTENCY_CONFLICT, None, None)
+        attempt_statement = select(WorkflowProtectedRuntimeContextInjectionAttemptModel).where(
+            WorkflowProtectedRuntimeContextInjectionAttemptModel.consumption_claim_id
+            == claim.claim_id
+        )
+        if for_update:
+            attempt_statement = attempt_statement.with_for_update()
+        attempt_row = await session.scalar(attempt_statement)
+        if attempt_row is None:
+            self._protected_runtime_context_injection_consumption_contract_violation()
+        attempt = self._protected_runtime_context_injection_attempt_from_row(attempt_row)
+        result_statement = select(WorkflowProtectedRuntimeContextInjectionResultModel).where(
+            WorkflowProtectedRuntimeContextInjectionResultModel.injection_id == claim.injection_id
+        )
+        if for_update:
+            result_statement = result_statement.with_for_update()
+        stored_row = await session.scalar(result_statement)
+        if stored_row is None:
+            return result_type(
+                statuses.CLAIM_ONLY_PENDING
+                if observed_at < attempt.injection_deadline
+                else statuses.CLAIM_ONLY_UNCERTAIN,
+                attempt,
+                None,
+            )
+        stored = self._protected_runtime_context_injection_result_from_row(stored_row)
+        if (
+            stored.attempt_id != attempt.attempt_id
+            or stored.attempt_digest != attempt.canonical_digest
+            or stored.consumption_claim_id != claim.claim_id
+            or stored.consumption_claim_digest != claim.canonical_digest
+        ):
+            self._protected_runtime_context_injection_consumption_contract_violation()
+        return result_type(statuses.TERMINAL, attempt, stored)
 
     async def _lock_protected_resident_context_access_consumption_sources(
         self,

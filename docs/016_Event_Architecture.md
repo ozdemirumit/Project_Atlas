@@ -541,6 +541,21 @@ false. IMP-218 performs no injection, handle retrieval or use, runtime use, netw
 activity, readiness probing, publication, delivery, dispatch, execution or infrastructure
 mutation. Actual injection-lease consumption is a separate later boundary.
 
+Protected runtime-context injection consumption irreversibly consumes that exact ADR-168 lease by
+atomically committing one append-only claim and started attempt before any trusted injector call.
+Fresh signed metadata binds the still-unused handle commitment, current destination fence and one
+exact empty inert slot commitment at its pre-mutation generation. The trusted protected-boundary
+injector may then perform one atomic compare-and-swap that consumes the handle, injects inert
+context and advances only that slot generation. Atlas receives only a signed minimized receipt and
+never receives handle or slot locator/material.
+
+Known success or failure requires a timely valid receipt. Crash, timeout, late or invalid receipt,
+partial slot transition, cleanup uncertainty or persistence ambiguity remains
+`injection_outcome_uncertain`; the lease and handle lineage remain consumed and the injector is
+never retried. Every operational authority declaration remains false. Injection success neither
+starts nor uses a runtime and grants no network, connector, readiness, publication, delivery,
+dispatch, execution or infrastructure-mutation authority.
+
 ### 10.2 Publication State
 
 Outbox records track:
@@ -942,3 +957,4 @@ This document is ready to enter Review when:
 | 1.7.0 | 2026-08-16 | Workflow Architecture | Added bounded protected resident-context access-authorization lease boundary |
 | 1.8.0 | 2026-08-16 | Workflow Architecture | Added atomic resident-context access consumption and protected non-bearer runtime-handle boundary |
 | 1.9.0 | 2026-08-16 | Workflow Architecture | Added bounded protected runtime-context injection-authorization lease boundary |
+| 2.0.0 | 2026-08-16 | Workflow Architecture | Added atomic injection-lease consumption and inert protected-slot injection boundary |

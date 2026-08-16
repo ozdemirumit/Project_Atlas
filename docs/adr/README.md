@@ -49,3 +49,4 @@ ADR numbers are permanent and never reused. Material changes require a new ADR r
 | [ADR-166](ADR-166_Bounded_Single_Use_Protected_Resident_Context_Access_Authorization_Lease.md) | Bounded single-use protected resident-context access authorization lease | Accepted |
 | [ADR-167](ADR-167_Atomic_Protected_Resident_Context_Access_Lease_Consumption.md) | Atomic protected resident-context access lease consumption and non-bearer runtime-handle materialization | Accepted |
 | [ADR-168](ADR-168_Bounded_Single_Use_Protected_Runtime_Context_Injection_Authorization_Lease.md) | Bounded single-use protected runtime-context injection authorization lease | Accepted |
+| [ADR-169](ADR-169_Atomic_Protected_Runtime_Context_Injection_Lease_Consumption.md) | Atomic protected runtime-context injection lease consumption and inert protected-slot injection | Accepted |

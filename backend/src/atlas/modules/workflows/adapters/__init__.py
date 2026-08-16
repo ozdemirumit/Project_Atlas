@@ -17,6 +17,14 @@ from atlas.modules.workflows.adapters.protected_resident_context_lifecycle_attes
     DeterministicDevelopmentWorkflowProtectedResidentContextLifecycleAttestor,
     UnavailableWorkflowProtectedResidentContextLifecycleAttestor,
 )
+from atlas.modules.workflows.adapters.protected_runtime_context_injectors import (
+    DenyAllWorkflowProtectedRuntimeContextTrustedInjectorReceiptSignatureVerifier,
+    DenyAllWorkflowProtectedRuntimeSlotReadinessSignatureVerifier,
+    DeterministicDevelopmentWorkflowProtectedRuntimeContextTrustedInjector,
+    DeterministicDevelopmentWorkflowProtectedRuntimeSlotReadinessAttestor,
+    UnavailableWorkflowProtectedRuntimeContextTrustedInjector,
+    UnavailableWorkflowProtectedRuntimeSlotReadinessAttestor,
+)
 from atlas.modules.workflows.adapters.protected_runtime_handle_lifecycle_attestors import (
     DeterministicDevelopmentWorkflowProtectedRuntimeHandleLifecycleAttestor,
     UnavailableWorkflowProtectedRuntimeHandleLifecycleAttestor,
@@ -60,6 +68,8 @@ __all__ = [
     "DenyAllWorkflowProtectedArtifactStatusSignatureVerifier",
     "DenyAllWorkflowProtectedResidentContextAccessorReadinessSignatureVerifier",
     "DenyAllWorkflowProtectedResidentContextLifecycleSignatureVerifier",
+    "DenyAllWorkflowProtectedRuntimeContextTrustedInjectorReceiptSignatureVerifier",
+    "DenyAllWorkflowProtectedRuntimeSlotReadinessSignatureVerifier",
     "DenyAllWorkflowProtectedTargetContextCapsuleDestinationCustodySignatureVerifier",
     "DenyAllWorkflowProtectedTargetContextCapsuleHandoffAttestationSignatureVerifier",
     "DenyAllWorkflowProtectedTargetContextCapsuleLifecycleSignatureVerifier",
@@ -67,7 +77,9 @@ __all__ = [
     "DeterministicDevelopmentWorkflowProtectedResidentContextAccessorReadinessAttestor",
     "DeterministicDevelopmentWorkflowProtectedResidentContextLifecycleAttestor",
     "DeterministicDevelopmentWorkflowProtectedResidentContextTrustedAccessor",
+    "DeterministicDevelopmentWorkflowProtectedRuntimeContextTrustedInjector",
     "DeterministicDevelopmentWorkflowProtectedRuntimeHandleLifecycleAttestor",
+    "DeterministicDevelopmentWorkflowProtectedRuntimeSlotReadinessAttestor",
     "InMemoryWorkflowPlanRepository",
     "SyntheticWorkflowPhysicalTransportEndpointMaterializer",
     "SyntheticWorkflowPhysicalTransportTargetContextArtifactOpener",
@@ -81,7 +93,9 @@ __all__ = [
     "UnavailableWorkflowProtectedResidentContextAccessorReadinessAttestor",
     "UnavailableWorkflowProtectedResidentContextLifecycleAttestor",
     "UnavailableWorkflowProtectedResidentContextTrustedAccessor",
+    "UnavailableWorkflowProtectedRuntimeContextTrustedInjector",
     "UnavailableWorkflowProtectedRuntimeHandleLifecycleAttestor",
+    "UnavailableWorkflowProtectedRuntimeSlotReadinessAttestor",
     "UnavailableWorkflowProtectedTargetContextCapsuleDestinationCustodyAttestor",
     "UnavailableWorkflowProtectedTargetContextCapsuleHandoffLifecycleAttestor",
     "UnavailableWorkflowProtectedTargetContextCapsuleLifecycleStatusAttestor",

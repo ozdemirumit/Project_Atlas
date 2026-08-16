@@ -1465,6 +1465,29 @@ export type WorkflowProtectedRuntimeContextInjectionAuthorizationInventory = {
   durable: true;
 };
 
+export type WorkflowProtectedRuntimeContextInjectionConsumption = {
+  injection_id: string;
+  attempt_state: "started" | "completed";
+  result_state:
+    | "injection_pending"
+    | "injected_into_protected_runtime_slot"
+    | "injection_failed"
+    | "injection_outcome_uncertain";
+  started_at: string;
+  completed_at: string | null;
+  policy_id: "policy.workflow-protected-runtime-context-injection-consumption";
+  policy_version: "1.0";
+  injector_profile_reference: string;
+  runtime_slot_profile_reference: string;
+  integrity_reference: string;
+};
+
+export type WorkflowProtectedRuntimeContextInjectionConsumptionInventory = {
+  consumptions: WorkflowProtectedRuntimeContextInjectionConsumption[];
+  server_time: string;
+  durable: true;
+};
+
 export type WorkflowProtectedResidentContextAccessConsumptionAuthority = {
   protected_resident_context_access_authority_granted: false;
   target_context_capsule_opening_authorized: false;
@@ -2826,6 +2849,23 @@ const protectedRuntimeContextInjectionAuthorizationFields = [
 ] as const;
 const protectedRuntimeContextInjectionAuthorizationInventoryFields = [
   "authorizations",
+  "server_time",
+  "durable",
+] as const;
+const protectedRuntimeContextInjectionConsumptionFields = [
+  "injection_id",
+  "attempt_state",
+  "result_state",
+  "started_at",
+  "completed_at",
+  "policy_id",
+  "policy_version",
+  "injector_profile_reference",
+  "runtime_slot_profile_reference",
+  "integrity_reference",
+] as const;
+const protectedRuntimeContextInjectionConsumptionInventoryFields = [
+  "consumptions",
   "server_time",
   "durable",
 ] as const;
@@ -5077,6 +5117,57 @@ function isProtectedRuntimeContextInjectionAuthorization(
   );
 }
 
+function isProtectedRuntimeContextInjectionConsumption(
+  value: unknown,
+  serverTime: string,
+): value is WorkflowProtectedRuntimeContextInjectionConsumption {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, protectedRuntimeContextInjectionConsumptionFields) ||
+    containsCredentialMaterial(value) ||
+    !isTimezoneAwareTimestamp(value.started_at) ||
+    (value.completed_at !== null && !isTimezoneAwareTimestamp(value.completed_at))
+  ) {
+    return false;
+  }
+  const startedAt = Date.parse(value.started_at);
+  const completedAt = value.completed_at === null ? null : Date.parse(value.completed_at);
+  const evaluatedAt = Date.parse(serverTime);
+  const stateIsConsistent =
+    (value.attempt_state === "started" &&
+      (value.result_state === "injection_pending" ||
+        value.result_state === "injection_outcome_uncertain") &&
+      completedAt === null) ||
+    (value.attempt_state === "completed" &&
+      (value.result_state === "injected_into_protected_runtime_slot" ||
+        value.result_state === "injection_failed" ||
+        value.result_state === "injection_outcome_uncertain") &&
+      completedAt !== null);
+  return (
+    isStableIdentifier(value.injection_id) &&
+    value.injection_id.startsWith(
+      "workflow-protected-runtime-context-injection-consumption.",
+    ) &&
+    startedAt <= evaluatedAt &&
+    (completedAt === null || (completedAt >= startedAt && completedAt <= evaluatedAt)) &&
+    stateIsConsistent &&
+    value.policy_id === "policy.workflow-protected-runtime-context-injection-consumption" &&
+    value.policy_version === "1.0" &&
+    isStableIdentifier(value.injector_profile_reference) &&
+    value.injector_profile_reference.startsWith(
+      "integrity.workflow-protected-runtime-context-injector-profile.",
+    ) &&
+    isStableIdentifier(value.runtime_slot_profile_reference) &&
+    value.runtime_slot_profile_reference.startsWith(
+      "integrity.workflow-protected-runtime-slot-profile.",
+    ) &&
+    isStableIdentifier(value.integrity_reference) &&
+    value.integrity_reference.startsWith(
+      "integrity.workflow-protected-runtime-context-injection-consumption.",
+    )
+  );
+}
+
 function hasZeroProtectedResidentContextAccessConsumptionAuthority(
   value: unknown,
 ): value is WorkflowProtectedResidentContextAccessConsumptionAuthority {
@@ -6795,6 +6886,57 @@ export async function listWorkflowProtectedRuntimeContextInjectionAuthorizations
     authorizationIds.add(authorization.authorization_lease_id);
   }
   return data as WorkflowProtectedRuntimeContextInjectionAuthorizationInventory;
+}
+
+export async function listWorkflowProtectedRuntimeContextInjectionConsumptions(): Promise<WorkflowProtectedRuntimeContextInjectionConsumptionInventory> {
+  const response = await apiFetch(
+    "/api/v1/workflows/protected-runtime-context-injection-consumptions",
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(
+    response,
+    "Workflow protected runtime-context injection consumption retrieval failed",
+  );
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, protectedRuntimeContextInjectionConsumptionInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    !Array.isArray(data.consumptions) ||
+    data.consumptions.length > 256 ||
+    !isTimezoneAwareTimestamp(data.server_time) ||
+    data.durable !== true
+  ) {
+    throw new ApiRequestError(
+      "Workflow protected runtime-context injection consumption response was unsafe",
+      response.status,
+    );
+  }
+  const serverTime = data.server_time;
+  if (
+    !data.consumptions.every((consumption) =>
+      isProtectedRuntimeContextInjectionConsumption(consumption, serverTime),
+    )
+  ) {
+    throw new ApiRequestError(
+      "Workflow protected runtime-context injection consumption response was unsafe",
+      response.status,
+    );
+  }
+  const injectionIds = new Set<string>();
+  for (const consumption of data.consumptions) {
+    if (
+      !isObject(consumption) ||
+      typeof consumption.injection_id !== "string" ||
+      injectionIds.has(consumption.injection_id)
+    ) {
+      throw new ApiRequestError(
+        "Workflow protected runtime-context injection consumption response was unsafe",
+        response.status,
+      );
+    }
+    injectionIds.add(consumption.injection_id);
+  }
+  return data as WorkflowProtectedRuntimeContextInjectionConsumptionInventory;
 }
 
 export async function listWorkflowProtectedResidentContextAccessConsumptions(): Promise<WorkflowProtectedResidentContextAccessConsumptionInventory> {

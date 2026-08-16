@@ -729,6 +729,14 @@ MVP workflows do not execute C3 through C5 capabilities.
   lease is active and unconsumed; the existing 20 authority fields remain false. Injection,
   handle retrieval or use, runtime use, network, connectors, readiness, publication, delivery,
   dispatch, execution and infrastructure mutation remain separately authorized future boundaries.
+- ADR-169 irreversibly consumes that exact injection lease by committing one append-only claim and
+  started attempt before any trusted protected-boundary injector call. Fresh handle-lifecycle and
+  exact-slot readiness evidence binds the current destination fence, exact inert slot commitment
+  and pre-mutation generation. The injector performs one protected-side atomic compare-and-swap,
+  consumes the handle, injects inert context and advances only the slot generation. Known outcomes
+  require a signed minimized receipt; crash, timeout, partial mutation, late/invalid receipt or
+  persistence ambiguity remains uncertain and is never retried. Success does not start or use a
+  runtime, and all operational authority fields remain false.
 
 ## 39. Assumptions
 
@@ -773,3 +781,4 @@ This document is ready to enter Review when:
 | 1.7.0 | 2026-08-16 | Workflow Architecture | Added bounded protected resident-context access-authorization lease |
 | 1.8.0 | 2026-08-16 | Workflow Architecture | Added atomic protected resident-context access consumption and non-bearer runtime-handle lineage |
 | 1.9.0 | 2026-08-16 | Workflow Architecture | Added bounded protected runtime-context injection-authorization lease |
+| 2.0.0 | 2026-08-16 | Workflow Architecture | Added atomic injection-lease consumption and inert protected-slot injection |
