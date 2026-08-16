@@ -10,6 +10,9 @@ from atlas.api.schemas import ResponseMeta
 from atlas.modules.workflows.application.protected_runtime_context_injection_authorization_ports import (  # noqa: E501
     WorkflowProtectedRuntimeContextInjectionAuthorizationPresentation,
 )
+from atlas.modules.workflows.application.protected_runtime_context_injection_consumptions import (
+    WorkflowProtectedRuntimeContextInjectionConsumptionPresentation,
+)
 from atlas.modules.workflows.domain import (
     EventPhysicalTransportCredentialAssignmentSnapshot,
     EventPhysicalTransportProfileSnapshot,
@@ -48,6 +51,8 @@ from atlas.modules.workflows.domain import (
     WorkflowProtectedResidentContextAccessConsumptionAttempt,
     WorkflowProtectedResidentContextAccessConsumptionResult,
     WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseState,
+    WorkflowProtectedRuntimeContextInjectionConsumptionAttempt,
+    WorkflowProtectedRuntimeContextInjectionConsumptionResult,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBinding,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAttempt,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLease,
@@ -3191,6 +3196,102 @@ class WorkflowProtectedRuntimeContextInjectionAuthorizationResponse(BaseModel):
 
 class WorkflowProtectedRuntimeContextInjectionAuthorizationInventoryResponse(BaseModel):
     data: WorkflowProtectedRuntimeContextInjectionAuthorizationInventoryData
+    meta: ResponseMeta
+
+
+class CreateWorkflowProtectedRuntimeContextInjectionConsumptionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    authorization_lease_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    policy_id: Literal["policy.workflow-protected-runtime-context-injection-consumption"]
+    policy_version: Literal["1.0"]
+    irreversible_consumption_acknowledged: Literal[True]
+    uncertain_outcome_requires_new_authorization_acknowledged: Literal[True]
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class WorkflowProtectedRuntimeContextInjectionConsumptionData(BaseModel):
+    """Minimized injection outcome with no handle or runtime-slot locator."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    injection_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    attempt_state: Literal["started", "completed"]
+    result_state: Literal[
+        "injection_pending",
+        "injected_into_protected_runtime_slot",
+        "injection_failed",
+        "injection_outcome_uncertain",
+    ]
+    started_at: datetime
+    completed_at: datetime | None
+    policy_id: Literal["policy.workflow-protected-runtime-context-injection-consumption"]
+    policy_version: Literal["1.0"]
+    injector_profile_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    runtime_slot_profile_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    integrity_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+
+    @classmethod
+    def from_domain(
+        cls,
+        presentation: WorkflowProtectedRuntimeContextInjectionConsumptionPresentation,
+        *,
+        evaluated_at: datetime,
+    ) -> WorkflowProtectedRuntimeContextInjectionConsumptionData:
+        if evaluated_at.tzinfo is None:
+            raise ValueError("runtime context injection presentation time must be timezone-aware")
+        attempt: WorkflowProtectedRuntimeContextInjectionConsumptionAttempt = presentation.attempt
+        result: WorkflowProtectedRuntimeContextInjectionConsumptionResult | None = (
+            presentation.result
+        )
+        result_state = (
+            result.state.value
+            if result is not None
+            else "injection_pending"
+            if evaluated_at < attempt.injection_deadline
+            else "injection_outcome_uncertain"
+        )
+        terminal = result is not None and result.completed_at is not None
+        return cls(
+            injection_id=attempt.injection_id,
+            attempt_state="completed" if terminal else "started",
+            result_state=result_state,
+            started_at=attempt.started_at,
+            completed_at=None if result is None else result.completed_at,
+            policy_id=attempt.policy_id,
+            policy_version=attempt.policy_version,
+            injector_profile_reference=(
+                "integrity.workflow-protected-runtime-context-injector-profile."
+                f"{sha256(f'{attempt.approved_injector_id}|{attempt.approved_injector_version}'.encode()).hexdigest()[:24]}"
+            ),
+            runtime_slot_profile_reference=(
+                "integrity.workflow-protected-runtime-slot-profile."
+                f"{sha256(attempt.runtime_slot_profile_digest.encode('utf-8')).hexdigest()[:24]}"
+            ),
+            integrity_reference=(
+                "integrity.workflow-protected-runtime-context-injection-consumption."
+                f"{sha256(attempt.injection_id.encode('utf-8')).hexdigest()[:24]}"
+            ),
+        )
+
+
+class WorkflowProtectedRuntimeContextInjectionConsumptionInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    consumptions: list[WorkflowProtectedRuntimeContextInjectionConsumptionData] = Field(
+        max_length=256
+    )
+    server_time: datetime
+    durable: Literal[True]
+
+
+class WorkflowProtectedRuntimeContextInjectionConsumptionResponse(BaseModel):
+    data: WorkflowProtectedRuntimeContextInjectionConsumptionData
+    meta: ResponseMeta
+
+
+class WorkflowProtectedRuntimeContextInjectionConsumptionInventoryResponse(BaseModel):
+    data: WorkflowProtectedRuntimeContextInjectionConsumptionInventoryData
     meta: ResponseMeta
 
 
