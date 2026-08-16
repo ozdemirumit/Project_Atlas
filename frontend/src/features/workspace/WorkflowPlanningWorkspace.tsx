@@ -37,6 +37,7 @@ import {
   listWorkflowPhysicalTransportCredentialMaterializations,
   listWorkflowPhysicalTransportTargetContextAccessAuthorizationLeases,
   listWorkflowPhysicalTransportTargetContextArtifactOpenings,
+  listWorkflowPhysicalTransportTargetContextCapsuleConsumerBindings,
   listWorkflowPhysicalTransportTargetContextBindings,
   listWorkflowPhysicalTransportCredentialAssignmentSnapshots,
   listWorkflowPhysicalTransportCredentialAssignmentFreshnessAdmissions,
@@ -243,6 +244,16 @@ export default function WorkflowPlanningWorkspace({
       siteId,
     ],
     queryFn: () => listWorkflowPhysicalTransportTargetContextArtifactOpenings({ scope }),
+    retry: false,
+  });
+  const targetContextCapsuleConsumerBindingQuery = useQuery({
+    queryKey: [
+      "workflow-physical-transport-target-context-capsule-consumer-bindings",
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: () => listWorkflowPhysicalTransportTargetContextCapsuleConsumerBindings({ scope }),
     retry: false,
   });
   const targetQuery = useQuery({
@@ -712,6 +723,10 @@ export default function WorkflowPlanningWorkspace({
   const targetContextArtifactOpeningErrorStatus =
     targetContextArtifactOpeningQuery.error instanceof ApiRequestError
       ? targetContextArtifactOpeningQuery.error.status
+      : undefined;
+  const targetContextCapsuleConsumerBindingErrorStatus =
+    targetContextCapsuleConsumerBindingQuery.error instanceof ApiRequestError
+      ? targetContextCapsuleConsumerBindingQuery.error.status
       : undefined;
   const eventEnvelopes = eventEnvelopesForAdmission;
   const transportAdmissions = transportAdmissionsForArtifacts;
@@ -2737,6 +2752,119 @@ export default function WorkflowPlanningWorkspace({
                           Zero authority: this evidence grants no protected artifact access,
                           endpoint or credential disclosure, delivery, network, readiness probe,
                           publication, dispatch, execution, or infrastructure mutation authority.
+                        </span>
+                      </div>
+                    </div>
+                  </li>
+                ),
+              )}
+            </ol>
+          )}
+      </section>
+
+      <section
+        className="workflow-physical-route-binding-band workflow-target-context-opening-band"
+        aria-labelledby="workflow-target-context-capsule-consumer-binding-title"
+      >
+        <div className="workflow-section-heading">
+          <div>
+            <p className="eyebrow">IMMUTABLE CONSUMER EVIDENCE</p>
+            <h2 id="workflow-target-context-capsule-consumer-binding-title">
+              Target-context capsule consumer bindings
+            </h2>
+          </div>
+          <span>Read only</span>
+        </div>
+        {targetContextCapsuleConsumerBindingQuery.isLoading && (
+          <div className="workflow-empty-state" role="status">
+            <RefreshCw className="spin" size={18} />
+            <span>Loading capsule consumer binding evidence...</span>
+          </div>
+        )}
+        {targetContextCapsuleConsumerBindingQuery.isError && (
+          <div className="workflow-inline-error" role="alert">
+            <AlertTriangle aria-hidden="true" size={18} />
+            <div>
+              <strong>
+                {targetContextCapsuleConsumerBindingErrorStatus === 401
+                  ? "Your session has expired"
+                  : targetContextCapsuleConsumerBindingErrorStatus === 403
+                    ? "Capsule consumer binding permission is missing"
+                    : "Capsule consumer bindings are unavailable"}
+              </strong>
+              <span>
+                {targetContextCapsuleConsumerBindingErrorStatus === 401
+                  ? "Sign in again to continue."
+                  : targetContextCapsuleConsumerBindingErrorStatus === 403
+                    ? "Your current role or scope cannot inspect capsule consumer binding evidence."
+                    : "No capsule, consumer authority, handoff readiness, or operational state is inferred from this failed read."}
+              </span>
+            </div>
+          </div>
+        )}
+        {targetContextCapsuleConsumerBindingQuery.isSuccess &&
+          targetContextCapsuleConsumerBindingQuery.data
+            .physical_transport_target_context_capsule_consumer_bindings.length === 0 && (
+            <div className="workflow-empty-state" role="status">
+              <LockKeyhole size={19} />
+              <span>No capsule consumer bindings are recorded in this scope.</span>
+            </div>
+          )}
+        {targetContextCapsuleConsumerBindingQuery.isSuccess &&
+          targetContextCapsuleConsumerBindingQuery.data
+            .physical_transport_target_context_capsule_consumer_bindings.length > 0 && (
+            <ol
+              className="workflow-step-preview workflow-physical-route-binding-list workflow-target-context-opening-list"
+              aria-label="Target-context capsule consumer bindings"
+            >
+              {targetContextCapsuleConsumerBindingQuery.data.physical_transport_target_context_capsule_consumer_bindings.map(
+                (binding) => (
+                  <li key={binding.binding_id}>
+                    <ShieldCheck size={18} />
+                    <div>
+                      <strong>
+                        <code title={binding.binding_id}>
+                          {safeHolderIdentifier(binding.binding_id)}
+                        </code>
+                        <span className="state-badge neutral">{readableKind(binding.state)}</span>
+                      </strong>
+                      <div className="workflow-physical-route-binding-grid">
+                        <span>
+                          Organization {binding.scope.organization_id} | environment{" "}
+                          {binding.scope.environment_id} | site {binding.scope.site_id}
+                        </span>
+                        <span>Bound {formatTimestamp(binding.bound_at)}</span>
+                        <span>Effective until {formatTimestamp(binding.effective_until)}</span>
+                        <span>
+                          Consumer contract{" "}
+                          <code title={binding.consumer_contract_id}>
+                            {safeHolderIdentifier(binding.consumer_contract_id)}
+                          </code>{" "}
+                          v{binding.consumer_contract_version}
+                        </span>
+                        <span>
+                          Purpose{" "}
+                          <code title={binding.purpose_id}>
+                            {safeHolderIdentifier(binding.purpose_id)}
+                          </code>
+                        </span>
+                        <span>
+                          Policy{" "}
+                          <code title={binding.policy.policy_id}>
+                            {safeHolderIdentifier(binding.policy.policy_id)}
+                          </code>{" "}
+                          v{binding.policy.policy_version}
+                        </span>
+                        <span>
+                          Integrity reference{" "}
+                          <code title={binding.integrity_reference}>
+                            {safeHolderIdentifier(binding.integrity_reference)}
+                          </code>
+                        </span>
+                        <span className="workflow-physical-route-binding-authority workflow-target-context-opening-zero-authority">
+                          Zero authority: this immutable evidence cannot reveal, copy, download,
+                          hand off, unseal, deliver, connect, probe, publish, dispatch, execute, or
+                          mutate infrastructure.
                         </span>
                       </div>
                     </div>

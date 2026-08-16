@@ -1116,6 +1116,51 @@ export type WorkflowPhysicalTransportTargetContextArtifactOpeningInventory = {
   durable: boolean;
 };
 
+export type WorkflowPhysicalTransportTargetContextCapsuleConsumerBindingPolicy = {
+  policy_id: "policy.workflow-protected-transport-target-context-capsule-consumer-binding";
+  policy_version: "1.0";
+};
+
+export type WorkflowPhysicalTransportTargetContextCapsuleConsumerBindingAuthority = {
+  endpoint_resolution_authorized: false;
+  route_selection_authorized: false;
+  route_binding_authorized: false;
+  credential_selection_authorized: false;
+  credential_assignment_binding_authorized: false;
+  credential_access_authorized: false;
+  credential_brokerage_authorized: false;
+  credential_resolution_authorized: false;
+  protected_artifact_access_authorized: false;
+  credential_delivery_authorized: false;
+  network_access_authorized: false;
+  readiness_probe_authorized: false;
+  publication_authorized: false;
+  delivery_authorized: false;
+  dispatch_authorized: false;
+  execution_authorized: false;
+  infrastructure_mutation_authorized: false;
+};
+
+export type WorkflowPhysicalTransportTargetContextCapsuleConsumerBinding = {
+  binding_id: string;
+  scope: WorkflowRunPlan["scope"];
+  state: "bound";
+  bound_at: string;
+  effective_until: string;
+  consumer_contract_id: string;
+  consumer_contract_version: string;
+  purpose_id: string;
+  policy: WorkflowPhysicalTransportTargetContextCapsuleConsumerBindingPolicy;
+  authority: WorkflowPhysicalTransportTargetContextCapsuleConsumerBindingAuthority;
+  integrity_reference: string;
+};
+
+export type WorkflowPhysicalTransportTargetContextCapsuleConsumerBindingInventory = {
+  physical_transport_target_context_capsule_consumer_bindings: WorkflowPhysicalTransportTargetContextCapsuleConsumerBinding[];
+  server_time: string;
+  durable: boolean;
+};
+
 export type WorkflowPhysicalTransportCredentialAssignmentSnapshotAuthority = {
   endpoint_resolution_authorized: false;
   protected_artifact_access_authorized: false;
@@ -2108,6 +2153,47 @@ const physicalTransportTargetContextArtifactOpeningFields = [
 ] as const;
 const physicalTransportTargetContextArtifactOpeningInventoryFields = [
   "physical_transport_target_context_artifact_openings",
+  "server_time",
+  "durable",
+] as const;
+const physicalTransportTargetContextCapsuleConsumerBindingPolicyFields = [
+  "policy_id",
+  "policy_version",
+] as const;
+const physicalTransportTargetContextCapsuleConsumerBindingAuthorityFields = [
+  "endpoint_resolution_authorized",
+  "route_selection_authorized",
+  "route_binding_authorized",
+  "credential_selection_authorized",
+  "credential_assignment_binding_authorized",
+  "credential_access_authorized",
+  "credential_brokerage_authorized",
+  "credential_resolution_authorized",
+  "protected_artifact_access_authorized",
+  "credential_delivery_authorized",
+  "network_access_authorized",
+  "readiness_probe_authorized",
+  "publication_authorized",
+  "delivery_authorized",
+  "dispatch_authorized",
+  "execution_authorized",
+  "infrastructure_mutation_authorized",
+] as const;
+const physicalTransportTargetContextCapsuleConsumerBindingFields = [
+  "binding_id",
+  "scope",
+  "state",
+  "bound_at",
+  "effective_until",
+  "consumer_contract_id",
+  "consumer_contract_version",
+  "purpose_id",
+  "policy",
+  "authority",
+  "integrity_reference",
+] as const;
+const physicalTransportTargetContextCapsuleConsumerBindingInventoryFields = [
+  "physical_transport_target_context_capsule_consumer_bindings",
   "server_time",
   "durable",
 ] as const;
@@ -3787,6 +3873,68 @@ function isPhysicalTransportTargetContextArtifactOpening(
   );
 }
 
+function hasZeroPhysicalTransportTargetContextCapsuleConsumerBindingAuthority(
+  value: unknown,
+): value is WorkflowPhysicalTransportTargetContextCapsuleConsumerBindingAuthority {
+  return (
+    isObject(value) &&
+    hasExactKeys(value, physicalTransportTargetContextCapsuleConsumerBindingAuthorityFields) &&
+    physicalTransportTargetContextCapsuleConsumerBindingAuthorityFields.every(
+      (field) => value[field] === false,
+    )
+  );
+}
+
+function isTargetContextCapsuleConsumerBindingPolicy(
+  value: unknown,
+): value is WorkflowPhysicalTransportTargetContextCapsuleConsumerBindingPolicy {
+  return (
+    isObject(value) &&
+    hasExactKeys(value, physicalTransportTargetContextCapsuleConsumerBindingPolicyFields) &&
+    value.policy_id ===
+      "policy.workflow-protected-transport-target-context-capsule-consumer-binding" &&
+    value.policy_version === "1.0"
+  );
+}
+
+function isPhysicalTransportTargetContextCapsuleConsumerBinding(
+  value: unknown,
+  scope: WorkflowScope,
+  serverTime: string,
+): value is WorkflowPhysicalTransportTargetContextCapsuleConsumerBinding {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, physicalTransportTargetContextCapsuleConsumerBindingFields) ||
+    !isExactScope(value.scope) ||
+    containsCredentialMaterial(value) ||
+    !isTimezoneAwareTimestamp(value.bound_at) ||
+    !isTimezoneAwareTimestamp(value.effective_until)
+  ) {
+    return false;
+  }
+  const bindingScope = value.scope;
+  const boundAt = Date.parse(value.bound_at);
+  const effectiveUntil = Date.parse(value.effective_until);
+  const evaluatedAt = Date.parse(serverTime);
+  return (
+    isStableIdentifier(value.binding_id) &&
+    bindingScope.organization_id === scope.organizationId &&
+    bindingScope.environment_id === scope.environmentId &&
+    bindingScope.site_id === scope.siteId &&
+    value.state === "bound" &&
+    boundAt <= evaluatedAt &&
+    boundAt < effectiveUntil &&
+    value.consumer_contract_id ===
+      "contract.workflow-protected-transport-target-context-capsule-consumer" &&
+    value.consumer_contract_version === "1.0" &&
+    value.purpose_id ===
+      "purpose.workflow-protected-transport-target-context-capsule-handoff-evaluation" &&
+    isTargetContextCapsuleConsumerBindingPolicy(value.policy) &&
+    hasZeroPhysicalTransportTargetContextCapsuleConsumerBindingAuthority(value.authority) &&
+    isStableIdentifier(value.integrity_reference)
+  );
+}
+
 function hasZeroPhysicalTransportCredentialAssignmentSnapshotAuthority(
   value: unknown,
 ): value is WorkflowPhysicalTransportCredentialAssignmentSnapshotAuthority {
@@ -5053,6 +5201,59 @@ export async function listWorkflowPhysicalTransportTargetContextArtifactOpenings
     openingIds.add(opening.opening_id);
   }
   return data as WorkflowPhysicalTransportTargetContextArtifactOpeningInventory;
+}
+
+export async function listWorkflowPhysicalTransportTargetContextCapsuleConsumerBindings(input: {
+  scope: WorkflowScope;
+}): Promise<WorkflowPhysicalTransportTargetContextCapsuleConsumerBindingInventory> {
+  const response = await apiFetch(
+    "/api/v1/workflows/physical-transport-target-context-capsule-consumer-bindings",
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(
+    response,
+    "Workflow physical transport target-context capsule consumer binding retrieval failed",
+  );
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, physicalTransportTargetContextCapsuleConsumerBindingInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    !Array.isArray(data.physical_transport_target_context_capsule_consumer_bindings) ||
+    data.physical_transport_target_context_capsule_consumer_bindings.length > 256 ||
+    !isTimezoneAwareTimestamp(data.server_time) ||
+    typeof data.durable !== "boolean"
+  ) {
+    throw new ApiRequestError(
+      "Workflow physical transport target-context capsule consumer binding response was unsafe",
+      response.status,
+    );
+  }
+  const serverTime = data.server_time;
+  if (
+    !data.physical_transport_target_context_capsule_consumer_bindings.every((binding) =>
+      isPhysicalTransportTargetContextCapsuleConsumerBinding(binding, input.scope, serverTime),
+    )
+  ) {
+    throw new ApiRequestError(
+      "Workflow physical transport target-context capsule consumer binding response was unsafe",
+      response.status,
+    );
+  }
+  const bindingIds = new Set<string>();
+  for (const binding of data.physical_transport_target_context_capsule_consumer_bindings) {
+    if (
+      !isObject(binding) ||
+      typeof binding.binding_id !== "string" ||
+      bindingIds.has(binding.binding_id)
+    ) {
+      throw new ApiRequestError(
+        "Workflow physical transport target-context capsule consumer binding response was unsafe",
+        response.status,
+      );
+    }
+    bindingIds.add(binding.binding_id);
+  }
+  return data as WorkflowPhysicalTransportTargetContextCapsuleConsumerBindingInventory;
 }
 
 export async function listWorkflowPhysicalTransportCredentialAssignmentSnapshots(): Promise<WorkflowPhysicalTransportCredentialAssignmentSnapshotInventory> {

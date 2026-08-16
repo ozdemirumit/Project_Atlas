@@ -305,6 +305,20 @@ from atlas.modules.workflows.application.target_context_bindings import (
     WorkflowEventPhysicalTransportTargetContextBindingService,
     WorkflowPhysicalTransportTargetContextBinderContext,
 )
+from atlas.modules.workflows.application.target_context_capsule_consumer_binding_ports import (
+    WorkflowProtectedTransportTargetContextCapsuleConsumerBindingError,
+    WorkflowTargetContextCapsuleConsumerBindingRepository,
+    WorkflowTargetContextCapsuleConsumerBindingRequest,
+    WorkflowTargetContextCapsuleConsumerBindingResult,
+    WorkflowTargetContextCapsuleConsumerBindingStatus,
+    validate_workflow_target_context_capsule_consumer_binding_request,
+)
+from atlas.modules.workflows.application.target_context_capsule_consumer_bindings import (
+    WORKFLOW_PROTECTED_TRANSPORT_TARGET_CONTEXT_CAPSULE_BINDER_AUDIENCE,
+    WORKFLOW_PROTECTED_TRANSPORT_TARGET_CONTEXT_CAPSULE_BINDER_SUBJECT,
+    WorkflowProtectedTransportTargetContextCapsuleBinderContext,
+    WorkflowProtectedTransportTargetContextCapsuleConsumerBindingService,
+)
 from atlas.modules.workflows.application.transport_admission_ports import (
     WorkflowEventTransportAdmissionError,
     WorkflowEventTransportAdmissionIdempotencyRecord,
@@ -393,6 +407,8 @@ __all__ = [
     "WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_BINDER_AUDIENCE",
     "WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_BINDER_SUBJECT",
     "WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_BINDING_PRODUCER",
+    "WORKFLOW_PROTECTED_TRANSPORT_TARGET_CONTEXT_CAPSULE_BINDER_AUDIENCE",
+    "WORKFLOW_PROTECTED_TRANSPORT_TARGET_CONTEXT_CAPSULE_BINDER_SUBJECT",
     "WORKFLOW_TRANSPORT_COMPATIBILITY_ADMISSION_PRODUCER",
     "WORKFLOW_TRANSPORT_COMPATIBILITY_ADMITTER_AUDIENCE",
     "WORKFLOW_TRANSPORT_CREDENTIAL_ASSIGNMENT_REGISTRY_AUDIENCE",
@@ -557,6 +573,9 @@ __all__ = [
     "WorkflowProtectedArtifactStatusSignatureVerifier",
     "WorkflowProtectedCredentialStatusAttestor",
     "WorkflowProtectedEndpointStatusAttestor",
+    "WorkflowProtectedTransportTargetContextCapsuleBinderContext",
+    "WorkflowProtectedTransportTargetContextCapsuleConsumerBindingError",
+    "WorkflowProtectedTransportTargetContextCapsuleConsumerBindingService",
     "WorkflowRunMaterializationError",
     "WorkflowRunMaterializationIdempotencyRecord",
     "WorkflowRunMaterializationRepository",
@@ -577,6 +596,10 @@ __all__ = [
     "WorkflowTargetContextArtifactOpeningResultRequest",
     "WorkflowTargetContextArtifactOpeningResultStatus",
     "WorkflowTargetContextArtifactOpeningResultWrite",
+    "WorkflowTargetContextCapsuleConsumerBindingRepository",
+    "WorkflowTargetContextCapsuleConsumerBindingRequest",
+    "WorkflowTargetContextCapsuleConsumerBindingResult",
+    "WorkflowTargetContextCapsuleConsumerBindingStatus",
     "WorkflowTransportCompatibilityAdmitterContext",
     "WorkflowTransportCredentialAccessAuthorizationLeaseError",
     "WorkflowTransportCredentialAccessAuthorizationLeaseIdempotencyRecord",
@@ -624,6 +647,7 @@ __all__ = [
     "WorkflowWorkerContext",
     "validate_workflow_target_context_access_authorization_request",
     "validate_workflow_target_context_artifact_opening_claim_request",
+    "validate_workflow_target_context_capsule_consumer_binding_request",
     "validate_workflow_transport_credential_access_authorization_request",
     "validate_workflow_transport_credential_assignment_freshness_request",
     "validate_workflow_transport_credential_assignment_snapshot",

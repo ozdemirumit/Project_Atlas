@@ -149,6 +149,11 @@ from atlas.modules.workflows.application.target_context_binding_ports import (
     WorkflowEventPhysicalTransportTargetContextBindingResult,
     WorkflowEventPhysicalTransportTargetContextBindingStatus,
 )
+from atlas.modules.workflows.application.target_context_capsule_consumer_binding_ports import (
+    WorkflowProtectedTransportTargetContextCapsuleConsumerBindingError,
+    WorkflowTargetContextCapsuleConsumerBindingRequest,
+    WorkflowTargetContextCapsuleConsumerBindingResult,
+)
 from atlas.modules.workflows.application.transport_compatibility_admission_ports import (
     WorkflowEventTransportCompatibilityAdmissionIdempotencyRecord,
     WorkflowEventTransportCompatibilityAdmissionRequest,
@@ -230,6 +235,7 @@ from atlas.modules.workflows.domain import (
     WorkflowOutboxPublicationLease,
     WorkflowOutboxPublicationLeaseEffectiveState,
     WorkflowPlanState,
+    WorkflowProtectedTransportTargetContextCapsuleConsumerBinding,
     WorkflowRunPlan,
     WorkflowScope,
     canonical_digest,
@@ -3076,6 +3082,22 @@ class InMemoryWorkflowPlanRepository:
                 is not None
                 and result.scope == scope
             )
+
+    async def bind_target_context_capsule_consumer(
+        self, request: WorkflowTargetContextCapsuleConsumerBindingRequest
+    ) -> WorkflowTargetContextCapsuleConsumerBindingResult:
+        raise WorkflowProtectedTransportTargetContextCapsuleConsumerBindingError(
+            "workflow_target_context_capsule_consumer_binding_requires_postgresql",
+            "Target-context capsule consumer bindings require durable PostgreSQL storage.",
+        )
+
+    async def list_target_context_capsule_consumer_bindings(
+        self, *, scope: WorkflowScope, limit: int
+    ) -> tuple[WorkflowProtectedTransportTargetContextCapsuleConsumerBinding, ...]:
+        raise WorkflowProtectedTransportTargetContextCapsuleConsumerBindingError(
+            "workflow_target_context_capsule_consumer_binding_requires_postgresql",
+            "Target-context capsule consumer bindings require durable PostgreSQL storage.",
+        )
 
     async def lookup_target_context_artifact_opening_replay(
         self, request: WorkflowTargetContextArtifactOpeningReplayLookupRequest

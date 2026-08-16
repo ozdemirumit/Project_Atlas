@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-211 |
 | Title | Immutable protected target-context capsule consumer binding without handoff, unsealing, delivery, network or runtime authority |
-| Status | In progress; documentation slice defined |
+| Status | Local implementation and verification complete; PR pending |
 | Branch | `agent/protected-capsule-consumer-binding` |
 | Pull Request | Not opened |
 | Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-158, ADR-159, ADR-160, ADR-161 |
 | Last Updated | 2026-08-16 |
-| Next Action | Implement the ADR-161 domain, application, PostgreSQL, API, security and read-only UI contracts |
+| Next Action | Open the exact-head PR, pass real PostgreSQL CI, merge by SHA and verify independent `main` CI |
 
 ### ATLAS-IMP-211 Scope Rationale
 
@@ -47,6 +47,24 @@
   or operational controls.
 - Full local suites, real PostgreSQL concurrency/migration CI, live desktop/mobile inspection,
   exact-head PR CI, SHA-locked merge and independent main CI must pass.
+
+### ATLAS-IMP-211 Local Verification
+
+- Backend Ruff formatting/lint and MyPy passed. The complete backend suite passed with `2294`
+  tests and `24` environment-dependent skips before the final isolated live-transaction case was
+  added; its final focused PostgreSQL file passed `8` local tests with `5` DSN-dependent skips.
+- Frontend TypeScript and ESLint passed. All `95` test files and `722` tests passed, followed by a
+  successful production Vite build.
+- PostgreSQL coverage checks canonical lock order, full lineage/currentness revalidation,
+  code-owned identity constraints, append-only and uniqueness rules, real repository
+  insert/flush/commit, concurrent binding, exact and changed replay, and atomic binding/audit-claim
+  persistence. Live cases are wired into CI through `ATLAS_TEST_POSTGRES_DSN`.
+- Live validation at `http://127.0.0.1:5270/#/workspace/workflows` used one normal
+  `atlas-demo` / `local-demo` username/password session. The capsule consumer binding region was
+  read-only with no buttons or links, required no MFA or second browser prompt, had no horizontal
+  overflow at `390x844` or `1440x900`, and produced no browser console warnings or errors.
+- Independent final review found no remaining P0, P1 or P2 issue after the lock-order, database
+  contract and successful transaction-path findings were corrected and retested.
 
 ### ATLAS-IMP-210 Scope Rationale
 

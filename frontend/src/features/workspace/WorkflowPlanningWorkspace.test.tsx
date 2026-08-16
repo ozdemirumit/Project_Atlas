@@ -25,6 +25,7 @@ import {
   type WorkflowPhysicalTransportCredentialMaterialization,
   type WorkflowPhysicalTransportTargetContextAccessAuthorizationLease,
   type WorkflowPhysicalTransportTargetContextArtifactOpening,
+  type WorkflowPhysicalTransportTargetContextCapsuleConsumerBinding,
   type WorkflowPhysicalTransportTargetContextBinding,
   type WorkflowPhysicalTransportCredentialAssignmentSnapshot,
   type WorkflowPhysicalTransportCredentialAssignmentBinding,
@@ -993,6 +994,41 @@ const targetContextArtifactOpening: WorkflowPhysicalTransportTargetContextArtifa
   integrity_reference: "integrity.workflow-target-context-artifact-opening.1234567890abcdef",
 };
 
+const targetContextCapsuleConsumerBinding: WorkflowPhysicalTransportTargetContextCapsuleConsumerBinding = {
+  binding_id: "workflow-target-context-capsule-consumer-binding.1234567890abcdef",
+  scope: { ...plan.scope },
+  state: "bound",
+  bound_at: "2026-08-14T10:08:24Z",
+  effective_until: "2026-08-14T10:08:27Z",
+  consumer_contract_id: "contract.workflow-protected-transport-target-context-capsule-consumer",
+  consumer_contract_version: "1.0",
+  purpose_id: "purpose.workflow-protected-transport-target-context-capsule-handoff-evaluation",
+  policy: {
+    policy_id: "policy.workflow-protected-transport-target-context-capsule-consumer-binding",
+    policy_version: "1.0",
+  },
+  authority: {
+    endpoint_resolution_authorized: false,
+    route_selection_authorized: false,
+    route_binding_authorized: false,
+    credential_selection_authorized: false,
+    credential_assignment_binding_authorized: false,
+    credential_access_authorized: false,
+    credential_brokerage_authorized: false,
+    credential_resolution_authorized: false,
+    protected_artifact_access_authorized: false,
+    credential_delivery_authorized: false,
+    network_access_authorized: false,
+    readiness_probe_authorized: false,
+    publication_authorized: false,
+    delivery_authorized: false,
+    dispatch_authorized: false,
+    execution_authorized: false,
+    infrastructure_mutation_authorized: false,
+  },
+  integrity_reference: "integrity.workflow-target-context-capsule-consumer-binding.1234567890abcdef",
+};
+
 const credentialAssignmentSnapshot: WorkflowPhysicalTransportCredentialAssignmentSnapshot = {
   snapshot_id: "workflow-credential-assignment-snapshot.1234567890abcdef",
   assignment_id: "deployment-credential-assignment.1234567890abcdef",
@@ -1534,6 +1570,29 @@ function targetContextArtifactOpeningResponse(
   );
 }
 
+function targetContextCapsuleConsumerBindingResponse(
+  bindings: unknown[],
+  status = 200,
+  serverTime = "2026-08-14T10:08:25Z",
+): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: {
+            physical_transport_target_context_capsule_consumer_bindings: bindings,
+            server_time: serverTime,
+            durable: false,
+          },
+          meta: {
+            correlation_id: "correlation.workflow.target-context-capsule-consumer-binding",
+            generated_at: serverTime,
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function credentialAssignmentSnapshotResponse(
   snapshots: unknown[],
   status = 200,
@@ -1608,6 +1667,8 @@ function mockReadResponses(input: {
   targetContextAccessAuthorizationLeaseServerTime?: string;
   targetContextArtifactOpenings?: unknown[];
   targetContextArtifactOpeningServerTime?: string;
+  targetContextCapsuleConsumerBindings?: unknown[];
+  targetContextCapsuleConsumerBindingServerTime?: string;
   credentialAssignmentSnapshots?: unknown[];
   transportCompatibilityAdmissions?: unknown[];
   pendingTransportAdmissionResponse?: Promise<Response>;
@@ -1626,6 +1687,7 @@ function mockReadResponses(input: {
   pendingTargetContextBindingResponse?: Promise<Response>;
   pendingTargetContextAccessAuthorizationLeaseResponse?: Promise<Response>;
   pendingTargetContextArtifactOpeningResponse?: Promise<Response>;
+  pendingTargetContextCapsuleConsumerBindingResponse?: Promise<Response>;
   pendingCredentialAssignmentSnapshotResponse?: Promise<Response>;
   pendingTransportCompatibilityAdmissionResponse?: Promise<Response>;
   leaseStatus?: number;
@@ -1667,6 +1729,8 @@ function mockReadResponses(input: {
   targetContextAccessAuthorizationLeaseStatuses?: number[];
   targetContextArtifactOpeningStatus?: number;
   targetContextArtifactOpeningStatuses?: number[];
+  targetContextCapsuleConsumerBindingStatus?: number;
+  targetContextCapsuleConsumerBindingStatuses?: number[];
   credentialAssignmentSnapshotStatus?: number;
   credentialAssignmentSnapshotStatuses?: number[];
   transportCompatibilityAdmissionStatus?: number;
@@ -1688,10 +1752,34 @@ function mockReadResponses(input: {
   let targetContextBindingReadCount = 0;
   let targetContextAccessAuthorizationLeaseReadCount = 0;
   let targetContextArtifactOpeningReadCount = 0;
+  let targetContextCapsuleConsumerBindingReadCount = 0;
   let credentialAssignmentSnapshotReadCount = 0;
   let transportCompatibilityAdmissionReadCount = 0;
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (
+      url.endsWith(
+        "/api/v1/workflows/physical-transport-target-context-capsule-consumer-bindings",
+      )
+    ) {
+      if (input.pendingTargetContextCapsuleConsumerBindingResponse) {
+        return input.pendingTargetContextCapsuleConsumerBindingResponse;
+      }
+      const status =
+        input.targetContextCapsuleConsumerBindingStatuses?.[
+          Math.min(
+            targetContextCapsuleConsumerBindingReadCount++,
+            input.targetContextCapsuleConsumerBindingStatuses.length - 1,
+          )
+        ] ?? input.targetContextCapsuleConsumerBindingStatus ?? 200;
+      return Promise.resolve(
+        targetContextCapsuleConsumerBindingResponse(
+          input.targetContextCapsuleConsumerBindings ?? [],
+          status,
+          input.targetContextCapsuleConsumerBindingServerTime,
+        ),
+      );
+    }
     if (
       url.endsWith(
         "/api/v1/workflows/physical-transport-target-context-artifact-openings",
@@ -5259,6 +5347,139 @@ describe("WorkflowPlanningWorkspace", () => {
     expect(section).not.toHaveTextContent(
       /capsule\.hidden|artifact\.hidden|attestation\.hidden|route\.hidden|provider\.hidden/i,
     );
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("renders capsule consumer bindings as minimized immutable read-only evidence", async () => {
+    mockReadResponses({
+      targetContextCapsuleConsumerBindings: [targetContextCapsuleConsumerBinding],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Target-context capsule consumer bindings",
+    })).closest("section") as HTMLElement;
+    const records = await within(section).findByRole("list", {
+      name: "Target-context capsule consumer bindings",
+    });
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) =>
+        (request instanceof Request ? request.url : request.toString()).endsWith(
+          "/api/v1/workflows/physical-transport-target-context-capsule-consumer-bindings",
+        ),
+      ),
+    ).toBe(true);
+    expect(within(section).getByTitle(targetContextCapsuleConsumerBinding.binding_id)).toBeVisible();
+    expect(
+      within(section).getByTitle(targetContextCapsuleConsumerBinding.consumer_contract_id),
+    ).toBeVisible();
+    expect(within(section).getByTitle(targetContextCapsuleConsumerBinding.purpose_id)).toBeVisible();
+    expect(records).toHaveTextContent("bound");
+    expect(records).toHaveTextContent(
+      /Zero authority: this immutable evidence cannot reveal.*copy.*download.*hand off.*unseal.*deliver.*connect.*probe.*publish.*dispatch.*execute.*mutate infrastructure/i,
+    );
+    expect(within(section).queryByRole("button")).toBeNull();
+    expect(section).not.toHaveTextContent(
+      /capsule\.secret|opening-result digest|artifact[-_ ]?(?:id|digest)|outbox[-_ ]?(?:id|digest)|route[-_ ]?(?:id|digest)|assignment[-_ ]?(?:id|digest)|idempotency|fencing token/i,
+    );
+    expect(section).not.toHaveTextContent(/\bMFA\b|second login|authorized browser session/i);
+  });
+
+  it("renders empty and fail-closed capsule consumer binding states without controls", async () => {
+    mockReadResponses({ targetContextCapsuleConsumerBindings: [] });
+    const view = renderWorkspace();
+    let section = (await screen.findByRole("heading", {
+      name: "Target-context capsule consumer bindings",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("No capsule consumer bindings are recorded in this scope."),
+    ).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+
+    view.unmount();
+    mockReadResponses({ targetContextCapsuleConsumerBindingStatus: 503 });
+    renderWorkspace();
+    section = (await screen.findByRole("heading", {
+      name: "Target-context capsule consumer bindings",
+    })).closest("section") as HTMLElement;
+    expect(await within(section).findByText("Capsule consumer bindings are unavailable")).toBeVisible();
+    expect(
+      within(section).getByText(/No capsule, consumer authority, handoff readiness/i),
+    ).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it.each([
+    [401, "Your session has expired", "Sign in again to continue."],
+    [
+      403,
+      "Capsule consumer binding permission is missing",
+      "current role or scope cannot inspect capsule consumer binding evidence",
+    ],
+  ])(
+    "handles capsule consumer binding read status %s in the normal browser session",
+    async (status, title, detail) => {
+      mockReadResponses({ targetContextCapsuleConsumerBindingStatus: status });
+      renderWorkspace();
+      const section = (await screen.findByRole("heading", {
+        name: "Target-context capsule consumer bindings",
+      })).closest("section") as HTMLElement;
+      expect(await within(section).findByText(title)).toBeVisible();
+      expect(within(section).getByText(new RegExp(detail, "i"))).toBeVisible();
+      expect(within(section).queryByRole("button")).toBeNull();
+      expect(section).not.toHaveTextContent(/\bMFA\b|second login|authorized browser session/i);
+    },
+  );
+
+  it.each([
+    ["a capsule id", { ...targetContextCapsuleConsumerBinding, sealed_capsule_id: "capsule.secret" }],
+    ["an opening digest", { ...targetContextCapsuleConsumerBinding, opening_result_digest: "a".repeat(64) }],
+    ["an artifact", { ...targetContextCapsuleConsumerBinding, event_artifact_id: "artifact.secret" }],
+    ["an outbox", { ...targetContextCapsuleConsumerBinding, outbox_entry_id: "outbox.secret" }],
+    ["a route", { ...targetContextCapsuleConsumerBinding, route_binding_id: "route.secret" }],
+    ["an assignment", { ...targetContextCapsuleConsumerBinding, assignment_id: "assignment.secret" }],
+    [
+      "an unrecognized consumer contract",
+      {
+        ...targetContextCapsuleConsumerBinding,
+        consumer_contract_id: "contract.workflow-unrecognized-consumer",
+      },
+    ],
+    [
+      "an unrecognized purpose",
+      {
+        ...targetContextCapsuleConsumerBinding,
+        purpose_id: "purpose.workflow-unrecognized-consumer",
+      },
+    ],
+    [
+      "runtime authority",
+      {
+        ...targetContextCapsuleConsumerBinding,
+        authority: {
+          ...targetContextCapsuleConsumerBinding.authority,
+          execution_authorized: true,
+        },
+      },
+    ],
+    [
+      "an extra policy field",
+      {
+        ...targetContextCapsuleConsumerBinding,
+        policy: { ...targetContextCapsuleConsumerBinding.policy, policy_digest: "b".repeat(64) },
+      },
+    ],
+  ])("fails closed when a capsule consumer binding contains %s", async (_case, unsafe) => {
+    mockReadResponses({ targetContextCapsuleConsumerBindings: [unsafe] });
+    renderWorkspace();
+    const section = (await screen.findByRole("heading", {
+      name: "Target-context capsule consumer bindings",
+    })).closest("section") as HTMLElement;
+    expect(await within(section).findByText("Capsule consumer bindings are unavailable")).toBeVisible();
+    expect(
+      within(section).queryByRole("list", { name: "Target-context capsule consumer bindings" }),
+    ).toBeNull();
+    expect(section).not.toHaveTextContent(/capsule\.secret|artifact\.secret|outbox\.secret|route\.secret|assignment\.secret/i);
     expect(within(section).queryByRole("button")).toBeNull();
   });
 

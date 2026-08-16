@@ -247,6 +247,10 @@ class WorkflowEventPhysicalTransportTargetContextArtifactOpeningFailureClass(Str
     TRUSTED_OPENER_REJECTED = "trusted_opener_rejected"
 
 
+class WorkflowProtectedTransportTargetContextCapsuleConsumerBindingState(StrEnum):
+    BOUND = "bound"
+
+
 class WorkflowEventPhysicalTransportCredentialMaterializationFailureClass(StrEnum):
     SEALED_LINEAGE_REJECTED = "sealed_lineage_rejected"
     CREDENTIAL_SOURCE_INVALID = "credential_source_invalid"
@@ -8340,3 +8344,341 @@ class WorkflowEventPhysicalTransportTargetContextArtifactOpeningResult:
 
     def digest_payload(self) -> dict[str, object]:
         return _target_context_artifact_opening_payload(self)
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedTransportTargetContextCapsuleConsumerBindingAuthority:
+    """Explicit zero-authority contract for capsule consumer binding evidence."""
+
+    endpoint_resolution_authorized: bool = False
+    route_selection_authorized: bool = False
+    route_binding_authorized: bool = False
+    credential_selection_authorized: bool = False
+    credential_assignment_binding_authorized: bool = False
+    credential_access_authorized: bool = False
+    credential_brokerage_authorized: bool = False
+    credential_resolution_authorized: bool = False
+    protected_artifact_access_authorized: bool = False
+    credential_delivery_authorized: bool = False
+    network_access_authorized: bool = False
+    readiness_probe_authorized: bool = False
+    publication_authorized: bool = False
+    delivery_authorized: bool = False
+    dispatch_authorized: bool = False
+    execution_authorized: bool = False
+    infrastructure_mutation_authorized: bool = False
+
+    def __post_init__(self) -> None:
+        if any(self.canonical_value().values()):
+            raise ValueError("target context capsule consumer bindings cannot grant authority")
+
+    def canonical_value(self) -> dict[str, bool]:
+        return {
+            "credential_access_authorized": self.credential_access_authorized,
+            "credential_assignment_binding_authorized": (
+                self.credential_assignment_binding_authorized
+            ),
+            "credential_brokerage_authorized": self.credential_brokerage_authorized,
+            "credential_delivery_authorized": self.credential_delivery_authorized,
+            "credential_resolution_authorized": self.credential_resolution_authorized,
+            "credential_selection_authorized": self.credential_selection_authorized,
+            "delivery_authorized": self.delivery_authorized,
+            "dispatch_authorized": self.dispatch_authorized,
+            "endpoint_resolution_authorized": self.endpoint_resolution_authorized,
+            "execution_authorized": self.execution_authorized,
+            "infrastructure_mutation_authorized": self.infrastructure_mutation_authorized,
+            "network_access_authorized": self.network_access_authorized,
+            "protected_artifact_access_authorized": self.protected_artifact_access_authorized,
+            "publication_authorized": self.publication_authorized,
+            "readiness_probe_authorized": self.readiness_probe_authorized,
+            "route_binding_authorized": self.route_binding_authorized,
+            "route_selection_authorized": self.route_selection_authorized,
+        }
+
+
+def _target_context_capsule_consumer_binding_payload(instance: object) -> dict[str, object]:
+    return {
+        name: (
+            value.isoformat()
+            if isinstance(value, datetime)
+            else value.value
+            if isinstance(value, StrEnum)
+            else value.canonical_value()
+            if isinstance(
+                value,
+                (
+                    WorkflowScope,
+                    WorkflowProtectedTransportTargetContextCapsuleConsumerBindingAuthority,
+                ),
+            )
+            else value
+        )
+        for name, value in (
+            (field.name, getattr(instance, field.name)) for field in fields(cast(Any, instance))
+        )
+        if name != "canonical_digest"
+    }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedTransportTargetContextCapsuleConsumerBindingPolicy:
+    policy_id: str
+    policy_version: str
+    consumer_subject_id: str
+    consumer_audience: str
+    consumer_contract_id: str
+    consumer_contract_version: str
+    purpose_id: str
+    minimum_remaining_lifetime_seconds: int
+    successful_opening_required: bool
+    exact_pending_event_lineage_required: bool
+    one_binding_per_opening_result_required: bool
+    one_binding_per_capsule_required: bool
+    handoff_forbidden: bool
+    unsealing_forbidden: bool
+    external_io_forbidden: bool
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.policy_id,
+            self.policy_version,
+            self.consumer_subject_id,
+            self.consumer_audience,
+            self.consumer_contract_id,
+            self.consumer_contract_version,
+            self.purpose_id,
+        ):
+            _require_identifier(value, name="target context capsule consumer binding policy value")
+        if (
+            self.policy_id
+            != "policy.workflow-protected-transport-target-context-capsule-consumer-binding"
+            or self.policy_version != "1.0"
+            or self.consumer_subject_id
+            != "service.workflow-protected-transport-target-context-capsule-consumer"
+            or self.consumer_audience
+            != "audience.workflow-protected-transport-target-context-capsule-consumer"
+            or self.consumer_contract_id
+            != "contract.workflow-protected-transport-target-context-capsule-consumer"
+            or self.consumer_contract_version != "1.0"
+            or self.purpose_id
+            != "purpose.workflow-protected-transport-target-context-capsule-handoff-evaluation"
+            or self.minimum_remaining_lifetime_seconds != 1
+            or self.successful_opening_required is not True
+            or self.exact_pending_event_lineage_required is not True
+            or self.one_binding_per_opening_result_required is not True
+            or self.one_binding_per_capsule_required is not True
+            or self.handoff_forbidden is not True
+            or self.unsealing_forbidden is not True
+            or self.external_io_forbidden is not True
+        ):
+            raise ValueError("target context capsule consumer binding policy is not code-owned")
+        _require_digest(
+            self.canonical_digest,
+            name="target context capsule consumer binding policy digest",
+        )
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError(
+                "target context capsule consumer binding policy canonical digest mismatch"
+            )
+
+    def digest_payload(self) -> dict[str, object]:
+        return _target_context_capsule_consumer_binding_payload(self)
+
+
+def code_owned_workflow_protected_transport_target_context_capsule_consumer_binding_policy() -> (
+    WorkflowProtectedTransportTargetContextCapsuleConsumerBindingPolicy
+):
+    values: dict[str, object] = {
+        "policy_id": (
+            "policy.workflow-protected-transport-target-context-capsule-consumer-binding"
+        ),
+        "policy_version": "1.0",
+        "consumer_subject_id": (
+            "service.workflow-protected-transport-target-context-capsule-consumer"
+        ),
+        "consumer_audience": (
+            "audience.workflow-protected-transport-target-context-capsule-consumer"
+        ),
+        "consumer_contract_id": (
+            "contract.workflow-protected-transport-target-context-capsule-consumer"
+        ),
+        "consumer_contract_version": "1.0",
+        "purpose_id": (
+            "purpose.workflow-protected-transport-target-context-capsule-handoff-evaluation"
+        ),
+        "minimum_remaining_lifetime_seconds": 1,
+        "successful_opening_required": True,
+        "exact_pending_event_lineage_required": True,
+        "one_binding_per_opening_result_required": True,
+        "one_binding_per_capsule_required": True,
+        "handoff_forbidden": True,
+        "unsealing_forbidden": True,
+        "external_io_forbidden": True,
+    }
+    return WorkflowProtectedTransportTargetContextCapsuleConsumerBindingPolicy(
+        **cast(Any, values), canonical_digest=canonical_digest(values)
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedTransportTargetContextCapsuleConsumerBinding:
+    """Immutable capsule-to-consumer evidence without handoff or runtime authority."""
+
+    binding_id: str
+    opening_result_id: str
+    opening_result_digest: str
+    opening_attempt_id: str
+    opening_attempt_digest: str
+    lease_consumption_claim_id: str
+    lease_consumption_claim_digest: str
+    authorization_lease_id: str
+    authorization_lease_digest: str
+    sealed_capsule_id: str
+    sealed_capsule_digest: str
+    capsule_schema_id: str
+    capsule_schema_version: str
+    capsule_is_bearer_capability: bool
+    target_context_binding_id: str
+    target_context_binding_digest: str
+    target_context_commitment: str
+    outbox_entry_id: str
+    outbox_entry_digest: str
+    event_id: str
+    event_digest: str
+    event_artifact_id: str
+    event_artifact_digest: str
+    logical_channel_binding_id: str
+    logical_channel_binding_digest: str
+    physical_transport_route_binding_id: str
+    physical_transport_route_binding_digest: str
+    transport_route_snapshot_id: str
+    transport_route_snapshot_digest: str
+    physical_transport_credential_assignment_binding_id: str
+    physical_transport_credential_assignment_binding_digest: str
+    credential_assignment_snapshot_id: str
+    credential_assignment_snapshot_digest: str
+    plan_id: str
+    plan_digest: str
+    run_id: str
+    run_digest: str
+    step_run_id: str
+    step_run_digest: str
+    workflow_execution_attempt_id: str
+    workflow_execution_attempt_digest: str
+    target_id: str
+    target_type: str
+    consumer_subject_id: str
+    consumer_audience: str
+    consumer_contract_id: str
+    consumer_contract_version: str
+    purpose_id: str
+    scope: WorkflowScope
+    binder_subject_id: str
+    binder_audience: str
+    bound_at: datetime
+    effective_until: datetime
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    request_fingerprint: str
+    idempotency_digest: str
+    authorization_audit_digest: str
+    state: WorkflowProtectedTransportTargetContextCapsuleConsumerBindingState
+    authority: WorkflowProtectedTransportTargetContextCapsuleConsumerBindingAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        identifiers = (
+            self.binding_id,
+            self.opening_result_id,
+            self.opening_attempt_id,
+            self.lease_consumption_claim_id,
+            self.authorization_lease_id,
+            self.sealed_capsule_id,
+            self.capsule_schema_id,
+            self.capsule_schema_version,
+            self.target_context_binding_id,
+            self.outbox_entry_id,
+            self.event_id,
+            self.event_artifact_id,
+            self.logical_channel_binding_id,
+            self.physical_transport_route_binding_id,
+            self.transport_route_snapshot_id,
+            self.physical_transport_credential_assignment_binding_id,
+            self.credential_assignment_snapshot_id,
+            self.plan_id,
+            self.run_id,
+            self.step_run_id,
+            self.workflow_execution_attempt_id,
+            self.target_id,
+            self.target_type,
+            self.consumer_subject_id,
+            self.consumer_audience,
+            self.consumer_contract_id,
+            self.consumer_contract_version,
+            self.purpose_id,
+            self.binder_subject_id,
+            self.binder_audience,
+            self.policy_id,
+            self.policy_version,
+        )
+        for value in identifiers:
+            _require_identifier(value, name="target context capsule consumer binding identifier")
+        digests = (
+            self.opening_result_digest,
+            self.opening_attempt_digest,
+            self.lease_consumption_claim_digest,
+            self.authorization_lease_digest,
+            self.sealed_capsule_digest,
+            self.target_context_binding_digest,
+            self.target_context_commitment,
+            self.outbox_entry_digest,
+            self.event_digest,
+            self.event_artifact_digest,
+            self.logical_channel_binding_digest,
+            self.physical_transport_route_binding_digest,
+            self.transport_route_snapshot_digest,
+            self.physical_transport_credential_assignment_binding_digest,
+            self.credential_assignment_snapshot_digest,
+            self.plan_digest,
+            self.run_digest,
+            self.step_run_digest,
+            self.workflow_execution_attempt_digest,
+            self.policy_digest,
+            self.request_fingerprint,
+            self.idempotency_digest,
+            self.authorization_audit_digest,
+            self.canonical_digest,
+        )
+        for value in digests:
+            _require_digest(value, name="target context capsule consumer binding digest")
+        policy = (
+            code_owned_workflow_protected_transport_target_context_capsule_consumer_binding_policy()
+        )
+        if (
+            self.capsule_is_bearer_capability is not False
+            or self.bound_at.tzinfo is None
+            or self.effective_until.tzinfo is None
+            or not self.bound_at < self.effective_until
+            or self.consumer_subject_id != policy.consumer_subject_id
+            or self.consumer_audience != policy.consumer_audience
+            or self.consumer_contract_id != policy.consumer_contract_id
+            or self.consumer_contract_version != policy.consumer_contract_version
+            or self.purpose_id != policy.purpose_id
+            or self.policy_id != policy.policy_id
+            or self.policy_version != policy.policy_version
+            or self.policy_digest != policy.canonical_digest
+            or self.state
+            is not WorkflowProtectedTransportTargetContextCapsuleConsumerBindingState.BOUND
+            or any(self.authority.canonical_value().values())
+        ):
+            raise ValueError("target context capsule consumer binding is invalid")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("target context capsule consumer binding canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return _target_context_capsule_consumer_binding_payload(self)
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}

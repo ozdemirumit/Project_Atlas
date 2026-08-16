@@ -75,6 +75,8 @@ from atlas.core.persistence.models import (
     WorkflowOutboxPublicationLeaseAcquireClaimModel,
     WorkflowOutboxPublicationLeaseModel,
     WorkflowPlanTransitionModel,
+    WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel,
+    WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel,
     WorkflowRunMaterializationClaimModel,
     WorkflowRunPlanModel,
 )
@@ -240,6 +242,13 @@ from atlas.modules.workflows.application.target_context_binding_ports import (
     WorkflowEventPhysicalTransportTargetContextBindingResult,
     WorkflowEventPhysicalTransportTargetContextBindingStatus,
 )
+from atlas.modules.workflows.application.target_context_capsule_consumer_binding_ports import (
+    WorkflowProtectedTransportTargetContextCapsuleConsumerBindingError,
+    WorkflowTargetContextCapsuleConsumerBindingRequest,
+    WorkflowTargetContextCapsuleConsumerBindingResult,
+    WorkflowTargetContextCapsuleConsumerBindingStatus,
+    validate_workflow_target_context_capsule_consumer_binding_request,
+)
 from atlas.modules.workflows.application.transport_admission_ports import (
     WorkflowEventTransportAdmissionError,
     WorkflowEventTransportAdmissionIdempotencyRecord,
@@ -365,6 +374,9 @@ from atlas.modules.workflows.domain import (
     WorkflowPlanTransition,
     WorkflowProtectedArtifactKind,
     WorkflowProtectedArtifactStatusAttestation,
+    WorkflowProtectedTransportTargetContextCapsuleConsumerBinding,
+    WorkflowProtectedTransportTargetContextCapsuleConsumerBindingAuthority,
+    WorkflowProtectedTransportTargetContextCapsuleConsumerBindingState,
     WorkflowRunPlan,
     WorkflowScope,
     WorkflowStepKind,
@@ -381,6 +393,7 @@ from atlas.modules.workflows.domain import (
     code_owned_workflow_event_physical_transport_target_context_artifact_opening_policy,
     code_owned_workflow_event_physical_transport_target_context_binding_policy,
     code_owned_workflow_event_transport_admission_policy,
+    code_owned_workflow_protected_transport_target_context_capsule_consumer_binding_policy,
     select_deployment_physical_transport_credential_assignment_head,
 )
 
@@ -420,6 +433,25 @@ class _TargetContextAccessLockedSources:
     credential_head: DeploymentPhysicalTransportCredentialAssignment | None
     observed_at: datetime
     materialization_chains: _TargetContextLockedSources | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _TargetContextCapsuleConsumerBindingLockedSources:
+    outbox: WorkflowDispatchOutboxEntryModel | None
+    event: WorkflowDispatchEventEnvelopeModel | None
+    artifact: WorkflowEventByteArtifactModel | None
+    access: _TargetContextAccessLockedSources | None
+    opening_lease: WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseModel | None
+    opening_claim: WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel | None
+    opening_attempt: WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptModel | None
+    opening_result: WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel | None
+    existing_bindings: tuple[
+        WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel, ...
+    ]
+    idempotency_claim: (
+        WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel | None
+    )
+    observed_at: datetime
 
 
 class PostgreSQLWorkflowPlanRepository:
@@ -4881,6 +4913,1218 @@ class PostgreSQLWorkflowPlanRepository:
                 else statuses.CONFLICT,
                 stored if stored.canonical_digest == result.canonical_digest else None,
             )
+
+    async def bind_target_context_capsule_consumer(
+        self, request: WorkflowTargetContextCapsuleConsumerBindingRequest
+    ) -> WorkflowTargetContextCapsuleConsumerBindingResult:
+        statuses = WorkflowTargetContextCapsuleConsumerBindingStatus
+        try:
+            validate_workflow_target_context_capsule_consumer_binding_request(request)
+        except (TypeError, ValueError):
+            return WorkflowTargetContextCapsuleConsumerBindingResult(
+                statuses.EVIDENCE_CONFLICT, None
+            )
+        if not self._target_context_capsule_consumer_binding_policy_matches(request):
+            return WorkflowTargetContextCapsuleConsumerBindingResult(
+                statuses.EVIDENCE_CONFLICT, None
+            )
+
+        # Historical exact replay is deliberately resolved before any live-source
+        # currentness query, so later expiry cannot hide an immutable prior result.
+        async with self._sessions() as session:
+            replay = await self._target_context_capsule_consumer_binding_replay(
+                session, request=request, for_update=False
+            )
+            if replay is not None:
+                return replay
+
+        async with self._sessions() as session:
+            locked = await self._lock_target_context_capsule_consumer_binding_sources(
+                session, request=request
+            )
+            replay = self._target_context_capsule_consumer_binding_replay_from_locked(
+                locked, request=request
+            )
+            if replay is not None:
+                await session.rollback()
+                return replay
+            if locked.existing_bindings:
+                await session.rollback()
+                return WorkflowTargetContextCapsuleConsumerBindingResult(
+                    statuses.ALREADY_BOUND, None
+                )
+            evidence = self._target_context_capsule_consumer_binding_evidence(
+                locked, request=request
+            )
+            if evidence is None:
+                await session.rollback()
+                return WorkflowTargetContextCapsuleConsumerBindingResult(
+                    statuses.EVIDENCE_CONFLICT, None
+                )
+
+            commit_observed_at = cast(
+                datetime, await session.scalar(select(func.clock_timestamp()))
+            )
+            locked = dataclass_replace(locked, observed_at=commit_observed_at)
+            evidence = self._target_context_capsule_consumer_binding_evidence(
+                locked, request=request
+            )
+            if evidence is None:
+                await session.rollback()
+                return WorkflowTargetContextCapsuleConsumerBindingResult(
+                    statuses.EVIDENCE_CONFLICT, None
+                )
+            binding, audit_payload = self._target_context_capsule_consumer_binding(
+                request=request,
+                evidence=evidence,
+                bound_at=commit_observed_at,
+            )
+            try:
+                session.add(self._target_context_capsule_consumer_binding_model(binding))
+                await session.flush()
+                session.add(
+                    self._target_context_capsule_consumer_binding_claim_model(
+                        request, binding=binding, audit_payload=audit_payload
+                    )
+                )
+                await session.commit()
+                return WorkflowTargetContextCapsuleConsumerBindingResult(statuses.BOUND, binding)
+            except IntegrityError:
+                await session.rollback()
+
+        async with self._sessions() as session:
+            replay = await self._target_context_capsule_consumer_binding_replay(
+                session, request=request, for_update=False
+            )
+            if replay is not None:
+                return replay
+            opening_row = await session.get(
+                WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel,
+                request.opening_result_id,
+            )
+            existing = None
+            if opening_row is not None and opening_row.sealed_capsule_id is not None:
+                existing = await session.scalar(
+                    select(WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel)
+                    .where(
+                        or_(
+                            WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel.opening_result_id
+                            == request.opening_result_id,
+                            WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel.sealed_capsule_id
+                            == opening_row.sealed_capsule_id,
+                        )
+                    )
+                    .limit(1)
+                )
+            return WorkflowTargetContextCapsuleConsumerBindingResult(
+                statuses.ALREADY_BOUND if existing is not None else statuses.EVIDENCE_CONFLICT,
+                None,
+            )
+
+    async def list_target_context_capsule_consumer_bindings(
+        self, *, scope: WorkflowScope, limit: int
+    ) -> tuple[WorkflowProtectedTransportTargetContextCapsuleConsumerBinding, ...]:
+        if not 1 <= limit <= 256:
+            raise ValueError("target context capsule consumer binding limit is invalid")
+        async with self._sessions() as session:
+            rows = tuple(
+                (
+                    await session.scalars(
+                        select(WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel)
+                        .where(
+                            WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel.organization_id
+                            == scope.organization_id,
+                            WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel.environment_id
+                            == scope.environment_id,
+                            WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel.site_id
+                            == scope.site_id,
+                        )
+                        .order_by(
+                            WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel.bound_at.desc(),
+                            WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel.binding_id,
+                        )
+                        .limit(limit)
+                    )
+                ).all()
+            )
+            claims = {
+                row.binding_id: row
+                for row in (
+                    await session.scalars(
+                        select(
+                            WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel
+                        ).where(
+                            WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel.binding_id.in_(
+                                tuple(item.binding_id for item in rows)
+                            )
+                        )
+                    )
+                ).all()
+            }
+        result: list[WorkflowProtectedTransportTargetContextCapsuleConsumerBinding] = []
+        for row in rows:
+            claim = claims.get(row.binding_id)
+            if claim is None:
+                self._target_context_capsule_consumer_binding_contract_violation()
+            binding = self._target_context_capsule_consumer_binding_from_row(row)
+            self._target_context_capsule_consumer_binding_from_claim(
+                cast(Any, claim), binding_row=row
+            )
+            result.append(binding)
+        return tuple(result)
+
+    async def _lock_target_context_capsule_consumer_binding_sources(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowTargetContextCapsuleConsumerBindingRequest,
+    ) -> _TargetContextCapsuleConsumerBindingLockedSources:
+        # Opening evidence is append-only and may be read to discover the root
+        # binding. Mutable lineage is then locked through the shared canonical
+        # target-context order before event and artifact rows are locked.
+        opening_hint = await session.get(
+            WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel,
+            request.opening_result_id,
+        )
+        access = None
+        if opening_hint is not None:
+            access = await self._lock_target_context_access_sources(
+                session,
+                request=cast(
+                    Any,
+                    type(
+                        "_TargetContextBindingReference",
+                        (),
+                        {
+                            "expected_target_context_binding_id": (
+                                opening_hint.target_context_binding_id
+                            )
+                        },
+                    )(),
+                ),
+            )
+
+        outbox = None if access is None else access.outbox
+        event = artifact = None
+        if outbox is not None:
+            event = cast(
+                WorkflowDispatchEventEnvelopeModel | None,
+                await session.scalar(
+                    select(WorkflowDispatchEventEnvelopeModel)
+                    .where(
+                        WorkflowDispatchEventEnvelopeModel.outbox_entry_id == outbox.outbox_entry_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            artifact = cast(
+                WorkflowEventByteArtifactModel | None,
+                await session.scalar(
+                    select(WorkflowEventByteArtifactModel)
+                    .where(WorkflowEventByteArtifactModel.outbox_entry_id == outbox.outbox_entry_id)
+                    .with_for_update()
+                ),
+            )
+
+        opening_lease = opening_claim = opening_attempt = opening_result = None
+        if opening_hint is not None:
+            opening_lease = cast(
+                WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseModel | None,
+                await session.scalar(
+                    select(WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseModel)
+                    .where(
+                        WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseModel.authorization_lease_id
+                        == opening_hint.authorization_lease_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            opening_claim = cast(
+                WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel | None,
+                await session.scalar(
+                    select(WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel)
+                    .where(
+                        WorkflowEventPhysicalTransportTargetContextAccessConsumptionClaimModel.claim_id
+                        == opening_hint.consumption_claim_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            opening_attempt = cast(
+                WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptModel | None,
+                await session.scalar(
+                    select(WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptModel)
+                    .where(
+                        WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttemptModel.attempt_id
+                        == opening_hint.attempt_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            opening_result = cast(
+                WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel | None,
+                await session.scalar(
+                    select(WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel)
+                    .where(
+                        WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel.opening_id
+                        == request.opening_result_id
+                    )
+                    .with_for_update()
+                ),
+            )
+
+        scope_id = self._target_context_capsule_consumer_binding_idempotency_scope(
+            request.scope,
+            request.binder_subject_id,
+            request.binder_audience,
+        )
+        idempotency_hint = cast(
+            WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel | None,
+            await session.scalar(
+                select(
+                    WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel
+                ).where(
+                    WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel.idempotency_scope_id
+                    == scope_id,
+                    WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel.idempotency_key
+                    == request.idempotency_key,
+                )
+            ),
+        )
+        capsule_id = None if opening_hint is None else opening_hint.sealed_capsule_id
+        existing_predicate = (
+            WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel.opening_result_id
+            == request.opening_result_id
+        )
+        if capsule_id is not None:
+            existing_predicate = or_(
+                existing_predicate,
+                WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel.sealed_capsule_id
+                == capsule_id,
+            )
+        if idempotency_hint is not None:
+            existing_predicate = or_(
+                existing_predicate,
+                WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel.binding_id
+                == idempotency_hint.binding_id,
+            )
+        existing_bindings = tuple(
+            (
+                await session.scalars(
+                    select(WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel)
+                    .where(existing_predicate)
+                    .with_for_update()
+                )
+            ).all()
+        )
+        idempotency_claim = cast(
+            WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel | None,
+            await session.scalar(
+                select(WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel)
+                .where(
+                    WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel.idempotency_scope_id
+                    == scope_id,
+                    WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel.idempotency_key
+                    == request.idempotency_key,
+                )
+                .with_for_update()
+            ),
+        )
+        observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+        return _TargetContextCapsuleConsumerBindingLockedSources(
+            outbox=outbox,
+            event=event,
+            artifact=artifact,
+            access=access,
+            opening_lease=opening_lease,
+            opening_claim=opening_claim,
+            opening_attempt=opening_attempt,
+            opening_result=opening_result,
+            existing_bindings=existing_bindings,
+            idempotency_claim=idempotency_claim,
+            observed_at=observed_at,
+        )
+
+    @classmethod
+    def _target_context_capsule_consumer_binding_evidence(
+        cls,
+        locked: _TargetContextCapsuleConsumerBindingLockedSources,
+        *,
+        request: WorkflowTargetContextCapsuleConsumerBindingRequest,
+    ) -> dict[str, Any] | None:
+        access = locked.access
+        if access is None or any(
+            value is None
+            for value in (
+                locked.outbox,
+                locked.event,
+                locked.artifact,
+                locked.opening_lease,
+                locked.opening_claim,
+                locked.opening_attempt,
+                locked.opening_result,
+                access.binding,
+                access.endpoint_result,
+                access.credential_result,
+                access.route_binding,
+                access.logical_binding,
+                access.outbox,
+                access.route_snapshot,
+                access.route_head,
+                access.credential_binding,
+                access.credential_snapshot,
+                access.credential_head,
+                access.materialization_chains,
+            )
+        ):
+            return None
+        try:
+            opening_lease = cls._target_context_access_lease_from_row(
+                cast(Any, locked.opening_lease)
+            )
+            opening_claim = cls._target_context_artifact_opening_claim_from_row(
+                cast(Any, locked.opening_claim)
+            )
+            opening_attempt = cls._target_context_artifact_opening_attempt_from_row(
+                cast(Any, locked.opening_attempt)
+            )
+            opening_result = cls._target_context_artifact_opening_result_from_row(
+                cast(Any, locked.opening_result)
+            )
+            target_context = cls._target_context_binding_from_row(cast(Any, access.binding))
+            endpoint = cls._endpoint_materialization_result_from_row(
+                cast(Any, access.endpoint_result)
+            )
+            credential = cls._credential_materialization_result_from_row(
+                cast(Any, access.credential_result)
+            )
+            route_binding = cls._physical_transport_route_binding_from_row(
+                cast(Any, access.route_binding)
+            )
+            logical_binding = cls._event_logical_channel_binding_from_row(
+                cast(Any, access.logical_binding)
+            )
+            outbox = cls._dispatch_outbox_from_row(cast(Any, locked.outbox))
+            access_outbox = cls._dispatch_outbox_from_row(cast(Any, access.outbox))
+            event = cls._dispatch_event_envelope_from_row(cast(Any, locked.event))
+            artifact = cls._event_byte_artifact_from_row(cast(Any, locked.artifact))
+            route_snapshot = cls._transport_route_snapshot_from_row(
+                cast(Any, access.route_snapshot)
+            )
+            route_head = cls._route_selection_head_from_row(cast(Any, access.route_head))
+            credential_binding = cls._credential_assignment_binding_from_row(
+                cast(Any, access.credential_binding)
+            )
+            credential_snapshot = cls._credential_assignment_snapshot_from_row(
+                cast(Any, access.credential_snapshot)
+            )
+            credential_head = cast(
+                DeploymentPhysicalTransportCredentialAssignment, access.credential_head
+            )
+            opening_lease_row = cast(
+                WorkflowEventPhysicalTransportTargetContextAccessAuthorizationLeaseModel,
+                locked.opening_lease,
+            )
+            binding_policy = (
+                code_owned_workflow_event_physical_transport_target_context_binding_policy()
+            )
+            chain_request = WorkflowEventPhysicalTransportTargetContextBindingRequest(
+                expected_endpoint_materialization_id=endpoint.materialization_id,
+                expected_endpoint_materialization_digest=endpoint.canonical_digest,
+                expected_credential_materialization_id=credential.materialization_id,
+                expected_credential_materialization_digest=credential.canonical_digest,
+                expected_policy_id=binding_policy.policy_id,
+                expected_policy_version=binding_policy.policy_version,
+                expected_policy_digest=binding_policy.canonical_digest,
+                scope=target_context.scope,
+                binder_subject_id=target_context.binder_subject_id,
+                requested_at=locked.observed_at,
+                idempotency_key="capsule-consumer-chain-revalidation",
+                request_fingerprint=canonical_digest(
+                    {
+                        "binding_digest": target_context.canonical_digest,
+                        "binding_id": target_context.binding_id,
+                        "operation": "capsule-consumer-chain-revalidation",
+                    }
+                ),
+                required_precommit_audit=cast(Any, None),
+            )
+            chain_evidence = cls._target_context_binding_evidence(
+                cast(_TargetContextLockedSources, access.materialization_chains),
+                request=chain_request,
+                observed_at=locked.observed_at,
+                require_live_overlap=True,
+            )
+        except Exception:
+            return None
+        if chain_evidence is None or not cls._target_context_artifact_opening_lineage_matches(
+            opening_claim, opening_attempt, opening_result
+        ):
+            return None
+        if (
+            opening_result.state
+            is not (
+                WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultState
+            ).OPENED_PROTECTED
+            or opening_result.failure_class is not None
+            or opening_result.sealed_capsule_id is None
+            or opening_result.sealed_capsule_digest is None
+            or opening_result.usable_until is None
+            or opening_result.capsule_is_bearer_capability
+            or not opening_result.protected_sources_closed
+            or not opening_result.cleanup_confirmed
+            or endpoint.usable_until is None
+            or credential.usable_until is None
+        ):
+            return None
+        policy = (
+            code_owned_workflow_protected_transport_target_context_capsule_consumer_binding_policy()
+        )
+        deadline = min(
+            opening_result.usable_until,
+            opening_lease.valid_until,
+            opening_lease.joint_usable_until,
+            target_context.joint_usable_until,
+            endpoint.usable_until,
+            credential.usable_until,
+            credential_head.expires_at,
+        )
+        event_scope = event.payload.scope
+        scope_objects = (
+            opening_lease.scope,
+            opening_claim.scope,
+            opening_attempt.scope,
+            opening_result.scope,
+            target_context.scope,
+            endpoint.scope,
+            credential.scope,
+            route_binding.scope,
+            logical_binding.scope,
+            outbox.scope,
+            artifact.scope,
+            route_snapshot.scope,
+            route_head.scope,
+            credential_binding.scope,
+            credential_snapshot.scope,
+            credential_head.scope,
+            event_scope,
+        )
+        lineage_matches = (
+            opening_result.opening_id == request.opening_result_id
+            and opening_result.canonical_digest == request.opening_result_digest
+            and opening_result.target_context_binding_id == target_context.binding_id
+            and opening_result.target_context_binding_digest == target_context.canonical_digest
+            and opening_result.target_context_commitment == target_context.target_context_commitment
+            and opening_result.authorization_lease_id == opening_lease.authorization_lease_id
+            and opening_result.authorization_lease_digest == opening_lease.canonical_digest
+            and opening_lease.target_context_binding_id == target_context.binding_id
+            and opening_lease.target_context_binding_digest == target_context.canonical_digest
+            and opening_lease.target_context_commitment == target_context.target_context_commitment
+            and opening_lease_row.outbox_entry_id == outbox.outbox_entry_id
+            and opening_lease_row.outbox_entry_digest == outbox.canonical_digest
+            and target_context.physical_transport_route_binding_id == route_binding.binding_id
+            and target_context.physical_transport_route_binding_digest
+            == route_binding.canonical_digest
+            and route_binding.logical_channel_binding_id == logical_binding.binding_id
+            and route_binding.logical_channel_binding_digest == logical_binding.canonical_digest
+            and logical_binding.outbox_entry_id == outbox.outbox_entry_id
+            and logical_binding.outbox_entry_digest == outbox.canonical_digest
+            and logical_binding.event_id == event.event_id == artifact.event_id
+            and logical_binding.event_digest == event.canonical_digest == artifact.event_digest
+            and logical_binding.artifact_id == artifact.artifact_id
+            and logical_binding.artifact_digest == artifact.canonical_digest
+            and event.payload.outbox_entry_id == outbox.outbox_entry_id
+            and event.payload.outbox_entry_digest == outbox.canonical_digest
+            and artifact.outbox_entry_id == outbox.outbox_entry_id
+            and artifact.outbox_entry_digest == outbox.canonical_digest
+            and outbox == access_outbox
+            and target_context.transport_route_snapshot_id == route_snapshot.snapshot_id
+            and target_context.transport_route_snapshot_digest == route_snapshot.canonical_digest
+            and target_context.physical_transport_credential_assignment_binding_id
+            == credential_binding.binding_id
+            and target_context.physical_transport_credential_assignment_binding_digest
+            == credential_binding.canonical_digest
+            and target_context.credential_assignment_snapshot_id == credential_snapshot.snapshot_id
+            and target_context.credential_assignment_snapshot_digest
+            == credential_snapshot.canonical_digest
+            and chain_evidence["route_binding"] == route_binding
+            and chain_evidence["route_snapshot"] == route_snapshot
+            and chain_evidence["endpoint_result"] == endpoint
+            and chain_evidence["credential_binding"] == credential_binding
+            and chain_evidence["credential_snapshot"] == credential_snapshot
+            and chain_evidence["credential_result"] == credential
+        )
+        workflow_lineage_matches = all(
+            (
+                item.plan_id == outbox.plan_id
+                and item.plan_digest == outbox.plan_digest
+                and item.run_id == outbox.run_id
+                and item.run_digest == outbox.run_digest
+                and item.step_run_id == outbox.step_run_id
+                and item.step_run_digest == outbox.step_run_digest
+                and item.attempt_id == outbox.attempt_id
+                and item.attempt_digest == outbox.attempt_digest
+                and item.target_id == outbox.target_id
+                and item.target_type == outbox.target_type
+            )
+            for item in (event.payload, artifact, logical_binding)
+        )
+        current_route_matches = (
+            route_head.current
+            and route_head.selection_active
+            and route_head.selection_eligible
+            and not route_head.selection_suspended
+            and not route_head.selection_withdrawn
+            and not route_head.selection_superseded
+            and route_head.route_set_id == route_snapshot.route_set_id
+            and route_head.route_set_revision == route_snapshot.route_set_revision
+            and route_head.selection_epoch_id == route_snapshot.selection_epoch_id
+            and route_head.selection_epoch_revision == route_snapshot.selection_epoch_revision
+            and route_head.selected_route_id == route_snapshot.route_id
+            and route_head.selected_route_revision == route_snapshot.route_revision
+            and route_head.selected_route_digest == route_snapshot.source_route_digest
+            and opening_lease_row.route_head_id == route_head.head_id
+            and opening_lease_row.route_head_digest == route_head.canonical_digest
+            and opening_lease_row.route_head_generation == route_head.generation
+            and opening_lease_row.route_head_fencing_token_digest == route_head.fencing_token_digest
+        )
+        current_credential_matches = (
+            credential_binding.credential_assignment_snapshot_id == credential_snapshot.snapshot_id
+            and credential_head.assignment_id == credential_snapshot.assignment_id
+            and credential_head.assignment_revision == credential_snapshot.assignment_revision
+            and credential_head.canonical_digest == credential_snapshot.source_assignment_digest
+            and credential_head.credential_generation == credential_snapshot.credential_generation
+            and credential_head.rotation_epoch == credential_snapshot.rotation_epoch
+            and credential_head.active
+            and not credential_head.revoked
+            and credential_head.activated_at <= locked.observed_at
+            and opening_lease_row.assignment_id == credential_head.assignment_id
+            and opening_lease_row.assignment_revision == credential_head.assignment_revision
+            and opening_lease_row.assignment_digest == credential_head.canonical_digest
+            and opening_lease_row.credential_generation == credential_head.credential_generation
+            and opening_lease_row.rotation_epoch == credential_head.rotation_epoch
+            and opening_lease_row.assignment_expires_at == credential_head.expires_at
+        )
+        if not (
+            all(scope == request.scope for scope in scope_objects)
+            and lineage_matches
+            and workflow_lineage_matches
+            and current_route_matches
+            and current_credential_matches
+            and outbox.state is WorkflowDispatchOutboxState.PENDING_PUBLICATION
+            and event.state is WorkflowDispatchEventEnvelopeState.PREPARED
+            and artifact.state is WorkflowEventByteArtifactState.MATERIALIZED
+            and logical_binding.state is WorkflowEventLogicalChannelBindingState.BOUND
+            and opening_lease.authority.protected_artifact_access_authorized
+            and all(
+                value is False
+                for name, value in opening_lease.authority.canonical_value().items()
+                if name != "protected_artifact_access_authorized"
+            )
+            and not endpoint.protected_artifact_revoked
+            and not credential.protected_artifact_revoked
+            and request.expected_policy_id == policy.policy_id
+            and request.expected_policy_version == policy.policy_version
+            and request.expected_policy_digest == policy.canonical_digest
+            and request.expected_consumer_subject_id == policy.consumer_subject_id
+            and request.expected_consumer_audience == policy.consumer_audience
+            and request.expected_consumer_contract_id == policy.consumer_contract_id
+            and request.expected_consumer_contract_version == policy.consumer_contract_version
+            and request.expected_purpose_id == policy.purpose_id
+            and locked.observed_at + timedelta(seconds=request.minimum_remaining_lifetime_seconds)
+            <= deadline
+        ):
+            return None
+        return {
+            "artifact": artifact,
+            "credential_binding": credential_binding,
+            "credential_snapshot": credential_snapshot,
+            "deadline": deadline,
+            "event": event,
+            "logical_binding": logical_binding,
+            "opening_attempt": opening_attempt,
+            "opening_claim": opening_claim,
+            "opening_result": opening_result,
+            "outbox": outbox,
+            "route_binding": route_binding,
+            "route_snapshot": route_snapshot,
+            "target_context": target_context,
+        }
+
+    async def _target_context_capsule_consumer_binding_replay(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowTargetContextCapsuleConsumerBindingRequest,
+        for_update: bool,
+    ) -> WorkflowTargetContextCapsuleConsumerBindingResult | None:
+        statement = select(
+            WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel
+        ).where(
+            WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel.idempotency_scope_id
+            == self._target_context_capsule_consumer_binding_idempotency_scope(
+                request.scope, request.binder_subject_id, request.binder_audience
+            ),
+            WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel.idempotency_key
+            == request.idempotency_key,
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        claim = cast(
+            WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel | None,
+            await session.scalar(statement),
+        )
+        statuses = WorkflowTargetContextCapsuleConsumerBindingStatus
+        if claim is not None:
+            binding_statement = select(
+                WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel
+            ).where(
+                WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel.binding_id
+                == claim.binding_id
+            )
+            if for_update:
+                binding_statement = binding_statement.with_for_update()
+            binding_row = cast(
+                WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel | None,
+                await session.scalar(binding_statement),
+            )
+            if binding_row is None:
+                self._target_context_capsule_consumer_binding_contract_violation()
+            binding = self._target_context_capsule_consumer_binding_from_claim(
+                claim, binding_row=binding_row
+            )
+            exact = self._target_context_capsule_consumer_binding_request_matches(
+                request, binding=binding, claim=claim
+            )
+            return WorkflowTargetContextCapsuleConsumerBindingResult(
+                statuses.REPLAY if exact else statuses.IDEMPOTENCY_CONFLICT,
+                binding if exact else None,
+            )
+        existing_statement = select(
+            WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel
+        ).where(
+            WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel.opening_result_id
+            == request.opening_result_id
+        )
+        if for_update:
+            existing_statement = existing_statement.with_for_update()
+        existing = await session.scalar(existing_statement)
+        if existing is not None:
+            return WorkflowTargetContextCapsuleConsumerBindingResult(statuses.ALREADY_BOUND, None)
+        return None
+
+    def _target_context_capsule_consumer_binding_replay_from_locked(
+        self,
+        locked: _TargetContextCapsuleConsumerBindingLockedSources,
+        *,
+        request: WorkflowTargetContextCapsuleConsumerBindingRequest,
+    ) -> WorkflowTargetContextCapsuleConsumerBindingResult | None:
+        claim = locked.idempotency_claim
+        statuses = WorkflowTargetContextCapsuleConsumerBindingStatus
+        if claim is None:
+            return None
+        binding_row = next(
+            (row for row in locked.existing_bindings if row.binding_id == claim.binding_id),
+            None,
+        )
+        if binding_row is None:
+            self._target_context_capsule_consumer_binding_contract_violation()
+        binding = self._target_context_capsule_consumer_binding_from_claim(
+            claim, binding_row=binding_row
+        )
+        exact = self._target_context_capsule_consumer_binding_request_matches(
+            request, binding=binding, claim=claim
+        )
+        return WorkflowTargetContextCapsuleConsumerBindingResult(
+            statuses.REPLAY if exact else statuses.IDEMPOTENCY_CONFLICT,
+            binding if exact else None,
+        )
+
+    @staticmethod
+    def _target_context_capsule_consumer_binding_request_matches(
+        request: WorkflowTargetContextCapsuleConsumerBindingRequest,
+        *,
+        binding: WorkflowProtectedTransportTargetContextCapsuleConsumerBinding,
+        claim: WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel,
+    ) -> bool:
+        return bool(
+            binding.opening_result_id == request.opening_result_id
+            and binding.opening_result_digest == request.opening_result_digest
+            and binding.policy_id == request.expected_policy_id
+            and binding.policy_version == request.expected_policy_version
+            and binding.policy_digest == request.expected_policy_digest
+            and binding.consumer_subject_id == request.expected_consumer_subject_id
+            and binding.consumer_audience == request.expected_consumer_audience
+            and binding.consumer_contract_id == request.expected_consumer_contract_id
+            and binding.consumer_contract_version == request.expected_consumer_contract_version
+            and binding.purpose_id == request.expected_purpose_id
+            and binding.scope == request.scope
+            and binding.binder_subject_id == request.binder_subject_id
+            and binding.binder_audience == request.binder_audience
+            and binding.request_fingerprint == request.request_fingerprint
+            and binding.idempotency_digest == request.idempotency_digest
+            and claim.idempotency_key == request.idempotency_key
+            and claim.idempotency_digest == request.idempotency_digest
+            and claim.request_fingerprint == request.request_fingerprint
+        )
+
+    @classmethod
+    def _target_context_capsule_consumer_binding(
+        cls,
+        *,
+        request: WorkflowTargetContextCapsuleConsumerBindingRequest,
+        evidence: dict[str, Any],
+        bound_at: datetime,
+    ) -> tuple[
+        WorkflowProtectedTransportTargetContextCapsuleConsumerBinding,
+        dict[str, object],
+    ]:
+        opening = cast(
+            WorkflowEventPhysicalTransportTargetContextArtifactOpeningResult,
+            evidence["opening_result"],
+        )
+        attempt = cast(
+            WorkflowEventPhysicalTransportTargetContextArtifactOpeningAttempt,
+            evidence["opening_attempt"],
+        )
+        claim = cast(
+            WorkflowEventPhysicalTransportTargetContextAccessLeaseConsumptionClaim,
+            evidence["opening_claim"],
+        )
+        target_context = cast(
+            WorkflowEventPhysicalTransportTargetContextBinding,
+            evidence["target_context"],
+        )
+        outbox = cast(WorkflowDispatchOutboxEntry, evidence["outbox"])
+        event = cast(WorkflowDispatchEventEnvelope, evidence["event"])
+        artifact = cast(WorkflowEventByteArtifact, evidence["artifact"])
+        logical = cast(WorkflowEventLogicalChannelBinding, evidence["logical_binding"])
+        route = cast(WorkflowEventPhysicalTransportRouteBinding, evidence["route_binding"])
+        route_snapshot = cast(EventPhysicalTransportRouteSnapshot, evidence["route_snapshot"])
+        credential_binding = cast(
+            WorkflowEventPhysicalTransportCredentialAssignmentBinding,
+            evidence["credential_binding"],
+        )
+        credential_snapshot = cast(
+            EventPhysicalTransportCredentialAssignmentSnapshot,
+            evidence["credential_snapshot"],
+        )
+        policy = (
+            code_owned_workflow_protected_transport_target_context_capsule_consumer_binding_policy()
+        )
+        binding_seed = canonical_digest(
+            {
+                "consumer_contract_id": policy.consumer_contract_id,
+                "consumer_contract_version": policy.consumer_contract_version,
+                "opening_result_digest": opening.canonical_digest,
+                "opening_result_id": opening.opening_id,
+                "policy_digest": policy.canonical_digest,
+                "purpose_id": policy.purpose_id,
+                "scope": request.scope.canonical_value(),
+            }
+        )
+        binding_id = f"workflow-target-context-capsule-consumer-binding.{binding_seed[:48]}"
+        audit_payload: dict[str, object] = {
+            "authority": (
+                WorkflowProtectedTransportTargetContextCapsuleConsumerBindingAuthority()
+            ).canonical_value(),
+            "binder_audience": request.binder_audience,
+            "binder_subject_id": request.binder_subject_id,
+            "binding_id": binding_id,
+            "consumer_audience": policy.consumer_audience,
+            "consumer_contract_id": policy.consumer_contract_id,
+            "consumer_contract_version": policy.consumer_contract_version,
+            "consumer_subject_id": policy.consumer_subject_id,
+            "event_artifact_id": artifact.artifact_id,
+            "event_id": event.event_id,
+            "idempotency_digest": request.idempotency_digest,
+            "opening_result_digest": opening.canonical_digest,
+            "opening_result_id": opening.opening_id,
+            "outbox_entry_id": outbox.outbox_entry_id,
+            "policy_digest": policy.canonical_digest,
+            "policy_id": policy.policy_id,
+            "policy_version": policy.policy_version,
+            "purpose_id": policy.purpose_id,
+            "request_fingerprint": request.request_fingerprint,
+            "schema_id": "audit.workflow-target-context-capsule-consumer-binding",
+            "schema_version": "1.0",
+            "scope": request.scope.canonical_value(),
+        }
+        authorization_audit_digest = canonical_digest(audit_payload)
+        values: dict[str, object] = {
+            "binding_id": binding_id,
+            "opening_result_id": opening.opening_id,
+            "opening_result_digest": opening.canonical_digest,
+            "opening_attempt_id": attempt.attempt_id,
+            "opening_attempt_digest": attempt.canonical_digest,
+            "lease_consumption_claim_id": claim.claim_id,
+            "lease_consumption_claim_digest": claim.canonical_digest,
+            "authorization_lease_id": opening.authorization_lease_id,
+            "authorization_lease_digest": opening.authorization_lease_digest,
+            "sealed_capsule_id": cast(str, opening.sealed_capsule_id),
+            "sealed_capsule_digest": cast(str, opening.sealed_capsule_digest),
+            "capsule_schema_id": opening.capsule_schema_id,
+            "capsule_schema_version": opening.capsule_schema_version,
+            "capsule_is_bearer_capability": opening.capsule_is_bearer_capability,
+            "target_context_binding_id": target_context.binding_id,
+            "target_context_binding_digest": target_context.canonical_digest,
+            "target_context_commitment": target_context.target_context_commitment,
+            "outbox_entry_id": outbox.outbox_entry_id,
+            "outbox_entry_digest": outbox.canonical_digest,
+            "event_id": event.event_id,
+            "event_digest": event.canonical_digest,
+            "event_artifact_id": artifact.artifact_id,
+            "event_artifact_digest": artifact.canonical_digest,
+            "logical_channel_binding_id": logical.binding_id,
+            "logical_channel_binding_digest": logical.canonical_digest,
+            "physical_transport_route_binding_id": route.binding_id,
+            "physical_transport_route_binding_digest": route.canonical_digest,
+            "transport_route_snapshot_id": route_snapshot.snapshot_id,
+            "transport_route_snapshot_digest": route_snapshot.canonical_digest,
+            "physical_transport_credential_assignment_binding_id": credential_binding.binding_id,
+            "physical_transport_credential_assignment_binding_digest": (
+                credential_binding.canonical_digest
+            ),
+            "credential_assignment_snapshot_id": credential_snapshot.snapshot_id,
+            "credential_assignment_snapshot_digest": credential_snapshot.canonical_digest,
+            "plan_id": outbox.plan_id,
+            "plan_digest": outbox.plan_digest,
+            "run_id": outbox.run_id,
+            "run_digest": outbox.run_digest,
+            "step_run_id": outbox.step_run_id,
+            "step_run_digest": outbox.step_run_digest,
+            "workflow_execution_attempt_id": outbox.attempt_id,
+            "workflow_execution_attempt_digest": outbox.attempt_digest,
+            "target_id": outbox.target_id,
+            "target_type": outbox.target_type,
+            "consumer_subject_id": policy.consumer_subject_id,
+            "consumer_audience": policy.consumer_audience,
+            "consumer_contract_id": policy.consumer_contract_id,
+            "consumer_contract_version": policy.consumer_contract_version,
+            "purpose_id": policy.purpose_id,
+            "scope": request.scope,
+            "binder_subject_id": request.binder_subject_id,
+            "binder_audience": request.binder_audience,
+            "bound_at": bound_at,
+            "effective_until": cast(datetime, evidence["deadline"]),
+            "policy_id": policy.policy_id,
+            "policy_version": policy.policy_version,
+            "policy_digest": policy.canonical_digest,
+            "request_fingerprint": request.request_fingerprint,
+            "idempotency_digest": request.idempotency_digest,
+            "authorization_audit_digest": authorization_audit_digest,
+            "state": WorkflowProtectedTransportTargetContextCapsuleConsumerBindingState.BOUND,
+            "authority": WorkflowProtectedTransportTargetContextCapsuleConsumerBindingAuthority(),
+        }
+        binding = WorkflowProtectedTransportTargetContextCapsuleConsumerBinding(
+            **cast(Any, values),
+            canonical_digest=canonical_digest(
+                cls._target_context_capsule_consumer_binding_payload_values(values)
+            ),
+        )
+        return binding, audit_payload
+
+    @staticmethod
+    def _target_context_capsule_consumer_binding_payload_values(
+        values: dict[str, object],
+    ) -> dict[str, object]:
+        return {
+            key: (
+                value.canonical_value()
+                if isinstance(
+                    value,
+                    (
+                        WorkflowScope,
+                        WorkflowProtectedTransportTargetContextCapsuleConsumerBindingAuthority,
+                    ),
+                )
+                else value.isoformat()
+                if isinstance(value, datetime)
+                else value.value
+                if isinstance(value, Enum)
+                else value
+            )
+            for key, value in values.items()
+        }
+
+    @staticmethod
+    def _target_context_capsule_consumer_binding_authority_columns(
+        authority: WorkflowProtectedTransportTargetContextCapsuleConsumerBindingAuthority,
+    ) -> dict[str, bool]:
+        return {
+            name.replace("_authorized", "_authority_granted"): value
+            for name, value in authority.canonical_value().items()
+        }
+
+    @classmethod
+    def _target_context_capsule_consumer_binding_model(
+        cls, binding: WorkflowProtectedTransportTargetContextCapsuleConsumerBinding
+    ) -> WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel:
+        excluded = {"scope", "state", "authority"}
+        values = {
+            name: getattr(binding, name)
+            for name in binding.digest_payload()
+            if name not in excluded
+        }
+        return WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel(
+            **values,
+            organization_id=binding.scope.organization_id,
+            environment_id=binding.scope.environment_id,
+            site_id=binding.scope.site_id,
+            state=binding.state.value,
+            **cls._target_context_capsule_consumer_binding_authority_columns(binding.authority),
+            canonical_digest=binding.canonical_digest,
+            payload=binding.digest_payload(),
+        )
+
+    @classmethod
+    def _target_context_capsule_consumer_binding_from_row(
+        cls, row: WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel
+    ) -> WorkflowProtectedTransportTargetContextCapsuleConsumerBinding:
+        try:
+            values = dict(row.payload)
+            values["scope"] = WorkflowScope(**cast(Any, values["scope"]))
+            values["bound_at"] = datetime.fromisoformat(str(values["bound_at"]))
+            values["effective_until"] = datetime.fromisoformat(str(values["effective_until"]))
+            values["state"] = WorkflowProtectedTransportTargetContextCapsuleConsumerBindingState(
+                str(values["state"])
+            )
+            values["authority"] = (
+                WorkflowProtectedTransportTargetContextCapsuleConsumerBindingAuthority(
+                    **cast(Any, values["authority"])
+                )
+            )
+            binding = WorkflowProtectedTransportTargetContextCapsuleConsumerBinding(
+                **cast(Any, values), canonical_digest=row.canonical_digest
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowProtectedTransportTargetContextCapsuleConsumerBindingError(
+                "workflow_target_context_capsule_consumer_binding_repository_contract_violation"
+            ) from exc
+        simple_fields = set(binding.digest_payload()) - {"scope", "state", "authority"}
+        row_authority = {
+            name: bool(getattr(row, name.replace("_authorized", "_authority_granted")))
+            for name in binding.authority.canonical_value()
+        }
+        if (
+            any(getattr(row, name) != getattr(binding, name) for name in simple_fields)
+            or row.organization_id != binding.scope.organization_id
+            or row.environment_id != binding.scope.environment_id
+            or row.site_id != binding.scope.site_id
+            or row.state != binding.state.value
+            or row_authority != binding.authority.canonical_value()
+            or row.payload != binding.digest_payload()
+            or row.canonical_digest != binding.canonical_digest
+            or any(binding.authority.canonical_value().values())
+        ):
+            cls._target_context_capsule_consumer_binding_contract_violation()
+        return binding
+
+    @classmethod
+    def _target_context_capsule_consumer_binding_claim_model(
+        cls,
+        request: WorkflowTargetContextCapsuleConsumerBindingRequest,
+        *,
+        binding: WorkflowProtectedTransportTargetContextCapsuleConsumerBinding,
+        audit_payload: dict[str, object],
+    ) -> WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel:
+        scope_id = cls._target_context_capsule_consumer_binding_idempotency_scope(
+            request.scope, request.binder_subject_id, request.binder_audience
+        )
+        payload = cls._target_context_capsule_consumer_binding_claim_payload(
+            request=request,
+            binding=binding,
+            scope_id=scope_id,
+            audit_payload=audit_payload,
+        )
+        claim_digest = canonical_digest(payload)
+        return WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel(
+            claim_id=f"workflow-target-context-capsule-consumer-claim.{claim_digest[:48]}",
+            idempotency_scope_id=scope_id,
+            idempotency_key=request.idempotency_key,
+            idempotency_digest=request.idempotency_digest,
+            request_fingerprint=request.request_fingerprint,
+            result_digest=binding.canonical_digest,
+            binding_id=binding.binding_id,
+            opening_result_id=binding.opening_result_id,
+            sealed_capsule_id=binding.sealed_capsule_id,
+            consumer_subject_id=binding.consumer_subject_id,
+            consumer_audience=binding.consumer_audience,
+            consumer_contract_id=binding.consumer_contract_id,
+            consumer_contract_version=binding.consumer_contract_version,
+            purpose_id=binding.purpose_id,
+            policy_id=binding.policy_id,
+            policy_version=binding.policy_version,
+            policy_digest=binding.policy_digest,
+            organization_id=binding.scope.organization_id,
+            environment_id=binding.scope.environment_id,
+            site_id=binding.scope.site_id,
+            binder_subject_id=binding.binder_subject_id,
+            binder_audience=binding.binder_audience,
+            created_at=binding.bound_at,
+            authorization_audit_digest=binding.authorization_audit_digest,
+            canonical_digest=claim_digest,
+            payload=payload,
+            authorization_audit_payload=audit_payload,
+        )
+
+    @classmethod
+    def _target_context_capsule_consumer_binding_claim_payload(
+        cls,
+        *,
+        request: WorkflowTargetContextCapsuleConsumerBindingRequest,
+        binding: WorkflowProtectedTransportTargetContextCapsuleConsumerBinding,
+        scope_id: str,
+        audit_payload: dict[str, object],
+    ) -> dict[str, object]:
+        return {
+            "authorization_audit_digest": canonical_digest(audit_payload),
+            "authorization_audit_payload": audit_payload,
+            "idempotency_digest": request.idempotency_digest,
+            "idempotency_key": request.idempotency_key,
+            "idempotency_scope_id": scope_id,
+            "request_fingerprint": request.request_fingerprint,
+            "result_binding": binding.canonical_value(),
+            "result_digest": binding.canonical_digest,
+        }
+
+    @classmethod
+    def _target_context_capsule_consumer_binding_from_claim(
+        cls,
+        claim: WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel,
+        *,
+        binding_row: WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel,
+    ) -> WorkflowProtectedTransportTargetContextCapsuleConsumerBinding:
+        binding = cls._target_context_capsule_consumer_binding_from_row(binding_row)
+        scope_id = cls._target_context_capsule_consumer_binding_idempotency_scope(
+            binding.scope, binding.binder_subject_id, binding.binder_audience
+        )
+        audit_payload = cls._target_context_capsule_consumer_binding_expected_audit_payload(binding)
+        request = WorkflowTargetContextCapsuleConsumerBindingRequest(
+            opening_result_id=binding.opening_result_id,
+            opening_result_digest=binding.opening_result_digest,
+            expected_policy_id=binding.policy_id,
+            expected_policy_version=binding.policy_version,
+            expected_policy_digest=binding.policy_digest,
+            expected_consumer_subject_id=binding.consumer_subject_id,
+            expected_consumer_audience=binding.consumer_audience,
+            expected_consumer_contract_id=binding.consumer_contract_id,
+            expected_consumer_contract_version=binding.consumer_contract_version,
+            expected_purpose_id=binding.purpose_id,
+            minimum_remaining_lifetime_seconds=1,
+            scope=binding.scope,
+            binder_subject_id=binding.binder_subject_id,
+            binder_audience=binding.binder_audience,
+            requested_at=binding.bound_at,
+            idempotency_key=claim.idempotency_key,
+            idempotency_digest=binding.idempotency_digest,
+            request_fingerprint=binding.request_fingerprint,
+        )
+        payload = cls._target_context_capsule_consumer_binding_claim_payload(
+            request=request,
+            binding=binding,
+            scope_id=scope_id,
+            audit_payload=audit_payload,
+        )
+        if (
+            claim.idempotency_scope_id != scope_id
+            or claim.idempotency_digest != binding.idempotency_digest
+            or claim.request_fingerprint != binding.request_fingerprint
+            or claim.result_digest != binding.canonical_digest
+            or claim.binding_id != binding.binding_id
+            or claim.opening_result_id != binding.opening_result_id
+            or claim.sealed_capsule_id != binding.sealed_capsule_id
+            or claim.consumer_subject_id != binding.consumer_subject_id
+            or claim.consumer_audience != binding.consumer_audience
+            or claim.consumer_contract_id != binding.consumer_contract_id
+            or claim.consumer_contract_version != binding.consumer_contract_version
+            or claim.purpose_id != binding.purpose_id
+            or claim.policy_id != binding.policy_id
+            or claim.policy_version != binding.policy_version
+            or claim.policy_digest != binding.policy_digest
+            or claim.organization_id != binding.scope.organization_id
+            or claim.environment_id != binding.scope.environment_id
+            or claim.site_id != binding.scope.site_id
+            or claim.binder_subject_id != binding.binder_subject_id
+            or claim.binder_audience != binding.binder_audience
+            or claim.created_at != binding.bound_at
+            or claim.authorization_audit_digest != binding.authorization_audit_digest
+            or claim.authorization_audit_digest != canonical_digest(audit_payload)
+            or dict(claim.authorization_audit_payload) != audit_payload
+            or claim.payload != payload
+            or claim.canonical_digest != canonical_digest(payload)
+        ):
+            cls._target_context_capsule_consumer_binding_contract_violation()
+        return binding
+
+    @staticmethod
+    def _target_context_capsule_consumer_binding_expected_audit_payload(
+        binding: WorkflowProtectedTransportTargetContextCapsuleConsumerBinding,
+    ) -> dict[str, object]:
+        return {
+            "authority": binding.authority.canonical_value(),
+            "binder_audience": binding.binder_audience,
+            "binder_subject_id": binding.binder_subject_id,
+            "binding_id": binding.binding_id,
+            "consumer_audience": binding.consumer_audience,
+            "consumer_contract_id": binding.consumer_contract_id,
+            "consumer_contract_version": binding.consumer_contract_version,
+            "consumer_subject_id": binding.consumer_subject_id,
+            "event_artifact_id": binding.event_artifact_id,
+            "event_id": binding.event_id,
+            "idempotency_digest": binding.idempotency_digest,
+            "opening_result_digest": binding.opening_result_digest,
+            "opening_result_id": binding.opening_result_id,
+            "outbox_entry_id": binding.outbox_entry_id,
+            "policy_digest": binding.policy_digest,
+            "policy_id": binding.policy_id,
+            "policy_version": binding.policy_version,
+            "purpose_id": binding.purpose_id,
+            "request_fingerprint": binding.request_fingerprint,
+            "schema_id": "audit.workflow-target-context-capsule-consumer-binding",
+            "schema_version": "1.0",
+            "scope": binding.scope.canonical_value(),
+        }
+
+    @staticmethod
+    def _target_context_capsule_consumer_binding_idempotency_scope(
+        scope: WorkflowScope, binder_subject_id: str, binder_audience: str
+    ) -> str:
+        return canonical_digest(
+            {
+                "binder_audience": binder_audience,
+                "binder_subject_id": binder_subject_id,
+                "operation": "bind-workflow-target-context-capsule-consumer",
+                "scope": scope.canonical_value(),
+            }
+        )
+
+    @staticmethod
+    def _target_context_capsule_consumer_binding_policy_matches(
+        request: WorkflowTargetContextCapsuleConsumerBindingRequest,
+    ) -> bool:
+        policy = (
+            code_owned_workflow_protected_transport_target_context_capsule_consumer_binding_policy()
+        )
+        return bool(
+            request.expected_policy_id == policy.policy_id
+            and request.expected_policy_version == policy.policy_version
+            and request.expected_policy_digest == policy.canonical_digest
+            and request.expected_consumer_subject_id == policy.consumer_subject_id
+            and request.expected_consumer_audience == policy.consumer_audience
+            and request.expected_consumer_contract_id == policy.consumer_contract_id
+            and request.expected_consumer_contract_version == policy.consumer_contract_version
+            and request.expected_purpose_id == policy.purpose_id
+            and request.minimum_remaining_lifetime_seconds
+            == policy.minimum_remaining_lifetime_seconds
+        )
+
+    @staticmethod
+    def _target_context_capsule_consumer_binding_contract_violation() -> NoReturn:
+        raise WorkflowProtectedTransportTargetContextCapsuleConsumerBindingError(
+            "workflow_target_context_capsule_consumer_binding_repository_contract_violation",
+            "Stored target-context capsule consumer binding evidence is invalid.",
+        )
 
     async def _lock_target_context_sources(
         self,
