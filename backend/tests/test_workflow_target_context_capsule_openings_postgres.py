@@ -874,6 +874,10 @@ def _live_uncertain_result_values(
             values[name] = lineage[name]
         elif name == "policy_digest":
             values[name] = policy.canonical_digest
+        elif name == "opener_id":
+            values[name] = policy.approved_opener_id
+        elif name == "opener_version":
+            values[name] = policy.approved_opener_version
         elif hasattr(policy, name):
             values[name] = getattr(policy, name)
         elif name == "state" or name == "failure_class":
