@@ -356,7 +356,7 @@ def upgrade() -> None:
         ),
         sa.Column("protected_runtime_handle_is_bearer_capability", sa.Boolean(), nullable=False),
         sa.Column("runtime_handle_established_in_protected_boundary", sa.Boolean(), nullable=False),
-        sa.Column("protected_resident_context_consumed", sa.Boolean(), nullable=False),
+        sa.Column("protected_resident_context_consumed", sa.Boolean(), nullable=True),
         sa.Column("runtime_handle_absence_confirmed", sa.Boolean(), nullable=False),
         sa.Column("outcome_known", sa.Boolean(), nullable=False),
         sa.Column("accessor_receipt_digest", sa.String(64), nullable=True),
@@ -443,7 +443,7 @@ def upgrade() -> None:
             "AND protected_runtime_handle_created_at IS NULL "
             "AND protected_runtime_handle_usable_until IS NULL "
             "AND NOT runtime_handle_established_in_protected_boundary "
-            "AND NOT protected_resident_context_consumed "
+            "AND protected_resident_context_consumed IS NULL "
             "AND NOT runtime_handle_absence_confirmed AND NOT outcome_known)",
             name="ck_wf_rc_access_result_outcome",
         ),

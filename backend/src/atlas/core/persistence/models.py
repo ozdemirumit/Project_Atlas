@@ -11531,7 +11531,7 @@ class WorkflowProtectedResidentContextAccessResultModel(Base):
             "AND protected_runtime_handle_created_at IS NULL "
             "AND protected_runtime_handle_usable_until IS NULL "
             "AND NOT runtime_handle_established_in_protected_boundary "
-            "AND NOT protected_resident_context_consumed AND NOT runtime_handle_absence_confirmed "
+            "AND protected_resident_context_consumed IS NULL AND NOT runtime_handle_absence_confirmed "
             "AND NOT outcome_known)",
             name="ck_wf_rc_access_result_outcome",
         ),
@@ -11600,7 +11600,7 @@ class WorkflowProtectedResidentContextAccessResultModel(Base):
     runtime_handle_established_in_protected_boundary: Mapped[bool] = mapped_column(
         Boolean, nullable=False
     )
-    protected_resident_context_consumed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    protected_resident_context_consumed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     runtime_handle_absence_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False)
     outcome_known: Mapped[bool] = mapped_column(Boolean, nullable=False)
     accessor_receipt_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)

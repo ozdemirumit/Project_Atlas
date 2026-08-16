@@ -31,6 +31,7 @@ import {
   type WorkflowPhysicalTransportTargetContextCapsuleOpeningAuthorizationLease,
   type WorkflowPhysicalTransportTargetContextCapsuleOpening,
   type WorkflowProtectedResidentContextAccessAuthorization,
+  type WorkflowProtectedResidentContextAccessConsumption,
   type WorkflowPhysicalTransportTargetContextBinding,
   type WorkflowPhysicalTransportCredentialAssignmentSnapshot,
   type WorkflowPhysicalTransportCredentialAssignmentBinding,
@@ -1254,6 +1255,50 @@ const protectedResidentContextAccessAuthorization: WorkflowProtectedResidentCont
     "integrity.workflow-protected-access-authorization.1234567890abcdef",
 };
 
+const protectedResidentContextAccessConsumption: WorkflowProtectedResidentContextAccessConsumption = {
+  access_id: "workflow-protected-resident-context-access.1234567890abcdef",
+  attempt_state: "completed",
+  result_state: "handle_established_in_protected_boundary",
+  started_at: "2026-08-14T10:08:28Z",
+  completed_at: "2026-08-14T10:08:28.250Z",
+  consumer_contract_id:
+    "contract.workflow-protected-transport-target-context-capsule-consumer",
+  consumer_contract_version: "1.0",
+  purpose_id: "purpose.workflow-protected-resident-context-access-consumption",
+  accessor_contract_id: "contract.workflow-protected-resident-context-accessor",
+  accessor_contract_version: "1.0",
+  accessor_profile_reference:
+    "integrity.workflow-protected-resident-context-accessor-profile.1234567890abcdef",
+  runtime_profile_reference:
+    "integrity.workflow-protected-runtime-context-profile.1234567890abcdef",
+  policy_id: "policy.workflow-protected-resident-context-access-consumption",
+  policy_version: "1.0",
+  authority: {
+    protected_resident_context_access_authority_granted: false,
+    target_context_capsule_opening_authorized: false,
+    target_context_capsule_handoff_authorized: false,
+    endpoint_resolution_authorized: false,
+    route_selection_authorized: false,
+    route_binding_authorized: false,
+    credential_selection_authorized: false,
+    credential_assignment_binding_authorized: false,
+    credential_access_authorized: false,
+    credential_brokerage_authorized: false,
+    credential_resolution_authorized: false,
+    protected_artifact_access_authorized: false,
+    credential_delivery_authorized: false,
+    network_access_authorized: false,
+    readiness_probe_authorized: false,
+    publication_authorized: false,
+    delivery_authorized: false,
+    dispatch_authorized: false,
+    execution_authorized: false,
+    infrastructure_mutation_authorized: false,
+  },
+  integrity_reference:
+    "integrity.workflow-protected-resident-context-access-consumption.1234567890abcdef",
+};
+
 const credentialAssignmentSnapshot: WorkflowPhysicalTransportCredentialAssignmentSnapshot = {
   snapshot_id: "workflow-credential-assignment-snapshot.1234567890abcdef",
   assignment_id: "deployment-credential-assignment.1234567890abcdef",
@@ -1940,6 +1985,26 @@ function protectedResidentContextAccessAuthorizationResponse(
   );
 }
 
+function protectedResidentContextAccessConsumptionResponse(
+  consumptions: unknown[],
+  status = 200,
+  serverTime = "2026-08-14T10:08:28.500Z",
+  durable = true,
+): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: { consumptions, server_time: serverTime, durable },
+          meta: {
+            correlation_id: "correlation.workflow.protected-resident-context-access-consumption",
+            generated_at: serverTime,
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function credentialAssignmentSnapshotResponse(
   snapshots: unknown[],
   status = 200,
@@ -2031,6 +2096,9 @@ function mockReadResponses(input: {
   protectedResidentContextAccessAuthorizations?: unknown[];
   protectedResidentContextAccessAuthorizationServerTime?: string;
   protectedResidentContextAccessAuthorizationDurable?: boolean;
+  protectedResidentContextAccessConsumptions?: unknown[];
+  protectedResidentContextAccessConsumptionServerTime?: string;
+  protectedResidentContextAccessConsumptionDurable?: boolean;
   credentialAssignmentSnapshots?: unknown[];
   transportCompatibilityAdmissions?: unknown[];
   pendingTransportAdmissionResponse?: Promise<Response>;
@@ -2055,6 +2123,7 @@ function mockReadResponses(input: {
   pendingTargetContextCapsuleOpeningAuthorizationLeaseResponse?: Promise<Response>;
   pendingTargetContextCapsuleOpeningResponse?: Promise<Response>;
   pendingProtectedResidentContextAccessAuthorizationResponse?: Promise<Response>;
+  pendingProtectedResidentContextAccessConsumptionResponse?: Promise<Response>;
   pendingCredentialAssignmentSnapshotResponse?: Promise<Response>;
   pendingTransportCompatibilityAdmissionResponse?: Promise<Response>;
   leaseStatus?: number;
@@ -2108,6 +2177,8 @@ function mockReadResponses(input: {
   targetContextCapsuleOpeningStatuses?: number[];
   protectedResidentContextAccessAuthorizationStatus?: number;
   protectedResidentContextAccessAuthorizationStatuses?: number[];
+  protectedResidentContextAccessConsumptionStatus?: number;
+  protectedResidentContextAccessConsumptionStatuses?: number[];
   credentialAssignmentSnapshotStatus?: number;
   credentialAssignmentSnapshotStatuses?: number[];
   transportCompatibilityAdmissionStatus?: number;
@@ -2135,10 +2206,31 @@ function mockReadResponses(input: {
   let targetContextCapsuleOpeningAuthorizationLeaseReadCount = 0;
   let targetContextCapsuleOpeningReadCount = 0;
   let protectedResidentContextAccessAuthorizationReadCount = 0;
+  let protectedResidentContextAccessConsumptionReadCount = 0;
   let credentialAssignmentSnapshotReadCount = 0;
   let transportCompatibilityAdmissionReadCount = 0;
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (url.endsWith("/api/v1/workflows/protected-resident-context-access-consumptions")) {
+      if (input.pendingProtectedResidentContextAccessConsumptionResponse) {
+        return input.pendingProtectedResidentContextAccessConsumptionResponse;
+      }
+      const status =
+        input.protectedResidentContextAccessConsumptionStatuses?.[
+          Math.min(
+            protectedResidentContextAccessConsumptionReadCount++,
+            input.protectedResidentContextAccessConsumptionStatuses.length - 1,
+          )
+        ] ?? input.protectedResidentContextAccessConsumptionStatus ?? 200;
+      return Promise.resolve(
+        protectedResidentContextAccessConsumptionResponse(
+          input.protectedResidentContextAccessConsumptions ?? [],
+          status,
+          input.protectedResidentContextAccessConsumptionServerTime,
+          input.protectedResidentContextAccessConsumptionDurable,
+        ),
+      );
+    }
     if (url.endsWith("/api/v1/workflows/protected-resident-context-access-authorizations")) {
       if (input.pendingProtectedResidentContextAccessAuthorizationResponse) {
         return input.pendingProtectedResidentContextAccessAuthorizationResponse;
@@ -7096,6 +7188,103 @@ describe("WorkflowPlanningWorkspace", () => {
     expect(within(section).queryByRole("textbox")).toBeNull();
     expect(within(section).queryByRole("combobox")).toBeNull();
     expect(within(section).queryByRole("checkbox")).toBeNull();
+  });
+
+  it("renders protected resident-context access consumptions as exact read-only evidence", async () => {
+    expect(Object.keys(protectedResidentContextAccessConsumption).sort()).toEqual(
+      [
+        "access_id",
+        "attempt_state",
+        "result_state",
+        "started_at",
+        "completed_at",
+        "consumer_contract_id",
+        "consumer_contract_version",
+        "purpose_id",
+        "accessor_contract_id",
+        "accessor_contract_version",
+        "accessor_profile_reference",
+        "runtime_profile_reference",
+        "policy_id",
+        "policy_version",
+        "authority",
+        "integrity_reference",
+      ].sort(),
+    );
+    mockReadResponses({
+      protectedResidentContextAccessConsumptions: [
+        protectedResidentContextAccessConsumption,
+      ],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Protected resident-context access consumptions",
+    })).closest("section") as HTMLElement;
+    const records = await within(section).findByRole("list", {
+      name: "Protected resident-context access consumptions",
+    });
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) =>
+        (request instanceof Request ? request.url : request.toString()).endsWith(
+          "/api/v1/workflows/protected-resident-context-access-consumptions",
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      within(section).getByTitle(protectedResidentContextAccessConsumption.access_id),
+    ).toBeVisible();
+    expect(records).toHaveTextContent("handle established in protected boundary");
+    expect(
+      within(section).getByTitle(
+        protectedResidentContextAccessConsumption.accessor_profile_reference,
+      ),
+    ).toBeVisible();
+    expect(
+      within(section).getByTitle(
+        protectedResidentContextAccessConsumption.runtime_profile_reference,
+      ),
+    ).toBeVisible();
+    expect(records).toHaveTextContent(
+      /all authorities false: protected resident-context access false.*target-context capsule opening false.*target-context capsule handoff false.*endpoint resolution false.*route selection false.*route binding false.*credential selection false.*credential assignment binding false.*credential access false.*credential brokerage false.*credential resolution false.*protected artifact access false.*credential delivery false.*network access false.*readiness probe false.*publication false.*delivery false.*dispatch false.*execution false.*infrastructure mutation false/i,
+    );
+    expect(within(section).queryByRole("button")).toBeNull();
+    expect(within(section).queryByRole("link")).toBeNull();
+    expect(within(section).queryByRole("textbox")).toBeNull();
+    expect(within(section).queryByRole("combobox")).toBeNull();
+    expect(within(section).queryByRole("checkbox")).toBeNull();
+    expect(section).not.toHaveTextContent(/authorized browser session|MFA/i);
+  });
+
+  it("fails closed for unsafe or unavailable resident-context access consumption evidence", async () => {
+    mockReadResponses({ protectedResidentContextAccessConsumptionStatus: 503 });
+    const view = renderWorkspace();
+    let section = (await screen.findByRole("heading", {
+      name: "Protected resident-context access consumptions",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Resident-context access consumptions are unavailable"),
+    ).toBeVisible();
+    expect(within(section).queryByRole("list")).toBeNull();
+
+    view.unmount();
+    mockReadResponses({
+      protectedResidentContextAccessConsumptions: [
+        {
+          ...protectedResidentContextAccessConsumption,
+          authorization_lease_id: "workflow-protected-resident-context-access-lease.hidden",
+        },
+      ],
+    });
+    renderWorkspace();
+    section = (await screen.findByRole("heading", {
+      name: "Protected resident-context access consumptions",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Resident-context access consumptions are unavailable"),
+    ).toBeVisible();
+    expect(within(section).queryByRole("list")).toBeNull();
+    expect(section).not.toHaveTextContent("workflow-protected-resident-context-access-lease.hidden");
   });
 
   it("creates and presents a planned-only workflow without requesting another login", async () => {

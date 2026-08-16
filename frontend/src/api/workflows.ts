@@ -1416,6 +1416,58 @@ export type WorkflowProtectedResidentContextAccessAuthorizationInventory = {
   durable: true;
 };
 
+export type WorkflowProtectedResidentContextAccessConsumptionAuthority = {
+  protected_resident_context_access_authority_granted: false;
+  target_context_capsule_opening_authorized: false;
+  target_context_capsule_handoff_authorized: false;
+  endpoint_resolution_authorized: false;
+  route_selection_authorized: false;
+  route_binding_authorized: false;
+  credential_selection_authorized: false;
+  credential_assignment_binding_authorized: false;
+  credential_access_authorized: false;
+  credential_brokerage_authorized: false;
+  credential_resolution_authorized: false;
+  protected_artifact_access_authorized: false;
+  credential_delivery_authorized: false;
+  network_access_authorized: false;
+  readiness_probe_authorized: false;
+  publication_authorized: false;
+  delivery_authorized: false;
+  dispatch_authorized: false;
+  execution_authorized: false;
+  infrastructure_mutation_authorized: false;
+};
+
+export type WorkflowProtectedResidentContextAccessConsumption = {
+  access_id: string;
+  attempt_state: "started" | "completed";
+  result_state:
+    | "access_pending"
+    | "handle_established_in_protected_boundary"
+    | "resident_context_access_failed"
+    | "access_outcome_uncertain";
+  started_at: string;
+  completed_at: string | null;
+  consumer_contract_id: "contract.workflow-protected-transport-target-context-capsule-consumer";
+  consumer_contract_version: "1.0";
+  purpose_id: "purpose.workflow-protected-resident-context-access-consumption";
+  accessor_contract_id: "contract.workflow-protected-resident-context-accessor";
+  accessor_contract_version: "1.0";
+  accessor_profile_reference: string;
+  runtime_profile_reference: string;
+  policy_id: "policy.workflow-protected-resident-context-access-consumption";
+  policy_version: "1.0";
+  authority: WorkflowProtectedResidentContextAccessConsumptionAuthority;
+  integrity_reference: string;
+};
+
+export type WorkflowProtectedResidentContextAccessConsumptionInventory = {
+  consumptions: WorkflowProtectedResidentContextAccessConsumption[];
+  server_time: string;
+  durable: true;
+};
+
 export type WorkflowPhysicalTransportCredentialAssignmentSnapshotAuthority = {
   endpoint_resolution_authorized: false;
   protected_artifact_access_authorized: false;
@@ -2679,6 +2731,51 @@ const protectedResidentContextAccessAuthorizationFields = [
 ] as const;
 const protectedResidentContextAccessAuthorizationInventoryFields = [
   "authorizations",
+  "server_time",
+  "durable",
+] as const;
+const protectedResidentContextAccessConsumptionAuthorityFields = [
+  "protected_resident_context_access_authority_granted",
+  "target_context_capsule_opening_authorized",
+  "target_context_capsule_handoff_authorized",
+  "endpoint_resolution_authorized",
+  "route_selection_authorized",
+  "route_binding_authorized",
+  "credential_selection_authorized",
+  "credential_assignment_binding_authorized",
+  "credential_access_authorized",
+  "credential_brokerage_authorized",
+  "credential_resolution_authorized",
+  "protected_artifact_access_authorized",
+  "credential_delivery_authorized",
+  "network_access_authorized",
+  "readiness_probe_authorized",
+  "publication_authorized",
+  "delivery_authorized",
+  "dispatch_authorized",
+  "execution_authorized",
+  "infrastructure_mutation_authorized",
+] as const;
+const protectedResidentContextAccessConsumptionFields = [
+  "access_id",
+  "attempt_state",
+  "result_state",
+  "started_at",
+  "completed_at",
+  "consumer_contract_id",
+  "consumer_contract_version",
+  "purpose_id",
+  "accessor_contract_id",
+  "accessor_contract_version",
+  "accessor_profile_reference",
+  "runtime_profile_reference",
+  "policy_id",
+  "policy_version",
+  "authority",
+  "integrity_reference",
+] as const;
+const protectedResidentContextAccessConsumptionInventoryFields = [
+  "consumptions",
   "server_time",
   "durable",
 ] as const;
@@ -4805,6 +4902,75 @@ function isProtectedResidentContextAccessAuthorization(
   );
 }
 
+function hasZeroProtectedResidentContextAccessConsumptionAuthority(
+  value: unknown,
+): value is WorkflowProtectedResidentContextAccessConsumptionAuthority {
+  return (
+    isObject(value) &&
+    hasExactKeys(value, protectedResidentContextAccessConsumptionAuthorityFields) &&
+    protectedResidentContextAccessConsumptionAuthorityFields.every(
+      (field) => value[field] === false,
+    )
+  );
+}
+
+function isProtectedResidentContextAccessConsumption(
+  value: unknown,
+  serverTime: string,
+): value is WorkflowProtectedResidentContextAccessConsumption {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, protectedResidentContextAccessConsumptionFields) ||
+    containsCredentialMaterial(value) ||
+    !isTimezoneAwareTimestamp(value.started_at) ||
+    (value.completed_at !== null && !isTimezoneAwareTimestamp(value.completed_at))
+  ) {
+    return false;
+  }
+  const startedAt = Date.parse(value.started_at);
+  const completedAt = value.completed_at === null ? null : Date.parse(value.completed_at);
+  const evaluatedAt = Date.parse(serverTime);
+  const stateIsConsistent =
+    (value.attempt_state === "started" &&
+      (value.result_state === "access_pending" ||
+        value.result_state === "access_outcome_uncertain") &&
+      completedAt === null) ||
+    (value.attempt_state === "completed" &&
+      value.result_state === "handle_established_in_protected_boundary" &&
+      completedAt !== null) ||
+    (value.attempt_state === "completed" &&
+      (value.result_state === "resident_context_access_failed" ||
+        value.result_state === "access_outcome_uncertain") &&
+      completedAt !== null);
+  return (
+    isStableIdentifier(value.access_id) &&
+    startedAt <= evaluatedAt &&
+    (completedAt === null || (completedAt >= startedAt && completedAt <= evaluatedAt)) &&
+    stateIsConsistent &&
+    value.consumer_contract_id ===
+      "contract.workflow-protected-transport-target-context-capsule-consumer" &&
+    value.consumer_contract_version === "1.0" &&
+    value.purpose_id === "purpose.workflow-protected-resident-context-access-consumption" &&
+    value.accessor_contract_id === "contract.workflow-protected-resident-context-accessor" &&
+    value.accessor_contract_version === "1.0" &&
+    isStableIdentifier(value.accessor_profile_reference) &&
+    value.accessor_profile_reference.startsWith(
+      "integrity.workflow-protected-resident-context-accessor-profile.",
+    ) &&
+    isStableIdentifier(value.runtime_profile_reference) &&
+    value.runtime_profile_reference.startsWith(
+      "integrity.workflow-protected-runtime-context-profile.",
+    ) &&
+    value.policy_id === "policy.workflow-protected-resident-context-access-consumption" &&
+    value.policy_version === "1.0" &&
+    hasZeroProtectedResidentContextAccessConsumptionAuthority(value.authority) &&
+    isStableIdentifier(value.integrity_reference) &&
+    value.integrity_reference.startsWith(
+      "integrity.workflow-protected-resident-context-access-consumption.",
+    )
+  );
+}
+
 function hasZeroPhysicalTransportCredentialAssignmentSnapshotAuthority(
   value: unknown,
 ): value is WorkflowPhysicalTransportCredentialAssignmentSnapshotAuthority {
@@ -6403,6 +6569,57 @@ export async function listWorkflowProtectedResidentContextAccessAuthorizations()
     authorizationIds.add(authorization.authorization_lease_id);
   }
   return data as WorkflowProtectedResidentContextAccessAuthorizationInventory;
+}
+
+export async function listWorkflowProtectedResidentContextAccessConsumptions(): Promise<WorkflowProtectedResidentContextAccessConsumptionInventory> {
+  const response = await apiFetch(
+    "/api/v1/workflows/protected-resident-context-access-consumptions",
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(
+    response,
+    "Workflow protected resident-context access consumption retrieval failed",
+  );
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, protectedResidentContextAccessConsumptionInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    !Array.isArray(data.consumptions) ||
+    data.consumptions.length > 256 ||
+    !isTimezoneAwareTimestamp(data.server_time) ||
+    data.durable !== true
+  ) {
+    throw new ApiRequestError(
+      "Workflow protected resident-context access consumption response was unsafe",
+      response.status,
+    );
+  }
+  const serverTime = data.server_time;
+  if (
+    !data.consumptions.every((consumption) =>
+      isProtectedResidentContextAccessConsumption(consumption, serverTime),
+    )
+  ) {
+    throw new ApiRequestError(
+      "Workflow protected resident-context access consumption response was unsafe",
+      response.status,
+    );
+  }
+  const attemptIds = new Set<string>();
+  for (const consumption of data.consumptions) {
+    if (
+      !isObject(consumption) ||
+      typeof consumption.access_id !== "string" ||
+      attemptIds.has(consumption.access_id)
+    ) {
+      throw new ApiRequestError(
+        "Workflow protected resident-context access consumption response was unsafe",
+        response.status,
+      );
+    }
+    attemptIds.add(consumption.access_id);
+  }
+  return data as WorkflowProtectedResidentContextAccessConsumptionInventory;
 }
 
 export async function listWorkflowPhysicalTransportCredentialAssignmentSnapshots(): Promise<WorkflowPhysicalTransportCredentialAssignmentSnapshotInventory> {

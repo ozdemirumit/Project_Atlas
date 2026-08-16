@@ -1558,6 +1558,13 @@ from atlas.modules.workflows.adapters.endpoint_materialization_unavailable impor
 )
 from atlas.modules.workflows.adapters.memory import InMemoryWorkflowPlanRepository
 from atlas.modules.workflows.adapters.postgres import PostgreSQLWorkflowPlanRepository
+from atlas.modules.workflows.adapters.protected_resident_context_accessors import (
+    DenyAllWorkflowProtectedResidentContextAccessorReadinessSignatureVerifier,
+    DeterministicDevelopmentWorkflowProtectedResidentContextAccessorReadinessAttestor,
+    DeterministicDevelopmentWorkflowProtectedResidentContextTrustedAccessor,
+    UnavailableWorkflowProtectedResidentContextAccessorReadinessAttestor,
+    UnavailableWorkflowProtectedResidentContextTrustedAccessor,
+)
 from atlas.modules.workflows.adapters.protected_resident_context_lifecycle_attestors import (
     DenyAllWorkflowProtectedResidentContextLifecycleSignatureVerifier,
     DeterministicDevelopmentWorkflowProtectedResidentContextLifecycleAttestor,
@@ -1615,6 +1622,8 @@ from atlas.modules.workflows.application import (
     WorkflowPlanRepository,
     WorkflowProtectedResidentContextAccessAuthorizationRepository,
     WorkflowProtectedResidentContextAccessAuthorizationService,
+    WorkflowProtectedResidentContextAccessConsumptionRepository,
+    WorkflowProtectedResidentContextAccessConsumptionService,
     WorkflowProtectedResidentContextLifecycleAttestor,
     WorkflowProtectedResidentContextLifecycleSignatureVerifier,
     WorkflowProtectedResidentContextOpeningReceiptSignatureVerifier,
@@ -1683,6 +1692,7 @@ class _WorkflowCredentialAccessAuthorizationNoStoreMiddleware(BaseHTTPMiddleware
             ),
             "/api/v1/workflows/physical-transport-target-context-capsule-openings",
             "/api/v1/workflows/protected-resident-context-access-authorizations",
+            "/api/v1/workflows/protected-resident-context-access-consumptions",
         }
     )
 
@@ -1803,6 +1813,47 @@ class _UnavailableWorkflowProtectedResidentContextAccessAuthorizationRepository:
         self, *_: object, **__: object
     ) -> None:
         raise RuntimeError("protected access authorization is unavailable")
+
+
+class _UnavailableWorkflowProtectedResidentContextAccessConsumptionRepository:
+    """Fail-closed ADR-167 composition placeholder with no memory fallback."""
+
+    @property
+    def durable(self) -> bool:
+        return False
+
+    async def get_authoritative_time(self) -> datetime:
+        raise RuntimeError("protected access consumption is unavailable")
+
+    async def lookup_protected_resident_context_access_consumption_replay(
+        self, *_: object, **__: object
+    ) -> None:
+        raise RuntimeError("protected access consumption is unavailable")
+
+    async def get_protected_resident_context_access_consumption_source(
+        self, *_: object, **__: object
+    ) -> None:
+        raise RuntimeError("protected access consumption is unavailable")
+
+    async def claim_protected_resident_context_access_consumption(
+        self, *_: object, **__: object
+    ) -> None:
+        raise RuntimeError("protected access consumption is unavailable")
+
+    async def record_protected_resident_context_access_consumption_result(
+        self, *_: object, **__: object
+    ) -> None:
+        raise RuntimeError("protected access consumption is unavailable")
+
+    async def list_protected_resident_context_access_consumption_attempts(
+        self, *_: object, **__: object
+    ) -> None:
+        raise RuntimeError("protected access consumption is unavailable")
+
+    async def get_protected_resident_context_access_consumption_results(
+        self, *_: object, **__: object
+    ) -> None:
+        raise RuntimeError("protected access consumption is unavailable")
 
 
 class _WorkflowProtectedResidentContextOpeningReceiptSignatureVerifierAdapter:
@@ -2312,6 +2363,9 @@ def create_app(
     ) = None,
     workflow_protected_resident_context_access_authorization_service: (
         WorkflowProtectedResidentContextAccessAuthorizationService | None
+    ) = None,
+    workflow_protected_resident_context_access_consumption_service: (
+        WorkflowProtectedResidentContextAccessConsumptionService | None
     ) = None,
     workflow_protected_transport_target_context_capsule_opening_service: (
         WorkflowProtectedTransportTargetContextCapsuleOpeningService | None
@@ -7215,6 +7269,82 @@ def create_app(
         resolved_protected_resident_context_access_authorization_service = (
             workflow_protected_resident_context_access_authorization_service
         )
+    if workflow_protected_resident_context_access_consumption_service is None:
+        resident_context_access_consumption_repository_methods = (
+            "get_authoritative_time",
+            "lookup_protected_resident_context_access_consumption_replay",
+            "get_protected_resident_context_access_consumption_source",
+            "claim_protected_resident_context_access_consumption",
+            "record_protected_resident_context_access_consumption_result",
+            "list_protected_resident_context_access_consumption_attempts",
+            "get_protected_resident_context_access_consumption_results",
+        )
+        if isinstance(workflow_repository, PostgreSQLWorkflowPlanRepository) and all(
+            callable(getattr(workflow_repository, method_name, None))
+            for method_name in resident_context_access_consumption_repository_methods
+        ):
+            resident_context_access_consumption_repository = cast(
+                WorkflowProtectedResidentContextAccessConsumptionRepository,
+                workflow_repository,
+            )
+        else:
+            resident_context_access_consumption_repository = cast(
+                WorkflowProtectedResidentContextAccessConsumptionRepository,
+                _UnavailableWorkflowProtectedResidentContextAccessConsumptionRepository(),
+            )
+        if (
+            resolved_settings.environment == "development"
+            and resolved_settings.development_identity_enabled
+        ):
+            development_lifecycle_attestor = (
+                DeterministicDevelopmentWorkflowProtectedResidentContextLifecycleAttestor(
+                    development_enabled=True
+                )
+            )
+            development_readiness_attestor = (
+                DeterministicDevelopmentWorkflowProtectedResidentContextAccessorReadinessAttestor(
+                    development_enabled=True
+                )
+            )
+            resolved_protected_resident_context_access_consumption_service = (
+                WorkflowProtectedResidentContextAccessConsumptionService(
+                    repository=resident_context_access_consumption_repository,
+                    lifecycle_attestor=development_lifecycle_attestor,
+                    readiness_attestor=development_readiness_attestor,
+                    lifecycle_signature_verifier=development_lifecycle_attestor,
+                    readiness_signature_verifier=development_readiness_attestor,
+                    accessor=(
+                        DeterministicDevelopmentWorkflowProtectedResidentContextTrustedAccessor(
+                            development_enabled=True
+                        )
+                    ),
+                    audit_sink=resolved_audit_sink,
+                )
+            )
+        else:
+            resolved_protected_resident_context_access_consumption_service = (
+                WorkflowProtectedResidentContextAccessConsumptionService(
+                    repository=resident_context_access_consumption_repository,
+                    lifecycle_attestor=(
+                        UnavailableWorkflowProtectedResidentContextLifecycleAttestor()
+                    ),
+                    readiness_attestor=(
+                        UnavailableWorkflowProtectedResidentContextAccessorReadinessAttestor()
+                    ),
+                    lifecycle_signature_verifier=(
+                        DenyAllWorkflowProtectedResidentContextLifecycleSignatureVerifier()
+                    ),
+                    readiness_signature_verifier=(
+                        DenyAllWorkflowProtectedResidentContextAccessorReadinessSignatureVerifier()
+                    ),
+                    accessor=UnavailableWorkflowProtectedResidentContextTrustedAccessor(),
+                    audit_sink=resolved_audit_sink,
+                )
+            )
+    else:
+        resolved_protected_resident_context_access_consumption_service = (
+            workflow_protected_resident_context_access_consumption_service
+        )
     configured_transport_route_selection_heads = (
         _deployment_event_transport_route_selection_heads(
             resolved_settings,
@@ -7668,6 +7798,12 @@ def create_app(
         )
         app.state.workflow_protected_resident_context_access_authorization_repository = (
             resolved_protected_resident_context_access_authorization_service.repository
+        )
+        app.state.workflow_protected_resident_context_access_consumption_service = (
+            resolved_protected_resident_context_access_consumption_service
+        )
+        app.state.workflow_protected_resident_context_access_consumption_repository = (
+            resolved_protected_resident_context_access_consumption_service.repository
         )
         app.state.workflow_transport_route_selection_heads = (
             configured_transport_route_selection_heads

@@ -241,6 +241,18 @@ from atlas.modules.workflows.application.protected_resident_context_access_autho
     WORKFLOW_PROTECTED_RESIDENT_CONTEXT_ACCESS_AUTHORIZATION_PRODUCER,
     WorkflowProtectedResidentContextAccessAuthorizationService,
 )
+from atlas.modules.workflows.application.protected_resident_context_access_consumption_ports import (  # noqa: E501
+    WorkflowProtectedResidentContextAccessConsumptionError,
+    WorkflowProtectedResidentContextAccessConsumptionRepository,
+    WorkflowProtectedResidentContextAccessorReadinessAttestor,
+    WorkflowProtectedResidentContextAccessorReadinessSignatureVerifier,
+    WorkflowProtectedResidentContextTrustedAccessor,
+)
+from atlas.modules.workflows.application.protected_resident_context_access_consumptions import (
+    WORKFLOW_PROTECTED_RESIDENT_CONTEXT_ACCESS_CONSUMPTION_PRODUCER,
+    WorkflowProtectedResidentContextAccessConsumptionPresentation,
+    WorkflowProtectedResidentContextAccessConsumptionService,
+)
 from atlas.modules.workflows.application.publication_lease_ports import (
     WorkflowOutboxPublicationLeaseAcquireIdempotencyRecord,
     WorkflowOutboxPublicationLeaseAcquireRequest,
@@ -516,6 +528,7 @@ __all__ = [
     "WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_BINDER_SUBJECT",
     "WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_BINDING_PRODUCER",
     "WORKFLOW_PROTECTED_RESIDENT_CONTEXT_ACCESS_AUTHORIZATION_PRODUCER",
+    "WORKFLOW_PROTECTED_RESIDENT_CONTEXT_ACCESS_CONSUMPTION_PRODUCER",
     "WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_AUDIENCE",
     "WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_SUBJECT",
     "WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_HANDOFF_AUTHORIZATION_LEASE_PRODUCER",
@@ -697,11 +710,18 @@ __all__ = [
     "WorkflowProtectedResidentContextAccessAuthorizationRepository",
     "WorkflowProtectedResidentContextAccessAuthorizationService",
     "WorkflowProtectedResidentContextAccessAuthorizationSource",
+    "WorkflowProtectedResidentContextAccessConsumptionError",
+    "WorkflowProtectedResidentContextAccessConsumptionPresentation",
+    "WorkflowProtectedResidentContextAccessConsumptionRepository",
+    "WorkflowProtectedResidentContextAccessConsumptionService",
+    "WorkflowProtectedResidentContextAccessorReadinessAttestor",
+    "WorkflowProtectedResidentContextAccessorReadinessSignatureVerifier",
     "WorkflowProtectedResidentContextLifecycleAttestation",
     "WorkflowProtectedResidentContextLifecycleAttestationRequest",
     "WorkflowProtectedResidentContextLifecycleAttestor",
     "WorkflowProtectedResidentContextLifecycleSignatureVerifier",
     "WorkflowProtectedResidentContextOpeningReceiptSignatureVerifier",
+    "WorkflowProtectedResidentContextTrustedAccessor",
     "WorkflowProtectedTargetContextCapsuleDestinationCustodyAttestationRequest",
     "WorkflowProtectedTargetContextCapsuleDestinationCustodyAttestor",
     "WorkflowProtectedTargetContextCapsuleDestinationCustodySignatureVerifier",

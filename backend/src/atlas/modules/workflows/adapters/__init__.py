@@ -5,6 +5,13 @@ from atlas.modules.workflows.adapters.endpoint_materialization_unavailable impor
     UnavailableWorkflowPhysicalTransportEndpointMaterializer,
 )
 from atlas.modules.workflows.adapters.memory import InMemoryWorkflowPlanRepository
+from atlas.modules.workflows.adapters.protected_resident_context_accessors import (
+    DenyAllWorkflowProtectedResidentContextAccessorReadinessSignatureVerifier,
+    DeterministicDevelopmentWorkflowProtectedResidentContextAccessorReadinessAttestor,
+    DeterministicDevelopmentWorkflowProtectedResidentContextTrustedAccessor,
+    UnavailableWorkflowProtectedResidentContextAccessorReadinessAttestor,
+    UnavailableWorkflowProtectedResidentContextTrustedAccessor,
+)
 from atlas.modules.workflows.adapters.protected_resident_context_lifecycle_attestors import (
     DenyAllWorkflowProtectedResidentContextLifecycleSignatureVerifier,
     DeterministicDevelopmentWorkflowProtectedResidentContextLifecycleAttestor,
@@ -47,12 +54,15 @@ from atlas.modules.workflows.adapters.unavailable import UnavailableWorkflowPlan
 
 __all__ = [
     "DenyAllWorkflowProtectedArtifactStatusSignatureVerifier",
+    "DenyAllWorkflowProtectedResidentContextAccessorReadinessSignatureVerifier",
     "DenyAllWorkflowProtectedResidentContextLifecycleSignatureVerifier",
     "DenyAllWorkflowProtectedTargetContextCapsuleDestinationCustodySignatureVerifier",
     "DenyAllWorkflowProtectedTargetContextCapsuleHandoffAttestationSignatureVerifier",
     "DenyAllWorkflowProtectedTargetContextCapsuleLifecycleSignatureVerifier",
     "DenyAllWorkflowProtectedTargetContextCapsuleOpeningAttestationSignatureVerifier",
+    "DeterministicDevelopmentWorkflowProtectedResidentContextAccessorReadinessAttestor",
     "DeterministicDevelopmentWorkflowProtectedResidentContextLifecycleAttestor",
+    "DeterministicDevelopmentWorkflowProtectedResidentContextTrustedAccessor",
     "InMemoryWorkflowPlanRepository",
     "SyntheticWorkflowPhysicalTransportEndpointMaterializer",
     "SyntheticWorkflowPhysicalTransportTargetContextArtifactOpener",
@@ -63,7 +73,9 @@ __all__ = [
     "UnavailableWorkflowPlanRepository",
     "UnavailableWorkflowProtectedCredentialStatusAttestor",
     "UnavailableWorkflowProtectedEndpointStatusAttestor",
+    "UnavailableWorkflowProtectedResidentContextAccessorReadinessAttestor",
     "UnavailableWorkflowProtectedResidentContextLifecycleAttestor",
+    "UnavailableWorkflowProtectedResidentContextTrustedAccessor",
     "UnavailableWorkflowProtectedTargetContextCapsuleDestinationCustodyAttestor",
     "UnavailableWorkflowProtectedTargetContextCapsuleHandoffLifecycleAttestor",
     "UnavailableWorkflowProtectedTargetContextCapsuleLifecycleStatusAttestor",

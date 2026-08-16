@@ -84,6 +84,8 @@ def test_orm_contract_has_composite_lineage_profiles_windows_and_twenty_zero_aut
     assert "handle_established_in_protected_boundary" in result_checks
     assert "resident_context_access_failed" in result_checks
     assert "access_outcome_uncertain" in result_checks
+    assert result.c.protected_resident_context_consumed.nullable is True
+    assert "protected_resident_context_consumed IS NULL" in result_checks
 
 
 def test_repository_orders_replay_locks_two_clocks_and_atomic_claim_attempt_commit() -> None:
