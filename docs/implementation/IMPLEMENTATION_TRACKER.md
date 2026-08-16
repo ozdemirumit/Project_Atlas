@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-214 |
 | Title | Bounded single-use consumer-side protected target-context capsule opening authorization lease without retrieval, unsealing, runtime, execution or infrastructure mutation authority |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/protected-capsule-opening-authorization` |
-| Pull Request | Not opened |
+| Pull Request | [#227](https://github.com/ozdemirumit/Project_Atlas/pull/227) |
 | Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-159, ADR-160, ADR-161, ADR-162, ADR-163, ADR-164 |
 | Last Updated | 2026-08-16 |
-| Next Action | Commit the completed ADR-164 vertical slice, open its pull request and verify exact-head PostgreSQL, backend and frontend CI |
+| Next Action | Verify PR #227 exact-head PostgreSQL, backend and frontend CI; then perform a SHA-locked merge and verify independent `main` CI |
 
 ### ATLAS-IMP-214 Scope Rationale
 
