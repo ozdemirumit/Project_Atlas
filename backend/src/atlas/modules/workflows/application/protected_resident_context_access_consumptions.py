@@ -30,6 +30,7 @@ from atlas.modules.workflows.application.protected_resident_context_access_consu
     WorkflowProtectedResidentContextAccessorReadinessAttestor,
     WorkflowProtectedResidentContextAccessorReadinessSignatureVerifier,
     WorkflowProtectedResidentContextTrustedAccessor,
+    build_workflow_protected_resident_context_trusted_accessor_instruction,
 )
 from atlas.modules.workflows.application.target_context_capsule_handoff_authorization_leases import (  # noqa: E501
     WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_AUDIENCE,
@@ -244,7 +245,9 @@ class WorkflowProtectedResidentContextAccessConsumptionService:
                     self._policy.runtime_handle_profile_version
                 ),
                 expected_runtime_handle_profile_digest=(self._policy.runtime_handle_profile_digest),
-                expected_verification_signing_key_id=(self._policy.verification_signing_key_id),
+                expected_readiness_verification_signing_key_id=(
+                    self._policy.readiness_verification_signing_key_id
+                ),
                 minimum_remaining_budget_milliseconds=(
                     self._policy.minimum_remaining_budget_milliseconds
                 ),
@@ -418,6 +421,7 @@ class WorkflowProtectedResidentContextAccessConsumptionService:
             lifecycle=lifecycle,
             readiness=readiness,
             nonce_digest=nonce_digest,
+            requested_at=context.requested_at,
         )
         return _ResolvedAccessEvidence(source, lifecycle, readiness)
 
@@ -464,11 +468,16 @@ class WorkflowProtectedResidentContextAccessConsumptionService:
         lifecycle: WorkflowProtectedResidentContextLifecycleAttestation,
         readiness: WorkflowProtectedResidentContextAccessorReadinessAttestation,
         nonce_digest: str,
+        requested_at: datetime,
     ) -> None:
         lease = source.authorization_lease
         if (
             lifecycle.request_nonce_digest != nonce_digest
             or readiness.request_nonce_digest != nonce_digest
+            or lifecycle.observed_at < requested_at
+            or readiness.observed_at < requested_at
+            or lifecycle.observed_at >= lifecycle.valid_until
+            or readiness.observed_at >= readiness.valid_until
             or lifecycle.protected_resident_context_id != lease.protected_resident_context_id
             or readiness.protected_resident_context_id != lease.protected_resident_context_id
             or lifecycle.protected_resident_context_digest
@@ -503,14 +512,7 @@ class WorkflowProtectedResidentContextAccessConsumptionService:
     def _build_instruction(
         self, attempt: WorkflowProtectedResidentContextAccessConsumptionAttempt
     ) -> WorkflowProtectedResidentContextTrustedAccessorInstruction:
-        return cast(
-            WorkflowProtectedResidentContextTrustedAccessorInstruction,
-            _construct_record(
-                WorkflowProtectedResidentContextTrustedAccessorInstruction,
-                sources=(attempt,),
-                aliases={"consumption_claim_id": attempt.consumption_claim_id},
-            ),
-        )
+        return build_workflow_protected_resident_context_trusted_accessor_instruction(attempt)
 
     def _verify_receipt(
         self,
@@ -557,8 +559,14 @@ class WorkflowProtectedResidentContextAccessConsumptionService:
             or receipt.secret_returned is not False
             or receipt.bearer_token_returned is not False
             or receipt.provider_payload_returned is not False
+            or receipt.filesystem_activity_performed is not False
+            or receipt.provider_activity_performed is not False
+            or receipt.connector_activity_performed is not False
             or receipt.network_activity_performed is not False
+            or receipt.readiness_probe_performed is not False
+            or receipt.publication_performed is not False
             or receipt.delivery_performed is not False
+            or receipt.dispatch_performed is not False
             or receipt.execution_performed is not False
             or receipt.infrastructure_mutation_performed is not False
             or (known_failure and receipt.runtime_handle_absence_confirmed is not True)

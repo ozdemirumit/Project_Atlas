@@ -228,8 +228,14 @@ def _receipt(
         "secret_returned": False,
         "bearer_token_returned": False,
         "provider_payload_returned": False,
+        "filesystem_activity_performed": False,
+        "provider_activity_performed": False,
+        "connector_activity_performed": False,
         "network_activity_performed": False,
+        "readiness_probe_performed": False,
+        "publication_performed": False,
         "delivery_performed": False,
+        "dispatch_performed": False,
         "execution_performed": False,
         "infrastructure_mutation_performed": False,
         "completed_at": NOW + timedelta(milliseconds=250),
@@ -330,6 +336,7 @@ def test_code_owned_consumption_policy_is_closed_and_digest_bound() -> None:
     assert policy.network_activity_forbidden is True
     assert policy.delivery_forbidden is True
     assert policy.execution_forbidden is True
+    assert policy.readiness_verification_signing_key_id != policy.verification_signing_key_id
     assert canonical_digest(policy.digest_payload()) == policy.canonical_digest
 
     with pytest.raises(ValueError, match="not code-owned"):
@@ -459,8 +466,14 @@ def test_success_receipt_rejects_bearer_or_overlong_handle_metadata() -> None:
         "secret_returned",
         "bearer_token_returned",
         "provider_payload_returned",
+        "filesystem_activity_performed",
+        "provider_activity_performed",
+        "connector_activity_performed",
         "network_activity_performed",
+        "readiness_probe_performed",
+        "publication_performed",
         "delivery_performed",
+        "dispatch_performed",
         "execution_performed",
         "infrastructure_mutation_performed",
     ],
@@ -499,6 +512,7 @@ def test_result_rejects_cross_state_evidence_and_late_known_outcome() -> None:
     success = _result(SUCCESS)
     failure = _result(FAILED)
     uncertain = _result(UNCERTAIN)
+    assert success.completed_at is not None
 
     with pytest.raises(ValueError, match="successful resident context access result"):
         replace(success, runtime_handle_established_in_protected_boundary=False)
@@ -509,7 +523,13 @@ def test_result_rejects_cross_state_evidence_and_late_known_outcome() -> None:
     with pytest.raises(ValueError, match="uncertain resident context access result"):
         replace(uncertain, protected_resident_context_consumed=False)
     with pytest.raises(ValueError, match="successful resident context access result"):
-        replace(success, completed_at=ACCESS_DEADLINE)
+        replace(
+            success,
+            completed_at=ACCESS_DEADLINE,
+            recorded_at=ACCESS_DEADLINE + timedelta(microseconds=1),
+        )
+    with pytest.raises(ValueError, match="resident context access result is unsafe"):
+        replace(success, recorded_at=success.completed_at - timedelta(microseconds=1))
 
 
 def test_exact_result_state_values_match_adr_167() -> None:

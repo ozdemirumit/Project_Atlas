@@ -3666,12 +3666,16 @@ export default function WorkflowPlanningWorkspace({
                             authorization.effective_state === "active" ? "neutral" : "warning"
                           }`}
                         >
-                          {authorization.effective_state === "active" ? "Active" : "Expired"}
+                          {authorization.effective_state === "active"
+                            ? "Active"
+                            : authorization.effective_state === "consumed"
+                              ? "Consumed"
+                              : "Expired"}
                         </span>
                       </strong>
                       <div className="workflow-physical-route-binding-grid">
                         <span>
-                          Immutable state {readableKind(authorization.state)} | effective state{" "}
+                          Authorization state {readableKind(authorization.state)} | effective state{" "}
                           {authorization.effective_state}
                         </span>
                         <span>
@@ -3709,7 +3713,9 @@ export default function WorkflowPlanningWorkspace({
                           </code>
                         </span>
                         <span className="workflow-physical-route-binding-authority">
-                          Authority protected resident-context access true | target-context capsule
+                          Authority protected resident-context access{" "}
+                          {String(authorization.authority.protected_access_authority_granted)} |
+                          target-context capsule
                           opening false | target-context capsule handoff false | endpoint resolution
                           false | route selection false | route binding false | credential selection
                           false | credential assignment binding false | credential access false |

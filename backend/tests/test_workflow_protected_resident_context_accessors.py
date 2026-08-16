@@ -107,8 +107,14 @@ class _Receipt:
     secret_returned: bool
     bearer_token_returned: bool
     provider_payload_returned: bool
+    filesystem_activity_performed: bool
+    provider_activity_performed: bool
+    connector_activity_performed: bool
     network_activity_performed: bool
+    readiness_probe_performed: bool
+    publication_performed: bool
     delivery_performed: bool
+    dispatch_performed: bool
     execution_performed: bool
     infrastructure_mutation_performed: bool
     completed_at: datetime
@@ -133,7 +139,8 @@ def _policy() -> Any:
     return SimpleNamespace(
         required_readiness_attestor_id="attestor.readiness",
         required_readiness_attestor_version="1.0",
-        verification_signing_key_id="key.test",
+        readiness_verification_signing_key_id="key.readiness.test",
+        verification_signing_key_id="key.receipt.test",
         required_accessor_contract_id="contract.accessor",
         required_accessor_contract_version="1.0",
         approved_accessor_id="accessor.test",
@@ -221,6 +228,7 @@ async def test_development_readiness_attestation_is_signed_metadata_only(
     evidence = await attestor.attest_accessor_readiness(request)
 
     assert attestor.verify_accessor_readiness_attestation(evidence) is True
+    assert evidence.signing_key_id == _policy().readiness_verification_signing_key_id
     assert evidence.raw_context_included is False
     assert evidence.runtime_handle_locator_included is False
     assert evidence.endpoint_included is False
@@ -248,12 +256,20 @@ async def test_development_accessor_enforces_single_atomic_cas(
     receipt = await accessor.establish_access(instruction)  # type: ignore[arg-type]
 
     assert accessor.verify_receipt(receipt) is True
+    assert receipt.signing_key_id == _policy().verification_signing_key_id
+    assert receipt.signing_key_id != _policy().readiness_verification_signing_key_id
     assert receipt.protected_resident_context_consumed is True
     assert receipt.runtime_handle_established_in_protected_boundary is True
     assert receipt.protected_runtime_handle_is_bearer_capability is False
     assert receipt.runtime_handle_locator_returned is False
     assert receipt.raw_context_returned is False
+    assert receipt.filesystem_activity_performed is False
+    assert receipt.provider_activity_performed is False
+    assert receipt.connector_activity_performed is False
     assert receipt.network_activity_performed is False
+    assert receipt.readiness_probe_performed is False
+    assert receipt.publication_performed is False
+    assert receipt.dispatch_performed is False
     with pytest.raises(WorkflowProtectedResidentContextAccessConsumptionError):
         await accessor.establish_access(instruction)  # type: ignore[arg-type]
     assert len(accessor.calls) == 1

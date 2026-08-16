@@ -6235,8 +6235,12 @@ async def list_workflow_protected_resident_context_access_authorizations(
         request.app.state.workflow_protected_resident_context_access_authorization_service,
     )
     try:
-        leases = await service.list_leases(scope=scope, limit=256)
-        server_time = await service.repository.get_authoritative_time()
+        presentations = await service.list_presentations(scope=scope, limit=256)
+        server_time = (
+            presentations[0].evaluated_at
+            if presentations
+            else await service.repository.get_authoritative_time()
+        )
     except WorkflowProtectedResidentContextAccessAuthorizationError as error:
         raise AtlasError(
             status=503,
@@ -6257,9 +6261,11 @@ async def list_workflow_protected_resident_context_access_authorizations(
         data=WorkflowProtectedResidentContextAccessAuthorizationInventoryData(
             authorizations=[
                 WorkflowProtectedResidentContextAccessAuthorizationData.from_domain(
-                    lease, evaluated_at=server_time
+                    presentation.lease,
+                    evaluated_at=presentation.evaluated_at,
+                    consumed=presentation.consumed,
                 )
-                for lease in leases
+                for presentation in presentations
             ],
             server_time=server_time,
             durable=True,
@@ -6310,7 +6316,12 @@ async def create_workflow_protected_resident_context_access_authorization(
                 requested_at=datetime.now(UTC),
             ),
         )
-        server_time = await service.repository.get_authoritative_time()
+        presentation = await service.get_presentation(
+            scope=scope,
+            authorization_lease_id=lease.authorization_lease_id,
+        )
+        if presentation.lease.canonical_digest != lease.canonical_digest:
+            raise RuntimeError("protected access authorization projection mismatch")
     except WorkflowProtectedResidentContextAccessAuthorizationError as error:
         unavailable = "unavailable" in error.code or error.code.endswith(
             "durable_repository_required"
@@ -6342,7 +6353,9 @@ async def create_workflow_protected_resident_context_access_authorization(
         ) from error
     return WorkflowProtectedResidentContextAccessAuthorizationResponse(
         data=WorkflowProtectedResidentContextAccessAuthorizationData.from_domain(
-            lease, evaluated_at=server_time
+            presentation.lease,
+            evaluated_at=presentation.evaluated_at,
+            consumed=presentation.consumed,
         ),
         meta=_meta(request),
     )

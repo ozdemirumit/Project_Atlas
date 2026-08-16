@@ -1371,7 +1371,7 @@ export type WorkflowPhysicalTransportTargetContextCapsuleOpeningInventory = {
 };
 
 export type WorkflowProtectedResidentContextAccessAuthorizationAuthority = {
-  protected_access_authority_granted: true;
+  protected_access_authority_granted: boolean;
   endpoint_resolution_authorized: false;
   route_selection_authorized: false;
   route_binding_authorized: false;
@@ -1395,8 +1395,8 @@ export type WorkflowProtectedResidentContextAccessAuthorizationAuthority = {
 
 export type WorkflowProtectedResidentContextAccessAuthorization = {
   authorization_lease_id: string;
-  state: "authorized_unconsumed";
-  effective_state: "active" | "expired";
+  state: "authorized_unconsumed" | "consumed";
+  effective_state: "active" | "expired" | "consumed";
   issued_at: string;
   valid_until: string;
   effective_until: string;
@@ -4842,13 +4842,14 @@ function isPhysicalTransportTargetContextCapsuleOpening(
 
 function hasProtectedResidentContextAccessOnlyAuthority(
   value: unknown,
+  accessAuthorityGranted: boolean,
 ): value is WorkflowProtectedResidentContextAccessAuthorizationAuthority {
   return (
     isObject(value) &&
     hasExactKeys(value, protectedResidentContextAccessAuthorizationAuthorityFields) &&
     protectedResidentContextAccessAuthorizationAuthorityFields.every((field) =>
       field === "protected_access_authority_granted"
-        ? value[field] === true
+        ? value[field] === accessAuthorityGranted
         : value[field] === false,
     )
   );
@@ -4872,13 +4873,18 @@ function isProtectedResidentContextAccessAuthorization(
   const validUntil = Date.parse(value.valid_until);
   const effectiveUntil = Date.parse(value.effective_until);
   const evaluatedAt = Date.parse(serverTime);
-  const expectedEffectiveState = evaluatedAt >= validUntil ? "expired" : "active";
+  const isConsumed = value.state === "consumed";
+  const expectedEffectiveState = isConsumed
+    ? "consumed"
+    : evaluatedAt >= validUntil
+      ? "expired"
+      : "active";
   return (
     isStableIdentifier(value.authorization_lease_id) &&
     value.authorization_lease_id.startsWith(
       "workflow-protected-resident-context-access-lease.",
     ) &&
-    value.state === "authorized_unconsumed" &&
+    (value.state === "authorized_unconsumed" || isConsumed) &&
     value.effective_state === expectedEffectiveState &&
     issuedAt <= evaluatedAt &&
     issuedAt < validUntil &&
@@ -4894,7 +4900,7 @@ function isProtectedResidentContextAccessAuthorization(
     value.destination_profile_reference.startsWith(
       "integrity.workflow-protected-destination-profile.",
     ) &&
-    hasProtectedResidentContextAccessOnlyAuthority(value.authority) &&
+    hasProtectedResidentContextAccessOnlyAuthority(value.authority, !isConsumed) &&
     isStableIdentifier(value.integrity_reference) &&
     value.integrity_reference.startsWith(
       "integrity.workflow-protected-access-authorization.",

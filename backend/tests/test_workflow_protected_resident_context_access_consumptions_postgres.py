@@ -2,12 +2,24 @@ from __future__ import annotations
 
 import inspect
 import os
+from dataclasses import fields
+from datetime import timedelta
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pytest
 from sqlalchemy import Table, text
 from sqlalchemy.ext.asyncio import create_async_engine
+from test_workflow_protected_resident_context_access_consumption_domain import (
+    FAILED,
+    SUCCESS,
+    UNCERTAIN,
+    _attempt,
+    _claim,
+    _payload,
+    _receipt,
+    _result,
+)
 
 from atlas.core.persistence.models import (
     WorkflowProtectedResidentContextAccessAttemptModel,
@@ -15,6 +27,10 @@ from atlas.core.persistence.models import (
     WorkflowProtectedResidentContextAccessResultModel,
 )
 from atlas.modules.workflows.adapters.postgres import PostgreSQLWorkflowPlanRepository
+from atlas.modules.workflows.application.protected_resident_context_access_consumption_ports import (  # noqa: E501
+    WorkflowProtectedResidentContextAccessConsumptionResultRequest,
+)
+from atlas.modules.workflows.domain import canonical_digest
 
 MIGRATION = (
     Path(__file__).resolve().parents[1]
@@ -40,6 +56,11 @@ def test_migration_is_linear_append_only_guarded_and_has_exact_lineage() -> None
     assert "trg_wf_rc_access_consume_append_only" in source
     assert "trg_wf_rc_access_attempt_append_only" in source
     assert "trg_wf_rc_access_result_append_only" in source
+    assert "completed_at <= recorded_at" in source
+    assert source.count("accessor_receipt_payload IS NOT NULL") == 2
+    assert source.count("accessor_receipt_payload ->> 'canonical_digest'") == 2
+    assert source.count("accessor_receipt_digest, FALSE") == 2
+    assert "accessor_receipt_payload IS NULL" in source
     assert (
         "refusing guarded downgrade: resident-context access consumption evidence exists" in source
     )
@@ -84,6 +105,11 @@ def test_orm_contract_has_composite_lineage_profiles_windows_and_twenty_zero_aut
     assert "handle_established_in_protected_boundary" in result_checks
     assert "resident_context_access_failed" in result_checks
     assert "access_outcome_uncertain" in result_checks
+    assert "completed_at <= recorded_at" in result_checks
+    assert result_checks.count("accessor_receipt_payload IS NOT NULL") == 2
+    assert result_checks.count("accessor_receipt_payload ->> 'canonical_digest'") == 2
+    assert result_checks.count("accessor_receipt_digest, FALSE") == 2
+    assert "accessor_receipt_payload IS NULL" in result_checks
     assert result.c.protected_resident_context_consumed.nullable is True
     assert "protected_resident_context_consumed IS NULL" in result_checks
 
@@ -129,6 +155,121 @@ def test_repository_orders_replay_locks_two_clocks_and_atomic_claim_attempt_comm
     ):
         assert model in lock_source
     assert "with_for_update" in lock_source
+    validation_source = inspect.getsource(
+        PostgreSQLWorkflowPlanRepository._protected_resident_context_access_consumption_request_is_valid
+    )
+    assert "request.lifecycle_attestation.observed_at <= locked.observed_at" in validation_source
+    assert (
+        "request.accessor_readiness_attestation.observed_at <= locked.observed_at"
+        in validation_source
+    )
+
+    result_source = inspect.getsource(
+        PostgreSQLWorkflowPlanRepository._protected_resident_context_access_result_matches
+    )
+    assert "result.completed_at <= result.recorded_at" in result_source
+    assert "receipt.completed_at <= result.recorded_at" in result_source
+    assert "_protected_resident_context_access_receipt_signature_verifier" in result_source
+    assert "receipt_verifier.verify_receipt(receipt)" in result_source
+
+
+def test_repository_receipt_verifier_binding_is_write_once() -> None:
+    class _Verifier:
+        def verify_receipt(self, receipt: object) -> bool:
+            del receipt
+            return True
+
+    repository = PostgreSQLWorkflowPlanRepository(
+        engine=cast(Any, object()),
+        session_factory=cast(Any, lambda: None),
+    )
+    first = _Verifier()
+
+    repository.bind_protected_resident_context_access_receipt_signature_verifier(first)
+    repository.bind_protected_resident_context_access_receipt_signature_verifier(first)
+    with pytest.raises(ValueError, match="already bound"):
+        repository.bind_protected_resident_context_access_receipt_signature_verifier(_Verifier())
+
+
+def test_repository_requires_receipts_for_known_results_and_binds_signed_outcome(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Verifier:
+        def verify_receipt(self, receipt: object) -> bool:
+            del receipt
+            return True
+
+    repository = PostgreSQLWorkflowPlanRepository(
+        engine=cast(Any, object()),
+        session_factory=cast(Any, lambda: None),
+    )
+    repository.bind_protected_resident_context_access_receipt_signature_verifier(_Verifier())
+    claim = _claim()
+    attempt = _attempt()
+    monkeypatch.setattr(
+        repository,
+        "_protected_resident_context_access_consumption_claim_from_row",
+        lambda row: claim,
+    )
+    monkeypatch.setattr(
+        repository,
+        "_protected_resident_context_access_attempt_from_row",
+        lambda row: attempt,
+    )
+    claim_row = cast(Any, object())
+    attempt_row = cast(Any, object())
+    success = _result(SUCCESS)
+    success_receipt = _receipt(SUCCESS)
+
+    def rebuild(value: Any, **changes: object) -> Any:
+        values = {
+            field.name: getattr(value, field.name)
+            for field in fields(value)
+            if field.name != "canonical_digest"
+        }
+        values.update(changes)
+        return type(value)(
+            **values,
+            canonical_digest=canonical_digest(_payload(values)),
+        )
+
+    def matches(*, result: Any, receipt: Any) -> bool:
+        return repository._protected_resident_context_access_result_matches(
+            request=WorkflowProtectedResidentContextAccessConsumptionResultRequest(
+                result=result,
+                receipt=receipt,
+                expected_claim_digest=claim.canonical_digest,
+                expected_attempt_digest=attempt.canonical_digest,
+            ),
+            claim_row=claim_row,
+            attempt_row=attempt_row,
+            observed_at=result.recorded_at + timedelta(milliseconds=1),
+        )
+
+    assert matches(result=success, receipt=success_receipt) is True
+    assert matches(result=success, receipt=None) is False
+    assert matches(result=success, receipt=_receipt(FAILED)) is False
+    assert (
+        matches(
+            result=success,
+            receipt=rebuild(success_receipt, instruction_digest="f" * 64),
+        )
+        is False
+    )
+    backdated = attempt.started_at - timedelta(microseconds=1)
+    backdated_receipt = rebuild(
+        success_receipt,
+        completed_at=backdated,
+        protected_runtime_handle_created_at=backdated,
+    )
+    backdated_result = rebuild(
+        success,
+        completed_at=backdated,
+        protected_runtime_handle_created_at=backdated,
+        recorded_at=attempt.started_at,
+    )
+    assert matches(result=backdated_result, receipt=backdated_receipt) is False
+    assert matches(result=_result(UNCERTAIN), receipt=None) is True
 
 
 def test_replay_path_is_durable_and_does_not_call_external_attestors_or_accessor() -> None:
@@ -192,5 +333,32 @@ async def test_live_postgres_contract_and_append_only_triggers_when_configured()
                 "trg_wf_rc_access_attempt_append_only",
                 "trg_wf_rc_access_result_append_only",
             }
+            outcome_constraint = await connection.scalar(
+                text(
+                    "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+                    "WHERE conname = 'ck_wf_rc_access_result_outcome'"
+                )
+            )
+            assert outcome_constraint is not None
+            assert "COALESCE" in outcome_constraint
+            expected_digest = "a" * 64
+            for invalid_payload in (
+                "{}",
+                '{"canonical_digest": null}',
+                (
+                    '{"canonical_digest": "'
+                    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                    '"}'
+                ),
+            ):
+                digest_matches = await connection.scalar(
+                    text(
+                        "SELECT COALESCE((CAST(:payload AS jsonb) ->> 'canonical_digest') = "
+                        ":expected_digest, FALSE)"
+                    ),
+                    {"payload": invalid_payload, "expected_digest": expected_digest},
+                )
+                assert digest_matches is False
     finally:
         await engine.dispose()

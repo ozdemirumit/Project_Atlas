@@ -11932,6 +11932,7 @@ class WorkflowProtectedResidentContextAccessConsumptionPolicy:
     runtime_handle_profile_id: str
     runtime_handle_profile_version: str
     runtime_handle_profile_digest: str
+    readiness_verification_signing_key_id: str
     verification_signing_key_id: str
     minimum_remaining_budget_milliseconds: int
     irreversible_consumption_acknowledgement_required: bool
@@ -11987,6 +11988,9 @@ def code_owned_workflow_protected_resident_context_access_consumption_policy_val
         "required_readiness_attestor_version": "1.0",
         **runtime_handle_profile,
         "runtime_handle_profile_digest": canonical_digest(runtime_handle_profile),
+        "readiness_verification_signing_key_id": (
+            "key.workflow-protected-resident-context-accessor-readiness.v1"
+        ),
         "verification_signing_key_id": (
             "key.workflow-protected-resident-context-access-receipt.v1"
         ),
@@ -12385,8 +12389,14 @@ class WorkflowProtectedResidentContextTrustedAccessorReceipt:
     secret_returned: bool
     bearer_token_returned: bool
     provider_payload_returned: bool
+    filesystem_activity_performed: bool
+    provider_activity_performed: bool
+    connector_activity_performed: bool
     network_activity_performed: bool
+    readiness_probe_performed: bool
+    publication_performed: bool
     delivery_performed: bool
+    dispatch_performed: bool
     execution_performed: bool
     infrastructure_mutation_performed: bool
     completed_at: datetime
@@ -12458,8 +12468,14 @@ class WorkflowProtectedResidentContextTrustedAccessorReceipt:
             or self.secret_returned is not False
             or self.bearer_token_returned is not False
             or self.provider_payload_returned is not False
+            or self.filesystem_activity_performed is not False
+            or self.provider_activity_performed is not False
+            or self.connector_activity_performed is not False
             or self.network_activity_performed is not False
+            or self.readiness_probe_performed is not False
+            or self.publication_performed is not False
             or self.delivery_performed is not False
+            or self.dispatch_performed is not False
             or self.execution_performed is not False
             or self.infrastructure_mutation_performed is not False
             or not self.integrity_signature
@@ -12604,6 +12620,7 @@ class WorkflowProtectedResidentContextAccessConsumptionResult:
             or self.access_deadline.tzinfo is None
             or self.protected_resident_context_usable_until.tzinfo is None
             or (self.completed_at is not None and self.completed_at.tzinfo is None)
+            or (self.completed_at is not None and self.completed_at > self.recorded_at)
             or self.access_deadline > self.protected_resident_context_usable_until
             or self.consumer_subject_id != policy.consumer_subject_id
             or self.consumer_audience != policy.consumer_audience

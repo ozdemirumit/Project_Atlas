@@ -7090,10 +7090,22 @@ describe("WorkflowPlanningWorkspace", () => {
       valid_until: "2026-08-14T10:08:28Z",
       effective_state: "expired",
     };
+    const consumedAuthorization: WorkflowProtectedResidentContextAccessAuthorization = {
+      ...protectedResidentContextAccessAuthorization,
+      authorization_lease_id:
+        "workflow-protected-resident-context-access-lease.0123456789abcdef",
+      state: "consumed",
+      effective_state: "consumed",
+      authority: {
+        ...protectedResidentContextAccessAuthorization.authority,
+        protected_access_authority_granted: false,
+      },
+    };
     mockReadResponses({
       protectedResidentContextAccessAuthorizations: [
         protectedResidentContextAccessAuthorization,
         expiredAuthorization,
+        consumedAuthorization,
       ],
     });
     renderWorkspace();
@@ -7118,6 +7130,7 @@ describe("WorkflowPlanningWorkspace", () => {
     ).toBeVisible();
     expect(records).toHaveTextContent("Active");
     expect(records).toHaveTextContent("Expired");
+    expect(records).toHaveTextContent("Consumed");
     expect(
       within(section).getAllByTitle(
         protectedResidentContextAccessAuthorization.consumer_contract_id,
@@ -7248,6 +7261,7 @@ describe("WorkflowPlanningWorkspace", () => {
     expect(records).toHaveTextContent(
       /all authorities false: protected resident-context access false.*target-context capsule opening false.*target-context capsule handoff false.*endpoint resolution false.*route selection false.*route binding false.*credential selection false.*credential assignment binding false.*credential access false.*credential brokerage false.*credential resolution false.*protected artifact access false.*credential delivery false.*network access false.*readiness probe false.*publication false.*delivery false.*dispatch false.*execution false.*infrastructure mutation false/i,
     );
+    expect(records).toHaveTextContent(/protected resident-context access false/i);
     expect(within(section).queryByRole("button")).toBeNull();
     expect(within(section).queryByRole("link")).toBeNull();
     expect(within(section).queryByRole("textbox")).toBeNull();

@@ -134,6 +134,17 @@ def test_repository_uses_upstream_first_locks_two_db_times_and_no_attestor_io() 
     assert '"valid_until"' in hydrate
 
 
+def test_authorization_projection_uses_one_database_statement_for_consumption_and_time() -> None:
+    source = inspect.getsource(
+        PostgreSQLWorkflowPlanRepository.list_protected_resident_context_access_authorization_presentations
+    )
+
+    assert "WorkflowProtectedResidentContextAccessConsumptionClaimModel" in source
+    assert "exists().where" in source
+    assert "statement_timestamp" in source
+    assert source.count("session.execute") == 1
+
+
 @pytest.mark.asyncio
 async def test_live_postgres_winner_lineage_deadline_fence_lifecycle_and_append_only() -> None:
     database_url = os.getenv("ATLAS_TEST_POSTGRES_DSN")

@@ -8,7 +8,7 @@ from enum import Enum
 from hashlib import sha256
 from typing import Any, NoReturn, cast
 
-from sqlalchemy import and_, func, or_, select, text, update
+from sqlalchemy import and_, exists, func, or_, select, text, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import (
@@ -231,6 +231,7 @@ from atlas.modules.workflows.application.physical_route_binding_ports import (
     WorkflowEventPhysicalTransportRouteBindingStatus,
 )
 from atlas.modules.workflows.application.protected_resident_context_access_authorization_ports import (  # noqa: E501
+    WorkflowProtectedResidentContextAccessAuthorizationPresentation,
     WorkflowProtectedResidentContextLifecycleAttestation,
 )
 from atlas.modules.workflows.application.protected_resident_context_access_consumption_ports import (  # noqa: E501
@@ -245,6 +246,8 @@ from atlas.modules.workflows.application.protected_resident_context_access_consu
     WorkflowProtectedResidentContextAccessConsumptionResultWrite,
     WorkflowProtectedResidentContextAccessConsumptionResultWriteStatus,
     WorkflowProtectedResidentContextAccessConsumptionSource,
+    WorkflowProtectedResidentContextTrustedAccessorReceiptSignatureVerifier,
+    build_workflow_protected_resident_context_trusted_accessor_instruction,
     validate_workflow_protected_resident_context_access_consumption_claim_request,
 )
 from atlas.modules.workflows.application.publication_lease_ports import (
@@ -709,6 +712,9 @@ class PostgreSQLWorkflowPlanRepository:
     ) -> None:
         self._engine = engine
         self._sessions = session_factory or async_sessionmaker(engine, expire_on_commit=False)
+        self._protected_resident_context_access_receipt_signature_verifier: (
+            WorkflowProtectedResidentContextTrustedAccessorReceiptSignatureVerifier | None
+        ) = None
 
     @classmethod
     def from_url(cls, database_url: str) -> PostgreSQLWorkflowPlanRepository:
@@ -717,6 +723,15 @@ class PostgreSQLWorkflowPlanRepository:
     @property
     def durable(self) -> bool:
         return True
+
+    def bind_protected_resident_context_access_receipt_signature_verifier(
+        self,
+        verifier: WorkflowProtectedResidentContextTrustedAccessorReceiptSignatureVerifier,
+    ) -> None:
+        current = self._protected_resident_context_access_receipt_signature_verifier
+        if current is not None and current is not verifier:
+            raise ValueError("protected resident-context receipt verifier is already bound")
+        self._protected_resident_context_access_receipt_signature_verifier = verifier
 
     async def get_authoritative_time(self) -> datetime:
         async with self._sessions() as session:
@@ -5647,31 +5662,49 @@ class PostgreSQLWorkflowPlanRepository:
                 return result_type(statuses.ALREADY_AUTHORIZED, None)
             return result_type(statuses.EVIDENCE_CONFLICT, None)
 
-    async def list_protected_resident_context_access_authorizations(
+    async def list_protected_resident_context_access_authorization_presentations(
         self,
         *,
         scope: WorkflowScope,
+        authorization_lease_ids: tuple[str, ...] | None = None,
         limit: int = 256,
-    ) -> tuple[WorkflowProtectedResidentContextAccessAuthorizationLease, ...]:
+    ) -> tuple[WorkflowProtectedResidentContextAccessAuthorizationPresentation, ...]:
+        if authorization_lease_ids == ():
+            return ()
+        lease_model = WorkflowProtectedResidentContextAccessAuthorizationLeaseModel
+        claim_model = WorkflowProtectedResidentContextAccessConsumptionClaimModel
+        consumed = exists().where(
+            claim_model.authorization_lease_id == lease_model.access_authorization_lease_id,
+            claim_model.organization_id == scope.organization_id,
+            claim_model.environment_id == scope.environment_id,
+            claim_model.site_id == scope.site_id,
+        )
+        statement = select(lease_model, consumed, func.statement_timestamp()).where(
+            lease_model.organization_id == scope.organization_id,
+            lease_model.environment_id == scope.environment_id,
+            lease_model.site_id == scope.site_id,
+        )
+        if authorization_lease_ids is not None:
+            statement = statement.where(
+                lease_model.access_authorization_lease_id.in_(authorization_lease_ids)
+            )
         async with self._sessions() as session:
             rows = (
-                await session.scalars(
-                    select(WorkflowProtectedResidentContextAccessAuthorizationLeaseModel)
-                    .where(
-                        WorkflowProtectedResidentContextAccessAuthorizationLeaseModel.organization_id
-                        == scope.organization_id,
-                        WorkflowProtectedResidentContextAccessAuthorizationLeaseModel.environment_id
-                        == scope.environment_id,
-                        WorkflowProtectedResidentContextAccessAuthorizationLeaseModel.site_id
-                        == scope.site_id,
-                    )
-                    .order_by(
-                        WorkflowProtectedResidentContextAccessAuthorizationLeaseModel.issued_at.desc()
-                    )
-                    .limit(max(1, min(limit, 256)))
+                await session.execute(
+                    statement.order_by(
+                        lease_model.issued_at.desc(),
+                        lease_model.access_authorization_lease_id,
+                    ).limit(max(1, min(limit, 256)))
                 )
             ).all()
-        return tuple(self._resident_context_access_lease_from_row(row) for row in rows)
+        return tuple(
+            WorkflowProtectedResidentContextAccessAuthorizationPresentation(
+                lease=self._resident_context_access_lease_from_row(row[0]),
+                consumed=bool(row[1]),
+                evaluated_at=cast(datetime, row[2]),
+            )
+            for row in rows
+        )
 
     async def get_protected_resident_context_access_consumption_source(
         self, *, authorization_lease_id: str
@@ -6714,6 +6747,12 @@ class PostgreSQLWorkflowPlanRepository:
             and lease.issued_at <= locked.observed_at < lease.valid_until
             and locked.observed_at + minimum <= lease.valid_until
             and locked.observed_at + minimum <= lease.protected_resident_context_usable_until
+            and request.lifecycle_attestation.observed_at <= locked.observed_at
+            and request.accessor_readiness_attestation.observed_at <= locked.observed_at
+            and request.lifecycle_attestation.observed_at
+            < request.lifecycle_attestation.valid_until
+            and request.accessor_readiness_attestation.observed_at
+            < request.accessor_readiness_attestation.valid_until
             and locked.observed_at + minimum <= request.lifecycle_attestation.valid_until
             and locked.observed_at + minimum <= request.accessor_readiness_attestation.valid_until
             and request.lifecycle_attestation.resident_context_unconsumed is True
@@ -7137,9 +7176,8 @@ class PostgreSQLWorkflowPlanRepository:
             cls._protected_resident_context_access_consumption_contract_violation()
         return value
 
-    @classmethod
     def _protected_resident_context_access_result_matches(
-        cls,
+        self,
         *,
         request: WorkflowProtectedResidentContextAccessConsumptionResultRequest,
         claim_row: WorkflowProtectedResidentContextAccessConsumptionClaimModel | None,
@@ -7149,18 +7187,34 @@ class PostgreSQLWorkflowPlanRepository:
         if claim_row is None or attempt_row is None:
             return False
         try:
-            claim = cls._protected_resident_context_access_consumption_claim_from_row(claim_row)
-            attempt = cls._protected_resident_context_access_attempt_from_row(attempt_row)
+            claim = self._protected_resident_context_access_consumption_claim_from_row(claim_row)
+            attempt = self._protected_resident_context_access_attempt_from_row(attempt_row)
+            instruction = build_workflow_protected_resident_context_trusted_accessor_instruction(
+                attempt
+            )
             result = request.result
             receipt = request.receipt
-            receipt_valid = receipt is None or receipt.canonical_digest == canonical_digest(
-                receipt.digest_payload()
+            receipt_verifier = self._protected_resident_context_access_receipt_signature_verifier
+            result_states = WorkflowProtectedResidentContextAccessConsumptionResultState
+            uncertain_state = result_states.ACCESS_OUTCOME_UNCERTAIN
+            receipt_valid = (
+                receipt is None
+                and result.state is uncertain_state
+                and result.accessor_receipt_digest is None
+                and result.completed_at is None
+            ) or (
+                receipt is not None
+                and result.state is not uncertain_state
+                and receipt.canonical_digest == canonical_digest(receipt.digest_payload())
+                and receipt_verifier is not None
+                and receipt_verifier.verify_receipt(receipt) is True
             )
         except Exception:
             return False
         return bool(
             receipt_valid
             and result.canonical_digest == canonical_digest(result.digest_payload())
+            and result.access_id == attempt.access_id
             and result.consumption_claim_id == claim.claim_id
             and result.consumption_claim_digest == claim.canonical_digest
             and result.attempt_id == attempt.attempt_id
@@ -7168,8 +7222,28 @@ class PostgreSQLWorkflowPlanRepository:
             and result.authorization_lease_id == claim.authorization_lease_id
             and result.authorization_lease_digest == claim.authorization_lease_digest
             and result.protected_resident_context_id == claim.protected_resident_context_id
+            and result.protected_resident_context_digest
+            == claim.protected_resident_context_digest
+            == attempt.protected_resident_context_digest
             and result.scope == claim.scope == attempt.scope
+            and result.consumer_subject_id == attempt.consumer_subject_id
+            and result.consumer_audience == attempt.consumer_audience
+            and result.consumer_contract_id == attempt.consumer_contract_id
+            and result.consumer_contract_version == attempt.consumer_contract_version
+            and result.purpose_id == attempt.purpose_id
+            and result.policy_id == attempt.policy_id
+            and result.policy_version == attempt.policy_version
+            and result.policy_digest == attempt.policy_digest
+            and result.accessor_id == attempt.approved_accessor_id
+            and result.accessor_version == attempt.approved_accessor_version
+            and result.runtime_handle_profile_id == attempt.runtime_handle_profile_id
+            and result.runtime_handle_profile_version == attempt.runtime_handle_profile_version
+            and result.runtime_handle_profile_digest == attempt.runtime_handle_profile_digest
+            and result.access_deadline == attempt.access_deadline
+            and result.protected_resident_context_usable_until
+            == attempt.protected_resident_context_usable_until
             and result.recorded_at <= observed_at
+            and (result.completed_at is None or result.completed_at <= result.recorded_at)
             and request.expected_claim_digest == claim.canonical_digest
             and request.expected_attempt_digest == attempt.canonical_digest
             and (
@@ -7178,14 +7252,56 @@ class PostgreSQLWorkflowPlanRepository:
                     receipt.access_id == result.access_id == attempt.access_id
                     and receipt.attempt_id == attempt.attempt_id
                     and receipt.consumption_claim_id == claim.claim_id
+                    and receipt.instruction_digest == instruction.canonical_digest
                     and receipt.authorization_lease_id == claim.authorization_lease_id
+                    and receipt.authorization_lease_digest == result.authorization_lease_digest
                     and receipt.protected_resident_context_id == claim.protected_resident_context_id
+                    and receipt.protected_resident_context_digest
+                    == result.protected_resident_context_digest
+                    and receipt.accessor_contract_id == attempt.required_accessor_contract_id
+                    and receipt.accessor_contract_version
+                    == attempt.required_accessor_contract_version
+                    and receipt.accessor_id == result.accessor_id
+                    and receipt.accessor_version == result.accessor_version
+                    and receipt.destination_boundary_id == attempt.destination_boundary_id
+                    and receipt.destination_deployment_id == attempt.destination_deployment_id
+                    and receipt.destination_generation == attempt.destination_generation
+                    and receipt.destination_fencing_token_digest
+                    == attempt.destination_fencing_token_digest
+                    and receipt.runtime_handle_profile_id == result.runtime_handle_profile_id
+                    and receipt.runtime_handle_profile_version
+                    == result.runtime_handle_profile_version
+                    and receipt.runtime_handle_profile_digest
+                    == result.runtime_handle_profile_digest
                     and result.accessor_receipt_digest == receipt.canonical_digest
+                    and receipt.state is result.state
+                    and receipt.failure_class is result.failure_class
+                    and receipt.protected_runtime_handle_id == result.protected_runtime_handle_id
+                    and receipt.protected_runtime_handle_digest
+                    == result.protected_runtime_handle_digest
+                    and receipt.protected_runtime_handle_created_at
+                    == result.protected_runtime_handle_created_at
+                    and receipt.protected_runtime_handle_usable_until
+                    == result.protected_runtime_handle_usable_until
+                    and receipt.protected_runtime_handle_is_bearer_capability
+                    is result.protected_runtime_handle_is_bearer_capability
+                    and receipt.protected_resident_context_consumed
+                    is result.protected_resident_context_consumed
+                    and receipt.runtime_handle_established_in_protected_boundary
+                    is result.runtime_handle_established_in_protected_boundary
+                    and receipt.runtime_handle_absence_confirmed
+                    is result.runtime_handle_absence_confirmed
                     and receipt.completed_at == result.completed_at
+                    and receipt.access_deadline == result.access_deadline
+                    and receipt.protected_resident_context_usable_until
+                    == result.protected_resident_context_usable_until
+                    and receipt.signing_key_id == attempt.verification_signing_key_id
+                    and attempt.started_at <= receipt.completed_at
+                    and receipt.completed_at <= result.recorded_at
                     and receipt.completed_at < attempt.access_deadline
                 )
             )
-            and cls._protected_resident_context_access_consumption_authority_is_zero(
+            and self._protected_resident_context_access_consumption_authority_is_zero(
                 result.authority
             )
         )

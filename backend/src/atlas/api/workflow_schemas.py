@@ -4,7 +4,7 @@ from datetime import datetime
 from hashlib import sha256
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from atlas.api.schemas import ResponseMeta
 from atlas.modules.workflows.domain import (
@@ -2863,7 +2863,7 @@ class CreateWorkflowProtectedResidentContextAccessAuthorizationInput(BaseModel):
 class WorkflowProtectedResidentContextAccessAuthorizationAuthorityData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    protected_access_authority_granted: Literal[True]
+    protected_access_authority_granted: bool
     endpoint_resolution_authorized: Literal[False]
     route_selection_authorized: Literal[False]
     route_binding_authorized: Literal[False]
@@ -2895,8 +2895,8 @@ class WorkflowProtectedResidentContextAccessAuthorizationData(BaseModel):
         max_length=73,
         pattern=r"^workflow-protected-resident-context-access-lease\.[0-9a-f]{24}$",
     )
-    state: Literal["authorized_unconsumed"]
-    effective_state: Literal["active", "expired"]
+    state: Literal["authorized_unconsumed", "consumed"]
+    effective_state: Literal["active", "expired", "consumed"]
     issued_at: datetime
     valid_until: datetime
     effective_until: datetime
@@ -2909,12 +2909,24 @@ class WorkflowProtectedResidentContextAccessAuthorizationData(BaseModel):
     authority: WorkflowProtectedResidentContextAccessAuthorizationAuthorityData
     integrity_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
 
+    @model_validator(mode="after")
+    def validate_consumption_projection(
+        self,
+    ) -> WorkflowProtectedResidentContextAccessAuthorizationData:
+        consumed = self.state == "consumed"
+        if (
+            self.effective_state == "consumed"
+        ) != consumed or self.authority.protected_access_authority_granted != (not consumed):
+            raise ValueError("protected resident-context access projection is inconsistent")
+        return self
+
     @classmethod
     def from_domain(
         cls,
         lease: WorkflowProtectedResidentContextAccessAuthorizationLease,
         *,
         evaluated_at: datetime,
+        consumed: bool = False,
     ) -> WorkflowProtectedResidentContextAccessAuthorizationData:
         policy = code_owned_workflow_protected_resident_context_access_authorization_policy()
         profile_input = "|".join(
@@ -2927,8 +2939,10 @@ class WorkflowProtectedResidentContextAccessAuthorizationData(BaseModel):
         )
         return cls(
             authorization_lease_id=lease.authorization_lease_id,
-            state=lease.state.value,
-            effective_state=lease.effective_state(evaluated_at=evaluated_at).value,
+            state="consumed" if consumed else lease.state.value,
+            effective_state=(
+                "consumed" if consumed else lease.effective_state(evaluated_at=evaluated_at).value
+            ),
             issued_at=lease.issued_at,
             valid_until=lease.valid_until,
             effective_until=lease.effective_until,
@@ -2943,7 +2957,7 @@ class WorkflowProtectedResidentContextAccessAuthorizationData(BaseModel):
             ),
             authority=WorkflowProtectedResidentContextAccessAuthorizationAuthorityData(
                 protected_access_authority_granted=(
-                    lease.protected_resident_context_access_authority_granted
+                    False if consumed else lease.protected_resident_context_access_authority_granted
                 ),
                 endpoint_resolution_authorized=lease.endpoint_resolution_authorized,
                 route_selection_authorized=lease.route_selection_authorized,

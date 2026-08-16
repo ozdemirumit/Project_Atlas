@@ -61,13 +61,30 @@
 
 - Local Ruff format/check passed across `1473` backend source, test and migration files.
 - Full MyPy passed across `1332` source and test files with no issues.
-- ADR-166/ADR-167 regression suite passed `96` tests; two live PostgreSQL tests were skipped
-  locally because `ATLAS_TEST_POSTGRES_DSN` is not configured and remain covered by CI.
-- Post-security-fix IMP-217 suite passed `62` tests; one live PostgreSQL test was skipped locally.
+- ADR-166/ADR-167 and API-health regression suite passed `122` tests; two live PostgreSQL tests
+  were skipped locally because `ATLAS_TEST_POSTGRES_DSN` is not configured and remain covered by
+  CI.
+- Post-review-fix IMP-217 suite passed `63` tests; one live PostgreSQL test was skipped locally.
 - Frontend ESLint and TypeScript checks passed, and the workspace UI suite passed all `521` tests.
 - Alembic reports the single head `20260816_0140`.
 - Independent security review findings were addressed: no autonomous cleanup, uncertain protected
   consumption is represented as unknown, and signed receipts deny every forbidden return/effect.
+- Independent integration review findings were addressed: future-dated attestations fail closed,
+  result chronology is enforced, readiness and receipt signatures use distinct code-owned keys,
+  and consumed authorization leases project no remaining access authority in the API or UI.
+- Final security re-review findings were addressed: GET and replayed POST authorization state use
+  one database snapshot, signed receipts bind every forbidden return and side effect, and the
+  durable result-write boundary independently verifies receipt signatures before append.
+- Known success or failure cannot be persisted without a verified receipt; every signed outcome,
+  handle, consumption, deadline, accessor, destination and profile field must exactly match the
+  append-only result. Receipt-free persistence is limited to explicit uncertain outcomes.
+- The durable boundary reconstructs the canonical accessor instruction from the locked attempt,
+  verifies the signed instruction digest, and rejects completion before attempt start.
+- PostgreSQL constraints independently require a durable receipt payload and a null-safe matching
+  canonical digest for known outcomes, forbid receipt payloads for uncertainty, and reject
+  completion after result recording time.
+- Both IMP-217 live PostgreSQL authorization and consumption tests are explicitly enrolled in the
+  DSN-enabled CI integration job rather than relying on the DSN-free full-suite invocation.
 
 ### ATLAS-IMP-216 Delivery Evidence
 

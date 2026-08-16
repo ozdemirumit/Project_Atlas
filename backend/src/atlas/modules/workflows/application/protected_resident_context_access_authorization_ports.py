@@ -236,6 +236,13 @@ class WorkflowProtectedResidentContextAccessAuthorizationLeaseResult:
     evaluated_at: datetime | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedResidentContextAccessAuthorizationPresentation:
+    lease: WorkflowProtectedResidentContextAccessAuthorizationLease
+    consumed: bool
+    evaluated_at: datetime
+
+
 class WorkflowProtectedResidentContextAccessAuthorizationRepository(Protocol):
     @property
     def durable(self) -> bool: ...
@@ -254,9 +261,13 @@ class WorkflowProtectedResidentContextAccessAuthorizationRepository(Protocol):
         self, request: WorkflowProtectedResidentContextAccessAuthorizationLeaseRequest
     ) -> WorkflowProtectedResidentContextAccessAuthorizationLeaseResult: ...
 
-    async def list_protected_resident_context_access_authorizations(
-        self, *, scope: WorkflowScope, limit: int = 256
-    ) -> tuple[WorkflowProtectedResidentContextAccessAuthorizationLease, ...]: ...
+    async def list_protected_resident_context_access_authorization_presentations(
+        self,
+        *,
+        scope: WorkflowScope,
+        authorization_lease_ids: tuple[str, ...] | None = None,
+        limit: int = 256,
+    ) -> tuple[WorkflowProtectedResidentContextAccessAuthorizationPresentation, ...]: ...
 
 
 def validate_workflow_protected_resident_context_access_authorization_request(

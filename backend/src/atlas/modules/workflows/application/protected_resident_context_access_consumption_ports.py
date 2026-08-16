@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, fields
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from atlas.modules.workflows.application.protected_resident_context_access_authorization_ports import (  # noqa: E501
     WorkflowProtectedResidentContextAccessAuthorizationSource,
@@ -202,6 +202,12 @@ class WorkflowProtectedResidentContextTrustedAccessor(Protocol):
     ) -> bool: ...
 
 
+class WorkflowProtectedResidentContextTrustedAccessorReceiptSignatureVerifier(Protocol):
+    def verify_receipt(
+        self, receipt: WorkflowProtectedResidentContextTrustedAccessorReceipt
+    ) -> bool: ...
+
+
 @dataclass(frozen=True, slots=True)
 class WorkflowProtectedResidentContextAccessConsumptionReplayLookupRequest:
     authorization_lease_id: str
@@ -250,7 +256,7 @@ class WorkflowProtectedResidentContextAccessConsumptionClaimRequest:
     expected_runtime_handle_profile_id: str
     expected_runtime_handle_profile_version: str
     expected_runtime_handle_profile_digest: str
-    expected_verification_signing_key_id: str
+    expected_readiness_verification_signing_key_id: str
     minimum_remaining_budget_milliseconds: int
     scope: WorkflowScope
     consumer_subject_id: str
@@ -315,6 +321,31 @@ class WorkflowProtectedResidentContextAccessConsumptionRepository(Protocol):
     async def get_protected_resident_context_access_consumption_results(
         self, *, scope: WorkflowScope, consumption_ids: tuple[str, ...]
     ) -> tuple[WorkflowProtectedResidentContextAccessConsumptionResult, ...]: ...
+
+
+def build_workflow_protected_resident_context_trusted_accessor_instruction(
+    attempt: WorkflowProtectedResidentContextAccessConsumptionAttempt,
+) -> WorkflowProtectedResidentContextTrustedAccessorInstruction:
+    aliases = {
+        "accessor_contract_id": attempt.required_accessor_contract_id,
+        "accessor_contract_version": attempt.required_accessor_contract_version,
+        "accessor_id": attempt.approved_accessor_id,
+        "accessor_version": attempt.approved_accessor_version,
+    }
+    values: dict[str, object] = {}
+    for field in fields(WorkflowProtectedResidentContextTrustedAccessorInstruction):
+        if field.name == "canonical_digest":
+            continue
+        if field.name in aliases:
+            values[field.name] = aliases[field.name]
+        else:
+            values[field.name] = getattr(attempt, field.name)
+    return WorkflowProtectedResidentContextTrustedAccessorInstruction(
+        **cast(Any, values),
+        canonical_digest=canonical_digest(
+            {name: _canonical_value(value) for name, value in values.items()}
+        ),
+    )
 
 
 def validate_workflow_protected_resident_context_access_consumption_claim_request(
@@ -398,7 +429,9 @@ def validate_workflow_protected_resident_context_access_consumption_claim_reques
         and lifecycle.attestor_version == request.expected_lifecycle_attestor_version
         and readiness.attestor_id == request.expected_readiness_attestor_id
         and readiness.attestor_version == request.expected_readiness_attestor_version
-        and readiness.signing_key_id == request.expected_verification_signing_key_id
+        and readiness.signing_key_id == request.expected_readiness_verification_signing_key_id
+        and lifecycle.observed_at < lifecycle.valid_until
+        and readiness.observed_at < readiness.valid_until
     )
     safe = (
         request.irreversible_consumption_acknowledged is True
@@ -491,5 +524,7 @@ def _canonical_value(value: Any) -> object:
 
 
 __all__ = [
-    name for name in globals() if name.startswith("Workflow") or name.startswith("validate_")
+    name
+    for name in globals()
+    if name.startswith("Workflow") or name.startswith("build_") or name.startswith("validate_")
 ]

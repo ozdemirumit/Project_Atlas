@@ -11172,7 +11172,7 @@ class WorkflowProtectedResidentContextAccessConsumptionClaimModel(Base):
             "AND purpose_id = 'purpose.workflow-protected-resident-context-access-consumption' "
             "AND policy_id = 'policy.workflow-protected-resident-context-access-consumption' "
             "AND policy_version = '1.0' AND policy_digest = "
-            "'9efc5c1bf8cb09789de6b9373fb72d09c7397df723f9184ff80b454ce10ede9a'",
+            "'9113356099474b5ed0239c16593bdec1ffd6212dfdeadefac9bb25cbcc20660d'",
             name="ck_wf_rc_access_consume_contract",
         ),
         CheckConstraint(
@@ -11325,7 +11325,7 @@ class WorkflowProtectedResidentContextAccessAttemptModel(Base):
             "AND purpose_id = 'purpose.workflow-protected-resident-context-access-consumption' "
             "AND policy_id = 'policy.workflow-protected-resident-context-access-consumption' "
             "AND policy_version = '1.0' AND policy_digest = "
-            "'9efc5c1bf8cb09789de6b9373fb72d09c7397df723f9184ff80b454ce10ede9a'",
+            "'9113356099474b5ed0239c16593bdec1ffd6212dfdeadefac9bb25cbcc20660d'",
             name="ck_wf_rc_access_attempt_contract",
         ),
         CheckConstraint(
@@ -11494,7 +11494,8 @@ class WorkflowProtectedResidentContextAccessResultModel(Base):
         CheckConstraint(
             "access_deadline <= protected_resident_context_usable_until AND "
             "((state = 'access_outcome_uncertain' AND recorded_at >= access_deadline) OR "
-            "completed_at < access_deadline)",
+            "completed_at < access_deadline) AND "
+            "(completed_at IS NULL OR completed_at <= recorded_at)",
             name="ck_wf_rc_access_result_window",
         ),
         CheckConstraint(
@@ -11505,12 +11506,15 @@ class WorkflowProtectedResidentContextAccessResultModel(Base):
             "AND purpose_id = 'purpose.workflow-protected-resident-context-access-consumption' "
             "AND policy_id = 'policy.workflow-protected-resident-context-access-consumption' "
             "AND policy_version = '1.0' AND policy_digest = "
-            "'9efc5c1bf8cb09789de6b9373fb72d09c7397df723f9184ff80b454ce10ede9a'",
+            "'9113356099474b5ed0239c16593bdec1ffd6212dfdeadefac9bb25cbcc20660d'",
             name="ck_wf_rc_access_result_contract",
         ),
         CheckConstraint(
             "(state = 'handle_established_in_protected_boundary' AND failure_class IS NULL "
             "AND completed_at IS NOT NULL AND accessor_receipt_digest IS NOT NULL "
+            "AND accessor_receipt_payload IS NOT NULL "
+            "AND COALESCE((accessor_receipt_payload ->> 'canonical_digest') = "
+            "accessor_receipt_digest, FALSE) "
             "AND protected_runtime_handle_id IS NOT NULL AND protected_runtime_handle_digest IS NOT NULL "
             "AND protected_runtime_handle_created_at = completed_at "
             "AND protected_runtime_handle_usable_until IS NOT NULL "
@@ -11519,6 +11523,9 @@ class WorkflowProtectedResidentContextAccessResultModel(Base):
             "AND outcome_known AND NOT protected_runtime_handle_is_bearer_capability) OR "
             "(state = 'resident_context_access_failed' AND failure_class IS NOT NULL "
             "AND completed_at IS NOT NULL AND accessor_receipt_digest IS NOT NULL "
+            "AND accessor_receipt_payload IS NOT NULL "
+            "AND COALESCE((accessor_receipt_payload ->> 'canonical_digest') = "
+            "accessor_receipt_digest, FALSE) "
             "AND protected_runtime_handle_id IS NULL AND protected_runtime_handle_digest IS NULL "
             "AND protected_runtime_handle_created_at IS NULL "
             "AND protected_runtime_handle_usable_until IS NULL "
@@ -11527,6 +11534,7 @@ class WorkflowProtectedResidentContextAccessResultModel(Base):
             "AND outcome_known) OR "
             "(state = 'access_outcome_uncertain' AND failure_class = 'access_outcome_uncertain' "
             "AND completed_at IS NULL AND accessor_receipt_digest IS NULL "
+            "AND accessor_receipt_payload IS NULL "
             "AND protected_runtime_handle_id IS NULL AND protected_runtime_handle_digest IS NULL "
             "AND protected_runtime_handle_created_at IS NULL "
             "AND protected_runtime_handle_usable_until IS NULL "

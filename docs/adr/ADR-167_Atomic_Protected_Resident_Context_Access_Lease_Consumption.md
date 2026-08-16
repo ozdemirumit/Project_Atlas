@@ -140,6 +140,13 @@ indexed or exposed through an API or UI.
 Production requires the approved trusted accessor and protected destination. A deterministic
 development adapter may emit fixed metadata only when explicitly test-enabled and performs no
 filesystem, provider, network, dispatch, execution or infrastructure-mutation operation.
+Every signed accessor receipt explicitly binds false declarations for filesystem, provider,
+connector, network, readiness-probe, publication, delivery, dispatch, execution and
+infrastructure-mutation activity, in addition to every forbidden return value. The durable write
+boundary independently verifies that receipt with the receipt-specific trust key before append.
+It reconstructs the canonical accessor instruction from the locked attempt, requires the signed
+`instruction_digest` to match, and rejects completion before the attempt start or at/after the
+access deadline.
 
 ### Outcomes And Recovery
 
@@ -173,6 +180,10 @@ ADR-165 result lineage. Database CHECK constraints enforce code-owned workload, 
 acknowledgements, non-bearer declarations and all 20 authority fields as false. Triggers reject
 `UPDATE` and `DELETE`. Downgrade fails closed while any table contains evidence. Production has no
 process-memory, permissive or caller-asserted fallback.
+
+Authorization reads project the immutable lease, irreversible consumption state and authoritative
+database timestamp from one SQL statement. Both inventory reads and idempotent authorization POST
+responses therefore expose consumed leases with zero remaining access authority.
 
 ### API And Human Presentation
 

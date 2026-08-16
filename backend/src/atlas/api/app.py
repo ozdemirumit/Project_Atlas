@@ -1809,7 +1809,7 @@ class _UnavailableWorkflowProtectedResidentContextAccessAuthorizationRepository:
     async def authorize_protected_resident_context_access(self, *_: object, **__: object) -> None:
         raise RuntimeError("protected access authorization is unavailable")
 
-    async def list_protected_resident_context_access_authorizations(
+    async def list_protected_resident_context_access_authorization_presentations(
         self, *_: object, **__: object
     ) -> None:
         raise RuntimeError("protected access authorization is unavailable")
@@ -7204,7 +7204,7 @@ def create_app(
             "preflight_protected_resident_context_access_authorization",
             "get_protected_resident_context_access_authorization_source",
             "authorize_protected_resident_context_access",
-            "list_protected_resident_context_access_authorizations",
+            "list_protected_resident_context_access_authorization_presentations",
         )
         if isinstance(workflow_repository, PostgreSQLWorkflowPlanRepository) and all(
             callable(getattr(workflow_repository, method_name, None))
@@ -7306,6 +7306,18 @@ def create_app(
                     development_enabled=True
                 )
             )
+            development_accessor = (
+                DeterministicDevelopmentWorkflowProtectedResidentContextTrustedAccessor(
+                    development_enabled=True
+                )
+            )
+            if isinstance(
+                resident_context_access_consumption_repository,
+                PostgreSQLWorkflowPlanRepository,
+            ):
+                resident_context_access_consumption_repository.bind_protected_resident_context_access_receipt_signature_verifier(
+                    development_accessor
+                )
             resolved_protected_resident_context_access_consumption_service = (
                 WorkflowProtectedResidentContextAccessConsumptionService(
                     repository=resident_context_access_consumption_repository,
@@ -7313,15 +7325,19 @@ def create_app(
                     readiness_attestor=development_readiness_attestor,
                     lifecycle_signature_verifier=development_lifecycle_attestor,
                     readiness_signature_verifier=development_readiness_attestor,
-                    accessor=(
-                        DeterministicDevelopmentWorkflowProtectedResidentContextTrustedAccessor(
-                            development_enabled=True
-                        )
-                    ),
+                    accessor=development_accessor,
                     audit_sink=resolved_audit_sink,
                 )
             )
         else:
+            unavailable_accessor = UnavailableWorkflowProtectedResidentContextTrustedAccessor()
+            if isinstance(
+                resident_context_access_consumption_repository,
+                PostgreSQLWorkflowPlanRepository,
+            ):
+                resident_context_access_consumption_repository.bind_protected_resident_context_access_receipt_signature_verifier(
+                    unavailable_accessor
+                )
             resolved_protected_resident_context_access_consumption_service = (
                 WorkflowProtectedResidentContextAccessConsumptionService(
                     repository=resident_context_access_consumption_repository,
@@ -7337,7 +7353,7 @@ def create_app(
                     readiness_signature_verifier=(
                         DenyAllWorkflowProtectedResidentContextAccessorReadinessSignatureVerifier()
                     ),
-                    accessor=UnavailableWorkflowProtectedResidentContextTrustedAccessor(),
+                    accessor=unavailable_accessor,
                     audit_sink=resolved_audit_sink,
                 )
             )

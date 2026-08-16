@@ -129,7 +129,7 @@ class DeterministicDevelopmentWorkflowProtectedResidentContextAccessorReadinessA
             ),
             "attestor_id": policy.required_readiness_attestor_id,
             "attestor_version": policy.required_readiness_attestor_version,
-            "signing_key_id": policy.verification_signing_key_id,
+            "signing_key_id": policy.readiness_verification_signing_key_id,
             "signature_algorithm": "hmac-sha256",
             "observed_at": now,
             "valid_until": valid_until,
@@ -162,7 +162,7 @@ class DeterministicDevelopmentWorkflowProtectedResidentContextAccessorReadinessA
     ) -> bool:
         if (
             not self._development_enabled
-            or attestation.signing_key_id != _policy().verification_signing_key_id
+            or attestation.signing_key_id != _policy().readiness_verification_signing_key_id
             or attestation.signature_algorithm != "hmac-sha256"
             or attestation.canonical_digest != canonical_digest(attestation.digest_payload())
         ):
@@ -295,8 +295,14 @@ class DeterministicDevelopmentWorkflowProtectedResidentContextTrustedAccessor:
             "secret_returned": False,
             "bearer_token_returned": False,
             "provider_payload_returned": False,
+            "filesystem_activity_performed": False,
+            "provider_activity_performed": False,
+            "connector_activity_performed": False,
             "network_activity_performed": False,
+            "readiness_probe_performed": False,
+            "publication_performed": False,
             "delivery_performed": False,
+            "dispatch_performed": False,
             "execution_performed": False,
             "infrastructure_mutation_performed": False,
             "completed_at": completed_at,

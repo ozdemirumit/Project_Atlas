@@ -12,6 +12,7 @@ from atlas.modules.workflows.application.protected_resident_context_access_autho
     WorkflowProtectedResidentContextAccessAuthorizationLeaseStatus,
     WorkflowProtectedResidentContextAccessAuthorizationPreflightRequest,
     WorkflowProtectedResidentContextAccessAuthorizationPreflightStatus,
+    WorkflowProtectedResidentContextAccessAuthorizationPresentation,
     WorkflowProtectedResidentContextAccessAuthorizationRepository,
     WorkflowProtectedResidentContextAccessAuthorizationSource,
     WorkflowProtectedResidentContextLifecycleAttestation,
@@ -267,24 +268,66 @@ class WorkflowProtectedResidentContextAccessAuthorizationService:
             return authorization.lease
         self._raise_authorization_status(authorization.status)
 
-    async def list_leases(
+    async def list_presentations(
         self, *, scope: WorkflowScope, limit: int = 256
-    ) -> tuple[WorkflowProtectedResidentContextAccessAuthorizationLease, ...]:
+    ) -> tuple[WorkflowProtectedResidentContextAccessAuthorizationPresentation, ...]:
         if not self._repository.durable:
             self._raise("workflow_protected_resident_context_access_durable_repository_required")
         if not 1 <= limit <= 256:
             self._raise("workflow_protected_resident_context_access_limit_invalid")
         try:
-            leases = await self._repository.list_protected_resident_context_access_authorizations(
-                scope=scope, limit=limit
+            presentations = await (
+                self._repository.list_protected_resident_context_access_authorization_presentations(
+                    scope=scope, limit=limit
+                )
             )
         except WorkflowProtectedResidentContextAccessAuthorizationError:
             raise
         except Exception:
             self._raise("workflow_protected_resident_context_access_repository_unavailable")
-        for lease in leases:
-            self._validate_historical_lease(lease, scope=scope)
-        return leases
+        for presentation in presentations:
+            self._validate_presentation(presentation, scope=scope)
+        if (
+            len({item.lease.authorization_lease_id for item in presentations}) != len(presentations)
+            or len({item.evaluated_at for item in presentations}) > 1
+        ):
+            self._raise("workflow_protected_resident_context_access_repository_contract_violation")
+        return presentations
+
+    async def get_presentation(
+        self, *, scope: WorkflowScope, authorization_lease_id: str
+    ) -> WorkflowProtectedResidentContextAccessAuthorizationPresentation:
+        if not self._repository.durable:
+            self._raise("workflow_protected_resident_context_access_durable_repository_required")
+        try:
+            presentations = await (
+                self._repository.list_protected_resident_context_access_authorization_presentations(
+                    scope=scope,
+                    authorization_lease_ids=(authorization_lease_id,),
+                    limit=1,
+                )
+            )
+        except WorkflowProtectedResidentContextAccessAuthorizationError:
+            raise
+        except Exception:
+            self._raise("workflow_protected_resident_context_access_repository_unavailable")
+        if len(presentations) != 1:
+            self._raise("workflow_protected_resident_context_access_repository_contract_violation")
+        presentation = presentations[0]
+        self._validate_presentation(presentation, scope=scope)
+        if presentation.lease.authorization_lease_id != authorization_lease_id:
+            self._raise("workflow_protected_resident_context_access_repository_contract_violation")
+        return presentation
+
+    def _validate_presentation(
+        self,
+        presentation: WorkflowProtectedResidentContextAccessAuthorizationPresentation,
+        *,
+        scope: WorkflowScope,
+    ) -> None:
+        if presentation.evaluated_at.tzinfo is None:
+            self._raise("workflow_protected_resident_context_access_repository_contract_violation")
+        self._validate_historical_lease(presentation.lease, scope=scope)
 
     def _validate_source(
         self,
