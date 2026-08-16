@@ -680,6 +680,16 @@ MVP workflows do not execute C3 through C5 capabilities.
   handoff field and all 17 operational authority fields are false on claim, attempt and result,
   and unsealing, runtime, dispatch, execution and infrastructure mutation remain separately
   authorized future boundaries.
+- ADR-164 establishes one append-only, single-use, non-renewable, non-transferable and non-bearer
+  one-second opening-authorization lease from one canonical `handed_off_sealed` result. Only the
+  exact consumer workload may request its own lease. Fresh signed destination custody/lifecycle
+  evidence must bind the complete receipt, destination, generation, fence and custody lineage and
+  prove both destination custody finality and terminated source reuse authority without requiring
+  source-side physical deletion. Exact replay obtains fresh evidence and repeats all currentness
+  checks under PostgreSQL locks. Only `target_context_capsule_opening_authorized` is true; the
+  handoff field and all 17 operational authority fields are false. Retrieval, unsealing,
+  decryption, runtime, network, dispatch, execution and mutation remain deferred to separately
+  authorized future boundaries, beginning with IMP-215 consumption.
 
 ## 39. Assumptions
 
@@ -719,3 +729,4 @@ This document is ready to enter Review when:
 | 1.2.0 | 2026-08-16 | Workflow Architecture | Added immutable zero-authority target-context capsule consumer binding |
 | 1.3.0 | 2026-08-16 | Workflow Architecture | Added bounded single-use target-context capsule handoff-authorization lease |
 | 1.4.0 | 2026-08-16 | Workflow Architecture | Added atomic lease consumption and sealed protected-boundary capsule handoff |
+| 1.5.0 | 2026-08-16 | Workflow Architecture | Added bounded consumer-side target-context capsule opening-authorization lease |

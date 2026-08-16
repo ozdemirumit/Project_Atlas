@@ -42,3 +42,6 @@ ADR numbers are permanent and never reused. Material changes require a new ADR r
 | [ADR-131](ADR-131_Durable_Chat_Centered_Operations_Workspace.md) | Durable chat-centered operations workspace | Accepted |
 | [ADR-132](ADR-132_Active_Directory_Authentication_Only_Boundary.md) | Active Directory authentication-only boundary | Accepted |
 | [ADR-133](ADR-133_Optional_Policy_Based_Step_Up_Authentication.md) | Optional policy-based step-up authentication | Accepted |
+| [ADR-162](ADR-162_Bounded_Single_Use_Target_Context_Capsule_Handoff_Authorization_Lease.md) | Bounded single-use protected target-context capsule handoff authorization lease | Accepted |
+| [ADR-163](ADR-163_Atomic_Target_Context_Capsule_Handoff_Lease_Consumption.md) | Atomic single-use target-context capsule handoff lease consumption | Accepted |
+| [ADR-164](ADR-164_Bounded_Single_Use_Target_Context_Capsule_Opening_Authorization_Lease.md) | Bounded single-use consumer-side target-context capsule opening authorization lease | Accepted |

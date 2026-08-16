@@ -4,14 +4,61 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-213 |
-| Title | Atomic single-use protected target-context capsule handoff-authorization lease consumption and sealed protected-boundary capsule handoff without unsealing, runtime, execution or infrastructure mutation authority |
-| Status | In Review |
-| Branch | `agent/protected-capsule-handoff-consumption` |
-| Pull Request | [#226](https://github.com/ozdemirumit/Project_Atlas/pull/226) |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-158, ADR-159, ADR-160, ADR-161, ADR-162, ADR-163 |
+| Task ID | ATLAS-IMP-214 |
+| Title | Bounded single-use consumer-side protected target-context capsule opening authorization lease without retrieval, unsealing, runtime, execution or infrastructure mutation authority |
+| Status | In Progress |
+| Branch | `agent/protected-capsule-opening-authorization` |
+| Pull Request | Not opened |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-159, ADR-160, ADR-161, ADR-162, ADR-163, ADR-164 |
 | Last Updated | 2026-08-16 |
-| Next Action | Open the exact-head pull request, pass CI, merge by SHA and verify independent `main` CI |
+| Next Action | Implement ADR-164 as the next isolated backend, API and read-only UI vertical slice |
+
+### ATLAS-IMP-214 Scope Rationale
+
+- IMP-213 moves one still-sealed capsule into the exact consumer custody boundary and records a
+  signed non-bearer receipt, but grants no retrieval, opening, runtime or operational authority.
+- The next smallest authorization boundary gives only that exact consumer one one-second lease to
+  request a later independent opening-consumption operation while current custody and lifecycle
+  evidence remains valid.
+- Destination custody finality, rather than source-side physical deletion, proves that the source
+  can no longer authorize reuse of the handed-off capsule.
+
+### ATLAS-IMP-214 Acceptance Criteria
+
+- Only a canonical terminal `handed_off_sealed` ADR-163 result with a trusted signed receipt is
+  eligible. Failure, uncertainty, pending, claim-only, attempt-only, late or malformed evidence
+  fails closed.
+- Only the exact bound consumer workload and audience may request its own lease. Caller input is
+  limited to handoff result ID/digest, code-owned policy ID/version and idempotency metadata.
+- Atlas obtains a fresh signed, nonce-bound and metadata-only destination custody/lifecycle
+  attestation before the transaction and verifies it offline again while locks are held.
+- The attestation binds exact handoff, consumer receipt, capsule, destination boundary, deployment,
+  generation, fence, custody contract, adapter and trusted-profile lineage. It proves destination
+  custody is final and source reuse authority is terminated without requiring physical deletion.
+- PostgreSQL revalidates the complete upstream lineage, live pending outbox, current route and
+  credential-assignment heads, custody evidence and all deadlines before and after precommit audit.
+- The lease is exactly one second, append-only, single-use, non-renewable, non-transferable and
+  non-bearer. Each handoff result, consumer receipt and capsule may produce at most one lease.
+- Exact replay obtains fresh custody/lifecycle evidence and repeats currentness under lock. Expiry,
+  drift or competing replay cannot renew, replace or create a second lease.
+- Only `target_context_capsule_opening_authorized` is true. The handoff field and all existing 17
+  operational authority fields remain false.
+- Issuance performs no capsule retrieval, protected-store access, opening, unsealing, decryption,
+  runtime injection, network access, publication, dispatch, execution or infrastructure mutation.
+- Workload POST and normal username/password session GET are minimized, non-oracle and `no-store`.
+  The UI is read-only and provides no issue/open/retry/reveal/unseal/execute control.
+- Production fails closed without PostgreSQL and a trusted destination custody/lifecycle attestor;
+  there is no process-memory, synthetic or permissive fallback.
+- Actual irreversible consumer-side capsule opening remains explicitly deferred to IMP-215.
+
+### ATLAS-IMP-213 Delivery Evidence
+
+- PR [#226](https://github.com/ozdemirumit/Project_Atlas/pull/226) exact head passed Continuous
+  Integration run `31928541605`, including backend and frontend jobs.
+- PR #226 was squash-merged to `main` as
+  `536fb302c0d434109a31e7fee6e849cc5fca1b50`.
+- The exact merged `main` commit passed independent Continuous Integration run `31928924603`,
+  including backend, frontend, migration round-trip and PostgreSQL integration gates.
 
 ### ATLAS-IMP-213 Scope Rationale
 
