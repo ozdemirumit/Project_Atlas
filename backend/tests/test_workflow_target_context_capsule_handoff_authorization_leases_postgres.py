@@ -186,7 +186,10 @@ def test_migration_is_linear_guarded_and_append_only() -> None:
     finally:
         migration.op.execute = original_execute
         migration.op.drop_table = original_drop
-    assert executed == [migration.DOWNGRADE_EMPTY_GUARD_SQL]
+    assert executed == [
+        migration.DOWNGRADE_EMPTY_GUARD_SQL,
+        f"DROP FUNCTION IF EXISTS {migration.APPEND_ONLY_FUNCTION}()",
+    ]
     assert dropped == [migration.CLAIM_TABLE, migration.LEASE_TABLE]
 
 
