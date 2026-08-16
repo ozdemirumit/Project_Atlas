@@ -750,6 +750,8 @@ def _live_claim_values(*, seed: str, table: Table, lease: dict[str, object]) -> 
         name = column.name
         if name in lineage:
             values[name] = lineage[name]
+        elif name == "policy_digest":
+            values[name] = policy.canonical_digest
         elif hasattr(policy, name):
             values[name] = getattr(policy, name)
         elif name in {
@@ -809,6 +811,8 @@ def _live_attempt_values(
         name = column.name
         if name in lineage:
             values[name] = lineage[name]
+        elif name == "policy_digest":
+            values[name] = policy.canonical_digest
         elif hasattr(policy, name):
             values[name] = getattr(policy, name)
         elif name == "state":
@@ -868,6 +872,8 @@ def _live_uncertain_result_values(
         name = column.name
         if name in lineage:
             values[name] = lineage[name]
+        elif name == "policy_digest":
+            values[name] = policy.canonical_digest
         elif hasattr(policy, name):
             values[name] = getattr(policy, name)
         elif name == "state" or name == "failure_class":
