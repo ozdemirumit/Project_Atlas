@@ -690,6 +690,16 @@ MVP workflows do not execute C3 through C5 capabilities.
   handoff field and all 17 operational authority fields are false. Retrieval, unsealing,
   decryption, runtime, network, dispatch, execution and mutation remain deferred to separately
   authorized future boundaries, beginning with IMP-215 consumption.
+- ADR-165 irreversibly consumes that exact opening lease by atomically committing one append-only
+  claim and started attempt before any trusted consumer-boundary opener call. Fresh destination
+  custody/lifecycle and opener-openability attestations are verified before and offline inside the
+  transaction, and PostgreSQL repeats currentness and deadline checks after precommit audit. The
+  opener may unseal only the exact handed-off capsule inside the protected destination and returns
+  only a signed minimized receipt plus non-bearer protected resident-context lineage. Raw endpoint
+  and credential material never enters ordinary platform layers; claim-only or uncertain outcomes
+  are never retried; both dedicated capsule authority fields and all 17 operational authority
+  fields are false. Runtime access, injection, network, dispatch, execution and infrastructure
+  mutation remain separately authorized future boundaries.
 
 ## 39. Assumptions
 
@@ -730,3 +740,4 @@ This document is ready to enter Review when:
 | 1.3.0 | 2026-08-16 | Workflow Architecture | Added bounded single-use target-context capsule handoff-authorization lease |
 | 1.4.0 | 2026-08-16 | Workflow Architecture | Added atomic lease consumption and sealed protected-boundary capsule handoff |
 | 1.5.0 | 2026-08-16 | Workflow Architecture | Added bounded consumer-side target-context capsule opening-authorization lease |
+| 1.6.0 | 2026-08-16 | Workflow Architecture | Added atomic consumer-side capsule opening consumption and protected resident-context lineage |

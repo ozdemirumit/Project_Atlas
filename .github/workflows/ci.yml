@@ -76,7 +76,9 @@ jobs:
           tests/test_workflow_target_context_artifact_openings_postgres.py
           tests/test_workflow_target_context_capsule_consumer_bindings_postgres.py
           tests/test_workflow_target_context_capsule_handoff_authorization_leases_postgres.py
+          tests/test_workflow_target_context_capsule_handoffs_postgres.py
           tests/test_workflow_target_context_capsule_opening_authorization_leases_postgres.py
+          tests/test_workflow_target_context_capsule_openings_postgres.py
           -k live_postgres
       - name: Test
         working-directory: backend

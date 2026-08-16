@@ -41,6 +41,7 @@ import {
   listWorkflowPhysicalTransportTargetContextCapsuleHandoffAuthorizationLeases,
   listWorkflowPhysicalTransportTargetContextCapsuleHandoffs,
   listWorkflowPhysicalTransportTargetContextCapsuleOpeningAuthorizationLeases,
+  listWorkflowPhysicalTransportTargetContextCapsuleOpenings,
   listWorkflowPhysicalTransportTargetContextBindings,
   listWorkflowPhysicalTransportCredentialAssignmentSnapshots,
   listWorkflowPhysicalTransportCredentialAssignmentFreshnessAdmissions,
@@ -289,6 +290,16 @@ export default function WorkflowPlanningWorkspace({
     ],
     queryFn: () =>
       listWorkflowPhysicalTransportTargetContextCapsuleOpeningAuthorizationLeases({ scope }),
+    retry: false,
+  });
+  const targetContextCapsuleOpeningQuery = useQuery({
+    queryKey: [
+      "workflow-physical-transport-target-context-capsule-openings",
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: () => listWorkflowPhysicalTransportTargetContextCapsuleOpenings({ scope }),
     retry: false,
   });
   const targetQuery = useQuery({
@@ -774,6 +785,10 @@ export default function WorkflowPlanningWorkspace({
   const targetContextCapsuleOpeningAuthorizationLeaseErrorStatus =
     targetContextCapsuleOpeningAuthorizationLeaseQuery.error instanceof ApiRequestError
       ? targetContextCapsuleOpeningAuthorizationLeaseQuery.error.status
+      : undefined;
+  const targetContextCapsuleOpeningErrorStatus =
+    targetContextCapsuleOpeningQuery.error instanceof ApiRequestError
+      ? targetContextCapsuleOpeningQuery.error.status
       : undefined;
   const eventEnvelopes = eventEnvelopesForAdmission;
   const transportAdmissions = transportAdmissionsForArtifacts;
@@ -3375,6 +3390,175 @@ export default function WorkflowPlanningWorkspace({
             This evidence authorizes only a later request to a separate capsule-opening
             consumption boundary. It cannot retrieve, reveal, copy, unseal, connect, create
             runtime context, dispatch, execute, or mutate infrastructure.
+          </span>
+        </div>
+      </section>
+
+      <section
+        className="workflow-physical-route-binding-band workflow-target-context-opening-band"
+        aria-labelledby="workflow-target-context-capsule-opening-title"
+      >
+        <div className="workflow-section-heading">
+          <div>
+            <p className="eyebrow">PROTECTED OPENING EVIDENCE</p>
+            <h2 id="workflow-target-context-capsule-opening-title">
+              Target-context capsule openings
+            </h2>
+          </div>
+          <span>Read only</span>
+        </div>
+        {targetContextCapsuleOpeningQuery.isLoading && (
+          <div className="workflow-empty-state" role="status">
+            <RefreshCw className="spin" size={18} />
+            <span>Loading target-context capsule opening evidence...</span>
+          </div>
+        )}
+        {targetContextCapsuleOpeningQuery.isError && (
+          <div className="workflow-inline-error" role="alert">
+            <AlertTriangle aria-hidden="true" size={18} />
+            <div>
+              <strong>
+                {targetContextCapsuleOpeningErrorStatus === 401
+                  ? "Your session has expired"
+                  : targetContextCapsuleOpeningErrorStatus === 403
+                    ? "Capsule opening evidence permission is missing"
+                    : "Capsule opening evidence is unavailable"}
+              </strong>
+              <span>
+                {targetContextCapsuleOpeningErrorStatus === 401
+                  ? "Sign in again to continue."
+                  : targetContextCapsuleOpeningErrorStatus === 403
+                    ? "Your current role or scope cannot inspect capsule opening evidence."
+                    : "No opening result, resident-context state, or operational authority is inferred from this failed read."}
+              </span>
+            </div>
+          </div>
+        )}
+        {targetContextCapsuleOpeningQuery.isSuccess &&
+          targetContextCapsuleOpeningQuery.data
+            .physical_transport_target_context_capsule_openings.length === 0 && (
+            <div className="workflow-empty-state" role="status">
+              <LockKeyhole size={19} />
+              <span>No target-context capsule openings are recorded in this scope.</span>
+            </div>
+          )}
+        {targetContextCapsuleOpeningQuery.isSuccess &&
+          targetContextCapsuleOpeningQuery.data
+            .physical_transport_target_context_capsule_openings.length > 0 && (
+            <ol
+              className="workflow-step-preview workflow-physical-route-binding-list workflow-target-context-opening-list"
+              aria-label="Target-context capsule openings"
+            >
+              {targetContextCapsuleOpeningQuery.data.physical_transport_target_context_capsule_openings.map(
+                (opening) => (
+                  <li key={opening.opening_id}>
+                    {opening.result_state === "opened_in_protected_consumer_boundary" ? (
+                      <ShieldCheck size={18} />
+                    ) : opening.result_state === "opening_failed" ? (
+                      <Ban size={18} />
+                    ) : (
+                      <FileClock size={18} />
+                    )}
+                    <div>
+                      <strong>
+                        <code title={opening.opening_id}>
+                          {safeHolderIdentifier(opening.opening_id)}
+                        </code>
+                        <span
+                          className={`state-badge ${
+                            opening.result_state === "opened_in_protected_consumer_boundary"
+                              ? "passed"
+                              : opening.result_state === "opening_failed"
+                                ? "failed"
+                                : "warning"
+                          }`}
+                        >
+                          {readableKind(opening.result_state)}
+                        </span>
+                      </strong>
+                      <div className="workflow-physical-route-binding-grid">
+                        <span>
+                          Organization {opening.scope.organization_id} | environment{" "}
+                          {opening.scope.environment_id} | site {opening.scope.site_id}
+                        </span>
+                        <span>
+                          Attempt state {readableKind(opening.attempt_state)} | result state{" "}
+                          {readableKind(opening.result_state)}
+                        </span>
+                        <span>
+                          Started {formatTimestamp(opening.started_at)}
+                          {opening.completed_at === null
+                            ? " | completion not recorded"
+                            : ` | completed ${formatTimestamp(opening.completed_at)}`}
+                        </span>
+                        <span>
+                          Consumer contract{" "}
+                          <code title={opening.consumer_contract_id}>
+                            {safeHolderIdentifier(opening.consumer_contract_id)}
+                          </code>{" "}
+                          v{opening.consumer_contract_version} | purpose{" "}
+                          <code title={opening.purpose_id}>
+                            {safeHolderIdentifier(opening.purpose_id)}
+                          </code>
+                        </span>
+                        <span>
+                          Opener contract{" "}
+                          <code title={opening.opener_contract_id}>
+                            {safeHolderIdentifier(opening.opener_contract_id)}
+                          </code>{" "}
+                          v{opening.opener_contract_version}
+                        </span>
+                        <span>
+                          Resident-context profile{" "}
+                          <code title={opening.resident_context_profile_reference}>
+                            {safeHolderIdentifier(opening.resident_context_profile_reference)}
+                          </code>
+                        </span>
+                        <span>
+                          Capsule opened in protected boundary{" "}
+                          {opening.capsule_opened_in_protected_boundary ? "true" : "false"} |
+                          target-context pair verified{" "}
+                          {opening.target_context_pair_verified ? "true" : "false"} | resident
+                          context bearer capability{" "}
+                          {opening.resident_context_is_bearer_capability ? "true" : "false"}
+                        </span>
+                        <span>
+                          Policy{" "}
+                          <code title={opening.policy_id}>
+                            {safeHolderIdentifier(opening.policy_id)}
+                          </code>{" "}
+                          v{opening.policy_version}
+                        </span>
+                        <span>
+                          Integrity reference{" "}
+                          <code title={opening.integrity_reference}>
+                            {safeHolderIdentifier(opening.integrity_reference)}
+                          </code>
+                        </span>
+                        <span className="workflow-physical-route-binding-authority workflow-target-context-opening-zero-authority">
+                          All authorities false: target-context capsule opening false |
+                          target-context capsule handoff false | endpoint resolution false | route
+                          selection false | route binding false | credential selection false |
+                          credential assignment binding false | credential access false | credential
+                          brokerage false | credential resolution false | protected artifact access
+                          false | credential delivery false | network access false | readiness probe
+                          false | publication false | delivery false | dispatch false | execution false
+                          | infrastructure mutation false
+                        </span>
+                      </div>
+                    </div>
+                  </li>
+                ),
+              )}
+            </ol>
+          )}
+        <div className="workflow-safety-boundary" role="note">
+          <LockKeyhole size={18} />
+          <span>
+            This is minimized historical opening evidence only. It exposes no protected capsule,
+            receipt, destination, attestation, resident-context identity, runtime handle, or
+            operational control and grants no authority to retry, reveal, inject, execute, or
+            mutate infrastructure.
           </span>
         </div>
       </section>

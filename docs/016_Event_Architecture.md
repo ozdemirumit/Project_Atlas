@@ -479,6 +479,22 @@ authority declarations are false. Issuance performs no capsule retrieval, openin
 decryption, runtime injection, network access, dispatch, execution or mutation. Actual opening is
 a separate IMP-215 boundary.
 
+Consumer-side target-context capsule opening consumption is the irreversible boundary after that
+lease. A durable exact-replay preflight performs no I/O. Only a request without an existing claim
+may obtain fresh signed destination custody/lifecycle and trusted-opener openability attestations.
+PostgreSQL verifies those attestations offline, locks and revalidates the complete authoritative
+lineage, evaluates database time twice and atomically appends one claim and started attempt. Their
+commit permanently consumes the lease before the trusted opener can touch the capsule.
+
+The trusted opener may unseal only the exact handed-off capsule inside the exact consumer protected
+boundary. Raw endpoint and credential material never enters ordinary event, application, audit or
+persistence paths. A timely signed success receipt may record non-bearer protected resident-context
+lineage; known failure requires signed zeroization evidence, while crash, timeout, late receipt or
+cleanup uncertainty remains `opening_outcome_uncertain`. Exact replay never calls the opener again.
+Both dedicated capsule authority declarations and all 17 operational authority declarations are
+false on the claim, attempt and result. Runtime access, network use, publication, dispatch,
+execution and infrastructure mutation remain separate later boundaries.
+
 ### 10.2 Publication State
 
 Outbox records track:
@@ -876,3 +892,4 @@ This document is ready to enter Review when:
 | 1.3.0 | 2026-08-16 | Workflow Architecture | Added bounded single-use target-context capsule handoff-authorization lease boundary |
 | 1.4.0 | 2026-08-16 | Workflow Architecture | Added atomic lease-consumption and sealed protected-boundary handoff evidence |
 | 1.5.0 | 2026-08-16 | Workflow Architecture | Added bounded consumer-side target-context capsule opening-authorization lease boundary |
+| 1.6.0 | 2026-08-16 | Workflow Architecture | Added atomic consumer-side capsule opening-consumption and protected resident-context evidence boundary |

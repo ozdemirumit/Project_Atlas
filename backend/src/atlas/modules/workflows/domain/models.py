@@ -10098,6 +10098,27 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseEff
     EXPIRED = "expired"
 
 
+class WorkflowProtectedTransportTargetContextCapsuleOpeningAttemptState(StrEnum):
+    STARTED = "started"
+
+
+class WorkflowProtectedTransportTargetContextCapsuleOpeningResultState(StrEnum):
+    OPENED_IN_PROTECTED_CONSUMER_BOUNDARY = "opened_in_protected_consumer_boundary"
+    OPENING_FAILED = "opening_failed"
+    OPENING_OUTCOME_UNCERTAIN = "opening_outcome_uncertain"
+
+
+class WorkflowProtectedTransportTargetContextCapsuleOpeningFailureClass(StrEnum):
+    DESTINATION_CUSTODY_INVALID = "destination_custody_invalid"
+    CAPSULE_NOT_OPENABLE = "capsule_not_openable"
+    TRUSTED_OPENER_REJECTED = "trusted_opener_rejected"
+    DEADLINE_EXPIRED = "deadline_expired"
+    OPENING_OUTCOME_UNCERTAIN = "opening_outcome_uncertain"
+
+
+WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_RESIDENT_CONTEXT_MAXIMUM_LIFETIME_SECONDS = 30
+
+
 @dataclass(frozen=True, slots=True)
 class WorkflowProtectedTransportTargetContextCapsuleOpeningLeaseAuthority:
     endpoint_resolution_authorized: bool = False
@@ -10478,3 +10499,895 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLease:
         if self.issued_at <= evaluated_at < self.valid_until:
             return WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseEffectiveState.ACTIVE  # noqa: E501
         return WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseEffectiveState.EXPIRED  # noqa: E501
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedTransportTargetContextCapsuleOpeningAuthority:
+    """Explicit zero-authority evidence after irreversible opening consumption."""
+
+    endpoint_resolution_authorized: bool = False
+    route_selection_authorized: bool = False
+    route_binding_authorized: bool = False
+    credential_selection_authorized: bool = False
+    credential_assignment_binding_authorized: bool = False
+    credential_access_authorized: bool = False
+    credential_brokerage_authorized: bool = False
+    credential_resolution_authorized: bool = False
+    protected_artifact_access_authorized: bool = False
+    credential_delivery_authorized: bool = False
+    network_access_authorized: bool = False
+    readiness_probe_authorized: bool = False
+    publication_authorized: bool = False
+    delivery_authorized: bool = False
+    dispatch_authorized: bool = False
+    execution_authorized: bool = False
+    infrastructure_mutation_authorized: bool = False
+    target_context_capsule_handoff_authorized: bool = False
+    target_context_capsule_opening_authorized: bool = False
+
+    def __post_init__(self) -> None:
+        if any(self.canonical_value().values()):
+            raise ValueError("consumed capsule opening evidence grants no authority")
+
+    def canonical_value(self) -> dict[str, bool]:
+        return {
+            "credential_access_authorized": self.credential_access_authorized,
+            "credential_assignment_binding_authorized": (
+                self.credential_assignment_binding_authorized
+            ),
+            "credential_brokerage_authorized": self.credential_brokerage_authorized,
+            "credential_delivery_authorized": self.credential_delivery_authorized,
+            "credential_resolution_authorized": self.credential_resolution_authorized,
+            "credential_selection_authorized": self.credential_selection_authorized,
+            "delivery_authorized": self.delivery_authorized,
+            "dispatch_authorized": self.dispatch_authorized,
+            "endpoint_resolution_authorized": self.endpoint_resolution_authorized,
+            "execution_authorized": self.execution_authorized,
+            "infrastructure_mutation_authorized": self.infrastructure_mutation_authorized,
+            "network_access_authorized": self.network_access_authorized,
+            "protected_artifact_access_authorized": self.protected_artifact_access_authorized,
+            "publication_authorized": self.publication_authorized,
+            "readiness_probe_authorized": self.readiness_probe_authorized,
+            "route_binding_authorized": self.route_binding_authorized,
+            "route_selection_authorized": self.route_selection_authorized,
+            "target_context_capsule_handoff_authorized": (
+                self.target_context_capsule_handoff_authorized
+            ),
+            "target_context_capsule_opening_authorized": (
+                self.target_context_capsule_opening_authorized
+            ),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedTransportTargetContextCapsuleOpeningConsumptionPolicy:
+    policy_id: str
+    policy_version: str
+    consumer_subject_id: str
+    consumer_audience: str
+    consumer_contract_id: str
+    consumer_contract_version: str
+    purpose_id: str
+    required_custody_attestor_id: str
+    required_custody_attestor_version: str
+    required_openability_attestor_id: str
+    required_openability_attestor_version: str
+    required_opener_contract_id: str
+    required_opener_contract_version: str
+    approved_opener_id: str
+    approved_opener_version: str
+    destination_boundary_id: str
+    destination_deployment_id: str
+    destination_generation: int
+    destination_fencing_token_digest: str
+    custody_contract_id: str
+    custody_contract_version: str
+    verification_signing_key_id: str
+    trusted_opener_profile_digest: str
+    minimum_remaining_budget_milliseconds: int
+    irreversible_consumption_acknowledgement_required: bool
+    uncertain_outcome_requires_new_authorization_acknowledgement_required: bool
+    automatic_retry_allowed: bool
+    raw_material_return_forbidden: bool
+    runtime_handle_creation_forbidden: bool
+    network_activity_forbidden: bool
+    delivery_forbidden: bool
+    execution_forbidden: bool
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        expected = code_owned_workflow_protected_transport_target_context_capsule_opening_consumption_policy_values()  # noqa: E501
+        if any(getattr(self, name) != value for name, value in expected.items()):
+            raise ValueError("capsule opening consumption policy is not code-owned")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("capsule opening consumption policy digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return _target_context_capsule_handoff_consumption_payload(self)
+
+
+def code_owned_workflow_protected_transport_target_context_capsule_opening_consumption_policy_values() -> (  # noqa: E501
+    dict[str, object]
+):
+    authorization = code_owned_workflow_protected_transport_target_context_capsule_opening_authorization_policy()  # noqa: E501
+    trusted_opener_profile = {
+        "approved_opener_id": (
+            "opener.workflow-protected-target-context-capsule-consumer-boundary"
+        ),
+        "approved_opener_version": "1.0",
+        "custody_contract_id": authorization.custody_contract_id,
+        "custody_contract_version": authorization.custody_contract_version,
+        "destination_boundary_id": authorization.destination_boundary_id,
+        "destination_deployment_id": authorization.destination_deployment_id,
+        "destination_fencing_token_digest": (authorization.destination_fencing_token_digest),
+        "destination_generation": authorization.destination_generation,
+        "required_opener_contract_id": (
+            "contract.workflow-protected-target-context-capsule-consumer-boundary-opener"
+        ),
+        "required_opener_contract_version": "1.0",
+        "verification_signing_key_id": (
+            "key.workflow-protected-target-context-capsule-opening-receipt.v1"
+        ),
+    }
+    return {
+        "policy_id": (
+            "policy.workflow-protected-transport-target-context-capsule-opening-consumption"
+        ),
+        "policy_version": "1.0",
+        "consumer_subject_id": authorization.consumer_subject_id,
+        "consumer_audience": authorization.consumer_audience,
+        "consumer_contract_id": authorization.consumer_contract_id,
+        "consumer_contract_version": authorization.consumer_contract_version,
+        "purpose_id": authorization.purpose_id,
+        "required_custody_attestor_id": authorization.required_attestor_id,
+        "required_custody_attestor_version": authorization.required_attestor_version,
+        "required_openability_attestor_id": (
+            "attestor.workflow-protected-target-context-capsule-consumer-boundary-openability"
+        ),
+        "required_openability_attestor_version": "1.0",
+        **trusted_opener_profile,
+        "trusted_opener_profile_digest": canonical_digest(trusted_opener_profile),
+        "minimum_remaining_budget_milliseconds": 100,
+        "irreversible_consumption_acknowledgement_required": True,
+        "uncertain_outcome_requires_new_authorization_acknowledgement_required": True,
+        "automatic_retry_allowed": False,
+        "raw_material_return_forbidden": True,
+        "runtime_handle_creation_forbidden": True,
+        "network_activity_forbidden": True,
+        "delivery_forbidden": True,
+        "execution_forbidden": True,
+    }
+
+
+def code_owned_workflow_protected_transport_target_context_capsule_opening_consumption_policy() -> (
+    WorkflowProtectedTransportTargetContextCapsuleOpeningConsumptionPolicy
+):
+    values = code_owned_workflow_protected_transport_target_context_capsule_opening_consumption_policy_values()  # noqa: E501
+    return WorkflowProtectedTransportTargetContextCapsuleOpeningConsumptionPolicy(
+        **cast(Any, values), canonical_digest=canonical_digest(values)
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedTransportTargetContextCapsuleOpeningConsumptionClaim:
+    claim_id: str
+    opening_id: str
+    attempt_id: str
+    authorization_lease_id: str
+    authorization_lease_digest: str
+    handoff_id: str
+    handoff_result_digest: str
+    handoff_attempt_id: str
+    handoff_attempt_digest: str
+    handoff_consumption_claim_id: str
+    handoff_consumption_claim_digest: str
+    consumer_binding_id: str
+    consumer_binding_digest: str
+    sealed_capsule_id: str
+    sealed_capsule_digest: str
+    consumer_receipt_id: str
+    consumer_receipt_digest: str
+    sealed_capsule_is_bearer_capability: bool
+    consumer_receipt_is_bearer_capability: bool
+    scope: WorkflowScope
+    consumer_subject_id: str
+    consumer_audience: str
+    consumer_contract_id: str
+    consumer_contract_version: str
+    purpose_id: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    irreversible_consumption_acknowledged: bool
+    uncertain_outcome_requires_new_authorization_acknowledged: bool
+    request_fingerprint: str
+    idempotency_digest: str
+    consumption_authorization_audit_digest: str
+    claimed_at: datetime
+    authority: WorkflowProtectedTransportTargetContextCapsuleOpeningAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.claim_id,
+            self.opening_id,
+            self.attempt_id,
+            self.authorization_lease_id,
+            self.handoff_id,
+            self.handoff_attempt_id,
+            self.handoff_consumption_claim_id,
+            self.consumer_binding_id,
+            self.sealed_capsule_id,
+            self.consumer_receipt_id,
+            self.consumer_subject_id,
+            self.consumer_audience,
+            self.consumer_contract_id,
+            self.consumer_contract_version,
+            self.purpose_id,
+            self.policy_id,
+            self.policy_version,
+        ):
+            _require_identifier(value, name="capsule opening consumption claim identifier")
+        for value in (
+            self.authorization_lease_digest,
+            self.handoff_result_digest,
+            self.handoff_attempt_digest,
+            self.handoff_consumption_claim_digest,
+            self.consumer_binding_digest,
+            self.sealed_capsule_digest,
+            self.consumer_receipt_digest,
+            self.policy_digest,
+            self.request_fingerprint,
+            self.idempotency_digest,
+            self.consumption_authorization_audit_digest,
+            self.canonical_digest,
+        ):
+            _require_digest(value, name="capsule opening consumption claim digest")
+        policy = code_owned_workflow_protected_transport_target_context_capsule_opening_consumption_policy()  # noqa: E501
+        if (
+            self.claimed_at.tzinfo is None
+            or self.consumer_subject_id != policy.consumer_subject_id
+            or self.consumer_audience != policy.consumer_audience
+            or self.consumer_contract_id != policy.consumer_contract_id
+            or self.consumer_contract_version != policy.consumer_contract_version
+            or self.purpose_id != policy.purpose_id
+            or self.policy_id != policy.policy_id
+            or self.policy_version != policy.policy_version
+            or self.policy_digest != policy.canonical_digest
+            or self.irreversible_consumption_acknowledged is not True
+            or self.uncertain_outcome_requires_new_authorization_acknowledged is not True
+            or self.sealed_capsule_is_bearer_capability is not False
+            or self.consumer_receipt_is_bearer_capability is not False
+            or any(self.authority.canonical_value().values())
+            or self.canonical_digest != canonical_digest(self.digest_payload())
+        ):
+            raise ValueError("capsule opening consumption claim is invalid")
+
+    def digest_payload(self) -> dict[str, object]:
+        return _target_context_capsule_handoff_consumption_payload(self)
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedTransportTargetContextCapsuleOpeningAttempt:
+    attempt_id: str
+    opening_id: str
+    consumption_claim_id: str
+    consumption_claim_digest: str
+    authorization_lease_id: str
+    authorization_lease_digest: str
+    consumer_binding_id: str
+    consumer_binding_digest: str
+    sealed_capsule_id: str
+    sealed_capsule_digest: str
+    consumer_receipt_id: str
+    consumer_receipt_digest: str
+    sealed_capsule_is_bearer_capability: bool
+    consumer_receipt_is_bearer_capability: bool
+    scope: WorkflowScope
+    consumer_subject_id: str
+    consumer_audience: str
+    consumer_contract_id: str
+    consumer_contract_version: str
+    purpose_id: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    required_opener_contract_id: str
+    required_opener_contract_version: str
+    approved_opener_id: str
+    approved_opener_version: str
+    destination_boundary_id: str
+    destination_deployment_id: str
+    destination_generation: int
+    destination_fencing_token_digest: str
+    custody_contract_id: str
+    custody_contract_version: str
+    verification_signing_key_id: str
+    trusted_opener_profile_digest: str
+    custody_attestation_id: str
+    custody_attestation_digest: str
+    openability_attestation_id: str
+    openability_attestation_digest: str
+    request_nonce_digest: str
+    started_at: datetime
+    opening_deadline: datetime
+    lease_valid_until: datetime
+    custody_attestation_valid_until: datetime
+    openability_attestation_valid_until: datetime
+    resident_context_usable_until_limit: datetime
+    state: WorkflowProtectedTransportTargetContextCapsuleOpeningAttemptState
+    authority: WorkflowProtectedTransportTargetContextCapsuleOpeningAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.attempt_id,
+            self.opening_id,
+            self.consumption_claim_id,
+            self.authorization_lease_id,
+            self.consumer_binding_id,
+            self.sealed_capsule_id,
+            self.consumer_receipt_id,
+            self.consumer_subject_id,
+            self.consumer_audience,
+            self.consumer_contract_id,
+            self.consumer_contract_version,
+            self.purpose_id,
+            self.policy_id,
+            self.policy_version,
+            self.required_opener_contract_id,
+            self.required_opener_contract_version,
+            self.approved_opener_id,
+            self.approved_opener_version,
+            self.destination_boundary_id,
+            self.destination_deployment_id,
+            self.custody_contract_id,
+            self.custody_contract_version,
+            self.verification_signing_key_id,
+            self.custody_attestation_id,
+            self.openability_attestation_id,
+        ):
+            _require_identifier(value, name="capsule opening attempt identifier")
+        for value in (
+            self.consumption_claim_digest,
+            self.authorization_lease_digest,
+            self.consumer_binding_digest,
+            self.sealed_capsule_digest,
+            self.consumer_receipt_digest,
+            self.policy_digest,
+            self.destination_fencing_token_digest,
+            self.trusted_opener_profile_digest,
+            self.custody_attestation_digest,
+            self.openability_attestation_digest,
+            self.request_nonce_digest,
+            self.canonical_digest,
+        ):
+            _require_digest(value, name="capsule opening attempt digest")
+        policy = code_owned_workflow_protected_transport_target_context_capsule_opening_consumption_policy()  # noqa: E501
+        deadlines = (
+            self.lease_valid_until,
+            self.custody_attestation_valid_until,
+            self.openability_attestation_valid_until,
+            self.resident_context_usable_until_limit,
+        )
+        if (
+            self.started_at.tzinfo is None
+            or self.opening_deadline.tzinfo is None
+            or any(value.tzinfo is None for value in deadlines)
+            or not self.started_at < self.opening_deadline
+            or self.opening_deadline > min(deadlines)
+            or self.state
+            is not WorkflowProtectedTransportTargetContextCapsuleOpeningAttemptState.STARTED
+            or self.consumer_subject_id != policy.consumer_subject_id
+            or self.consumer_audience != policy.consumer_audience
+            or self.consumer_contract_id != policy.consumer_contract_id
+            or self.consumer_contract_version != policy.consumer_contract_version
+            or self.purpose_id != policy.purpose_id
+            or self.policy_id != policy.policy_id
+            or self.policy_version != policy.policy_version
+            or self.policy_digest != policy.canonical_digest
+            or self.required_opener_contract_id != policy.required_opener_contract_id
+            or self.required_opener_contract_version != policy.required_opener_contract_version
+            or self.approved_opener_id != policy.approved_opener_id
+            or self.approved_opener_version != policy.approved_opener_version
+            or self.destination_boundary_id != policy.destination_boundary_id
+            or self.destination_deployment_id != policy.destination_deployment_id
+            or self.destination_generation != policy.destination_generation
+            or self.destination_fencing_token_digest != policy.destination_fencing_token_digest
+            or self.custody_contract_id != policy.custody_contract_id
+            or self.custody_contract_version != policy.custody_contract_version
+            or self.verification_signing_key_id != policy.verification_signing_key_id
+            or self.trusted_opener_profile_digest != policy.trusted_opener_profile_digest
+            or self.sealed_capsule_is_bearer_capability is not False
+            or self.consumer_receipt_is_bearer_capability is not False
+            or any(self.authority.canonical_value().values())
+            or self.canonical_digest != canonical_digest(self.digest_payload())
+        ):
+            raise ValueError("capsule opening attempt is invalid")
+
+    def digest_payload(self) -> dict[str, object]:
+        return _target_context_capsule_handoff_consumption_payload(self)
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedTransportTargetContextCapsuleTrustedOpenerInstruction:
+    opening_id: str
+    attempt_id: str
+    consumption_claim_id: str
+    authorization_lease_id: str
+    authorization_lease_digest: str
+    sealed_capsule_id: str
+    sealed_capsule_digest: str
+    consumer_receipt_id: str
+    consumer_receipt_digest: str
+    sealed_capsule_is_bearer_capability: bool
+    consumer_receipt_is_bearer_capability: bool
+    consumer_subject_id: str
+    consumer_audience: str
+    consumer_contract_id: str
+    consumer_contract_version: str
+    purpose_id: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    required_opener_contract_id: str
+    required_opener_contract_version: str
+    approved_opener_id: str
+    approved_opener_version: str
+    destination_boundary_id: str
+    destination_deployment_id: str
+    destination_generation: int
+    destination_fencing_token_digest: str
+    custody_contract_id: str
+    custody_contract_version: str
+    trusted_opener_profile_digest: str
+    custody_attestation_digest: str
+    openability_attestation_digest: str
+    started_at: datetime
+    opening_deadline: datetime
+    resident_context_usable_until_limit: datetime
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.opening_id,
+            self.attempt_id,
+            self.consumption_claim_id,
+            self.authorization_lease_id,
+            self.sealed_capsule_id,
+            self.consumer_receipt_id,
+            self.consumer_subject_id,
+            self.consumer_audience,
+            self.consumer_contract_id,
+            self.consumer_contract_version,
+            self.purpose_id,
+            self.policy_id,
+            self.policy_version,
+            self.required_opener_contract_id,
+            self.required_opener_contract_version,
+            self.approved_opener_id,
+            self.approved_opener_version,
+            self.destination_boundary_id,
+            self.destination_deployment_id,
+            self.custody_contract_id,
+            self.custody_contract_version,
+        ):
+            _require_identifier(value, name="trusted capsule opener instruction identifier")
+        for value in (
+            self.authorization_lease_digest,
+            self.sealed_capsule_digest,
+            self.consumer_receipt_digest,
+            self.policy_digest,
+            self.destination_fencing_token_digest,
+            self.trusted_opener_profile_digest,
+            self.custody_attestation_digest,
+            self.openability_attestation_digest,
+            self.canonical_digest,
+        ):
+            _require_digest(value, name="trusted capsule opener instruction digest")
+        policy = code_owned_workflow_protected_transport_target_context_capsule_opening_consumption_policy()  # noqa: E501
+        if (
+            self.started_at.tzinfo is None
+            or self.opening_deadline.tzinfo is None
+            or self.resident_context_usable_until_limit.tzinfo is None
+            or not self.started_at < self.opening_deadline
+            or self.opening_deadline > self.resident_context_usable_until_limit
+            or self.consumer_subject_id != policy.consumer_subject_id
+            or self.consumer_audience != policy.consumer_audience
+            or self.consumer_contract_id != policy.consumer_contract_id
+            or self.consumer_contract_version != policy.consumer_contract_version
+            or self.purpose_id != policy.purpose_id
+            or self.policy_id != policy.policy_id
+            or self.policy_version != policy.policy_version
+            or self.policy_digest != policy.canonical_digest
+            or self.required_opener_contract_id != policy.required_opener_contract_id
+            or self.required_opener_contract_version != policy.required_opener_contract_version
+            or self.approved_opener_id != policy.approved_opener_id
+            or self.approved_opener_version != policy.approved_opener_version
+            or self.destination_boundary_id != policy.destination_boundary_id
+            or self.destination_deployment_id != policy.destination_deployment_id
+            or self.destination_generation != policy.destination_generation
+            or self.destination_fencing_token_digest != policy.destination_fencing_token_digest
+            or self.custody_contract_id != policy.custody_contract_id
+            or self.custody_contract_version != policy.custody_contract_version
+            or self.trusted_opener_profile_digest != policy.trusted_opener_profile_digest
+            or self.sealed_capsule_is_bearer_capability is not False
+            or self.consumer_receipt_is_bearer_capability is not False
+            or self.canonical_digest != canonical_digest(self.digest_payload())
+        ):
+            raise ValueError("trusted capsule opener instruction is invalid")
+
+    def digest_payload(self) -> dict[str, object]:
+        return _target_context_capsule_handoff_consumption_payload(self)
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedTransportTargetContextCapsuleTrustedOpenerReceipt:
+    opening_id: str
+    attempt_id: str
+    consumption_claim_id: str
+    instruction_digest: str
+    authorization_lease_id: str
+    authorization_lease_digest: str
+    sealed_capsule_id: str
+    sealed_capsule_digest: str
+    consumer_receipt_id: str
+    consumer_receipt_digest: str
+    opener_contract_id: str
+    opener_contract_version: str
+    opener_id: str
+    opener_version: str
+    destination_boundary_id: str
+    destination_deployment_id: str
+    destination_generation: int
+    destination_fencing_token_digest: str
+    custody_contract_id: str
+    custody_contract_version: str
+    trusted_opener_profile_digest: str
+    state: WorkflowProtectedTransportTargetContextCapsuleOpeningResultState
+    failure_class: WorkflowProtectedTransportTargetContextCapsuleOpeningFailureClass | None
+    protected_resident_context_id: str | None
+    protected_resident_context_digest: str | None
+    protected_resident_context_created_at: datetime | None
+    protected_resident_context_usable_until: datetime | None
+    protected_resident_context_is_bearer_capability: bool
+    capsule_opened_in_protected_boundary: bool
+    target_context_pair_verified: bool
+    raw_target_context_returned: bool
+    runtime_handle_created: bool
+    network_activity_performed: bool
+    delivery_performed: bool
+    execution_performed: bool
+    protected_source_closed: bool
+    source_capsule_zeroized: bool
+    completed_at: datetime
+    opening_deadline: datetime
+    attested_by: str
+    signing_key_id: str
+    signature_algorithm: str
+    integrity_signature: str
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.opening_id,
+            self.attempt_id,
+            self.consumption_claim_id,
+            self.authorization_lease_id,
+            self.sealed_capsule_id,
+            self.consumer_receipt_id,
+            self.opener_contract_id,
+            self.opener_contract_version,
+            self.opener_id,
+            self.opener_version,
+            self.destination_boundary_id,
+            self.destination_deployment_id,
+            self.custody_contract_id,
+            self.custody_contract_version,
+            self.attested_by,
+            self.signing_key_id,
+            self.signature_algorithm,
+        ):
+            _require_identifier(value, name="trusted capsule opener receipt identifier")
+        for value in (
+            self.instruction_digest,
+            self.authorization_lease_digest,
+            self.sealed_capsule_digest,
+            self.consumer_receipt_digest,
+            self.destination_fencing_token_digest,
+            self.trusted_opener_profile_digest,
+            self.canonical_digest,
+        ):
+            _require_digest(value, name="trusted capsule opener receipt digest")
+        policy = code_owned_workflow_protected_transport_target_context_capsule_opening_consumption_policy()  # noqa: E501
+        result_states = WorkflowProtectedTransportTargetContextCapsuleOpeningResultState
+        failure_classes = WorkflowProtectedTransportTargetContextCapsuleOpeningFailureClass
+        successful_state = result_states.OPENED_IN_PROTECTED_CONSUMER_BOUNDARY
+        failed_state = result_states.OPENING_FAILED
+        uncertain_failure = failure_classes.OPENING_OUTCOME_UNCERTAIN
+        if (
+            self.completed_at.tzinfo is None
+            or self.opening_deadline.tzinfo is None
+            or self.completed_at >= self.opening_deadline
+            or (
+                self.protected_resident_context_created_at is not None
+                and self.protected_resident_context_created_at.tzinfo is None
+            )
+            or (
+                self.protected_resident_context_usable_until is not None
+                and self.protected_resident_context_usable_until.tzinfo is None
+            )
+            or self.opener_contract_id != policy.required_opener_contract_id
+            or self.opener_contract_version != policy.required_opener_contract_version
+            or self.opener_id != policy.approved_opener_id
+            or self.opener_version != policy.approved_opener_version
+            or self.destination_boundary_id != policy.destination_boundary_id
+            or self.destination_deployment_id != policy.destination_deployment_id
+            or self.destination_generation != policy.destination_generation
+            or self.destination_fencing_token_digest != policy.destination_fencing_token_digest
+            or self.custody_contract_id != policy.custody_contract_id
+            or self.custody_contract_version != policy.custody_contract_version
+            or self.trusted_opener_profile_digest != policy.trusted_opener_profile_digest
+            or self.signing_key_id != policy.verification_signing_key_id
+            or self.protected_resident_context_is_bearer_capability is not False
+            or self.raw_target_context_returned is not False
+            or self.runtime_handle_created is not False
+            or self.network_activity_performed is not False
+            or self.delivery_performed is not False
+            or self.execution_performed is not False
+            or not self.integrity_signature
+            or any(character.isspace() for character in self.integrity_signature)
+        ):
+            raise ValueError("trusted capsule opener receipt is unsafe")
+        if self.state is successful_state:
+            if (
+                self.failure_class is not None
+                or self.protected_resident_context_id is None
+                or self.protected_resident_context_digest is None
+                or self.protected_resident_context_created_at != self.completed_at
+                or self.protected_resident_context_usable_until is None
+                or not self.completed_at < self.protected_resident_context_usable_until
+                or self.protected_resident_context_usable_until
+                > self.completed_at
+                + timedelta(
+                    seconds=(
+                        WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_RESIDENT_CONTEXT_MAXIMUM_LIFETIME_SECONDS
+                    )
+                )
+                or self.capsule_opened_in_protected_boundary is not True
+                or self.target_context_pair_verified is not True
+                or self.protected_source_closed is not True
+                or self.source_capsule_zeroized is not True
+            ):
+                raise ValueError("successful trusted capsule opener receipt is invalid")
+            _require_identifier(
+                self.protected_resident_context_id,
+                name="protected resident context id",
+            )
+            _require_digest(
+                self.protected_resident_context_digest,
+                name="protected resident context digest",
+            )
+        elif (
+            self.state is not failed_state
+            or self.failure_class is None
+            or self.failure_class is uncertain_failure
+            or self.protected_resident_context_id is not None
+            or self.protected_resident_context_digest is not None
+            or self.protected_resident_context_created_at is not None
+            or self.protected_resident_context_usable_until is not None
+            or self.capsule_opened_in_protected_boundary is not False
+            or self.target_context_pair_verified is not False
+            or self.protected_source_closed is not True
+            or self.source_capsule_zeroized is not True
+        ):
+            raise ValueError("failed trusted capsule opener receipt is invalid")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("trusted capsule opener receipt digest mismatch")
+
+    def signature_payload(self) -> dict[str, object]:
+        return {
+            name: value
+            for name, value in self.digest_payload().items()
+            if name != "integrity_signature"
+        }
+
+    def digest_payload(self) -> dict[str, object]:
+        return _target_context_capsule_handoff_consumption_payload(self)
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedTransportTargetContextCapsuleOpeningResult:
+    opening_id: str
+    attempt_id: str
+    attempt_digest: str
+    consumption_claim_id: str
+    consumption_claim_digest: str
+    authorization_lease_id: str
+    authorization_lease_digest: str
+    consumer_binding_id: str
+    consumer_binding_digest: str
+    sealed_capsule_id: str
+    sealed_capsule_digest: str
+    consumer_receipt_id: str
+    consumer_receipt_digest: str
+    scope: WorkflowScope
+    consumer_subject_id: str
+    consumer_audience: str
+    consumer_contract_id: str
+    consumer_contract_version: str
+    purpose_id: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    opener_id: str
+    opener_version: str
+    opening_receipt_digest: str | None
+    state: WorkflowProtectedTransportTargetContextCapsuleOpeningResultState
+    failure_class: WorkflowProtectedTransportTargetContextCapsuleOpeningFailureClass | None
+    protected_resident_context_id: str | None
+    protected_resident_context_digest: str | None
+    protected_resident_context_created_at: datetime | None
+    protected_resident_context_usable_until: datetime | None
+    protected_resident_context_is_bearer_capability: bool
+    capsule_opened_in_protected_boundary: bool
+    target_context_pair_verified: bool
+    outcome_known: bool
+    protected_source_closed: bool
+    source_capsule_zeroized: bool
+    completed_at: datetime | None
+    recorded_at: datetime
+    opening_deadline: datetime
+    authority: WorkflowProtectedTransportTargetContextCapsuleOpeningAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.opening_id,
+            self.attempt_id,
+            self.consumption_claim_id,
+            self.authorization_lease_id,
+            self.consumer_binding_id,
+            self.sealed_capsule_id,
+            self.consumer_receipt_id,
+            self.consumer_subject_id,
+            self.consumer_audience,
+            self.consumer_contract_id,
+            self.consumer_contract_version,
+            self.purpose_id,
+            self.policy_id,
+            self.policy_version,
+            self.opener_id,
+            self.opener_version,
+        ):
+            _require_identifier(value, name="capsule opening result identifier")
+        for value in (
+            self.attempt_digest,
+            self.consumption_claim_digest,
+            self.authorization_lease_digest,
+            self.consumer_binding_digest,
+            self.sealed_capsule_digest,
+            self.consumer_receipt_digest,
+            self.policy_digest,
+            self.canonical_digest,
+        ):
+            _require_digest(value, name="capsule opening result digest")
+        if self.opening_receipt_digest is not None:
+            _require_digest(self.opening_receipt_digest, name="capsule opening receipt digest")
+        policy = code_owned_workflow_protected_transport_target_context_capsule_opening_consumption_policy()  # noqa: E501
+        result_states = WorkflowProtectedTransportTargetContextCapsuleOpeningResultState
+        failure_classes = WorkflowProtectedTransportTargetContextCapsuleOpeningFailureClass
+        successful_state = result_states.OPENED_IN_PROTECTED_CONSUMER_BOUNDARY
+        failed_state = result_states.OPENING_FAILED
+        uncertain_state = result_states.OPENING_OUTCOME_UNCERTAIN
+        uncertain_failure = failure_classes.OPENING_OUTCOME_UNCERTAIN
+        if (
+            self.recorded_at.tzinfo is None
+            or self.opening_deadline.tzinfo is None
+            or (self.completed_at is not None and self.completed_at.tzinfo is None)
+            or (
+                self.protected_resident_context_created_at is not None
+                and self.protected_resident_context_created_at.tzinfo is None
+            )
+            or (
+                self.protected_resident_context_usable_until is not None
+                and self.protected_resident_context_usable_until.tzinfo is None
+            )
+            or self.consumer_subject_id != policy.consumer_subject_id
+            or self.consumer_audience != policy.consumer_audience
+            or self.consumer_contract_id != policy.consumer_contract_id
+            or self.consumer_contract_version != policy.consumer_contract_version
+            or self.purpose_id != policy.purpose_id
+            or self.policy_id != policy.policy_id
+            or self.policy_version != policy.policy_version
+            or self.policy_digest != policy.canonical_digest
+            or self.opener_id != policy.approved_opener_id
+            or self.opener_version != policy.approved_opener_version
+            or self.protected_resident_context_is_bearer_capability is not False
+            or any(self.authority.canonical_value().values())
+        ):
+            raise ValueError("capsule opening result is invalid")
+        if self.state is successful_state:
+            if (
+                self.failure_class is not None
+                or self.opening_receipt_digest is None
+                or self.protected_resident_context_id is None
+                or self.protected_resident_context_digest is None
+                or self.completed_at is None
+                or self.protected_resident_context_created_at != self.completed_at
+                or self.protected_resident_context_usable_until is None
+                or not self.completed_at < self.protected_resident_context_usable_until
+                or self.protected_resident_context_usable_until
+                > self.completed_at
+                + timedelta(
+                    seconds=(
+                        WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_RESIDENT_CONTEXT_MAXIMUM_LIFETIME_SECONDS
+                    )
+                )
+                or self.capsule_opened_in_protected_boundary is not True
+                or self.target_context_pair_verified is not True
+                or self.outcome_known is not True
+                or self.protected_source_closed is not True
+                or self.source_capsule_zeroized is not True
+                or self.completed_at >= self.opening_deadline
+                or self.recorded_at < self.completed_at
+            ):
+                raise ValueError("successful capsule opening result is invalid")
+            _require_identifier(
+                self.protected_resident_context_id,
+                name="protected resident context id",
+            )
+            _require_digest(
+                self.protected_resident_context_digest,
+                name="protected resident context digest",
+            )
+        elif self.state is failed_state:
+            if (
+                self.failure_class is None
+                or self.failure_class is uncertain_failure
+                or self.opening_receipt_digest is None
+                or self.protected_resident_context_id is not None
+                or self.protected_resident_context_digest is not None
+                or self.protected_resident_context_created_at is not None
+                or self.protected_resident_context_usable_until is not None
+                or self.capsule_opened_in_protected_boundary is not False
+                or self.target_context_pair_verified is not False
+                or self.outcome_known is not True
+                or self.protected_source_closed is not True
+                or self.source_capsule_zeroized is not True
+                or self.completed_at is None
+                or self.completed_at >= self.opening_deadline
+                or self.recorded_at < self.completed_at
+            ):
+                raise ValueError("failed capsule opening result is invalid")
+        elif (
+            self.state is not uncertain_state
+            or self.failure_class is not uncertain_failure
+            or self.opening_receipt_digest is not None
+            or self.protected_resident_context_id is not None
+            or self.protected_resident_context_digest is not None
+            or self.protected_resident_context_created_at is not None
+            or self.protected_resident_context_usable_until is not None
+            or self.capsule_opened_in_protected_boundary is not False
+            or self.target_context_pair_verified is not False
+            or self.outcome_known is not False
+            or self.protected_source_closed is not False
+            or self.source_capsule_zeroized is not False
+            or self.completed_at is not None
+            or self.recorded_at < self.opening_deadline
+        ):
+            raise ValueError("uncertain capsule opening result is invalid")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("capsule opening result digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return _target_context_capsule_handoff_consumption_payload(self)
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
