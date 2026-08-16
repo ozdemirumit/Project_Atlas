@@ -136,8 +136,9 @@ def test_schema_is_single_use_non_bearer_and_single_authority() -> None:
     assert POLICY_DIGEST in _checks(claim)
     for table in (lease, claim):
         for item in (*table.constraints, *table.indexes):
-            if isinstance(item.name, str):
-                assert len(item.name) <= 63
+            item_name = getattr(item, "name", None)
+            if isinstance(item_name, str):
+                assert len(item_name) <= 63
 
 
 def test_code_owned_contract_matches_domain_and_migration() -> None:
@@ -414,7 +415,7 @@ def test_repository_retimes_a_new_lease_from_the_second_database_timestamp() -> 
 
 def test_orm_mapping_round_trips_domain_lease_attestation_claim_and_audit() -> None:
     request = _domain_request()
-    evidence = {
+    evidence: dict[str, object] = {
         "consumer_binding": {
             "binding_id": request.expected_consumer_binding_id,
             "canonical_digest": request.expected_consumer_binding_digest,
