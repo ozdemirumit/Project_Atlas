@@ -9448,6 +9448,13 @@ class WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel(Base):
             "consumption_claim_id",
             name="uq_wf_tctx_handoff_attempt_lineage",
         ),
+        UniqueConstraint(
+            "attempt_id",
+            "canonical_digest",
+            "sealed_capsule_id",
+            "sealed_capsule_digest",
+            name="uq_wf_tctx_handoff_attempt_open_auth_lineage",
+        ),
         CheckConstraint("state = 'started'", name="ck_wf_tctx_handoff_attempt_state"),
         CheckConstraint(
             "started_at < handoff_deadline AND handoff_deadline <= lease_valid_until "
@@ -9593,6 +9600,27 @@ class WorkflowProtectedTransportTargetContextCapsuleHandoffResultModel(Base):
     __table_args__ = (
         UniqueConstraint("attempt_id", name="uq_wf_tctx_handoff_result_attempt"),
         UniqueConstraint("consumption_claim_id", name="uq_wf_tctx_handoff_result_claim"),
+        UniqueConstraint(
+            "handoff_id",
+            "attempt_id",
+            "consumption_claim_id",
+            name="uq_wf_tctx_handoff_result_lineage",
+        ),
+        UniqueConstraint(
+            "handoff_id",
+            "canonical_digest",
+            "attempt_id",
+            "attempt_digest",
+            "consumption_claim_id",
+            "consumption_claim_digest",
+            "authorization_lease_id",
+            "authorization_lease_digest",
+            "consumer_binding_id",
+            "consumer_binding_digest",
+            "consumer_receipt_id",
+            "receipt_digest",
+            name="uq_wf_tctx_handoff_result_open_auth_lineage",
+        ),
         ForeignKeyConstraint(
             ["handoff_id", "attempt_id", "consumption_claim_id"],
             [
@@ -9706,6 +9734,261 @@ class WorkflowProtectedTransportTargetContextCapsuleHandoffResultModel(Base):
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     receipt_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseModel(Base):
+    __tablename__ = "workflow_event_tctx_capsule_opening_authorization_leases"
+    __table_args__ = (
+        UniqueConstraint("handoff_id", name="uq_wf_tctx_open_auth_result"),
+        UniqueConstraint("consumer_receipt_id", name="uq_wf_tctx_open_auth_receipt"),
+        UniqueConstraint("sealed_capsule_id", name="uq_wf_tctx_open_auth_capsule"),
+        UniqueConstraint(
+            "authorization_lease_id",
+            "handoff_id",
+            "consumer_receipt_id",
+            "sealed_capsule_id",
+            name="uq_wf_tctx_open_auth_claim_lineage",
+        ),
+        ForeignKeyConstraint(
+            [
+                "handoff_id",
+                "handoff_result_digest",
+                "attempt_id",
+                "attempt_digest",
+                "consumption_claim_id",
+                "consumption_claim_digest",
+                "upstream_authorization_lease_id",
+                "upstream_authorization_lease_digest",
+                "consumer_binding_id",
+                "consumer_binding_digest",
+                "consumer_receipt_id",
+                "receipt_digest",
+            ],
+            [
+                "workflow_event_tctx_capsule_handoff_results.handoff_id",
+                "workflow_event_tctx_capsule_handoff_results.canonical_digest",
+                "workflow_event_tctx_capsule_handoff_results.attempt_id",
+                "workflow_event_tctx_capsule_handoff_results.attempt_digest",
+                "workflow_event_tctx_capsule_handoff_results.consumption_claim_id",
+                "workflow_event_tctx_capsule_handoff_results.consumption_claim_digest",
+                "workflow_event_tctx_capsule_handoff_results.authorization_lease_id",
+                "workflow_event_tctx_capsule_handoff_results.authorization_lease_digest",
+                "workflow_event_tctx_capsule_handoff_results.consumer_binding_id",
+                "workflow_event_tctx_capsule_handoff_results.consumer_binding_digest",
+                "workflow_event_tctx_capsule_handoff_results.consumer_receipt_id",
+                "workflow_event_tctx_capsule_handoff_results.receipt_digest",
+            ],
+            name="fk_wf_tctx_open_auth_result_lineage",
+        ),
+        ForeignKeyConstraint(
+            ["attempt_id", "attempt_digest", "sealed_capsule_id", "sealed_capsule_digest"],
+            [
+                "workflow_event_tctx_capsule_handoff_attempts.attempt_id",
+                "workflow_event_tctx_capsule_handoff_attempts.canonical_digest",
+                "workflow_event_tctx_capsule_handoff_attempts.sealed_capsule_id",
+                "workflow_event_tctx_capsule_handoff_attempts.sealed_capsule_digest",
+            ],
+            name="fk_wf_tctx_open_auth_attempt_lineage",
+        ),
+        CheckConstraint(
+            "policy_id = 'policy.workflow-protected-transport-target-context-capsule-"
+            "opening-authorization' AND policy_version = '1.0' "
+            "AND consumer_subject_id = "
+            "'service.workflow-protected-transport-target-context-capsule-consumer' "
+            "AND consumer_audience = "
+            "'audience.workflow-protected-transport-target-context-capsule-consumer' "
+            "AND consumer_contract_id = "
+            "'contract.workflow-protected-transport-target-context-capsule-consumer' "
+            "AND consumer_contract_version = '1.0' "
+            "AND purpose_id = "
+            "'purpose.workflow-protected-transport-target-context-capsule-opening-evaluation' "
+            "AND destination_boundary_id = "
+            "'boundary.workflow-protected-target-context-capsule-consumer' "
+            "AND destination_deployment_id = "
+            "'deployment.workflow-protected-target-context-capsule-consumer' "
+            "AND destination_generation = 1 "
+            "AND destination_fencing_token_digest = "
+            "'701153578261c45c3f1faa89f75b4a3f7003126683ddb895c0346aac0f9148e7' "
+            "AND custody_contract_id = "
+            "'contract.workflow-protected-target-context-capsule-custody' "
+            "AND custody_contract_version = '1.0' "
+            "AND approved_adapter_id = "
+            "'adapter.workflow-protected-target-context-capsule-sealed-handoff' "
+            "AND approved_adapter_version = '1.0' "
+            "AND verification_signing_key_id = "
+            "'key.workflow-protected-target-context-capsule-handoff-receipt.v1' "
+            "AND trusted_profile_digest = "
+            "'7f4c97bcac8852cb9bee577f15103a51dbbee4180ba9bff980d54bc6e691ff78' "
+            "AND state = 'authorized_unconsumed'",
+            name="ck_wf_tctx_capsule_open_auth_contract",
+        ),
+        CheckConstraint(
+            "valid_until = issued_at + interval '1 second' AND issued_at < valid_until "
+            "AND valid_until <= effective_until AND valid_until <= custody_attestation_valid_until",
+            name="ck_wf_tctx_capsule_open_auth_window",
+        ),
+        CheckConstraint(
+            "single_use AND NOT renewable AND NOT transferable AND NOT lease_is_bearer_capability",
+            name="ck_wf_tctx_capsule_open_auth_flags",
+        ),
+        CheckConstraint(
+            "target_context_capsule_opening_authority_granted "
+            "AND NOT target_context_capsule_handoff_authority_granted "
+            "AND NOT route_selection_authority_granted "
+            "AND NOT route_binding_authority_granted "
+            "AND NOT endpoint_resolution_authority_granted "
+            "AND NOT protected_artifact_access_authority_granted "
+            "AND NOT credential_selection_authority_granted "
+            "AND NOT credential_assignment_binding_authority_granted "
+            "AND NOT credential_access_authority_granted "
+            "AND NOT credential_brokerage_authority_granted "
+            "AND NOT credential_resolution_authority_granted "
+            "AND NOT credential_delivery_authority_granted "
+            "AND NOT network_access_authority_granted "
+            "AND NOT readiness_probe_authority_granted "
+            "AND NOT publication_authority_granted "
+            "AND NOT delivery_authority_granted "
+            "AND NOT dispatch_authority_granted "
+            "AND NOT execution_authority_granted "
+            "AND NOT infrastructure_mutation_authority_granted",
+            name="ck_wf_tctx_capsule_open_auth_authority",
+        ),
+        Index(
+            "ix_wf_tctx_open_auth_scope",
+            "organization_id",
+            "environment_id",
+            "site_id",
+            "issued_at",
+        ),
+    )
+
+    authorization_lease_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    handoff_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    handoff_result_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    attempt_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    attempt_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    consumption_claim_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    consumption_claim_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    upstream_authorization_lease_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "workflow_event_tctx_capsule_handoff_authorization_leases.authorization_lease_id"
+        ),
+        nullable=False,
+    )
+    upstream_authorization_lease_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    consumer_binding_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_event_tctx_capsule_consumer_bindings.binding_id"), nullable=False
+    )
+    consumer_binding_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    sealed_capsule_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    sealed_capsule_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    consumer_receipt_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    receipt_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    destination_boundary_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    destination_deployment_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    destination_generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    destination_fencing_token_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    custody_contract_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    custody_contract_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    approved_adapter_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    approved_adapter_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    verification_signing_key_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    trusted_profile_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    custody_attestation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    custody_attestation_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    custody_attestation_valid_until: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    consumer_subject_id: Mapped[str] = mapped_column(String(240), nullable=False)
+    consumer_audience: Mapped[str] = mapped_column(String(240), nullable=False)
+    consumer_contract_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    consumer_contract_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    purpose_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    policy_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    effective_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    single_use: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    renewable: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    transferable: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    lease_is_bearer_capability: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    target_context_capsule_opening_authority_granted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False
+    )
+    target_context_capsule_handoff_authority_granted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False
+    )
+    route_selection_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    route_binding_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    endpoint_resolution_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    protected_artifact_access_authority_granted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False
+    )
+    credential_selection_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_assignment_binding_authority_granted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False
+    )
+    credential_access_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_brokerage_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_resolution_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_delivery_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    network_access_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    readiness_probe_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    publication_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    delivery_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    dispatch_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    execution_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    infrastructure_mutation_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    custody_attestation_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationClaimModel(Base):
+    __tablename__ = "workflow_event_tctx_capsule_opening_authorization_claims"
+    __table_args__ = (
+        UniqueConstraint("authorization_lease_id", name="uq_wf_tctx_open_auth_claim_lease"),
+        UniqueConstraint(
+            "idempotency_scope_id",
+            "idempotency_key",
+            name="uq_wf_tctx_open_auth_scope_idem",
+        ),
+        ForeignKeyConstraint(
+            ["authorization_lease_id", "handoff_id", "consumer_receipt_id", "sealed_capsule_id"],
+            [
+                "workflow_event_tctx_capsule_opening_authorization_leases.authorization_lease_id",
+                "workflow_event_tctx_capsule_opening_authorization_leases.handoff_id",
+                "workflow_event_tctx_capsule_opening_authorization_leases.consumer_receipt_id",
+                "workflow_event_tctx_capsule_opening_authorization_leases.sealed_capsule_id",
+            ],
+            name="fk_wf_tctx_open_auth_claim_lease",
+        ),
+    )
+
+    claim_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    authorization_lease_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    handoff_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    consumer_receipt_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    sealed_capsule_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    consumer_subject_id: Mapped[str] = mapped_column(String(240), nullable=False)
+    consumer_audience: Mapped[str] = mapped_column(String(240), nullable=False)
+    idempotency_scope_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    authorization_audit_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    claimed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    authorization_audit_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
 
 class WorkflowDispatchIntentStagingClaimModel(Base):

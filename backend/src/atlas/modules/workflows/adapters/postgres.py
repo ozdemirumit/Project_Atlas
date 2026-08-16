@@ -82,6 +82,8 @@ from atlas.core.persistence.models import (
     WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseModel,
     WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaimModel,
     WorkflowProtectedTransportTargetContextCapsuleHandoffResultModel,
+    WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationClaimModel,
+    WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseModel,
     WorkflowRunMaterializationClaimModel,
     WorkflowRunPlanModel,
 )
@@ -111,11 +113,16 @@ from atlas.modules.workflows.application import (
     WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseRequest,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseResult,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseStatus,
+    WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseRequest,
+    WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseResult,
+    WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseStatus,
+    WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationSource,
     WorkflowRunMaterializationIdempotencyRecord,
     WorkflowRunMaterializationRequest,
     WorkflowRunMaterializationResult,
     WorkflowRunMaterializationStatus,
     validate_workflow_protected_transport_target_context_capsule_handoff_authorization_request,
+    validate_workflow_protected_transport_target_context_capsule_opening_authorization_request,
 )
 from atlas.modules.workflows.application.byte_artifact_ports import (
     WorkflowEventByteArtifactError,
@@ -411,6 +418,9 @@ from atlas.modules.workflows.domain import (
     WorkflowProtectedTransportTargetContextCapsuleHandoffLeaseAuthority,
     WorkflowProtectedTransportTargetContextCapsuleHandoffResult,
     WorkflowProtectedTransportTargetContextCapsuleHandoffResultState,
+    WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLease,
+    WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseState,
+    WorkflowProtectedTransportTargetContextCapsuleOpeningLeaseAuthority,
     WorkflowRunPlan,
     WorkflowScope,
     WorkflowStepKind,
@@ -435,6 +445,9 @@ from atlas.modules.workflows.domain.models import (
 )
 from atlas.modules.workflows.domain.models import (
     code_owned_workflow_protected_transport_target_context_capsule_handoff_consumption_policy as _handoff_consumption_policy,  # noqa: E501
+)
+from atlas.modules.workflows.domain.models import (
+    code_owned_workflow_protected_transport_target_context_capsule_opening_authorization_policy as _opening_authorization_policy,  # noqa: E501
 )
 
 
@@ -526,6 +539,30 @@ class _TargetContextCapsuleHandoffLockedSources:
     result: WorkflowProtectedTransportTargetContextCapsuleHandoffResultModel | None
     observed_at: datetime
     source_deadline: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class _TargetContextCapsuleOpeningAuthorizationLockedSources:
+    source: WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationSource | None
+    result_row: WorkflowProtectedTransportTargetContextCapsuleHandoffResultModel | None
+    attempt_row: WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel | None
+    consumption_claim_row: (
+        WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaimModel | None
+    )
+    upstream_lease_row: (
+        WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseModel | None
+    )
+    upstream_claim_row: (
+        WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationClaimModel | None
+    )
+    binding_sources: _TargetContextCapsuleConsumerBindingLockedSources | None
+    existing_leases: tuple[
+        WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseModel, ...
+    ]
+    idempotency_claim: (
+        WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationClaimModel | None
+    )
+    observed_at: datetime
 
 
 class PostgreSQLWorkflowPlanRepository:
@@ -5193,6 +5230,667 @@ class PostgreSQLWorkflowPlanRepository:
                 row,
             )
             for row in rows
+        )
+
+    async def get_target_context_capsule_opening_authorization_source(
+        self, *, handoff_id: str
+    ) -> WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationSource | None:
+        async with self._sessions() as session:
+            result_row = await session.get(
+                WorkflowProtectedTransportTargetContextCapsuleHandoffResultModel, handoff_id
+            )
+            if result_row is None:
+                return None
+            attempt_row = await session.get(
+                WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel,
+                result_row.attempt_id,
+            )
+            claim_row = await session.get(
+                WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaimModel,
+                result_row.consumption_claim_id,
+            )
+            upstream_lease_row = await session.get(
+                WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseModel,
+                result_row.authorization_lease_id,
+            )
+            upstream_claim_row = cast(
+                WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationClaimModel | None,
+                await session.scalar(
+                    select(
+                        WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationClaimModel
+                    ).where(
+                        WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationClaimModel.authorization_lease_id
+                        == result_row.authorization_lease_id
+                    )
+                ),
+            )
+            binding_row = await session.get(
+                WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel,
+                result_row.consumer_binding_id,
+            )
+            binding_claim_row = cast(
+                WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel | None,
+                await session.scalar(
+                    select(
+                        WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel
+                    ).where(
+                        WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel.binding_id
+                        == result_row.consumer_binding_id
+                    )
+                ),
+            )
+        return self._target_context_capsule_opening_source_from_rows(
+            result_row=result_row,
+            attempt_row=attempt_row,
+            consumption_claim_row=claim_row,
+            upstream_lease_row=upstream_lease_row,
+            upstream_claim_row=upstream_claim_row,
+            binding_row=binding_row,
+            binding_claim_row=binding_claim_row,
+        )
+
+    async def authorize_target_context_capsule_opening(
+        self,
+        request: WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseRequest,
+    ) -> WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseResult:
+        statuses = WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseStatus
+        async with self._sessions() as session:
+            locked = await self._lock_target_context_capsule_opening_authorization_sources(
+                session, request=request
+            )
+            working = self._target_context_capsule_opening_retimed_request(
+                request, issued_at=locked.observed_at
+            )
+            if not self._target_context_capsule_opening_evidence_matches(
+                request=working, locked=locked
+            ):
+                await session.rollback()
+                return (
+                    WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseResult(
+                        statuses.EVIDENCE_CONFLICT, None
+                    )
+                )
+            replay = self._target_context_capsule_opening_replay(request=working, locked=locked)
+            if replay is not None:
+                await session.rollback()
+                return replay
+            if locked.existing_leases:
+                await session.rollback()
+                return (
+                    WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseResult(
+                        statuses.ALREADY_AUTHORIZED, None
+                    )
+                )
+            try:
+                await request.required_precommit_audit()
+            except Exception:
+                await session.rollback()
+                return (
+                    WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseResult(
+                        statuses.PRECOMMIT_AUDIT_FAILED, None
+                    )
+                )
+            commit_observed_at = cast(
+                datetime, await session.scalar(select(func.clock_timestamp()))
+            )
+            commit_locked = dataclass_replace(locked, observed_at=commit_observed_at)
+            commit_request = self._target_context_capsule_opening_retimed_request(
+                working, issued_at=commit_observed_at
+            )
+            if not self._target_context_capsule_opening_evidence_matches(
+                request=commit_request, locked=commit_locked
+            ):
+                await session.rollback()
+                return (
+                    WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseResult(
+                        statuses.EVIDENCE_CONFLICT, None
+                    )
+                )
+            try:
+                audit_payload = {
+                    "schema_id": "audit.workflow-target-context-capsule-opening-authorization",
+                    "schema_version": "1.0",
+                    "authorization_lease_id": commit_request.candidate.authorization_lease_id,
+                    "handoff_id": commit_request.candidate.handoff_id,
+                    "request_fingerprint": commit_request.request_fingerprint,
+                    "scope": commit_request.scope.canonical_value(),
+                    "consumer_subject_id": commit_request.consumer_subject_id,
+                    "target_context_capsule_opening_authorized": True,
+                    "target_context_capsule_handoff_authorized": False,
+                    "operational_authority_granted": False,
+                }
+                session.add(self._target_context_capsule_opening_lease_model(commit_request))
+                await session.flush()
+                session.add(
+                    self._target_context_capsule_opening_claim_model(
+                        commit_request,
+                        audit_payload=audit_payload,
+                        claimed_at=commit_observed_at,
+                    )
+                )
+                await session.commit()
+                return (
+                    WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseResult(
+                        statuses.AUTHORIZED, commit_request.candidate, commit_observed_at
+                    )
+                )
+            except IntegrityError:
+                await session.rollback()
+        async with self._sessions() as session:
+            locked = await self._lock_target_context_capsule_opening_authorization_sources(
+                session, request=request
+            )
+            retry = self._target_context_capsule_opening_retimed_request(
+                request, issued_at=locked.observed_at
+            )
+            if not self._target_context_capsule_opening_evidence_matches(
+                request=retry, locked=locked
+            ):
+                await session.rollback()
+                return (
+                    WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseResult(
+                        statuses.EVIDENCE_CONFLICT, None
+                    )
+                )
+            replay = self._target_context_capsule_opening_replay(request=retry, locked=locked)
+            await session.rollback()
+            if replay is not None:
+                return replay
+            if locked.existing_leases:
+                return (
+                    WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseResult(
+                        statuses.ALREADY_AUTHORIZED, None
+                    )
+                )
+        return WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseResult(
+            statuses.EVIDENCE_CONFLICT, None
+        )
+
+    async def list_target_context_capsule_opening_authorization_leases(
+        self, *, scope: WorkflowScope, limit: int = 256
+    ) -> tuple[WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLease, ...]:
+        async with self._sessions() as session:
+            rows = tuple(
+                (
+                    await session.scalars(
+                        select(
+                            WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseModel
+                        )
+                        .where(
+                            WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseModel.organization_id
+                            == scope.organization_id,
+                            WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseModel.environment_id
+                            == scope.environment_id,
+                            WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseModel.site_id
+                            == scope.site_id,
+                        )
+                        .order_by(
+                            WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseModel.issued_at.desc()
+                        )
+                        .limit(max(1, min(limit, 256)))
+                    )
+                ).all()
+            )
+        return tuple(self._target_context_capsule_opening_lease_from_row(row) for row in rows)
+
+    async def _lock_target_context_capsule_opening_authorization_sources(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseRequest,
+    ) -> _TargetContextCapsuleOpeningAuthorizationLockedSources:
+        result_row = cast(
+            WorkflowProtectedTransportTargetContextCapsuleHandoffResultModel | None,
+            await session.scalar(
+                select(WorkflowProtectedTransportTargetContextCapsuleHandoffResultModel)
+                .where(
+                    WorkflowProtectedTransportTargetContextCapsuleHandoffResultModel.handoff_id
+                    == request.source.result.handoff_id
+                )
+                .with_for_update()
+            ),
+        )
+        attempt_row = claim_row = upstream_lease_row = upstream_claim_row = None
+        binding_row = binding_claim_row = binding_sources = None
+        if result_row is not None:
+            attempt_row = cast(
+                WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel | None,
+                await session.scalar(
+                    select(WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel)
+                    .where(
+                        WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel.attempt_id
+                        == result_row.attempt_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            claim_row = cast(
+                WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaimModel | None,
+                await session.scalar(
+                    select(
+                        WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaimModel
+                    )
+                    .where(
+                        WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaimModel.claim_id
+                        == result_row.consumption_claim_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            upstream_lease_row = cast(
+                WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseModel | None,
+                await session.scalar(
+                    select(
+                        WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseModel
+                    )
+                    .where(
+                        WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseModel.authorization_lease_id
+                        == result_row.authorization_lease_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            upstream_claim_row = cast(
+                WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationClaimModel | None,
+                await session.scalar(
+                    select(
+                        WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationClaimModel
+                    )
+                    .where(
+                        WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationClaimModel.authorization_lease_id
+                        == result_row.authorization_lease_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            binding_row = await session.get(
+                WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel,
+                result_row.consumer_binding_id,
+                with_for_update=True,
+            )
+            if binding_row is not None:
+                binding_claim_row = cast(
+                    WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel | None,
+                    await session.scalar(
+                        select(
+                            WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel
+                        )
+                        .where(
+                            WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel.binding_id
+                            == binding_row.binding_id
+                        )
+                        .with_for_update()
+                    ),
+                )
+            if binding_row is not None and binding_claim_row is not None:
+                binding_sources = await self._lock_target_context_capsule_consumer_binding_sources(
+                    session,
+                    request=self._target_context_capsule_handoff_binding_request(
+                        binding_row,
+                        binding_claim_row,
+                        requested_at=request.requested_at,
+                    ),
+                )
+        source = self._target_context_capsule_opening_source_from_rows(
+            result_row=result_row,
+            attempt_row=attempt_row,
+            consumption_claim_row=claim_row,
+            upstream_lease_row=upstream_lease_row,
+            upstream_claim_row=upstream_claim_row,
+            binding_row=binding_row,
+            binding_claim_row=binding_claim_row,
+        )
+        existing_leases: tuple[
+            WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseModel, ...
+        ] = ()
+        if source is not None:
+            existing_leases = tuple(
+                (
+                    await session.scalars(
+                        select(
+                            WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseModel
+                        )
+                        .where(
+                            or_(
+                                WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseModel.handoff_id
+                                == source.result.handoff_id,
+                                WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseModel.consumer_receipt_id
+                                == source.result.consumer_receipt_id,
+                                WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseModel.sealed_capsule_id
+                                == source.attempt.sealed_capsule_id,
+                            )
+                        )
+                        .with_for_update()
+                    )
+                ).all()
+            )
+        scope_id = self._target_context_capsule_opening_idempotency_scope(
+            request.scope, request.consumer_subject_id, request.consumer_audience
+        )
+        idempotency_claim = cast(
+            WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationClaimModel | None,
+            await session.scalar(
+                select(WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationClaimModel)
+                .where(
+                    WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationClaimModel.idempotency_scope_id
+                    == scope_id,
+                    WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationClaimModel.idempotency_key
+                    == request.idempotency_key,
+                )
+                .with_for_update()
+            ),
+        )
+        observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+        return _TargetContextCapsuleOpeningAuthorizationLockedSources(
+            source=source,
+            result_row=result_row,
+            attempt_row=attempt_row,
+            consumption_claim_row=claim_row,
+            upstream_lease_row=upstream_lease_row,
+            upstream_claim_row=upstream_claim_row,
+            binding_sources=binding_sources,
+            existing_leases=existing_leases,
+            idempotency_claim=idempotency_claim,
+            observed_at=observed_at,
+        )
+
+    @classmethod
+    def _target_context_capsule_opening_source_from_rows(
+        cls,
+        *,
+        result_row: WorkflowProtectedTransportTargetContextCapsuleHandoffResultModel | None,
+        attempt_row: WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel | None,
+        consumption_claim_row: (
+            WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaimModel | None
+        ),
+        upstream_lease_row: (
+            WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseModel | None
+        ),
+        upstream_claim_row: (
+            WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationClaimModel | None
+        ),
+        binding_row: WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel | None,
+        binding_claim_row: WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel
+        | None,
+    ) -> WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationSource | None:
+        if any(
+            row is None
+            for row in (
+                result_row,
+                attempt_row,
+                consumption_claim_row,
+                upstream_lease_row,
+                upstream_claim_row,
+                binding_row,
+                binding_claim_row,
+            )
+        ):
+            return None
+        assert result_row is not None
+        assert attempt_row is not None
+        assert consumption_claim_row is not None
+        assert upstream_lease_row is not None
+        assert upstream_claim_row is not None
+        assert binding_row is not None
+        assert binding_claim_row is not None
+        try:
+            return WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationSource(
+                result=cls._target_context_capsule_handoff_result_from_row(result_row),
+                attempt=cls._target_context_capsule_handoff_attempt_from_row(attempt_row),
+                consumption_claim=cls._target_context_capsule_handoff_consumption_claim_from_row(
+                    consumption_claim_row
+                ),
+                upstream_authorization_lease=cls._target_context_capsule_handoff_lease_from_claim(
+                    upstream_claim_row, upstream_lease_row
+                ),
+                consumer_binding=cls._target_context_capsule_consumer_binding_from_claim(
+                    binding_claim_row, binding_row=binding_row
+                ),
+            )
+        except Exception:
+            return None
+
+    @classmethod
+    def _target_context_capsule_opening_evidence_matches(
+        cls,
+        *,
+        request: WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseRequest,
+        locked: _TargetContextCapsuleOpeningAuthorizationLockedSources,
+    ) -> bool:
+        source = locked.source
+        if source is None or locked.binding_sources is None:
+            return False
+        try:
+            validate_workflow_protected_transport_target_context_capsule_opening_authorization_request(
+                request
+            )
+            binding_row = locked.binding_sources.existing_bindings
+            binding_model = next(
+                (
+                    row
+                    for row in binding_row
+                    if row.binding_id == source.consumer_binding.binding_id
+                ),
+                None,
+            )
+            current = dataclass_replace(locked.binding_sources, observed_at=locked.observed_at)
+            binding_request = cls._target_context_capsule_handoff_binding_request(
+                cast(
+                    WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel,
+                    binding_model,
+                ),
+                cast(
+                    WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel,
+                    locked.binding_sources.idempotency_claim,
+                ),
+                requested_at=locked.observed_at,
+            )
+            upstream_evidence = cls._target_context_capsule_consumer_binding_evidence(
+                current, request=binding_request
+            )
+            attestation = request.custody_attestation
+            policy = _opening_authorization_policy()
+            signature_valid = (
+                request.offline_signature_verifier.verify_destination_custody_attestation(
+                    attestation
+                )
+            )
+        except Exception:
+            return False
+        return bool(
+            upstream_evidence is not None
+            and signature_valid
+            and source == request.source
+            and source.result.state
+            is WorkflowProtectedTransportTargetContextCapsuleHandoffResultState.HANDED_OFF_SEALED
+            and source.result.consumer_receipt_id is not None
+            and not source.result.consumer_receipt_is_bearer_capability
+            and source.result.sealed_capsule_handed_off
+            and source.result.usable_until is not None
+            and locked.observed_at < source.result.usable_until
+            and source.attempt.destination_boundary_id == policy.destination_boundary_id
+            and source.attempt.destination_deployment_id == policy.destination_deployment_id
+            and source.attempt.destination_generation == policy.destination_generation
+            and source.attempt.destination_fencing_token_digest
+            == policy.destination_fencing_token_digest
+            and source.attempt.custody_contract_id == policy.custody_contract_id
+            and source.attempt.custody_contract_version == policy.custody_contract_version
+            and source.attempt.approved_adapter_id == policy.approved_adapter_id
+            and source.attempt.approved_adapter_version == policy.approved_adapter_version
+            and source.attempt.verification_signing_key_id == policy.verification_signing_key_id
+            and source.attempt.trusted_profile_digest == policy.trusted_profile_digest
+            and attestation.attestor_id == policy.required_attestor_id
+            and attestation.attestor_version == policy.required_attestor_version
+            and attestation.observed_at <= locked.observed_at
+            and request.candidate.valid_until <= attestation.valid_until
+            and request.candidate.valid_until <= source.result.usable_until
+            and request.candidate.issued_at <= locked.observed_at
+            and request.candidate.valid_until - request.candidate.issued_at == timedelta(seconds=1)
+        )
+
+    @staticmethod
+    def _target_context_capsule_opening_retimed_request(
+        request: WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseRequest,
+        *,
+        issued_at: datetime,
+    ) -> WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseRequest:
+        valid_until = issued_at + timedelta(seconds=1)
+        payload = request.candidate.digest_payload()
+        payload["issued_at"] = issued_at.isoformat()
+        payload["valid_until"] = valid_until.isoformat()
+        candidate = dataclass_replace(
+            request.candidate,
+            issued_at=issued_at,
+            valid_until=valid_until,
+            canonical_digest=canonical_digest(payload),
+        )
+        return dataclass_replace(request, requested_at=issued_at, candidate=candidate)
+
+    @classmethod
+    def _target_context_capsule_opening_replay(
+        cls,
+        *,
+        request: WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseRequest,
+        locked: _TargetContextCapsuleOpeningAuthorizationLockedSources,
+    ) -> WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseResult | None:
+        claim = locked.idempotency_claim
+        if claim is None:
+            return None
+        statuses = WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseStatus
+        if claim.request_fingerprint != request.request_fingerprint:
+            return WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseResult(
+                statuses.IDEMPOTENCY_CONFLICT, None
+            )
+        row = next(
+            (
+                item
+                for item in locked.existing_leases
+                if item.authorization_lease_id == claim.authorization_lease_id
+            ),
+            None,
+        )
+        if row is None:
+            return WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseResult(
+                statuses.EVIDENCE_CONFLICT, None
+            )
+        return WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseResult(
+            statuses.REPLAY,
+            cls._target_context_capsule_opening_lease_from_row(row),
+            locked.observed_at,
+        )
+
+    @staticmethod
+    def _target_context_capsule_opening_idempotency_scope(
+        scope: WorkflowScope, subject_id: str, audience: str
+    ) -> str:
+        return canonical_digest(
+            {
+                "scope": scope.canonical_value(),
+                "subject_id": subject_id,
+                "audience": audience,
+            }
+        )
+
+    @staticmethod
+    def _target_context_capsule_opening_authority_columns(
+        authority: WorkflowProtectedTransportTargetContextCapsuleOpeningLeaseAuthority,
+    ) -> dict[str, bool]:
+        return {
+            name.replace("_authorized", "_authority_granted"): value
+            for name, value in authority.canonical_value().items()
+        }
+
+    @classmethod
+    def _target_context_capsule_opening_lease_model(
+        cls,
+        request: WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseRequest,
+    ) -> WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseModel:
+        lease = request.candidate
+        return WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseModel(
+            **{
+                name: getattr(lease, name)
+                for name in lease.__dataclass_fields__
+                if name not in {"scope", "state", "authority", "canonical_digest"}
+            },
+            organization_id=lease.scope.organization_id,
+            environment_id=lease.scope.environment_id,
+            site_id=lease.scope.site_id,
+            state=lease.state.value,
+            **cls._target_context_capsule_opening_authority_columns(lease.authority),
+            canonical_digest=lease.canonical_digest,
+            payload=lease.digest_payload(),
+            custody_attestation_payload=request.custody_attestation.digest_payload(),
+        )
+
+    @classmethod
+    def _target_context_capsule_opening_claim_model(
+        cls,
+        request: WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseRequest,
+        *,
+        audit_payload: dict[str, object],
+        claimed_at: datetime,
+    ) -> WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationClaimModel:
+        lease = request.candidate
+        audit_digest = canonical_digest(audit_payload)
+        payload: dict[str, object] = {
+            "authorization_lease_id": lease.authorization_lease_id,
+            "handoff_id": lease.handoff_id,
+            "consumer_receipt_id": lease.consumer_receipt_id,
+            "sealed_capsule_id": lease.sealed_capsule_id,
+            "scope": lease.scope.canonical_value(),
+            "consumer_subject_id": request.consumer_subject_id,
+            "consumer_audience": request.consumer_audience,
+            "request_fingerprint": request.request_fingerprint,
+            "authorization_audit_digest": audit_digest,
+            "claimed_at": claimed_at.isoformat(),
+        }
+        digest = canonical_digest(payload)
+        return WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationClaimModel(
+            claim_id=f"workflow-target-context-capsule-opening-authorization-claim.{digest[:24]}",
+            authorization_lease_id=lease.authorization_lease_id,
+            handoff_id=lease.handoff_id,
+            consumer_receipt_id=lease.consumer_receipt_id,
+            sealed_capsule_id=lease.sealed_capsule_id,
+            organization_id=lease.scope.organization_id,
+            environment_id=lease.scope.environment_id,
+            site_id=lease.scope.site_id,
+            consumer_subject_id=request.consumer_subject_id,
+            consumer_audience=request.consumer_audience,
+            idempotency_scope_id=cls._target_context_capsule_opening_idempotency_scope(
+                request.scope, request.consumer_subject_id, request.consumer_audience
+            ),
+            idempotency_key=request.idempotency_key,
+            request_fingerprint=request.request_fingerprint,
+            authorization_audit_digest=audit_digest,
+            claimed_at=claimed_at,
+            canonical_digest=digest,
+            payload=payload,
+            authorization_audit_payload=audit_payload,
+        )
+
+    @staticmethod
+    def _target_context_capsule_opening_lease_from_row(
+        row: WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseModel,
+    ) -> WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLease:
+        payload = dict(row.payload)
+        payload["scope"] = WorkflowScope(**cast(dict[str, str], payload["scope"]))
+        payload["state"] = (
+            WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseState(
+                str(payload["state"])
+            )
+        )
+        payload["authority"] = WorkflowProtectedTransportTargetContextCapsuleOpeningLeaseAuthority(
+            **cast(dict[str, bool], payload["authority"])
+        )
+        for name in (
+            "custody_attestation_valid_until",
+            "issued_at",
+            "valid_until",
+            "effective_until",
+        ):
+            payload[name] = datetime.fromisoformat(str(payload[name]))
+        return WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLease(
+            **cast(Any, payload), canonical_digest=row.canonical_digest
         )
 
     async def get_target_context_capsule_handoff_authorization_lease_by_id(

@@ -28,6 +28,7 @@ import {
   type WorkflowPhysicalTransportTargetContextCapsuleConsumerBinding,
   type WorkflowPhysicalTransportTargetContextCapsuleHandoffAuthorizationLease,
   type WorkflowPhysicalTransportTargetContextCapsuleHandoff,
+  type WorkflowPhysicalTransportTargetContextCapsuleOpeningAuthorizationLease,
   type WorkflowPhysicalTransportTargetContextBinding,
   type WorkflowPhysicalTransportCredentialAssignmentSnapshot,
   type WorkflowPhysicalTransportCredentialAssignmentBinding,
@@ -1115,6 +1116,52 @@ const targetContextCapsuleHandoff: WorkflowPhysicalTransportTargetContextCapsule
   integrity_reference: "integrity.workflow-target-context-capsule-handoff.1234567890abcdef",
 };
 
+const targetContextCapsuleOpeningAuthorizationLease: WorkflowPhysicalTransportTargetContextCapsuleOpeningAuthorizationLease = {
+  authorization_lease_id:
+    "workflow-target-context-capsule-opening-authorization-lease.1234567890abcdef",
+  scope: { ...plan.scope },
+  state: "authorized_unconsumed",
+  effective_state: "active",
+  issued_at: "2026-08-14T10:08:26Z",
+  valid_until: "2026-08-14T10:08:27Z",
+  single_use: true,
+  renewable: false,
+  transferable: false,
+  lease_is_bearer_capability: false,
+  consumer_contract_id:
+    "contract.workflow-protected-transport-target-context-capsule-consumer",
+  consumer_contract_version: "1.0",
+  purpose_id:
+    "purpose.workflow-protected-transport-target-context-capsule-opening-evaluation",
+  destination_custody_profile_reference:
+    "integrity.workflow-target-context-capsule-destination-custody-profile.1234567890abcdef",
+  policy_id: "policy.workflow-protected-transport-target-context-capsule-opening-authorization",
+  policy_version: "1.0",
+  authority: {
+    target_context_capsule_opening_authorized: true,
+    target_context_capsule_handoff_authorized: false,
+    endpoint_resolution_authorized: false,
+    route_selection_authorized: false,
+    route_binding_authorized: false,
+    credential_selection_authorized: false,
+    credential_assignment_binding_authorized: false,
+    credential_access_authorized: false,
+    credential_brokerage_authorized: false,
+    credential_resolution_authorized: false,
+    protected_artifact_access_authorized: false,
+    credential_delivery_authorized: false,
+    network_access_authorized: false,
+    readiness_probe_authorized: false,
+    publication_authorized: false,
+    delivery_authorized: false,
+    dispatch_authorized: false,
+    execution_authorized: false,
+    infrastructure_mutation_authorized: false,
+  },
+  integrity_reference:
+    "integrity.workflow-target-context-capsule-opening-lease.1234567890abcdef",
+};
+
 const credentialAssignmentSnapshot: WorkflowPhysicalTransportCredentialAssignmentSnapshot = {
   snapshot_id: "workflow-credential-assignment-snapshot.1234567890abcdef",
   assignment_id: "deployment-credential-assignment.1234567890abcdef",
@@ -1728,6 +1775,31 @@ function targetContextCapsuleHandoffResponse(
   );
 }
 
+function targetContextCapsuleOpeningAuthorizationLeaseResponse(
+  leases: unknown[],
+  status = 200,
+  serverTime = "2026-08-14T10:08:26.500Z",
+  durable = true,
+): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: {
+            physical_transport_target_context_capsule_opening_authorization_leases: leases,
+            server_time: serverTime,
+            durable,
+          },
+          meta: {
+            correlation_id:
+              "correlation.workflow.target-context-capsule-opening-authorization-lease",
+            generated_at: serverTime,
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function credentialAssignmentSnapshotResponse(
   snapshots: unknown[],
   status = 200,
@@ -1810,6 +1882,9 @@ function mockReadResponses(input: {
   targetContextCapsuleHandoffs?: unknown[];
   targetContextCapsuleHandoffServerTime?: string;
   targetContextCapsuleHandoffDurable?: boolean;
+  targetContextCapsuleOpeningAuthorizationLeases?: unknown[];
+  targetContextCapsuleOpeningAuthorizationLeaseServerTime?: string;
+  targetContextCapsuleOpeningAuthorizationLeaseDurable?: boolean;
   credentialAssignmentSnapshots?: unknown[];
   transportCompatibilityAdmissions?: unknown[];
   pendingTransportAdmissionResponse?: Promise<Response>;
@@ -1831,6 +1906,7 @@ function mockReadResponses(input: {
   pendingTargetContextCapsuleConsumerBindingResponse?: Promise<Response>;
   pendingTargetContextCapsuleHandoffAuthorizationLeaseResponse?: Promise<Response>;
   pendingTargetContextCapsuleHandoffResponse?: Promise<Response>;
+  pendingTargetContextCapsuleOpeningAuthorizationLeaseResponse?: Promise<Response>;
   pendingCredentialAssignmentSnapshotResponse?: Promise<Response>;
   pendingTransportCompatibilityAdmissionResponse?: Promise<Response>;
   leaseStatus?: number;
@@ -1878,6 +1954,8 @@ function mockReadResponses(input: {
   targetContextCapsuleHandoffAuthorizationLeaseStatuses?: number[];
   targetContextCapsuleHandoffStatus?: number;
   targetContextCapsuleHandoffStatuses?: number[];
+  targetContextCapsuleOpeningAuthorizationLeaseStatus?: number;
+  targetContextCapsuleOpeningAuthorizationLeaseStatuses?: number[];
   credentialAssignmentSnapshotStatus?: number;
   credentialAssignmentSnapshotStatuses?: number[];
   transportCompatibilityAdmissionStatus?: number;
@@ -1902,10 +1980,35 @@ function mockReadResponses(input: {
   let targetContextCapsuleConsumerBindingReadCount = 0;
   let targetContextCapsuleHandoffAuthorizationLeaseReadCount = 0;
   let targetContextCapsuleHandoffReadCount = 0;
+  let targetContextCapsuleOpeningAuthorizationLeaseReadCount = 0;
   let credentialAssignmentSnapshotReadCount = 0;
   let transportCompatibilityAdmissionReadCount = 0;
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (
+      url.endsWith(
+        "/api/v1/workflows/physical-transport-target-context-capsule-opening-authorization-leases",
+      )
+    ) {
+      if (input.pendingTargetContextCapsuleOpeningAuthorizationLeaseResponse) {
+        return input.pendingTargetContextCapsuleOpeningAuthorizationLeaseResponse;
+      }
+      const status =
+        input.targetContextCapsuleOpeningAuthorizationLeaseStatuses?.[
+          Math.min(
+            targetContextCapsuleOpeningAuthorizationLeaseReadCount++,
+            input.targetContextCapsuleOpeningAuthorizationLeaseStatuses.length - 1,
+          )
+        ] ?? input.targetContextCapsuleOpeningAuthorizationLeaseStatus ?? 200;
+      return Promise.resolve(
+        targetContextCapsuleOpeningAuthorizationLeaseResponse(
+          input.targetContextCapsuleOpeningAuthorizationLeases ?? [],
+          status,
+          input.targetContextCapsuleOpeningAuthorizationLeaseServerTime,
+          input.targetContextCapsuleOpeningAuthorizationLeaseDurable,
+        ),
+      );
+    }
     if (url.endsWith("/api/v1/workflows/physical-transport-target-context-capsule-handoffs")) {
       if (input.pendingTargetContextCapsuleHandoffResponse) {
         return input.pendingTargetContextCapsuleHandoffResponse;
@@ -6150,6 +6253,322 @@ describe("WorkflowPlanningWorkspace", () => {
     expect(within(section).queryByRole("button")).toBeNull();
     expect(within(section).queryByRole("link")).toBeNull();
   });
+
+  it("accepts the canonical backend capsule opening authorization response as minimized read-only evidence", async () => {
+    expect(Object.keys(targetContextCapsuleOpeningAuthorizationLease).sort()).toEqual(
+      [
+        "authorization_lease_id",
+        "scope",
+        "state",
+        "effective_state",
+        "issued_at",
+        "valid_until",
+        "single_use",
+        "renewable",
+        "transferable",
+        "lease_is_bearer_capability",
+        "consumer_contract_id",
+        "consumer_contract_version",
+        "purpose_id",
+        "destination_custody_profile_reference",
+        "policy_id",
+        "policy_version",
+        "authority",
+        "integrity_reference",
+      ].sort(),
+    );
+    const expiredLease: WorkflowPhysicalTransportTargetContextCapsuleOpeningAuthorizationLease = {
+      ...targetContextCapsuleOpeningAuthorizationLease,
+      authorization_lease_id:
+        "workflow-target-context-capsule-opening-authorization-lease.abcdef1234567890",
+      issued_at: "2026-08-14T10:08:25Z",
+      valid_until: "2026-08-14T10:08:26Z",
+      effective_state: "expired",
+    };
+    mockReadResponses({
+      targetContextCapsuleOpeningAuthorizationLeases: [
+        targetContextCapsuleOpeningAuthorizationLease,
+        expiredLease,
+      ],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Target-context capsule opening authorization leases",
+    })).closest("section") as HTMLElement;
+    const records = await within(section).findByRole("list", {
+      name: "Target-context capsule opening authorization leases",
+    });
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) =>
+        (request instanceof Request ? request.url : request.toString()).endsWith(
+          "/api/v1/workflows/physical-transport-target-context-capsule-opening-authorization-leases",
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      within(section).getByTitle(
+        targetContextCapsuleOpeningAuthorizationLease.authorization_lease_id,
+      ),
+    ).toBeVisible();
+    expect(records).toHaveTextContent("Active");
+    expect(records).toHaveTextContent("Expired");
+    expect(records).toHaveTextContent(
+      "Single use true | renewable false | transferable false | bearer capability false",
+    );
+    expect(
+      within(section).getAllByTitle(
+        targetContextCapsuleOpeningAuthorizationLease.consumer_contract_id,
+      )[0],
+    ).toBeVisible();
+    expect(
+      within(section).getAllByTitle(targetContextCapsuleOpeningAuthorizationLease.purpose_id)[0],
+    ).toBeVisible();
+    expect(
+      within(section).getAllByTitle(
+        targetContextCapsuleOpeningAuthorizationLease.destination_custody_profile_reference,
+      )[0],
+    ).toBeVisible();
+    expect(records).toHaveTextContent(
+      /target-context capsule opening true.*target-context capsule handoff false.*endpoint resolution false.*route selection false.*route binding false.*credential selection false.*credential assignment binding false.*credential access false.*credential brokerage false.*credential resolution false.*protected artifact access false.*credential delivery false.*network access false.*readiness probe false.*publication false.*delivery false.*dispatch false.*execution false.*infrastructure mutation false/i,
+    );
+    expect(within(section).queryByRole("button")).toBeNull();
+    expect(within(section).queryByRole("link")).toBeNull();
+    expect(within(section).queryByRole("textbox")).toBeNull();
+    expect(within(section).queryByRole("combobox")).toBeNull();
+    expect(section).not.toHaveTextContent(
+      /handoff[-_ ]?(?:id|digest)|capsule[-_ ]?(?:id|digest)|receipt[-_ ]?(?:id|digest)|opening[-_ ]?(?:id|digest)|artifact[-_ ]?(?:id|digest)|attestation|idempotency|request fingerprint|fenc(?:e|ing)|locator|endpoint[-_ ]?(?:id|host|address)|credential[-_ ]?(?:id|material|token|secret)/i,
+    );
+    expect(section).not.toHaveTextContent(/\bMFA\b|second login|authorized browser session/i);
+  });
+
+  it("renders empty and loading capsule opening authorization lease states without controls", async () => {
+    mockReadResponses({ targetContextCapsuleOpeningAuthorizationLeases: [] });
+    const view = renderWorkspace();
+    let section = (await screen.findByRole("heading", {
+      name: "Target-context capsule opening authorization leases",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText(
+        "No capsule opening authorization leases are recorded in this scope.",
+      ),
+    ).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+    expect(within(section).queryByRole("link")).toBeNull();
+
+    view.unmount();
+    mockReadResponses({
+      pendingTargetContextCapsuleOpeningAuthorizationLeaseResponse: new Promise<Response>(
+        () => undefined,
+      ),
+    });
+    renderWorkspace();
+    section = (await screen.findByRole("heading", {
+      name: "Target-context capsule opening authorization leases",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText(
+        "Loading capsule opening authorization lease evidence...",
+      ),
+    ).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+    expect(within(section).queryByRole("link")).toBeNull();
+  });
+
+  it("fails closed when capsule opening authorization storage is not durable", async () => {
+    mockReadResponses({
+      targetContextCapsuleOpeningAuthorizationLeases: [
+        targetContextCapsuleOpeningAuthorizationLease,
+      ],
+      targetContextCapsuleOpeningAuthorizationLeaseDurable: false,
+    });
+    renderWorkspace();
+    const section = (await screen.findByRole("heading", {
+      name: "Target-context capsule opening authorization leases",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Capsule opening authorization leases are unavailable"),
+    ).toBeVisible();
+    expect(within(section).queryByRole("list")).toBeNull();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it.each([
+    [401, "Your session has expired", "Sign in again to continue."],
+    [
+      403,
+      "Capsule opening authorization lease permission is missing",
+      "current role or scope cannot inspect capsule opening authorization lease evidence",
+    ],
+    [
+      503,
+      "Capsule opening authorization leases are unavailable",
+      "No opening authority, capsule state, or operational state is inferred",
+    ],
+  ])(
+    "handles capsule opening authorization lease read status %s in the normal browser session",
+    async (status, title, detail) => {
+      mockReadResponses({ targetContextCapsuleOpeningAuthorizationLeaseStatus: status });
+      renderWorkspace();
+      const section = (await screen.findByRole("heading", {
+        name: "Target-context capsule opening authorization leases",
+      })).closest("section") as HTMLElement;
+      expect(await within(section).findByText(title)).toBeVisible();
+      expect(within(section).getByText(new RegExp(detail, "i"))).toBeVisible();
+      expect(within(section).queryByRole("button")).toBeNull();
+      expect(within(section).queryByRole("link")).toBeNull();
+      expect(section).not.toHaveTextContent(/\bMFA\b|second login|authorized browser session/i);
+    },
+  );
+
+  it.each([
+    [
+      "a handoff identifier",
+      { ...targetContextCapsuleOpeningAuthorizationLease, handoff_id: "handoff.hidden" },
+    ],
+    [
+      "a capsule identifier",
+      { ...targetContextCapsuleOpeningAuthorizationLease, capsule_id: "capsule.hidden" },
+    ],
+    [
+      "a consumer receipt",
+      { ...targetContextCapsuleOpeningAuthorizationLease, consumer_receipt_id: "receipt.hidden" },
+    ],
+    [
+      "an attestation",
+      { ...targetContextCapsuleOpeningAuthorizationLease, attestation_id: "attestation.hidden" },
+    ],
+    [
+      "a legacy nested policy",
+      {
+        ...targetContextCapsuleOpeningAuthorizationLease,
+        policy: {
+          policy_id:
+            "policy.workflow-protected-transport-target-context-capsule-opening-authorization",
+          policy_version: "1.0",
+        },
+      },
+    ],
+    [
+      "an unexpected consumer contract",
+      {
+        ...targetContextCapsuleOpeningAuthorizationLease,
+        consumer_contract_id: "contract.workflow-protected-transport-target-context-other",
+      },
+    ],
+    [
+      "an unexpected consumer contract version",
+      {
+        ...targetContextCapsuleOpeningAuthorizationLease,
+        consumer_contract_version: "2.0",
+      },
+    ],
+    [
+      "an unexpected purpose",
+      {
+        ...targetContextCapsuleOpeningAuthorizationLease,
+        purpose_id: "purpose.workflow-protected-transport-target-context-capsule-other",
+      },
+    ],
+    [
+      "an invalid custody profile reference",
+      {
+        ...targetContextCapsuleOpeningAuthorizationLease,
+        destination_custody_profile_reference: "custody-profile.hidden",
+      },
+    ],
+    [
+      "an unexpected policy identifier",
+      {
+        ...targetContextCapsuleOpeningAuthorizationLease,
+        policy_id: "policy.workflow-protected-transport-target-context-capsule-opening-other",
+      },
+    ],
+    [
+      "an unexpected policy version",
+      { ...targetContextCapsuleOpeningAuthorizationLease, policy_version: "2.0" },
+    ],
+    [
+      "an extra authority",
+      {
+        ...targetContextCapsuleOpeningAuthorizationLease,
+        authority: {
+          ...targetContextCapsuleOpeningAuthorizationLease.authority,
+          consume_authorized: false,
+        },
+      },
+    ],
+    [
+      "missing opening authority",
+      {
+        ...targetContextCapsuleOpeningAuthorizationLease,
+        authority: {
+          ...targetContextCapsuleOpeningAuthorizationLease.authority,
+          target_context_capsule_opening_authorized: false,
+        },
+      },
+    ],
+    [
+      "handoff authority",
+      {
+        ...targetContextCapsuleOpeningAuthorizationLease,
+        authority: {
+          ...targetContextCapsuleOpeningAuthorizationLease.authority,
+          target_context_capsule_handoff_authorized: true,
+        },
+      },
+    ],
+    [
+      "protected artifact access",
+      {
+        ...targetContextCapsuleOpeningAuthorizationLease,
+        authority: {
+          ...targetContextCapsuleOpeningAuthorizationLease.authority,
+          protected_artifact_access_authorized: true,
+        },
+      },
+    ],
+    [
+      "a bearer capability",
+      { ...targetContextCapsuleOpeningAuthorizationLease, lease_is_bearer_capability: true },
+    ],
+    [
+      "a shortened lifetime",
+      {
+        ...targetContextCapsuleOpeningAuthorizationLease,
+        valid_until: "2026-08-14T10:08:26.999Z",
+      },
+    ],
+    [
+      "a mismatched scope",
+      {
+        ...targetContextCapsuleOpeningAuthorizationLease,
+        scope: { ...plan.scope, site_id: "site.other" },
+      },
+    ],
+  ])(
+    "fails closed when a capsule opening authorization lease contains %s",
+    async (_case, unsafe) => {
+      mockReadResponses({ targetContextCapsuleOpeningAuthorizationLeases: [unsafe] });
+      renderWorkspace();
+      const section = (await screen.findByRole("heading", {
+        name: "Target-context capsule opening authorization leases",
+      })).closest("section") as HTMLElement;
+      expect(
+        await within(section).findByText("Capsule opening authorization leases are unavailable"),
+      ).toBeVisible();
+      expect(
+        within(section).queryByRole("list", {
+          name: "Target-context capsule opening authorization leases",
+        }),
+      ).toBeNull();
+      expect(section).not.toHaveTextContent(
+        /handoff\.hidden|capsule\.hidden|receipt\.hidden|attestation\.hidden|custody-profile\.hidden/i,
+      );
+      expect(within(section).queryByRole("button")).toBeNull();
+      expect(within(section).queryByRole("link")).toBeNull();
+    },
+  );
 
   it("creates and presents a planned-only workflow without requesting another login", async () => {
     renderWorkspace();

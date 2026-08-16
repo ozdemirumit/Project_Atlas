@@ -45,6 +45,7 @@ from atlas.modules.workflows.domain import (
     WorkflowProtectedTransportTargetContextCapsuleHandoffAttempt,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLease,
     WorkflowProtectedTransportTargetContextCapsuleHandoffResult,
+    WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLease,
     WorkflowRunPlan,
 )
 
@@ -2702,6 +2703,144 @@ class WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseInv
     BaseModel
 ):
     data: WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseInventoryData
+    meta: ResponseMeta
+
+
+class CreateWorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    handoff_result_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    handoff_result_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    policy_id: Literal[
+        "policy.workflow-protected-transport-target-context-capsule-opening-authorization"
+    ]
+    policy_version: Literal["1.0"]
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseAuthorityData(
+    BaseModel
+):
+    model_config = ConfigDict(extra="forbid")
+
+    target_context_capsule_opening_authorized: Literal[True]
+    target_context_capsule_handoff_authorized: Literal[False]
+    endpoint_resolution_authorized: Literal[False]
+    route_selection_authorized: Literal[False]
+    route_binding_authorized: Literal[False]
+    credential_selection_authorized: Literal[False]
+    credential_assignment_binding_authorized: Literal[False]
+    credential_access_authorized: Literal[False]
+    credential_brokerage_authorized: Literal[False]
+    credential_resolution_authorized: Literal[False]
+    protected_artifact_access_authorized: Literal[False]
+    credential_delivery_authorized: Literal[False]
+    network_access_authorized: Literal[False]
+    readiness_probe_authorized: Literal[False]
+    publication_authorized: Literal[False]
+    delivery_authorized: Literal[False]
+    dispatch_authorized: Literal[False]
+    execution_authorized: Literal[False]
+    infrastructure_mutation_authorized: Literal[False]
+
+
+class WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseData(BaseModel):
+    """Minimized, non-oracle opening authorization evidence."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    authorization_lease_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    scope: WorkflowScopeData
+    state: Literal["authorized_unconsumed"]
+    effective_state: Literal["active", "expired"]
+    issued_at: datetime
+    valid_until: datetime
+    single_use: Literal[True]
+    renewable: Literal[False]
+    transferable: Literal[False]
+    lease_is_bearer_capability: Literal[False]
+    consumer_contract_id: Literal[
+        "contract.workflow-protected-transport-target-context-capsule-consumer"
+    ]
+    consumer_contract_version: Literal["1.0"]
+    purpose_id: Literal[
+        "purpose.workflow-protected-transport-target-context-capsule-opening-evaluation"
+    ]
+    destination_custody_profile_reference: str = Field(
+        min_length=3, max_length=128, pattern=STABLE_ID
+    )
+    policy_id: Literal[
+        "policy.workflow-protected-transport-target-context-capsule-opening-authorization"
+    ]
+    policy_version: Literal["1.0"]
+    authority: WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseAuthorityData
+    integrity_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+
+    @classmethod
+    def from_domain(
+        cls,
+        lease: WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLease,
+        *,
+        evaluated_at: datetime,
+    ) -> WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseData:
+        custody_profile_input = "|".join(
+            (
+                lease.destination_boundary_id,
+                lease.destination_deployment_id,
+                lease.trusted_profile_digest,
+            )
+        )
+        return cls(
+            authorization_lease_id=lease.authorization_lease_id,
+            scope=WorkflowScopeData.model_validate(lease.scope.canonical_value()),
+            state=lease.state.value,
+            effective_state=lease.effective_state(evaluated_at=evaluated_at).value,
+            issued_at=lease.issued_at,
+            valid_until=lease.valid_until,
+            single_use=True,
+            renewable=False,
+            transferable=False,
+            lease_is_bearer_capability=False,
+            consumer_contract_id=lease.consumer_contract_id,
+            consumer_contract_version=lease.consumer_contract_version,
+            purpose_id=lease.purpose_id,
+            destination_custody_profile_reference=(
+                "integrity.workflow-target-context-capsule-destination-custody-profile."
+                f"{sha256(custody_profile_input.encode()).hexdigest()[:24]}"
+            ),
+            policy_id=lease.policy_id,
+            policy_version=lease.policy_version,
+            authority=WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseAuthorityData.model_validate(
+                lease.authority.canonical_value()
+            ),
+            integrity_reference=(
+                "integrity.workflow-target-context-capsule-opening-authorization-lease."
+                f"{sha256(lease.authorization_lease_id.encode()).hexdigest()[:24]}"
+            ),
+        )
+
+
+class WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseInventoryData(
+    BaseModel
+):
+    model_config = ConfigDict(extra="forbid")
+
+    physical_transport_target_context_capsule_opening_authorization_leases: list[
+        WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseData
+    ] = Field(max_length=256)
+    server_time: datetime
+    durable: Literal[True]
+
+
+class WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseResponse(BaseModel):
+    data: WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseData
+    meta: ResponseMeta
+
+
+class WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseInventoryResponse(
+    BaseModel
+):
+    data: WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseInventoryData
     meta: ResponseMeta
 
 

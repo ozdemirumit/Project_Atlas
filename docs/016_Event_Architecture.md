@@ -461,6 +461,24 @@ Timeout, crash or uncertainty never restores the lease and never triggers automa
 Unsealing, runtime use, event publication, delivery, dispatch, execution and infrastructure
 mutation remain separate and explicitly deferred.
 
+Consumer-side target-context capsule opening authorization is the next independent append-only
+lease boundary. Only the exact consumer workload and audience bound into the canonical
+`handed_off_sealed` result may submit the handoff result ID and digest, code-owned policy ID and
+version, and idempotency metadata. A fresh signed, nonce-bound and metadata-only destination
+custody/lifecycle attestation must prove exact destination boundary, deployment, generation,
+fence, custody contract and consumer receipt lineage. It must also prove destination custody is
+final and source reuse authority is terminated; source-side physical deletion is not required.
+
+PostgreSQL revalidates the complete target-context, opening, consumer-binding, handoff, event,
+route and credential-assignment lineages, current heads and fences and the full code-owned
+one-second window before appending one immutable opening-authorization lease, idempotency claim and
+audit evidence. Exact replay obtains fresh custody/lifecycle evidence and repeats currentness under
+lock. The lease is single-use, non-renewable, non-transferable and non-bearer. Only
+`target_context_capsule_opening_authorized` is true; the prior handoff field and all 17 operational
+authority declarations are false. Issuance performs no capsule retrieval, opening, unsealing,
+decryption, runtime injection, network access, dispatch, execution or mutation. Actual opening is
+a separate IMP-215 boundary.
+
 ### 10.2 Publication State
 
 Outbox records track:
@@ -857,3 +875,4 @@ This document is ready to enter Review when:
 | 1.2.0 | 2026-08-16 | Workflow Architecture | Added immutable zero-authority target-context capsule consumer-binding event boundary |
 | 1.3.0 | 2026-08-16 | Workflow Architecture | Added bounded single-use target-context capsule handoff-authorization lease boundary |
 | 1.4.0 | 2026-08-16 | Workflow Architecture | Added atomic lease-consumption and sealed protected-boundary handoff evidence |
+| 1.5.0 | 2026-08-16 | Workflow Architecture | Added bounded consumer-side target-context capsule opening-authorization lease boundary |

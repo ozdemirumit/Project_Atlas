@@ -28,6 +28,7 @@ from atlas.api.security import (
     authorize_workflow_plan_read,
     authorize_workflow_target_context_capsule_handoff_authorization_lease_read,
     authorize_workflow_target_context_capsule_handoff_read,
+    authorize_workflow_target_context_capsule_opening_authorization_lease_read,
     authorize_workflow_transport_compatibility_admission_read,
     authorize_workflow_transport_credential_assignment_snapshot_read,
     authorize_workflow_transport_profile_read,
@@ -74,6 +75,7 @@ from atlas.api.workflow_schemas import (
     CreateWorkflowProtectedTransportTargetContextCapsuleConsumerBindingInput,
     CreateWorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseInput,
     CreateWorkflowProtectedTransportTargetContextCapsuleHandoffInput,
+    CreateWorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseInput,
     EventPhysicalTransportCredentialAssignmentSnapshotData,
     EventPhysicalTransportCredentialAssignmentSnapshotInventoryData,
     EventPhysicalTransportCredentialAssignmentSnapshotInventoryResponse,
@@ -201,6 +203,10 @@ from atlas.api.workflow_schemas import (
     WorkflowProtectedTransportTargetContextCapsuleHandoffInventoryData,
     WorkflowProtectedTransportTargetContextCapsuleHandoffInventoryResponse,
     WorkflowProtectedTransportTargetContextCapsuleHandoffResponse,
+    WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseData,
+    WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseInventoryData,
+    WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseInventoryResponse,
+    WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseResponse,
     WorkflowRunPlanData,
     WorkflowRunPlanResponse,
 )
@@ -278,6 +284,8 @@ from atlas.modules.workflows.application import (
     WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseService,
     WorkflowProtectedTransportTargetContextCapsuleHandoffError,
     WorkflowProtectedTransportTargetContextCapsuleHandoffService,
+    WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseError,
+    WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseService,
     WorkflowRunMaterializationError,
     WorkflowRunMaterializationRepository,
     WorkflowRunMaterializationService,
@@ -6037,6 +6045,142 @@ async def create_workflow_physical_transport_target_context_capsule_handoff(
             presentation.attempt,
             presentation.result,
             evaluated_at=server_time,
+        ),
+        meta=_meta(request),
+    )
+
+
+@router.get(
+    "/physical-transport-target-context-capsule-opening-authorization-leases",
+    response_model=(
+        WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseInventoryResponse
+    ),
+)
+async def list_workflow_physical_transport_target_context_capsule_opening_authorization_leases(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_workflow_target_context_capsule_opening_authorization_lease_read),
+    ],
+) -> WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseInventoryResponse:
+    del decision
+    _no_store(response)
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    service = cast(
+        WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseService,
+        request.app.state.workflow_target_context_capsule_opening_authorization_lease_service,
+    )
+    try:
+        leases = await service.list_leases(scope=scope, limit=256)
+        server_time = await service.repository.get_authoritative_time()
+    except WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseError as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_target_context_capsule_opening_authorization_service_unavailable",
+            title="Workflow target-context capsule opening authorization unavailable",
+            detail="Opening authorization metadata is temporarily unavailable.",
+            retryable=True,
+        ) from error
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_target_context_capsule_opening_authorization_service_unavailable",
+            title="Workflow target-context capsule opening authorization unavailable",
+            detail="Opening authorization metadata is temporarily unavailable.",
+            retryable=True,
+        ) from error
+    return WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseInventoryResponse(
+        data=WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseInventoryData(
+            physical_transport_target_context_capsule_opening_authorization_leases=[
+                WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseData.from_domain(
+                    lease, evaluated_at=server_time
+                )
+                for lease in leases
+            ],
+            server_time=server_time,
+            durable=True,
+        ),
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    "/physical-transport-target-context-capsule-opening-authorization-leases",
+    response_model=(
+        WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseResponse
+    ),
+    status_code=201,
+)
+async def create_workflow_physical_transport_target_context_capsule_opening_authorization_lease(
+    payload: CreateWorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[
+        AuthenticatedSubject,
+        Depends(workflow_protected_transport_target_context_capsule_consumer_subject),
+    ],
+) -> WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseResponse:
+    _no_store(response)
+    service = cast(
+        WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseService,
+        request.app.state.workflow_target_context_capsule_opening_authorization_lease_service,
+    )
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    try:
+        lease = await service.authorize(
+            handoff_result_id=payload.handoff_result_id,
+            handoff_result_digest=payload.handoff_result_digest,
+            policy_id=payload.policy_id,
+            policy_version=payload.policy_version,
+            idempotency_key=payload.idempotency_key,
+            context=WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationContext(
+                subject_id=subject.subject_id,
+                actor_type=subject.kind.value,
+                authentication_method=subject.authentication_method.value,
+                credential_audience=(WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_AUDIENCE),
+                scope=scope,
+                correlation_id=str(request.state.correlation_id),
+                decision_id=(
+                    "decision.workflow-protected-transport-target-context-capsule-consumer-"
+                    "authenticated"
+                ),
+                requested_at=datetime.now(UTC),
+            ),
+        )
+        server_time = await service.repository.get_authoritative_time()
+    except WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseError as error:
+        unavailable = "unavailable" in error.code or error.code.endswith(
+            "durable_repository_required"
+        )
+        conflict = "conflict" in error.code or "already_authorized" in error.code
+        raise AtlasError(
+            status=503 if unavailable else 409 if conflict else 422,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity or evidence is not authorized for this operation.",
+            retryable=unavailable,
+        ) from error
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_target_context_capsule_opening_authorization_service_unavailable",
+            title="Workflow target-context capsule opening authorization unavailable",
+            detail="Opening authorization metadata is temporarily unavailable.",
+            retryable=True,
+        ) from error
+    return WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseResponse(
+        data=WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseData.from_domain(
+            lease, evaluated_at=server_time
         ),
         meta=_meta(request),
     )

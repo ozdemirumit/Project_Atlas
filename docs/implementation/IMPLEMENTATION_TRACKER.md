@@ -4,14 +4,81 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-213 |
-| Title | Atomic single-use protected target-context capsule handoff-authorization lease consumption and sealed protected-boundary capsule handoff without unsealing, runtime, execution or infrastructure mutation authority |
-| Status | In Review |
-| Branch | `agent/protected-capsule-handoff-consumption` |
-| Pull Request | [#226](https://github.com/ozdemirumit/Project_Atlas/pull/226) |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-158, ADR-159, ADR-160, ADR-161, ADR-162, ADR-163 |
+| Task ID | ATLAS-IMP-214 |
+| Title | Bounded single-use consumer-side protected target-context capsule opening authorization lease without retrieval, unsealing, runtime, execution or infrastructure mutation authority |
+| Status | Review |
+| Branch | `agent/protected-capsule-opening-authorization` |
+| Pull Request | [#227](https://github.com/ozdemirumit/Project_Atlas/pull/227) |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-159, ADR-160, ADR-161, ADR-162, ADR-163, ADR-164 |
 | Last Updated | 2026-08-16 |
-| Next Action | Open the exact-head pull request, pass CI, merge by SHA and verify independent `main` CI |
+| Next Action | Verify PR #227 exact-head PostgreSQL, backend and frontend CI; then perform a SHA-locked merge and verify independent `main` CI |
+
+### ATLAS-IMP-214 Scope Rationale
+
+- IMP-213 moves one still-sealed capsule into the exact consumer custody boundary and records a
+  signed non-bearer receipt, but grants no retrieval, opening, runtime or operational authority.
+- The next smallest authorization boundary gives only that exact consumer one one-second lease to
+  request a later independent opening-consumption operation while current custody and lifecycle
+  evidence remains valid.
+- Destination custody finality, rather than source-side physical deletion, proves that the source
+  can no longer authorize reuse of the handed-off capsule.
+
+### ATLAS-IMP-214 Acceptance Criteria
+
+- Only a canonical terminal `handed_off_sealed` ADR-163 result with a trusted signed receipt is
+  eligible. Failure, uncertainty, pending, claim-only, attempt-only, late or malformed evidence
+  fails closed.
+- Only the exact bound consumer workload and audience may request its own lease. Caller input is
+  limited to handoff result ID/digest, code-owned policy ID/version and idempotency metadata.
+- Atlas obtains a fresh signed, nonce-bound and metadata-only destination custody/lifecycle
+  attestation before the transaction and verifies it offline again while locks are held.
+- The attestation binds exact handoff, consumer receipt, capsule, destination boundary, deployment,
+  generation, fence, custody contract, adapter and trusted-profile lineage. It proves destination
+  custody is final and source reuse authority is terminated without requiring physical deletion.
+- PostgreSQL revalidates the complete upstream lineage, live pending outbox, current route and
+  credential-assignment heads, custody evidence and all deadlines before and after precommit audit.
+- The lease is exactly one second, append-only, single-use, non-renewable, non-transferable and
+  non-bearer. Each handoff result, consumer receipt and capsule may produce at most one lease.
+- Exact replay obtains fresh custody/lifecycle evidence and repeats currentness under lock. Expiry,
+  drift or competing replay cannot renew, replace or create a second lease.
+- Only `target_context_capsule_opening_authorized` is true. The handoff field and all existing 17
+  operational authority fields remain false.
+- Issuance performs no capsule retrieval, protected-store access, opening, unsealing, decryption,
+  runtime injection, network access, publication, dispatch, execution or infrastructure mutation.
+- Workload POST and normal username/password session GET are minimized, non-oracle and `no-store`.
+  The UI is read-only and provides no issue/open/retry/reveal/unseal/execute control.
+- Production fails closed without PostgreSQL and a trusted destination custody/lifecycle attestor;
+  there is no process-memory, synthetic or permissive fallback.
+- Actual irreversible consumer-side capsule opening remains explicitly deferred to IMP-215.
+
+### ATLAS-IMP-214 Local Verification
+
+- Backend Ruff formatting/lint and strict MyPy passed for `1309` source and test files. The full
+  backend suite passed `2385` tests with `29` environment-dependent skips; the focused opening
+  authorization, API and authorization-regression set passed `19` tests with one live-PostgreSQL
+  skip.
+- Frontend TypeScript and ESLint passed. All `95` test files and `793` tests passed, including all
+  `504` workflow-planning workspace scenarios. The production Vite bundle built successfully.
+- Alembic reports the single `20260816_0137` head. Migration and ORM coverage verifies exact
+  code-owned contract enforcement, composite handoff/capsule/receipt lineage, a single-use claim
+  foreign key and append-only behavior. The live PostgreSQL behavior test is included in the CI
+  PostgreSQL 17 gate through `ATLAS_TEST_POSTGRES_DSN`.
+- Independent review found no remaining P0, P1 or P2 issue after response-contract alignment,
+  complete custody-attestation drift denial, under-lock validation repair, fail-closed raw outage
+  handling, database lineage hardening and inclusion of the new live PostgreSQL test in CI.
+- Live desktop inspection confirmed the read-only opening-authorization section exposes no issue,
+  open, retry, reveal, unseal or execute control; no sensitive metadata, horizontal overflow or
+  section overflow was observed. The absent local PostgreSQL/attestor state failed closed as
+  unavailable.
+
+### ATLAS-IMP-213 Delivery Evidence
+
+- PR [#226](https://github.com/ozdemirumit/Project_Atlas/pull/226) exact head passed Continuous
+  Integration run `31928541605`, including backend and frontend jobs.
+- PR #226 was squash-merged to `main` as
+  `536fb302c0d434109a31e7fee6e849cc5fca1b50`.
+- The exact merged `main` commit passed independent Continuous Integration run `31928924603`,
+  including backend, frontend, migration round-trip and PostgreSQL integration gates.
 
 ### ATLAS-IMP-213 Scope Rationale
 
