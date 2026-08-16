@@ -10270,13 +10270,25 @@ class WorkflowProtectedTargetContextCapsuleDestinationCustodyAttestation:
     approved_adapter_version: str
     verification_signing_key_id: str
     trusted_profile_digest: str
+    scope: WorkflowScope
+    consumer_subject_id: str
+    consumer_audience: str
+    consumer_contract_id: str
+    consumer_contract_version: str
+    purpose_id: str
     request_nonce_digest: str
     observed_at: datetime
     valid_until: datetime
     handed_off_sealed: bool
     destination_custody_confirmed: bool
     custody_finality_confirmed: bool
+    destination_custody_final: bool
+    source_reuse_authority_terminated: bool
     capsule_remains_sealed: bool
+    consumer_receipt_is_bearer_capability: bool
+    sealed_capsule_is_bearer_capability: bool
+    runtime_authority_granted: bool
+    runtime_authority_count: int
     revoked: bool
     destroyed: bool
     signing_key_id: str
@@ -10302,6 +10314,11 @@ class WorkflowProtectedTargetContextCapsuleDestinationCustodyAttestation:
             self.approved_adapter_id,
             self.approved_adapter_version,
             self.verification_signing_key_id,
+            self.consumer_subject_id,
+            self.consumer_audience,
+            self.consumer_contract_id,
+            self.consumer_contract_version,
+            self.purpose_id,
             self.signing_key_id,
             self.signature_algorithm,
         ):
@@ -10326,7 +10343,13 @@ class WorkflowProtectedTargetContextCapsuleDestinationCustodyAttestation:
             or self.handed_off_sealed is not True
             or self.destination_custody_confirmed is not True
             or self.custody_finality_confirmed is not True
+            or self.destination_custody_final is not True
+            or self.source_reuse_authority_terminated is not True
             or self.capsule_remains_sealed is not True
+            or self.consumer_receipt_is_bearer_capability is not False
+            or self.sealed_capsule_is_bearer_capability is not False
+            or self.runtime_authority_granted is not False
+            or self.runtime_authority_count != 0
             or self.revoked is not False
             or self.destroyed is not False
             or self.destination_generation < 1

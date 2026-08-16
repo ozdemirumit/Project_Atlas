@@ -126,6 +126,23 @@ class _Service:
         return () if self.lease is None or self.lease.scope != scope else (self.lease,)
 
 
+class _FailingService(_Service):
+    async def get_authoritative_time(self) -> datetime:
+        raise RuntimeError("database unavailable")
+
+    async def authorize(
+        self, **kwargs: Any
+    ) -> WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLease:
+        del kwargs
+        raise RuntimeError("database unavailable")
+
+    async def list_leases(
+        self, *, scope: WorkflowScope, limit: int = 256
+    ) -> tuple[WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLease, ...]:
+        del scope, limit
+        raise RuntimeError("database unavailable")
+
+
 def _payload() -> dict[str, str]:
     policy = code_owned_workflow_protected_transport_target_context_capsule_opening_authorization_policy()  # noqa: E501
     return {
@@ -184,12 +201,23 @@ def test_workload_only_post_and_password_session_get_are_minimized() -> None:
         "renewable",
         "transferable",
         "lease_is_bearer_capability",
+        "consumer_contract_id",
+        "consumer_contract_version",
+        "purpose_id",
+        "destination_custody_profile_reference",
         "policy_id",
         "policy_version",
         "authority",
         "integrity_reference",
     }
     assert item["authority"]["target_context_capsule_opening_authorized"] is True
+    assert item["consumer_contract_id"] == (
+        "contract.workflow-protected-transport-target-context-capsule-consumer"
+    )
+    assert item["purpose_id"] == (
+        "purpose.workflow-protected-transport-target-context-capsule-opening-evaluation"
+    )
+    assert item["destination_custody_profile_reference"].startswith("integrity.")
     assert sum(value is True for value in item["authority"].values()) == 1
     forbidden = {
         "handoff_id",
@@ -230,4 +258,60 @@ def test_post_forbids_caller_owned_ttl_authority_and_opener_fields() -> None:
             response = client.post(ENDPOINT, json={**_payload(), field: value}, headers=headers)
             assert response.status_code == 422
             _assert_no_store(response)
+    assert service.calls == []
+
+
+def test_repository_outages_fail_closed_as_no_store_503_for_get_and_post() -> None:
+    workload_service, token = _workload_service_and_token(
+        identity_id=WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_SUBJECT,
+        audience=WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_AUDIENCE,
+    )
+    app = create_app(
+        _settings(),
+        workload_identity_service=workload_service,
+        workflow_protected_transport_target_context_capsule_opening_authorization_lease_service=cast(
+            Any, _FailingService()
+        ),
+    )
+    with TestClient(app, raise_server_exceptions=False) as client:
+        _login(client)
+        inventory = client.get(ENDPOINT)
+        created = client.post(
+            ENDPOINT,
+            json=_payload(),
+            headers=_workload_headers(
+                token, WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_AUDIENCE
+            ),
+        )
+    for response in (inventory, created):
+        assert response.status_code == 503
+        assert response.json()["code"] == (
+            "workflow_target_context_capsule_opening_authorization_service_unavailable"
+        )
+        _assert_no_store(response)
+
+
+def test_wrong_workload_identity_cannot_issue_opening_authorization() -> None:
+    workload_service, token = _workload_service_and_token(
+        identity_id="service.workflow-unrelated",
+        audience=WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_AUDIENCE,
+    )
+    service = _Service()
+    app = create_app(
+        _settings(),
+        workload_identity_service=workload_service,
+        workflow_protected_transport_target_context_capsule_opening_authorization_lease_service=cast(
+            Any, service
+        ),
+    )
+    with TestClient(app) as client:
+        response = client.post(
+            ENDPOINT,
+            json=_payload(),
+            headers=_workload_headers(
+                token, WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_AUDIENCE
+            ),
+        )
+    assert response.status_code == 401
+    _assert_no_store(response)
     assert service.calls == []

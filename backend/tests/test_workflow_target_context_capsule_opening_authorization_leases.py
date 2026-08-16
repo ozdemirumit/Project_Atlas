@@ -232,10 +232,13 @@ class _AuditSink:
 
 
 class _Verifier:
+    def __init__(self, *, valid: bool = True) -> None:
+        self._valid = valid
+
     def verify_destination_custody_attestation(
         self, attestation: WorkflowProtectedTargetContextCapsuleDestinationCustodyAttestation
     ) -> bool:
-        return attestation.integrity_signature == "signature.imp-214"
+        return self._valid and attestation.integrity_signature == "signature.imp-214"
 
 
 class _Attestor:
@@ -278,6 +281,18 @@ class _Attestor:
                     "approved_adapter_version",
                     "verification_signing_key_id",
                     "trusted_profile_digest",
+                    "scope",
+                    "consumer_subject_id",
+                    "consumer_audience",
+                    "consumer_contract_id",
+                    "consumer_contract_version",
+                    "purpose_id",
+                    "destination_custody_final",
+                    "source_reuse_authority_terminated",
+                    "consumer_receipt_is_bearer_capability",
+                    "sealed_capsule_is_bearer_capability",
+                    "runtime_authority_granted",
+                    "runtime_authority_count",
                     "request_nonce_digest",
                 )
             },
@@ -289,7 +304,13 @@ class _Attestor:
             "handed_off_sealed": True,
             "destination_custody_confirmed": True,
             "custody_finality_confirmed": True,
+            "destination_custody_final": True,
+            "source_reuse_authority_terminated": True,
             "capsule_remains_sealed": True,
+            "consumer_receipt_is_bearer_capability": False,
+            "sealed_capsule_is_bearer_capability": False,
+            "runtime_authority_granted": False,
+            "runtime_authority_count": 0,
             "revoked": False,
             "destroyed": False,
             "signing_key_id": "key.destination-custody.imp-214",
@@ -306,19 +327,22 @@ class _Repository:
         self, source: WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationSource
     ) -> None:
         self.source = source
+        self.evaluated_at = DB_NOW
         self.requests: list[
             WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseRequest
         ] = []
         self._lease: (
             WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLease | None
         ) = None
+        self._idempotency_key: str | None = None
+        self._request_fingerprint: str | None = None
 
     @property
     def durable(self) -> bool:
         return True
 
     async def get_authoritative_time(self) -> datetime:
-        return DB_NOW
+        return self.evaluated_at
 
     async def get_target_context_capsule_opening_authorization_source(
         self, *, handoff_id: str
@@ -329,20 +353,41 @@ class _Repository:
         self,
         request: WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseRequest,
     ) -> WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseResult:
-        validate_workflow_protected_transport_target_context_capsule_opening_authorization_request(
-            request
-        )
+        try:
+            validate_workflow_protected_transport_target_context_capsule_opening_authorization_request(
+                request
+            )
+        except ValueError:
+            return WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseResult(
+                WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseStatus.EVIDENCE_CONFLICT,
+                None,
+                self.evaluated_at,
+            )
         self.requests.append(request)
         await request.required_precommit_audit()
         if self._lease is None:
             self._lease = request.candidate
+            self._idempotency_key = request.idempotency_key
+            self._request_fingerprint = request.request_fingerprint
             status = WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseStatus.AUTHORIZED  # noqa: E501
+        elif request.idempotency_key != self._idempotency_key:
+            return WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseResult(
+                WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseStatus.ALREADY_AUTHORIZED,
+                None,
+                self.evaluated_at,
+            )
+        elif request.request_fingerprint != self._request_fingerprint:
+            return WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseResult(
+                WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseStatus.IDEMPOTENCY_CONFLICT,
+                None,
+                self.evaluated_at,
+            )
         else:
             status = (
                 WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseStatus.REPLAY
             )
         return WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseResult(
-            status, self._lease, DB_NOW
+            status, self._lease, self.evaluated_at
         )
 
     async def list_target_context_capsule_opening_authorization_leases(
@@ -397,6 +442,209 @@ async def test_authorizes_exact_one_second_non_bearer_opening_lease() -> None:
     )
     assert attestor.calls == 1
     assert len(repository.requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_exact_replay_revalidates_fresh_custody_evidence_and_returns_same_lease() -> None:
+    source = make_source()
+    repository = _Repository(source)
+    attestor = _Attestor()
+    service = WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseService(
+        authorization_repository=repository,
+        custody_attestor=attestor,
+        custody_signature_verifier=_Verifier(),
+        audit_sink=_AuditSink(),
+    )
+    policy = service.policy
+    arguments = {
+        "handoff_result_id": source.result.handoff_id,
+        "handoff_result_digest": source.result.canonical_digest,
+        "policy_id": policy.policy_id,
+        "policy_version": policy.policy_version,
+        "idempotency_key": "imp-214-replay",
+        "context": _context(),
+    }
+    first = await service.authorize(**cast(Any, arguments))
+    replay = await service.authorize(**cast(Any, arguments))
+    assert replay == first
+    assert attestor.calls == 2
+    assert len(repository.requests) == 2
+
+
+@pytest.mark.asyncio
+async def test_expired_replay_fails_closed_without_replacement() -> None:
+    source = make_source()
+    repository = _Repository(source)
+    service = WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseService(
+        authorization_repository=repository,
+        custody_attestor=_Attestor(),
+        custody_signature_verifier=_Verifier(),
+        audit_sink=_AuditSink(),
+    )
+    policy = service.policy
+    arguments = {
+        "handoff_result_id": source.result.handoff_id,
+        "handoff_result_digest": source.result.canonical_digest,
+        "policy_id": policy.policy_id,
+        "policy_version": policy.policy_version,
+        "idempotency_key": "imp-214-expired-replay",
+        "context": _context(),
+    }
+    first = await service.authorize(**cast(Any, arguments))
+
+    repository.evaluated_at = first.valid_until + timedelta(milliseconds=1)
+    with pytest.raises(
+        WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseError
+    ) as raised:
+        await service.authorize(**cast(Any, arguments))
+    assert raised.value.code.endswith("repository_contract_violation")
+    assert repository._lease == first
+
+
+@pytest.mark.asyncio
+async def test_changed_key_cannot_issue_replacement_for_same_handoff() -> None:
+    source = make_source()
+    repository = _Repository(source)
+    service = WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseService(
+        authorization_repository=repository,
+        custody_attestor=_Attestor(),
+        custody_signature_verifier=_Verifier(),
+        audit_sink=_AuditSink(),
+    )
+    policy = service.policy
+    first = await service.authorize(
+        handoff_result_id=source.result.handoff_id,
+        handoff_result_digest=source.result.canonical_digest,
+        policy_id=policy.policy_id,
+        policy_version=policy.policy_version,
+        idempotency_key="imp-214-original-key",
+        context=_context(),
+    )
+    with pytest.raises(
+        WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseError
+    ) as raised:
+        await service.authorize(
+            handoff_result_id=source.result.handoff_id,
+            handoff_result_digest=source.result.canonical_digest,
+            policy_id=policy.policy_id,
+            policy_version=policy.policy_version,
+            idempotency_key="imp-214-different-key",
+            context=_context(),
+        )
+    assert raised.value.code.endswith("already_authorized")
+    assert repository._lease == first
+
+
+@pytest.mark.asyncio
+async def test_under_lock_signature_rejection_fails_as_evidence_conflict() -> None:
+    source = make_source()
+    repository = _Repository(source)
+    service = WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseService(
+        authorization_repository=repository,
+        custody_attestor=_Attestor(),
+        custody_signature_verifier=_Verifier(valid=False),
+        audit_sink=_AuditSink(),
+    )
+    with pytest.raises(
+        WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseError
+    ) as raised:
+        await service.authorize(
+            handoff_result_id=source.result.handoff_id,
+            handoff_result_digest=source.result.canonical_digest,
+            policy_id=service.policy.policy_id,
+            policy_version=service.policy.policy_version,
+            idempotency_key="imp-214-invalid-signature",
+            context=_context(),
+        )
+    assert raised.value.code.endswith("evidence_conflict")
+    assert repository._lease is None
+
+
+@pytest.mark.asyncio
+async def test_destination_custody_attestation_rejects_reusable_source_or_runtime_power() -> None:
+    source = make_source()
+    service = WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseService(
+        authorization_repository=_Repository(source),
+        custody_attestor=_Attestor(),
+        custody_signature_verifier=_Verifier(),
+        audit_sink=_AuditSink(),
+    )
+    request = service._attestation_request(
+        source,
+        nonce_digest="a" * 64,
+        context=_context(),
+    )
+    attestation = await _Attestor().attest_destination_custody(request)
+    with pytest.raises(ValueError, match="unsafe"):
+        replace(attestation, source_reuse_authority_terminated=False)
+    with pytest.raises(ValueError, match="unsafe"):
+        replace(attestation, destination_custody_final=False)
+    with pytest.raises(ValueError, match="unsafe"):
+        replace(attestation, runtime_authority_granted=True, runtime_authority_count=1)
+    with pytest.raises(ValueError, match="unsafe"):
+        replace(attestation, consumer_receipt_is_bearer_capability=True)
+    with pytest.raises(ValueError, match="unsafe"):
+        replace(attestation, sealed_capsule_is_bearer_capability=True)
+    for changes in (
+        {"consumer_subject_id": "service.workflow-unrelated"},
+        {"consumer_audience": "audience.workflow-unrelated"},
+        {"consumer_contract_id": "contract.workflow-unrelated"},
+        {"consumer_contract_version": "2.0"},
+        {"purpose_id": "purpose.workflow-unrelated"},
+        {"scope": WorkflowScope("org-other", "environment-lab", "site-istanbul")},
+    ):
+        drifted = _replace_and_redigest(attestation, **changes)
+        with pytest.raises(
+            WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseError,
+            match="denied",
+        ):
+            service._validate_attestation(
+                drifted,
+                request=request,
+                evaluated_at=DB_NOW,
+            )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("actor_type", "authentication_method", "subject_id"),
+    (
+        ("human", "password", "user.admin"),
+        ("human", "personal_token", "user.admin"),
+        ("ai_agent", "workload_token", "agent.workflow-analysis"),
+    ),
+)
+async def test_human_personal_token_and_ai_identity_fail_before_attestation(
+    actor_type: str, authentication_method: str, subject_id: str
+) -> None:
+    source = make_source()
+    repository = _Repository(source)
+    attestor = _Attestor()
+    service = WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseService(
+        authorization_repository=repository,
+        custody_attestor=attestor,
+        custody_signature_verifier=_Verifier(),
+        audit_sink=_AuditSink(),
+    )
+    with pytest.raises(
+        WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseError,
+        match="denied",
+    ):
+        await service.authorize(
+            handoff_result_id=source.result.handoff_id,
+            handoff_result_digest=source.result.canonical_digest,
+            policy_id=service.policy.policy_id,
+            policy_version=service.policy.policy_version,
+            idempotency_key="imp-214-forbidden-identity",
+            context=replace(
+                _context(),
+                subject_id=subject_id,
+                actor_type=actor_type,
+                authentication_method=authentication_method,
+            ),
+        )
+    assert attestor.calls == 0
+    assert repository.requests == []
 
 
 @pytest.mark.asyncio

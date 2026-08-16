@@ -1128,6 +1128,13 @@ const targetContextCapsuleOpeningAuthorizationLease: WorkflowPhysicalTransportTa
   renewable: false,
   transferable: false,
   lease_is_bearer_capability: false,
+  consumer_contract_id:
+    "contract.workflow-protected-transport-target-context-capsule-consumer",
+  consumer_contract_version: "1.0",
+  purpose_id:
+    "purpose.workflow-protected-transport-target-context-capsule-opening-evaluation",
+  destination_custody_profile_reference:
+    "integrity.workflow-target-context-capsule-destination-custody-profile.1234567890abcdef",
   policy_id: "policy.workflow-protected-transport-target-context-capsule-opening-authorization",
   policy_version: "1.0",
   authority: {
@@ -6260,6 +6267,10 @@ describe("WorkflowPlanningWorkspace", () => {
         "renewable",
         "transferable",
         "lease_is_bearer_capability",
+        "consumer_contract_id",
+        "consumer_contract_version",
+        "purpose_id",
+        "destination_custody_profile_reference",
         "policy_id",
         "policy_version",
         "authority",
@@ -6305,6 +6316,19 @@ describe("WorkflowPlanningWorkspace", () => {
     expect(records).toHaveTextContent(
       "Single use true | renewable false | transferable false | bearer capability false",
     );
+    expect(
+      within(section).getAllByTitle(
+        targetContextCapsuleOpeningAuthorizationLease.consumer_contract_id,
+      )[0],
+    ).toBeVisible();
+    expect(
+      within(section).getAllByTitle(targetContextCapsuleOpeningAuthorizationLease.purpose_id)[0],
+    ).toBeVisible();
+    expect(
+      within(section).getAllByTitle(
+        targetContextCapsuleOpeningAuthorizationLease.destination_custody_profile_reference,
+      )[0],
+    ).toBeVisible();
     expect(records).toHaveTextContent(
       /target-context capsule opening true.*target-context capsule handoff false.*endpoint resolution false.*route selection false.*route binding false.*credential selection false.*credential assignment binding false.*credential access false.*credential brokerage false.*credential resolution false.*protected artifact access false.*credential delivery false.*network access false.*readiness probe false.*publication false.*delivery false.*dispatch false.*execution false.*infrastructure mutation false/i,
     );
@@ -6426,27 +6450,31 @@ describe("WorkflowPlanningWorkspace", () => {
       },
     ],
     [
-      "a legacy consumer contract",
+      "an unexpected consumer contract",
       {
         ...targetContextCapsuleOpeningAuthorizationLease,
-        consumer_contract_id:
-          "contract.workflow-protected-transport-target-context-capsule-consumer",
-        consumer_contract_version: "1.0",
+        consumer_contract_id: "contract.workflow-protected-transport-target-context-other",
       },
     ],
     [
-      "a legacy purpose",
+      "an unexpected consumer contract version",
       {
         ...targetContextCapsuleOpeningAuthorizationLease,
-        purpose_id:
-          "purpose.workflow-protected-transport-target-context-capsule-opening-evaluation",
+        consumer_contract_version: "2.0",
       },
     ],
     [
-      "a custody profile reference",
+      "an unexpected purpose",
       {
         ...targetContextCapsuleOpeningAuthorizationLease,
-        custody_profile_reference: "custody-profile.hidden",
+        purpose_id: "purpose.workflow-protected-transport-target-context-capsule-other",
+      },
+    ],
+    [
+      "an invalid custody profile reference",
+      {
+        ...targetContextCapsuleOpeningAuthorizationLease,
+        destination_custody_profile_reference: "custody-profile.hidden",
       },
     ],
     [

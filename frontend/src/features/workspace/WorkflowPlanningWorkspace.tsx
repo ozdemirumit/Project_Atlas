@@ -3324,6 +3324,22 @@ export default function WorkflowPlanningWorkspace({
                           {lease.lease_is_bearer_capability ? " true" : " false"}
                         </span>
                         <span>
+                          Consumer contract{" "}
+                          <code title={lease.consumer_contract_id}>
+                            {safeHolderIdentifier(lease.consumer_contract_id)}
+                          </code>{" "}
+                          v{lease.consumer_contract_version} | purpose{" "}
+                          <code title={lease.purpose_id}>
+                            {safeHolderIdentifier(lease.purpose_id)}
+                          </code>
+                        </span>
+                        <span>
+                          Custody profile{" "}
+                          <code title={lease.destination_custody_profile_reference}>
+                            {safeHolderIdentifier(lease.destination_custody_profile_reference)}
+                          </code>
+                        </span>
+                        <span>
                           Policy{" "}
                           <code title={lease.policy_id}>
                             {safeHolderIdentifier(lease.policy_id)}

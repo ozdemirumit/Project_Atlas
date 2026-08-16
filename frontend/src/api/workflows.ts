@@ -1300,6 +1300,10 @@ export type WorkflowPhysicalTransportTargetContextCapsuleOpeningAuthorizationLea
   renewable: false;
   transferable: false;
   lease_is_bearer_capability: false;
+  consumer_contract_id: "contract.workflow-protected-transport-target-context-capsule-consumer";
+  consumer_contract_version: "1.0";
+  purpose_id: "purpose.workflow-protected-transport-target-context-capsule-opening-evaluation";
+  destination_custody_profile_reference: string;
   policy_id: "policy.workflow-protected-transport-target-context-capsule-opening-authorization";
   policy_version: "1.0";
   authority: WorkflowPhysicalTransportTargetContextCapsuleOpeningAuthorizationLeaseAuthority;
@@ -2474,6 +2478,10 @@ const physicalTransportTargetContextCapsuleOpeningAuthorizationLeaseFields = [
   "renewable",
   "transferable",
   "lease_is_bearer_capability",
+  "consumer_contract_id",
+  "consumer_contract_version",
+  "purpose_id",
+  "destination_custody_profile_reference",
   "policy_id",
   "policy_version",
   "authority",
@@ -4442,6 +4450,15 @@ function isPhysicalTransportTargetContextCapsuleOpeningAuthorizationLease(
     value.renewable === false &&
     value.transferable === false &&
     value.lease_is_bearer_capability === false &&
+    value.consumer_contract_id ===
+      "contract.workflow-protected-transport-target-context-capsule-consumer" &&
+    value.consumer_contract_version === "1.0" &&
+    value.purpose_id ===
+      "purpose.workflow-protected-transport-target-context-capsule-opening-evaluation" &&
+    isStableIdentifier(value.destination_custody_profile_reference) &&
+    value.destination_custody_profile_reference.startsWith(
+      "integrity.workflow-target-context-capsule-destination-custody-profile.",
+    ) &&
     value.policy_id ===
       "policy.workflow-protected-transport-target-context-capsule-opening-authorization" &&
     value.policy_version === "1.0" &&

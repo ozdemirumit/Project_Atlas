@@ -6087,6 +6087,14 @@ async def list_workflow_physical_transport_target_context_capsule_opening_author
             detail="Opening authorization metadata is temporarily unavailable.",
             retryable=True,
         ) from error
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_target_context_capsule_opening_authorization_service_unavailable",
+            title="Workflow target-context capsule opening authorization unavailable",
+            detail="Opening authorization metadata is temporarily unavailable.",
+            retryable=True,
+        ) from error
     return WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseInventoryResponse(
         data=WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseInventoryData(
             physical_transport_target_context_capsule_opening_authorization_leases=[
@@ -6161,6 +6169,14 @@ async def create_workflow_physical_transport_target_context_capsule_opening_auth
             title="Request denied",
             detail="The current identity or evidence is not authorized for this operation.",
             retryable=unavailable,
+        ) from error
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_target_context_capsule_opening_authorization_service_unavailable",
+            title="Workflow target-context capsule opening authorization unavailable",
+            detail="Opening authorization metadata is temporarily unavailable.",
+            retryable=True,
         ) from error
     return WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseResponse(
         data=WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseData.from_domain(

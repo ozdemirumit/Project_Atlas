@@ -72,6 +72,16 @@ class WorkflowProtectedTargetContextCapsuleDestinationCustodyAttestationRequest:
     trusted_profile_digest: str
     scope: WorkflowScope
     consumer_subject_id: str
+    consumer_audience: str
+    consumer_contract_id: str
+    consumer_contract_version: str
+    purpose_id: str
+    destination_custody_final: bool
+    source_reuse_authority_terminated: bool
+    consumer_receipt_is_bearer_capability: bool
+    sealed_capsule_is_bearer_capability: bool
+    runtime_authority_granted: bool
+    runtime_authority_count: int
     request_nonce_digest: str
     requested_at: datetime
 
@@ -172,6 +182,21 @@ def validate_workflow_protected_transport_target_context_capsule_opening_authori
         or result.scope != request.scope
         or candidate.consumer_subject_id != request.consumer_subject_id
         or candidate.consumer_audience != request.consumer_audience
+        or candidate.consumer_contract_id != attestation.consumer_contract_id
+        or candidate.consumer_contract_version != attestation.consumer_contract_version
+        or candidate.purpose_id != attestation.purpose_id
+        or attestation.scope != request.scope
+        or attestation.consumer_subject_id != request.consumer_subject_id
+        or attestation.consumer_audience != request.consumer_audience
+        or attestation.consumer_contract_id != candidate.consumer_contract_id
+        or attestation.consumer_contract_version != candidate.consumer_contract_version
+        or attestation.purpose_id != candidate.purpose_id
+        or attestation.destination_custody_final is not True
+        or attestation.source_reuse_authority_terminated is not True
+        or attestation.consumer_receipt_is_bearer_capability is not False
+        or attestation.sealed_capsule_is_bearer_capability is not False
+        or attestation.runtime_authority_granted is not False
+        or attestation.runtime_authority_count != 0
         or candidate.policy_digest != request.expected_policy_digest
         or candidate.issued_at != request.requested_at
         or candidate.valid_until - candidate.issued_at

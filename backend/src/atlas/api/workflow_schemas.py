@@ -2759,6 +2759,16 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseDat
     renewable: Literal[False]
     transferable: Literal[False]
     lease_is_bearer_capability: Literal[False]
+    consumer_contract_id: Literal[
+        "contract.workflow-protected-transport-target-context-capsule-consumer"
+    ]
+    consumer_contract_version: Literal["1.0"]
+    purpose_id: Literal[
+        "purpose.workflow-protected-transport-target-context-capsule-opening-evaluation"
+    ]
+    destination_custody_profile_reference: str = Field(
+        min_length=3, max_length=128, pattern=STABLE_ID
+    )
     policy_id: Literal[
         "policy.workflow-protected-transport-target-context-capsule-opening-authorization"
     ]
@@ -2773,6 +2783,13 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseDat
         *,
         evaluated_at: datetime,
     ) -> WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseData:
+        custody_profile_input = "|".join(
+            (
+                lease.destination_boundary_id,
+                lease.destination_deployment_id,
+                lease.trusted_profile_digest,
+            )
+        )
         return cls(
             authorization_lease_id=lease.authorization_lease_id,
             scope=WorkflowScopeData.model_validate(lease.scope.canonical_value()),
@@ -2784,6 +2801,13 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseDat
             renewable=False,
             transferable=False,
             lease_is_bearer_capability=False,
+            consumer_contract_id=lease.consumer_contract_id,
+            consumer_contract_version=lease.consumer_contract_version,
+            purpose_id=lease.purpose_id,
+            destination_custody_profile_reference=(
+                "integrity.workflow-target-context-capsule-destination-custody-profile."
+                f"{sha256(custody_profile_input.encode()).hexdigest()[:24]}"
+            ),
             policy_id=lease.policy_id,
             policy_version=lease.policy_version,
             authority=WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseAuthorityData.model_validate(

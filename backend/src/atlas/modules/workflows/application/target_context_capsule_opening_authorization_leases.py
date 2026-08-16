@@ -100,9 +100,14 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseSer
         normalized_key = self._idempotency_key(idempotency_key)
         if policy_id != self._policy.policy_id or policy_version != self._policy.policy_version:
             self._raise("workflow_target_context_capsule_opening_policy_conflict")
-        source = await self._repository.get_target_context_capsule_opening_authorization_source(
-            handoff_id=handoff_id
-        )
+        try:
+            source = await self._repository.get_target_context_capsule_opening_authorization_source(
+                handoff_id=handoff_id
+            )
+        except WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseError:
+            raise
+        except Exception:
+            self._raise("workflow_target_context_capsule_opening_repository_unavailable")
         if source is None:
             self._raise("workflow_target_context_capsule_opening_evidence_conflict")
         self._validate_source(source, expected_digest=handoff_digest, scope=context.scope)
@@ -127,7 +132,15 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseSer
         request = self._attestation_request(source, nonce_digest=nonce_digest, context=context)
         try:
             attestation = await self._custody_attestor.attest_destination_custody(request)
+        except WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseError:
+            raise
+        except Exception:
+            self._raise("workflow_target_context_capsule_opening_evidence_conflict")
+        try:
             authoritative_now = await self._repository.get_authoritative_time()
+        except Exception:
+            self._raise("workflow_target_context_capsule_opening_repository_unavailable")
+        try:
             self._validate_attestation(attestation, request=request, evaluated_at=authoritative_now)
             if (
                 self._custody_signature_verifier.verify_destination_custody_attestation(attestation)
@@ -220,9 +233,16 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseSer
             self._raise("workflow_target_context_capsule_opening_durable_repository_required")
         if not 1 <= limit <= 256:
             self._raise("workflow_target_context_capsule_opening_limit_invalid")
-        leases = await self._repository.list_target_context_capsule_opening_authorization_leases(
-            scope=scope, limit=limit
-        )
+        try:
+            leases = (
+                await self._repository.list_target_context_capsule_opening_authorization_leases(
+                    scope=scope, limit=limit
+                )
+            )
+        except WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseError:
+            raise
+        except Exception:
+            self._raise("workflow_target_context_capsule_opening_repository_unavailable")
         for lease in leases:
             self._validate_historical_lease(lease, scope=scope)
         return leases
@@ -313,6 +333,16 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseSer
             trusted_profile_digest=attempt.trusted_profile_digest,
             scope=result.scope,
             consumer_subject_id=context.subject_id,
+            consumer_audience=self._policy.consumer_audience,
+            consumer_contract_id=self._policy.consumer_contract_id,
+            consumer_contract_version=self._policy.consumer_contract_version,
+            purpose_id=self._policy.purpose_id,
+            destination_custody_final=True,
+            source_reuse_authority_terminated=True,
+            consumer_receipt_is_bearer_capability=False,
+            sealed_capsule_is_bearer_capability=False,
+            runtime_authority_granted=False,
+            runtime_authority_count=0,
             request_nonce_digest=nonce_digest,
             requested_at=context.requested_at,
         )
@@ -348,6 +378,18 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseSer
             "approved_adapter_version",
             "verification_signing_key_id",
             "trusted_profile_digest",
+            "scope",
+            "consumer_subject_id",
+            "consumer_audience",
+            "consumer_contract_id",
+            "consumer_contract_version",
+            "purpose_id",
+            "destination_custody_final",
+            "source_reuse_authority_terminated",
+            "consumer_receipt_is_bearer_capability",
+            "sealed_capsule_is_bearer_capability",
+            "runtime_authority_granted",
+            "runtime_authority_count",
             "request_nonce_digest",
         ):
             if getattr(attestation, name) != getattr(request, name):
@@ -361,7 +403,13 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseSer
             or not attestation.handed_off_sealed
             or not attestation.destination_custody_confirmed
             or not attestation.custody_finality_confirmed
+            or not attestation.destination_custody_final
+            or not attestation.source_reuse_authority_terminated
             or not attestation.capsule_remains_sealed
+            or attestation.consumer_receipt_is_bearer_capability
+            or attestation.sealed_capsule_is_bearer_capability
+            or attestation.runtime_authority_granted
+            or attestation.runtime_authority_count != 0
             or attestation.revoked
             or attestation.destroyed
             or canonical_digest(attestation.digest_payload()) != attestation.canonical_digest

@@ -9448,6 +9448,13 @@ class WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel(Base):
             "consumption_claim_id",
             name="uq_wf_tctx_handoff_attempt_lineage",
         ),
+        UniqueConstraint(
+            "attempt_id",
+            "canonical_digest",
+            "sealed_capsule_id",
+            "sealed_capsule_digest",
+            name="uq_wf_tctx_handoff_attempt_open_auth_lineage",
+        ),
         CheckConstraint("state = 'started'", name="ck_wf_tctx_handoff_attempt_state"),
         CheckConstraint(
             "started_at < handoff_deadline AND handoff_deadline <= lease_valid_until "
@@ -9599,6 +9606,21 @@ class WorkflowProtectedTransportTargetContextCapsuleHandoffResultModel(Base):
             "consumption_claim_id",
             name="uq_wf_tctx_handoff_result_lineage",
         ),
+        UniqueConstraint(
+            "handoff_id",
+            "canonical_digest",
+            "attempt_id",
+            "attempt_digest",
+            "consumption_claim_id",
+            "consumption_claim_digest",
+            "authorization_lease_id",
+            "authorization_lease_digest",
+            "consumer_binding_id",
+            "consumer_binding_digest",
+            "consumer_receipt_id",
+            "receipt_digest",
+            name="uq_wf_tctx_handoff_result_open_auth_lineage",
+        ),
         ForeignKeyConstraint(
             ["handoff_id", "attempt_id", "consumption_claim_id"],
             [
@@ -9720,23 +9742,85 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseMod
         UniqueConstraint("handoff_id", name="uq_wf_tctx_open_auth_result"),
         UniqueConstraint("consumer_receipt_id", name="uq_wf_tctx_open_auth_receipt"),
         UniqueConstraint("sealed_capsule_id", name="uq_wf_tctx_open_auth_capsule"),
+        UniqueConstraint(
+            "authorization_lease_id",
+            "handoff_id",
+            "consumer_receipt_id",
+            "sealed_capsule_id",
+            name="uq_wf_tctx_open_auth_claim_lineage",
+        ),
         ForeignKeyConstraint(
-            ["handoff_id", "attempt_id", "consumption_claim_id"],
+            [
+                "handoff_id",
+                "handoff_result_digest",
+                "attempt_id",
+                "attempt_digest",
+                "consumption_claim_id",
+                "consumption_claim_digest",
+                "upstream_authorization_lease_id",
+                "upstream_authorization_lease_digest",
+                "consumer_binding_id",
+                "consumer_binding_digest",
+                "consumer_receipt_id",
+                "receipt_digest",
+            ],
             [
                 "workflow_event_tctx_capsule_handoff_results.handoff_id",
+                "workflow_event_tctx_capsule_handoff_results.canonical_digest",
                 "workflow_event_tctx_capsule_handoff_results.attempt_id",
+                "workflow_event_tctx_capsule_handoff_results.attempt_digest",
                 "workflow_event_tctx_capsule_handoff_results.consumption_claim_id",
+                "workflow_event_tctx_capsule_handoff_results.consumption_claim_digest",
+                "workflow_event_tctx_capsule_handoff_results.authorization_lease_id",
+                "workflow_event_tctx_capsule_handoff_results.authorization_lease_digest",
+                "workflow_event_tctx_capsule_handoff_results.consumer_binding_id",
+                "workflow_event_tctx_capsule_handoff_results.consumer_binding_digest",
+                "workflow_event_tctx_capsule_handoff_results.consumer_receipt_id",
+                "workflow_event_tctx_capsule_handoff_results.receipt_digest",
             ],
             name="fk_wf_tctx_open_auth_result_lineage",
         ),
         ForeignKeyConstraint(
-            ["handoff_id", "attempt_id", "consumption_claim_id"],
+            ["attempt_id", "attempt_digest", "sealed_capsule_id", "sealed_capsule_digest"],
             [
-                "workflow_event_tctx_capsule_handoff_attempts.handoff_id",
                 "workflow_event_tctx_capsule_handoff_attempts.attempt_id",
-                "workflow_event_tctx_capsule_handoff_attempts.consumption_claim_id",
+                "workflow_event_tctx_capsule_handoff_attempts.canonical_digest",
+                "workflow_event_tctx_capsule_handoff_attempts.sealed_capsule_id",
+                "workflow_event_tctx_capsule_handoff_attempts.sealed_capsule_digest",
             ],
             name="fk_wf_tctx_open_auth_attempt_lineage",
+        ),
+        CheckConstraint(
+            "policy_id = 'policy.workflow-protected-transport-target-context-capsule-"
+            "opening-authorization' AND policy_version = '1.0' "
+            "AND consumer_subject_id = "
+            "'service.workflow-protected-transport-target-context-capsule-consumer' "
+            "AND consumer_audience = "
+            "'audience.workflow-protected-transport-target-context-capsule-consumer' "
+            "AND consumer_contract_id = "
+            "'contract.workflow-protected-transport-target-context-capsule-consumer' "
+            "AND consumer_contract_version = '1.0' "
+            "AND purpose_id = "
+            "'purpose.workflow-protected-transport-target-context-capsule-opening-evaluation' "
+            "AND destination_boundary_id = "
+            "'boundary.workflow-protected-target-context-capsule-consumer' "
+            "AND destination_deployment_id = "
+            "'deployment.workflow-protected-target-context-capsule-consumer' "
+            "AND destination_generation = 1 "
+            "AND destination_fencing_token_digest = "
+            "'701153578261c45c3f1faa89f75b4a3f7003126683ddb895c0346aac0f9148e7' "
+            "AND custody_contract_id = "
+            "'contract.workflow-protected-target-context-capsule-custody' "
+            "AND custody_contract_version = '1.0' "
+            "AND approved_adapter_id = "
+            "'adapter.workflow-protected-target-context-capsule-sealed-handoff' "
+            "AND approved_adapter_version = '1.0' "
+            "AND verification_signing_key_id = "
+            "'key.workflow-protected-target-context-capsule-handoff-receipt.v1' "
+            "AND trusted_profile_digest = "
+            "'7f4c97bcac8852cb9bee577f15103a51dbbee4180ba9bff980d54bc6e691ff78' "
+            "AND state = 'authorized_unconsumed'",
+            name="ck_wf_tctx_capsule_open_auth_contract",
         ),
         CheckConstraint(
             "valid_until = issued_at + interval '1 second' AND issued_at < valid_until "
@@ -9875,15 +9959,20 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationClaimMod
             "idempotency_key",
             name="uq_wf_tctx_open_auth_scope_idem",
         ),
+        ForeignKeyConstraint(
+            ["authorization_lease_id", "handoff_id", "consumer_receipt_id", "sealed_capsule_id"],
+            [
+                "workflow_event_tctx_capsule_opening_authorization_leases.authorization_lease_id",
+                "workflow_event_tctx_capsule_opening_authorization_leases.handoff_id",
+                "workflow_event_tctx_capsule_opening_authorization_leases.consumer_receipt_id",
+                "workflow_event_tctx_capsule_opening_authorization_leases.sealed_capsule_id",
+            ],
+            name="fk_wf_tctx_open_auth_claim_lease",
+        ),
     )
 
     claim_id: Mapped[str] = mapped_column(String(128), primary_key=True)
-    authorization_lease_id: Mapped[str] = mapped_column(
-        ForeignKey(
-            "workflow_event_tctx_capsule_opening_authorization_leases.authorization_lease_id"
-        ),
-        nullable=False,
-    )
+    authorization_lease_id: Mapped[str] = mapped_column(String(128), nullable=False)
     handoff_id: Mapped[str] = mapped_column(String(128), nullable=False)
     consumer_receipt_id: Mapped[str] = mapped_column(String(128), nullable=False)
     sealed_capsule_id: Mapped[str] = mapped_column(String(128), nullable=False)

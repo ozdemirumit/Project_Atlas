@@ -74,6 +74,29 @@ def upgrade() -> None:
         HANDOFF_RESULT_TABLE,
         ["handoff_id", "attempt_id", "consumption_claim_id"],
     )
+    op.create_unique_constraint(
+        "uq_wf_tctx_handoff_result_open_auth_lineage",
+        HANDOFF_RESULT_TABLE,
+        [
+            "handoff_id",
+            "canonical_digest",
+            "attempt_id",
+            "attempt_digest",
+            "consumption_claim_id",
+            "consumption_claim_digest",
+            "authorization_lease_id",
+            "authorization_lease_digest",
+            "consumer_binding_id",
+            "consumer_binding_digest",
+            "consumer_receipt_id",
+            "receipt_digest",
+        ],
+    )
+    op.create_unique_constraint(
+        "uq_wf_tctx_handoff_attempt_open_auth_lineage",
+        HANDOFF_ATTEMPT_TABLE,
+        ["attempt_id", "canonical_digest", "sealed_capsule_id", "sealed_capsule_digest"],
+    )
     op.create_table(
         LEASE_TABLE,
         sa.Column("authorization_lease_id", sa.String(128), primary_key=True),
@@ -128,7 +151,34 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "policy_id = 'policy.workflow-protected-transport-target-context-capsule-"
             "opening-authorization' "
-            "AND policy_version = '1.0' AND state = 'authorized_unconsumed'",
+            "AND policy_version = '1.0' "
+            "AND consumer_subject_id = "
+            "'service.workflow-protected-transport-target-context-capsule-consumer' "
+            "AND consumer_audience = "
+            "'audience.workflow-protected-transport-target-context-capsule-consumer' "
+            "AND consumer_contract_id = "
+            "'contract.workflow-protected-transport-target-context-capsule-consumer' "
+            "AND consumer_contract_version = '1.0' "
+            "AND purpose_id = "
+            "'purpose.workflow-protected-transport-target-context-capsule-opening-evaluation' "
+            "AND destination_boundary_id = "
+            "'boundary.workflow-protected-target-context-capsule-consumer' "
+            "AND destination_deployment_id = "
+            "'deployment.workflow-protected-target-context-capsule-consumer' "
+            "AND destination_generation = 1 "
+            "AND destination_fencing_token_digest = "
+            "'701153578261c45c3f1faa89f75b4a3f7003126683ddb895c0346aac0f9148e7' "
+            "AND custody_contract_id = "
+            "'contract.workflow-protected-target-context-capsule-custody' "
+            "AND custody_contract_version = '1.0' "
+            "AND approved_adapter_id = "
+            "'adapter.workflow-protected-target-context-capsule-sealed-handoff' "
+            "AND approved_adapter_version = '1.0' "
+            "AND verification_signing_key_id = "
+            "'key.workflow-protected-target-context-capsule-handoff-receipt.v1' "
+            "AND trusted_profile_digest = "
+            "'7f4c97bcac8852cb9bee577f15103a51dbbee4180ba9bff980d54bc6e691ff78' "
+            "AND state = 'authorized_unconsumed'",
             name="ck_wf_tctx_capsule_open_auth_contract",
         ),
         sa.CheckConstraint(
@@ -142,20 +192,43 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(_authority_check(), name="ck_wf_tctx_capsule_open_auth_authority"),
         sa.ForeignKeyConstraint(
-            ["handoff_id", "attempt_id", "consumption_claim_id"],
+            [
+                "handoff_id",
+                "handoff_result_digest",
+                "attempt_id",
+                "attempt_digest",
+                "consumption_claim_id",
+                "consumption_claim_digest",
+                "upstream_authorization_lease_id",
+                "upstream_authorization_lease_digest",
+                "consumer_binding_id",
+                "consumer_binding_digest",
+                "consumer_receipt_id",
+                "receipt_digest",
+            ],
             [
                 f"{HANDOFF_RESULT_TABLE}.handoff_id",
+                f"{HANDOFF_RESULT_TABLE}.canonical_digest",
                 f"{HANDOFF_RESULT_TABLE}.attempt_id",
+                f"{HANDOFF_RESULT_TABLE}.attempt_digest",
                 f"{HANDOFF_RESULT_TABLE}.consumption_claim_id",
+                f"{HANDOFF_RESULT_TABLE}.consumption_claim_digest",
+                f"{HANDOFF_RESULT_TABLE}.authorization_lease_id",
+                f"{HANDOFF_RESULT_TABLE}.authorization_lease_digest",
+                f"{HANDOFF_RESULT_TABLE}.consumer_binding_id",
+                f"{HANDOFF_RESULT_TABLE}.consumer_binding_digest",
+                f"{HANDOFF_RESULT_TABLE}.consumer_receipt_id",
+                f"{HANDOFF_RESULT_TABLE}.receipt_digest",
             ],
             name="fk_wf_tctx_open_auth_result_lineage",
         ),
         sa.ForeignKeyConstraint(
-            ["handoff_id", "attempt_id", "consumption_claim_id"],
+            ["attempt_id", "attempt_digest", "sealed_capsule_id", "sealed_capsule_digest"],
             [
-                f"{HANDOFF_ATTEMPT_TABLE}.handoff_id",
                 f"{HANDOFF_ATTEMPT_TABLE}.attempt_id",
-                f"{HANDOFF_ATTEMPT_TABLE}.consumption_claim_id",
+                f"{HANDOFF_ATTEMPT_TABLE}.canonical_digest",
+                f"{HANDOFF_ATTEMPT_TABLE}.sealed_capsule_id",
+                f"{HANDOFF_ATTEMPT_TABLE}.sealed_capsule_digest",
             ],
             name="fk_wf_tctx_open_auth_attempt_lineage",
         ),
@@ -178,6 +251,13 @@ def upgrade() -> None:
         sa.UniqueConstraint("consumer_receipt_id", name="uq_wf_tctx_open_auth_receipt"),
         sa.UniqueConstraint("sealed_capsule_id", name="uq_wf_tctx_open_auth_capsule"),
         sa.UniqueConstraint("canonical_digest", name="uq_wf_tctx_open_auth_digest"),
+        sa.UniqueConstraint(
+            "authorization_lease_id",
+            "handoff_id",
+            "consumer_receipt_id",
+            "sealed_capsule_id",
+            name="uq_wf_tctx_open_auth_claim_lineage",
+        ),
     )
     op.create_index(
         "ix_wf_tctx_open_auth_scope",
@@ -203,8 +283,13 @@ def upgrade() -> None:
         sa.Column("payload", postgresql.JSONB(), nullable=False),
         sa.Column("authorization_audit_payload", postgresql.JSONB(), nullable=False),
         sa.ForeignKeyConstraint(
-            ["authorization_lease_id"],
-            [f"{LEASE_TABLE}.authorization_lease_id"],
+            ["authorization_lease_id", "handoff_id", "consumer_receipt_id", "sealed_capsule_id"],
+            [
+                f"{LEASE_TABLE}.authorization_lease_id",
+                f"{LEASE_TABLE}.handoff_id",
+                f"{LEASE_TABLE}.consumer_receipt_id",
+                f"{LEASE_TABLE}.sealed_capsule_id",
+            ],
             name="fk_wf_tctx_open_auth_claim_lease",
         ),
         sa.UniqueConstraint("authorization_lease_id", name="uq_wf_tctx_open_auth_claim_lease"),
@@ -257,5 +342,11 @@ def downgrade() -> None:
     )
     op.drop_table(CLAIM_TABLE)
     op.drop_table(LEASE_TABLE)
+    op.drop_constraint(
+        "uq_wf_tctx_handoff_attempt_open_auth_lineage", HANDOFF_ATTEMPT_TABLE, type_="unique"
+    )
+    op.drop_constraint(
+        "uq_wf_tctx_handoff_result_open_auth_lineage", HANDOFF_RESULT_TABLE, type_="unique"
+    )
     op.drop_constraint("uq_wf_tctx_handoff_result_lineage", HANDOFF_RESULT_TABLE, type_="unique")
     op.execute(sa.text(f"DROP FUNCTION IF EXISTS {APPEND_ONLY_FUNCTION}()"))

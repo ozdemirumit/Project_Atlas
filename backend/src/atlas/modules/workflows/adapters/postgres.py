@@ -5294,12 +5294,6 @@ class PostgreSQLWorkflowPlanRepository:
         request: WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseRequest,
     ) -> WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseResult:
         statuses = WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseStatus
-        try:
-            await request.required_precommit_audit()
-        except Exception:
-            return WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseResult(
-                statuses.PRECOMMIT_AUDIT_FAILED, None
-            )
         async with self._sessions() as session:
             locked = await self._lock_target_context_capsule_opening_authorization_sources(
                 session, request=request
@@ -5325,6 +5319,15 @@ class PostgreSQLWorkflowPlanRepository:
                 return (
                     WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseResult(
                         statuses.ALREADY_AUTHORIZED, None
+                    )
+                )
+            try:
+                await request.required_precommit_audit()
+            except Exception:
+                await session.rollback()
+                return (
+                    WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseResult(
+                        statuses.PRECOMMIT_AUDIT_FAILED, None
                     )
                 )
             commit_observed_at = cast(
