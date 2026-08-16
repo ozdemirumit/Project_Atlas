@@ -17,6 +17,7 @@ depends_on: str | Sequence[str] | None = None
 
 LEASE_TABLE = "workflow_event_tctx_capsule_handoff_authorization_leases"
 CLAIM_TABLE = "workflow_event_tctx_capsule_handoff_authorization_claims"
+APPEND_ONLY_FUNCTION = "reject_wf_tctx_capsule_handoff_auth_mutation"
 
 
 def _contract_check() -> str:
@@ -249,6 +250,22 @@ def upgrade() -> None:
     op.create_index("ix_wf_tctx_handoff_claim_scope", CLAIM_TABLE, ["idempotency_scope_id"])
     op.create_index("ix_wf_tctx_handoff_claim_binding", CLAIM_TABLE, ["consumer_binding_id"])
 
+    op.execute(
+        sa.text(
+            f"""
+            CREATE FUNCTION {APPEND_ONLY_FUNCTION}()
+            RETURNS trigger
+            LANGUAGE plpgsql
+            AS $$
+            BEGIN
+                RAISE EXCEPTION
+                    'workflow target-context capsule handoff authorization records are append-only'
+                    USING ERRCODE = '55000';
+            END;
+            $$
+            """
+        )
+    )
     for table, trigger in (
         (LEASE_TABLE, "trg_wf_tctx_handoff_leases_append_only"),
         (CLAIM_TABLE, "trg_wf_tctx_handoff_claims_append_only"),
@@ -256,7 +273,7 @@ def upgrade() -> None:
         op.execute(
             sa.text(
                 f"CREATE TRIGGER {trigger} BEFORE UPDATE OR DELETE ON {table} "
-                "FOR EACH ROW EXECUTE FUNCTION atlas_reject_append_only_mutation()"
+                f"FOR EACH ROW EXECUTE FUNCTION {APPEND_ONLY_FUNCTION}()"
             )
         )
 
@@ -280,3 +297,4 @@ def downgrade() -> None:
     op.execute(DOWNGRADE_EMPTY_GUARD_SQL)
     op.drop_table(CLAIM_TABLE)
     op.drop_table(LEASE_TABLE)
+    op.execute(sa.text(f"DROP FUNCTION IF EXISTS {APPEND_ONLY_FUNCTION}()"))

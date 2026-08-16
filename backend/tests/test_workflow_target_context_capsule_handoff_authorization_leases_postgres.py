@@ -170,6 +170,7 @@ def test_migration_is_linear_guarded_and_append_only() -> None:
     assert 'down_revision: str | None = "20260816_0134"' in source
     assert "trg_wf_tctx_handoff_leases_append_only" in source
     assert "trg_wf_tctx_handoff_claims_append_only" in source
+    assert "reject_wf_tctx_capsule_handoff_auth_mutation" in source
     assert "BEFORE UPDATE OR DELETE" in source
     assert "refusing to downgrade target-context capsule handoff authorization schema" in source
     assert "append-only tables contain evidence" in source
