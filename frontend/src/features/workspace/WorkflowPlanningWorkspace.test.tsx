@@ -30,6 +30,7 @@ import {
   type WorkflowPhysicalTransportTargetContextCapsuleHandoff,
   type WorkflowPhysicalTransportTargetContextCapsuleOpeningAuthorizationLease,
   type WorkflowPhysicalTransportTargetContextCapsuleOpening,
+  type WorkflowProtectedResidentContextAccessAuthorization,
   type WorkflowPhysicalTransportTargetContextBinding,
   type WorkflowPhysicalTransportCredentialAssignmentSnapshot,
   type WorkflowPhysicalTransportCredentialAssignmentBinding,
@@ -1211,6 +1212,48 @@ const targetContextCapsuleOpening: WorkflowPhysicalTransportTargetContextCapsule
     "integrity.workflow-target-context-capsule-opening.1234567890abcdef",
 };
 
+const protectedResidentContextAccessAuthorization: WorkflowProtectedResidentContextAccessAuthorization = {
+  authorization_lease_id:
+    "workflow-protected-resident-context-access-lease.1234567890abcdef",
+  state: "authorized_unconsumed",
+  effective_state: "active",
+  issued_at: "2026-08-14T10:08:28Z",
+  valid_until: "2026-08-14T10:08:29Z",
+  effective_until: "2026-08-14T10:08:29.500Z",
+  consumer_contract_id:
+    "contract.workflow-protected-transport-target-context-capsule-consumer",
+  consumer_contract_version: "1.0",
+  purpose_id: "purpose.workflow-protected-resident-context-access-evaluation",
+  policy_id: "policy.workflow-protected-resident-context-access-authorization",
+  policy_version: "1.0",
+  destination_profile_reference:
+    "integrity.workflow-protected-destination-profile.1234567890abcdef",
+  authority: {
+    protected_access_authority_granted: true,
+    endpoint_resolution_authorized: false,
+    route_selection_authorized: false,
+    route_binding_authorized: false,
+    credential_selection_authorized: false,
+    credential_assignment_binding_authorized: false,
+    credential_access_authorized: false,
+    credential_brokerage_authorized: false,
+    credential_resolution_authorized: false,
+    protected_artifact_access_authorized: false,
+    credential_delivery_authorized: false,
+    network_access_authorized: false,
+    readiness_probe_authorized: false,
+    publication_authorized: false,
+    delivery_authorized: false,
+    dispatch_authorized: false,
+    execution_authorized: false,
+    infrastructure_mutation_authorized: false,
+    handoff_authorized: false,
+    protected_opening_authorized: false,
+  },
+  integrity_reference:
+    "integrity.workflow-protected-access-authorization.1234567890abcdef",
+};
+
 const credentialAssignmentSnapshot: WorkflowPhysicalTransportCredentialAssignmentSnapshot = {
   snapshot_id: "workflow-credential-assignment-snapshot.1234567890abcdef",
   assignment_id: "deployment-credential-assignment.1234567890abcdef",
@@ -1873,6 +1916,30 @@ function targetContextCapsuleOpeningResponse(
   );
 }
 
+function protectedResidentContextAccessAuthorizationResponse(
+  authorizations: unknown[],
+  status = 200,
+  serverTime = "2026-08-14T10:08:28.500Z",
+  durable = true,
+): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: {
+            authorizations,
+            server_time: serverTime,
+            durable,
+          },
+          meta: {
+            correlation_id: "correlation.workflow.protected-resident-context-access-authorization",
+            generated_at: serverTime,
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function credentialAssignmentSnapshotResponse(
   snapshots: unknown[],
   status = 200,
@@ -1961,6 +2028,9 @@ function mockReadResponses(input: {
   targetContextCapsuleOpenings?: unknown[];
   targetContextCapsuleOpeningServerTime?: string;
   targetContextCapsuleOpeningDurable?: boolean;
+  protectedResidentContextAccessAuthorizations?: unknown[];
+  protectedResidentContextAccessAuthorizationServerTime?: string;
+  protectedResidentContextAccessAuthorizationDurable?: boolean;
   credentialAssignmentSnapshots?: unknown[];
   transportCompatibilityAdmissions?: unknown[];
   pendingTransportAdmissionResponse?: Promise<Response>;
@@ -1984,6 +2054,7 @@ function mockReadResponses(input: {
   pendingTargetContextCapsuleHandoffResponse?: Promise<Response>;
   pendingTargetContextCapsuleOpeningAuthorizationLeaseResponse?: Promise<Response>;
   pendingTargetContextCapsuleOpeningResponse?: Promise<Response>;
+  pendingProtectedResidentContextAccessAuthorizationResponse?: Promise<Response>;
   pendingCredentialAssignmentSnapshotResponse?: Promise<Response>;
   pendingTransportCompatibilityAdmissionResponse?: Promise<Response>;
   leaseStatus?: number;
@@ -2035,6 +2106,8 @@ function mockReadResponses(input: {
   targetContextCapsuleOpeningAuthorizationLeaseStatuses?: number[];
   targetContextCapsuleOpeningStatus?: number;
   targetContextCapsuleOpeningStatuses?: number[];
+  protectedResidentContextAccessAuthorizationStatus?: number;
+  protectedResidentContextAccessAuthorizationStatuses?: number[];
   credentialAssignmentSnapshotStatus?: number;
   credentialAssignmentSnapshotStatuses?: number[];
   transportCompatibilityAdmissionStatus?: number;
@@ -2061,10 +2134,31 @@ function mockReadResponses(input: {
   let targetContextCapsuleHandoffReadCount = 0;
   let targetContextCapsuleOpeningAuthorizationLeaseReadCount = 0;
   let targetContextCapsuleOpeningReadCount = 0;
+  let protectedResidentContextAccessAuthorizationReadCount = 0;
   let credentialAssignmentSnapshotReadCount = 0;
   let transportCompatibilityAdmissionReadCount = 0;
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (url.endsWith("/api/v1/workflows/protected-resident-context-access-authorizations")) {
+      if (input.pendingProtectedResidentContextAccessAuthorizationResponse) {
+        return input.pendingProtectedResidentContextAccessAuthorizationResponse;
+      }
+      const status =
+        input.protectedResidentContextAccessAuthorizationStatuses?.[
+          Math.min(
+            protectedResidentContextAccessAuthorizationReadCount++,
+            input.protectedResidentContextAccessAuthorizationStatuses.length - 1,
+          )
+        ] ?? input.protectedResidentContextAccessAuthorizationStatus ?? 200;
+      return Promise.resolve(
+        protectedResidentContextAccessAuthorizationResponse(
+          input.protectedResidentContextAccessAuthorizations ?? [],
+          status,
+          input.protectedResidentContextAccessAuthorizationServerTime,
+          input.protectedResidentContextAccessAuthorizationDurable,
+        ),
+      );
+    }
     if (url.endsWith("/api/v1/workflows/physical-transport-target-context-capsule-openings")) {
       if (input.pendingTargetContextCapsuleOpeningResponse) {
         return input.pendingTargetContextCapsuleOpeningResponse;
@@ -6875,6 +6969,133 @@ describe("WorkflowPlanningWorkspace", () => {
     expect(await within(section).findByText("Capsule opening evidence is unavailable")).toBeVisible();
     expect(within(section).queryByRole("list")).toBeNull();
     expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it("renders protected resident-context access authorizations as minimized read-only evidence", async () => {
+    expect(Object.keys(protectedResidentContextAccessAuthorization).sort()).toEqual(
+      [
+        "authorization_lease_id",
+        "state",
+        "effective_state",
+        "issued_at",
+        "valid_until",
+        "effective_until",
+        "consumer_contract_id",
+        "consumer_contract_version",
+        "purpose_id",
+        "policy_id",
+        "policy_version",
+        "destination_profile_reference",
+        "authority",
+        "integrity_reference",
+      ].sort(),
+    );
+    const expiredAuthorization: WorkflowProtectedResidentContextAccessAuthorization = {
+      ...protectedResidentContextAccessAuthorization,
+      authorization_lease_id:
+        "workflow-protected-resident-context-access-lease.abcdef1234567890",
+      issued_at: "2026-08-14T10:08:27Z",
+      valid_until: "2026-08-14T10:08:28Z",
+      effective_state: "expired",
+    };
+    mockReadResponses({
+      protectedResidentContextAccessAuthorizations: [
+        protectedResidentContextAccessAuthorization,
+        expiredAuthorization,
+      ],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Protected resident-context access authorizations",
+    })).closest("section") as HTMLElement;
+    const records = await within(section).findByRole("list", {
+      name: "Protected resident-context access authorizations",
+    });
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) =>
+        (request instanceof Request ? request.url : request.toString()).endsWith(
+          "/api/v1/workflows/protected-resident-context-access-authorizations",
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      within(section).getByTitle(
+        protectedResidentContextAccessAuthorization.authorization_lease_id,
+      ),
+    ).toBeVisible();
+    expect(records).toHaveTextContent("Active");
+    expect(records).toHaveTextContent("Expired");
+    expect(
+      within(section).getAllByTitle(
+        protectedResidentContextAccessAuthorization.consumer_contract_id,
+      )[0],
+    ).toBeVisible();
+    expect(
+      within(section).getAllByTitle(protectedResidentContextAccessAuthorization.purpose_id)[0],
+    ).toBeVisible();
+    expect(
+      within(section).getAllByTitle(
+        protectedResidentContextAccessAuthorization.destination_profile_reference,
+      )[0],
+    ).toBeVisible();
+    expect(records).toHaveTextContent(
+      /protected resident-context access true.*target-context capsule opening false.*target-context capsule handoff false.*endpoint resolution false.*route selection false.*route binding false.*credential selection false.*credential assignment binding false.*credential access false.*credential brokerage false.*credential resolution false.*protected artifact access false.*credential delivery false.*network access false.*readiness probe false.*publication false.*delivery false.*dispatch false.*execution false.*infrastructure mutation false/i,
+    );
+    expect(section).not.toHaveTextContent(
+      /opening\.hidden|capsule\.hidden|receipt\.hidden|attestation\.hidden|nonce\.hidden|target\.hidden|credential\.hidden|route\.hidden|fence\.hidden|idempotency\.hidden/i,
+    );
+  });
+
+  it("fails closed when protected resident-context access authorization evidence is unavailable or unsafe", async () => {
+    mockReadResponses({ protectedResidentContextAccessAuthorizationStatus: 503 });
+    const view = renderWorkspace();
+    let section = (await screen.findByRole("heading", {
+      name: "Protected resident-context access authorizations",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Resident-context access authorizations are unavailable"),
+    ).toBeVisible();
+    expect(within(section).queryByRole("list")).toBeNull();
+
+    view.unmount();
+    mockReadResponses({
+      protectedResidentContextAccessAuthorizations: [
+        {
+          ...protectedResidentContextAccessAuthorization,
+          opening_id: "opening.hidden",
+        },
+      ],
+    });
+    renderWorkspace();
+    section = (await screen.findByRole("heading", {
+      name: "Protected resident-context access authorizations",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Resident-context access authorizations are unavailable"),
+    ).toBeVisible();
+    expect(within(section).queryByRole("list")).toBeNull();
+    expect(section).not.toHaveTextContent("opening.hidden");
+  });
+
+  it("exposes no operational controls for protected resident-context access authorizations", async () => {
+    mockReadResponses({
+      protectedResidentContextAccessAuthorizations: [
+        protectedResidentContextAccessAuthorization,
+      ],
+    });
+    renderWorkspace();
+    const section = (await screen.findByRole("heading", {
+      name: "Protected resident-context access authorizations",
+    })).closest("section") as HTMLElement;
+    await within(section).findByRole("list", {
+      name: "Protected resident-context access authorizations",
+    });
+    expect(within(section).queryByRole("button")).toBeNull();
+    expect(within(section).queryByRole("link")).toBeNull();
+    expect(within(section).queryByRole("textbox")).toBeNull();
+    expect(within(section).queryByRole("combobox")).toBeNull();
+    expect(within(section).queryByRole("checkbox")).toBeNull();
   });
 
   it("creates and presents a planned-only workflow without requesting another login", async () => {

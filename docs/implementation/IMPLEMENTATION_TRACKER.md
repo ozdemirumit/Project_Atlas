@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-216 |
 | Title | Bounded single-use protected resident-context access authorization without handle creation, injection, network, execution or infrastructure mutation authority |
-| Status | In Progress |
+| Status | Implementation complete; delivery verification in progress |
 | Branch | `agent/protected-resident-context-access-authorization` |
 | Pull Request | Not opened |
 | Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160, ADR-161, ADR-162, ADR-163, ADR-164, ADR-165, ADR-166 |
 | Last Updated | 2026-08-16 |
-| Next Action | Define ADR-166 and implement the smallest fail-closed resident-context access-authorization vertical slice |
+| Next Action | Run exact-head PR CI, merge by verified SHA and confirm main CI |
 
 ### ATLAS-IMP-216 Scope Rationale
 
@@ -50,6 +50,17 @@
   process-memory, permissive or caller-asserted fallback.
 - Actual lease consumption, runtime-handle creation, resident-context access or injection remains a
   separately designed future boundary.
+
+### ATLAS-IMP-216 Local Verification
+
+- Focused backend domain, application, attestor, persistence and API tests: `48 passed`, with the
+  live PostgreSQL case deferred to CI because no local `ATLAS_TEST_POSTGRES_DSN` was configured.
+- Strict MyPy: no issues in the 15 affected backend, persistence, RBAC, API and test files.
+- Ruff: formatting and checks passed for all affected backend and migration files.
+- Frontend ESLint and TypeScript checks passed; focused Vitest: `3 passed`, `516 skipped`.
+- Alembic reports the single head `20260816_0139`.
+- Two independent reviews were completed; their persistence, replay, audit, RBAC, API-contract and
+  stale-helper findings were addressed before delivery.
 
 ### ATLAS-IMP-215 Scope Rationale
 
