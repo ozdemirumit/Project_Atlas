@@ -114,7 +114,6 @@ from atlas.modules.workflows.application import (
     WorkflowPlanMutationResult,
     WorkflowPlanMutationStatus,
     WorkflowPlanningError,
-    WorkflowProtectedResidentContextAccessAuthorizationError,
     WorkflowProtectedResidentContextAccessAuthorizationPreflightRequest,
     WorkflowProtectedResidentContextAccessAuthorizationPreflightResult,
     WorkflowProtectedResidentContextAccessAuthorizationPreflightStatus,
@@ -122,7 +121,6 @@ from atlas.modules.workflows.application import (
     WorkflowProtectedResidentContextAccessAuthorizationResult,
     WorkflowProtectedResidentContextAccessAuthorizationSource,
     WorkflowProtectedResidentContextAccessAuthorizationStatus,
-    validate_workflow_protected_resident_context_access_authorization_request,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseError,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseRequest,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseResult,
@@ -135,6 +133,7 @@ from atlas.modules.workflows.application import (
     WorkflowRunMaterializationRequest,
     WorkflowRunMaterializationResult,
     WorkflowRunMaterializationStatus,
+    validate_workflow_protected_resident_context_access_authorization_request,
     validate_workflow_protected_transport_target_context_capsule_handoff_authorization_request,
     validate_workflow_protected_transport_target_context_capsule_opening_authorization_request,
 )
@@ -430,11 +429,11 @@ from atlas.modules.workflows.domain import (
     WorkflowPlanStep,
     WorkflowPlanStepState,
     WorkflowPlanTransition,
+    WorkflowProtectedArtifactKind,
+    WorkflowProtectedArtifactStatusAttestation,
     WorkflowProtectedResidentContextAccessAuthorizationClaim,
     WorkflowProtectedResidentContextAccessAuthorizationLease,
     WorkflowProtectedResidentContextAccessAuthorizationLeaseState,
-    WorkflowProtectedArtifactKind,
-    WorkflowProtectedArtifactStatusAttestation,
     WorkflowProtectedTargetContextCapsuleLifecycleAttestation,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBinding,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBindingAuthority,
@@ -476,8 +475,8 @@ from atlas.modules.workflows.domain import (
     code_owned_workflow_event_physical_transport_target_context_artifact_opening_policy,
     code_owned_workflow_event_physical_transport_target_context_binding_policy,
     code_owned_workflow_event_transport_admission_policy,
-    code_owned_workflow_protected_transport_target_context_capsule_consumer_binding_policy,
     code_owned_workflow_protected_resident_context_access_authorization_policy,
+    code_owned_workflow_protected_transport_target_context_capsule_consumer_binding_policy,
     select_deployment_physical_transport_credential_assignment_head,
 )
 from atlas.modules.workflows.domain.models import (
@@ -5580,7 +5579,10 @@ class PostgreSQLWorkflowPlanRepository:
                 request_fingerprint=request.request_fingerprint,
             )
         )
-        if preflight.status is WorkflowProtectedResidentContextAccessAuthorizationPreflightStatus.REPLAY:
+        if (
+            preflight.status
+            is WorkflowProtectedResidentContextAccessAuthorizationPreflightStatus.REPLAY
+        ):
             row_claim = await self._resident_context_access_claim_for_digest(
                 scope=request.scope,
                 subject_id=request.consumer_subject_id,
@@ -5594,8 +5596,12 @@ class PostgreSQLWorkflowPlanRepository:
                 preflight.evaluated_at,
             )
         mapping = {
-            WorkflowProtectedResidentContextAccessAuthorizationPreflightStatus.IDEMPOTENCY_CONFLICT: statuses.IDEMPOTENCY_CONFLICT,
-            WorkflowProtectedResidentContextAccessAuthorizationPreflightStatus.ALREADY_AUTHORIZED: statuses.ALREADY_AUTHORIZED,
+            (
+                WorkflowProtectedResidentContextAccessAuthorizationPreflightStatus.IDEMPOTENCY_CONFLICT
+            ): statuses.IDEMPOTENCY_CONFLICT,
+            (
+                WorkflowProtectedResidentContextAccessAuthorizationPreflightStatus.ALREADY_AUTHORIZED
+            ): statuses.ALREADY_AUTHORIZED,
         }
         return WorkflowProtectedResidentContextAccessAuthorizationResult(
             mapping.get(preflight.status, statuses.EVIDENCE_CONFLICT),
@@ -5659,9 +5665,7 @@ class PostgreSQLWorkflowPlanRepository:
             audit_payload = {
                 "schema_id": "audit.workflow-protected-resident-context-access-authorization",
                 "schema_version": "1.0",
-                "access_authorization_lease_id": (
-                    working.candidate.access_authorization_lease_id
-                ),
+                "access_authorization_lease_id": (working.candidate.access_authorization_lease_id),
                 "opening_id": working.candidate.opening_id,
                 "request_fingerprint": working.request_fingerprint,
                 "scope": working.scope.canonical_value(),
@@ -5695,10 +5699,8 @@ class PostgreSQLWorkflowPlanRepository:
                 return committed
 
         async with self._sessions() as session:
-            retry_locked = (
-                await self._lock_protected_resident_context_access_authorization_sources(
-                    session, request=request
-                )
+            retry_locked = await self._lock_protected_resident_context_access_authorization_sources(
+                session, request=request
             )
             retry = self._protected_resident_context_access_retimed_request(
                 request, issued_at=retry_locked.observed_at
@@ -6179,9 +6181,7 @@ class PostgreSQLWorkflowPlanRepository:
         opening_authorization_claim = cast(
             WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationClaimModel | None,
             await session.scalar(
-                select(
-                    WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationClaimModel
-                )
+                select(WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationClaimModel)
                 .where(
                     WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationClaimModel.authorization_lease_id
                     == source.opening_authorization_lease.authorization_lease_id
@@ -6303,9 +6303,7 @@ class PostgreSQLWorkflowPlanRepository:
             opening_result = cls._target_context_capsule_opening_result_from_row(
                 locked.opening_result
             )
-            policy = (
-                code_owned_workflow_protected_resident_context_access_authorization_policy()
-            )
+            policy = code_owned_workflow_protected_resident_context_access_authorization_policy()
         except Exception:
             return False
         source = request.source
@@ -6317,7 +6315,9 @@ class PostgreSQLWorkflowPlanRepository:
             and source.opening_attempt == opening_attempt
             and source.opening_result == opening_result
             and opening_result.state
-            is WorkflowProtectedTransportTargetContextCapsuleOpeningResultState.OPENED_IN_PROTECTED_CONSUMER_BOUNDARY
+            is (
+                WorkflowProtectedTransportTargetContextCapsuleOpeningResultState.OPENED_IN_PROTECTED_CONSUMER_BOUNDARY
+            )
             and opening_result.completed_at is not None
             and opening_result.completed_at < opening_result.opening_deadline
             and opening_result.protected_resident_context_usable_until is not None
@@ -6327,8 +6327,7 @@ class PostgreSQLWorkflowPlanRepository:
             and source.destination_boundary_id == policy.destination_boundary_id
             and source.destination_deployment_id == policy.destination_deployment_id
             and source.destination_generation == policy.destination_generation
-            and source.destination_fencing_token_digest
-            == policy.destination_fencing_token_digest
+            and source.destination_fencing_token_digest == policy.destination_fencing_token_digest
             and attestation.attestor_id == policy.required_lifecycle_attestor_id
             and attestation.attestor_version == policy.required_lifecycle_attestor_version
             and attestation.observed_at <= locked.observed_at < attestation.valid_until
@@ -6369,8 +6368,7 @@ class PostgreSQLWorkflowPlanRepository:
             or row.request_fingerprint != request.request_fingerprint
             or row.opening_id != request.source.opening_result.opening_id
             or row.opening_result_digest != request.source.opening_result.canonical_digest
-            or row.protected_resident_context_id
-            != request.source.protected_resident_context_id
+            or row.protected_resident_context_id != request.source.protected_resident_context_id
         ):
             return WorkflowProtectedResidentContextAccessAuthorizationResult(
                 statuses.IDEMPOTENCY_CONFLICT, None, None, locked.observed_at
@@ -6425,9 +6423,7 @@ class PostgreSQLWorkflowPlanRepository:
             "opening_attempt_id": source.opening_attempt.attempt_id,
             "opening_attempt_digest": source.opening_attempt.canonical_digest,
             "opening_consumption_claim_id": source.opening_consumption_claim.claim_id,
-            "opening_consumption_claim_digest": (
-                source.opening_consumption_claim.canonical_digest
-            ),
+            "opening_consumption_claim_digest": (source.opening_consumption_claim.canonical_digest),
             "opening_authorization_lease_id": (
                 source.opening_authorization_lease.authorization_lease_id
             ),
@@ -6440,9 +6436,7 @@ class PostgreSQLWorkflowPlanRepository:
             "opening_deadline": result.opening_deadline,
             "protected_resident_context_id": source.protected_resident_context_id,
             "protected_resident_context_digest": source.protected_resident_context_digest,
-            "protected_resident_context_created_at": (
-                source.protected_resident_context_created_at
-            ),
+            "protected_resident_context_created_at": (source.protected_resident_context_created_at),
             "protected_resident_context_usable_until": (
                 source.protected_resident_context_usable_until
             ),
@@ -6501,7 +6495,9 @@ class PostgreSQLWorkflowPlanRepository:
             "renewable": False,
             "transferable": False,
             "lease_is_bearer_capability": False,
-            "state": WorkflowProtectedResidentContextAccessAuthorizationLeaseState.AUTHORIZED_UNCONSUMED,
+            "state": (
+                WorkflowProtectedResidentContextAccessAuthorizationLeaseState.AUTHORIZED_UNCONSUMED
+            ),
         }
         lease = WorkflowProtectedResidentContextAccessAuthorizationLease(
             **cast(Any, lease_values),
@@ -6565,8 +6561,7 @@ class PostgreSQLWorkflowPlanRepository:
             and candidate.opening_consumption_claim_id == claim.claim_id
             and candidate.opening_consumption_claim_digest == claim.canonical_digest
             and candidate.opening_receipt_digest == result.opening_receipt_digest
-            and candidate.protected_resident_context_id
-            == result.protected_resident_context_id
+            and candidate.protected_resident_context_id == result.protected_resident_context_id
             and candidate.protected_resident_context_digest
             == result.protected_resident_context_digest
             and candidate.protected_resident_context_created_at
@@ -6585,8 +6580,7 @@ class PostgreSQLWorkflowPlanRepository:
             and attestation.request_nonce_digest == request.expected_request_nonce_digest
             and attestation.opening_id == result.opening_id
             and attestation.opening_result_digest == result.canonical_digest
-            and attestation.protected_resident_context_id
-            == result.protected_resident_context_id
+            and attestation.protected_resident_context_id == result.protected_resident_context_id
             and attestation.protected_resident_context_digest
             == result.protected_resident_context_digest
             and attestation.resident_context_present is True
@@ -6989,14 +6983,8 @@ class PostgreSQLWorkflowPlanRepository:
         from atlas.modules.workflows import application
 
         return (
-            getattr(
-                application,
-                "WorkflowProtectedResidentContextAccessAuthorizationLeaseResult",
-            ),
-            getattr(
-                application,
-                "WorkflowProtectedResidentContextAccessAuthorizationLeaseStatus",
-            ),
+            application.WorkflowProtectedResidentContextAccessAuthorizationLeaseResult,
+            application.WorkflowProtectedResidentContextAccessAuthorizationLeaseStatus,
         )
 
     @staticmethod
@@ -7005,15 +6993,9 @@ class PostgreSQLWorkflowPlanRepository:
     ) -> Any:
         from atlas.modules.workflows import domain
 
-        lease_type = getattr(
-            domain, "WorkflowProtectedResidentContextAccessAuthorizationLease"
-        )
-        state_type = getattr(
-            domain, "WorkflowProtectedResidentContextAccessAuthorizationLeaseState"
-        )
-        authority_type = getattr(
-            domain, "WorkflowProtectedResidentContextAccessAuthorizationLeaseAuthority"
-        )
+        lease_type = domain.WorkflowProtectedResidentContextAccessAuthorizationLease
+        state_type = domain.WorkflowProtectedResidentContextAccessAuthorizationLeaseState
+        authority_type = domain.WorkflowProtectedResidentContextAccessAuthorizationLeaseAuthority
         payload = dict(row.payload)
         payload["scope"] = WorkflowScope(**cast(dict[str, str], payload["scope"]))
         payload["state"] = state_type(str(payload["state"]))

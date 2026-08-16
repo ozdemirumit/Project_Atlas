@@ -5,6 +5,11 @@ from atlas.modules.workflows.adapters.endpoint_materialization_unavailable impor
     UnavailableWorkflowPhysicalTransportEndpointMaterializer,
 )
 from atlas.modules.workflows.adapters.memory import InMemoryWorkflowPlanRepository
+from atlas.modules.workflows.adapters.protected_resident_context_lifecycle_attestors import (
+    DenyAllWorkflowProtectedResidentContextLifecycleSignatureVerifier,
+    DeterministicDevelopmentWorkflowProtectedResidentContextLifecycleAttestor,
+    UnavailableWorkflowProtectedResidentContextLifecycleAttestor,
+)
 from atlas.modules.workflows.adapters.target_context_access_status_attestors import (
     DenyAllWorkflowProtectedArtifactStatusSignatureVerifier,
     UnavailableWorkflowProtectedCredentialStatusAttestor,
@@ -42,10 +47,12 @@ from atlas.modules.workflows.adapters.unavailable import UnavailableWorkflowPlan
 
 __all__ = [
     "DenyAllWorkflowProtectedArtifactStatusSignatureVerifier",
+    "DenyAllWorkflowProtectedResidentContextLifecycleSignatureVerifier",
     "DenyAllWorkflowProtectedTargetContextCapsuleDestinationCustodySignatureVerifier",
     "DenyAllWorkflowProtectedTargetContextCapsuleHandoffAttestationSignatureVerifier",
     "DenyAllWorkflowProtectedTargetContextCapsuleLifecycleSignatureVerifier",
     "DenyAllWorkflowProtectedTargetContextCapsuleOpeningAttestationSignatureVerifier",
+    "DeterministicDevelopmentWorkflowProtectedResidentContextLifecycleAttestor",
     "InMemoryWorkflowPlanRepository",
     "SyntheticWorkflowPhysicalTransportEndpointMaterializer",
     "SyntheticWorkflowPhysicalTransportTargetContextArtifactOpener",
@@ -56,6 +63,7 @@ __all__ = [
     "UnavailableWorkflowPlanRepository",
     "UnavailableWorkflowProtectedCredentialStatusAttestor",
     "UnavailableWorkflowProtectedEndpointStatusAttestor",
+    "UnavailableWorkflowProtectedResidentContextLifecycleAttestor",
     "UnavailableWorkflowProtectedTargetContextCapsuleDestinationCustodyAttestor",
     "UnavailableWorkflowProtectedTargetContextCapsuleHandoffLifecycleAttestor",
     "UnavailableWorkflowProtectedTargetContextCapsuleLifecycleStatusAttestor",

@@ -165,7 +165,9 @@ async def test_live_postgres_winner_lineage_deadline_fence_lifecycle_and_append_
 
         with pytest.raises(IntegrityError):
             async with engine.begin() as connection:
-                await connection.execute(lease_table.insert(), _live_values(seed=seed, table=lease_table))
+                await connection.execute(
+                    lease_table.insert(), _live_values(seed=seed, table=lease_table)
+                )
 
         for name, value in (
             ("opening_deadline", winner["opening_completed_at"]),
@@ -193,7 +195,9 @@ async def test_live_postgres_winner_lineage_deadline_fence_lifecycle_and_append_
             with pytest.raises(DBAPIError):
                 async with engine.begin() as connection:
                     await connection.execute(
-                        table.update().where(table.c[key] == value).values(payload={"changed": True})
+                        table.update()
+                        .where(table.c[key] == value)
+                        .values(payload={"changed": True})
                     )
     finally:
         await engine.dispose()

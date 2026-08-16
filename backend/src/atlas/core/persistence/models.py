@@ -10965,9 +10965,7 @@ class WorkflowProtectedResidentContextAccessAuthorizationClaimModel(Base):
             ],
             name="fk_wf_rc_access_auth_claim_lease",
         ),
-        UniqueConstraint(
-            "access_authorization_lease_id", name="uq_wf_rc_access_auth_claim_lease"
-        ),
+        UniqueConstraint("access_authorization_lease_id", name="uq_wf_rc_access_auth_claim_lease"),
         UniqueConstraint("opening_id", name="uq_wf_rc_access_auth_claim_result"),
         UniqueConstraint(
             "protected_resident_context_id", name="uq_wf_rc_access_auth_claim_context"

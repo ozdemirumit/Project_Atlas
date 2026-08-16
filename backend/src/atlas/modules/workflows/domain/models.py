@@ -10098,6 +10098,15 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseEff
     EXPIRED = "expired"
 
 
+class WorkflowProtectedResidentContextAccessAuthorizationLeaseState(StrEnum):
+    AUTHORIZED_UNCONSUMED = "authorized_unconsumed"
+
+
+class WorkflowProtectedResidentContextAccessAuthorizationLeaseEffectiveState(StrEnum):
+    ACTIVE = "active"
+    EXPIRED = "expired"
+
+
 class WorkflowProtectedTransportTargetContextCapsuleOpeningAttemptState(StrEnum):
     STARTED = "started"
 
@@ -11391,3 +11400,429 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningResult:
 
     def canonical_value(self) -> dict[str, object]:
         return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedResidentContextAccessAuthorizationPolicy:
+    policy_id: str
+    policy_version: str
+    consumer_subject_id: str
+    consumer_audience: str
+    consumer_contract_id: str
+    consumer_contract_version: str
+    purpose_id: str
+    required_opening_result_state: str
+    required_attestor_id: str
+    required_attestor_version: str
+    destination_boundary_id: str
+    destination_deployment_id: str
+    destination_generation: int
+    destination_fencing_token_digest: str
+    verification_signing_key_id: str
+    trusted_opener_profile_digest: str
+    maximum_lifetime_seconds: int
+    single_use_required: bool
+    renewable_allowed: bool
+    transferable_allowed: bool
+    bearer_capability_allowed: bool
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        expected = (
+            code_owned_workflow_protected_resident_context_access_authorization_policy_values()
+        )
+        if any(getattr(self, name) != value for name, value in expected.items()):
+            raise ValueError("resident context access authorization policy is not code-owned")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("resident context access authorization policy digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return _target_context_capsule_handoff_consumption_payload(self)
+
+
+def code_owned_workflow_protected_resident_context_access_authorization_policy_values() -> dict[
+    str, object
+]:
+    opening = (
+        code_owned_workflow_protected_transport_target_context_capsule_opening_consumption_policy()
+    )
+    return {
+        "policy_id": "policy.workflow-protected-resident-context-access-authorization",
+        "policy_version": "1.0",
+        "consumer_subject_id": opening.consumer_subject_id,
+        "consumer_audience": opening.consumer_audience,
+        "consumer_contract_id": opening.consumer_contract_id,
+        "consumer_contract_version": opening.consumer_contract_version,
+        "purpose_id": "purpose.workflow-protected-resident-context-access-evaluation",
+        "required_opening_result_state": (
+            WorkflowProtectedTransportTargetContextCapsuleOpeningResultState.OPENED_IN_PROTECTED_CONSUMER_BOUNDARY.value
+        ),
+        "required_attestor_id": "attestor.workflow-protected-resident-context-lifecycle",
+        "required_attestor_version": "1.0",
+        "destination_boundary_id": opening.destination_boundary_id,
+        "destination_deployment_id": opening.destination_deployment_id,
+        "destination_generation": opening.destination_generation,
+        "destination_fencing_token_digest": opening.destination_fencing_token_digest,
+        "verification_signing_key_id": opening.verification_signing_key_id,
+        "trusted_opener_profile_digest": opening.trusted_opener_profile_digest,
+        "maximum_lifetime_seconds": 1,
+        "single_use_required": True,
+        "renewable_allowed": False,
+        "transferable_allowed": False,
+        "bearer_capability_allowed": False,
+    }
+
+
+def code_owned_workflow_protected_resident_context_access_authorization_policy() -> (
+    WorkflowProtectedResidentContextAccessAuthorizationPolicy
+):
+    values = code_owned_workflow_protected_resident_context_access_authorization_policy_values()
+    return WorkflowProtectedResidentContextAccessAuthorizationPolicy(
+        **cast(Any, values), canonical_digest=canonical_digest(values)
+    )
+
+
+_PROTECTED_RESIDENT_CONTEXT_OPERATIONAL_AUTHORITY_FIELDS = (
+    "endpoint_resolution_authorized",
+    "route_selection_authorized",
+    "route_binding_authorized",
+    "credential_selection_authorized",
+    "credential_assignment_binding_authorized",
+    "credential_access_authorized",
+    "credential_brokerage_authorized",
+    "credential_resolution_authorized",
+    "protected_artifact_access_authorized",
+    "credential_delivery_authorized",
+    "network_access_authorized",
+    "readiness_probe_authorized",
+    "publication_authorized",
+    "delivery_authorized",
+    "dispatch_authorized",
+    "execution_authorized",
+    "infrastructure_mutation_authorized",
+    "target_context_capsule_handoff_authorized",
+    "target_context_capsule_opening_authorized",
+)
+
+
+def _require_protected_resident_context_authority(
+    instance: (
+        WorkflowProtectedResidentContextAccessAuthorizationClaim
+        | WorkflowProtectedResidentContextAccessAuthorizationLease
+    ),
+    *,
+    access_granted: bool,
+) -> None:
+    if any(
+        getattr(instance, name) is not False
+        for name in _PROTECTED_RESIDENT_CONTEXT_OPERATIONAL_AUTHORITY_FIELDS
+    ):
+        raise ValueError("resident context access authorization grants operational authority")
+    if instance.protected_resident_context_access_authority_granted is not access_granted:
+        raise ValueError("resident context access authority declaration is invalid")
+
+
+def _validate_protected_resident_context_source(
+    instance: (
+        WorkflowProtectedResidentContextAccessAuthorizationClaim
+        | WorkflowProtectedResidentContextAccessAuthorizationLease
+    ),
+) -> None:
+    policy = code_owned_workflow_protected_resident_context_access_authorization_policy()
+    if (
+        instance.opening_result_state
+        is not (
+            WorkflowProtectedTransportTargetContextCapsuleOpeningResultState.OPENED_IN_PROTECTED_CONSUMER_BOUNDARY
+        )
+        or instance.opening_completed_at.tzinfo is None
+        or instance.opening_deadline.tzinfo is None
+        or instance.protected_resident_context_created_at.tzinfo is None
+        or instance.protected_resident_context_usable_until.tzinfo is None
+        or not instance.opening_completed_at < instance.opening_deadline
+        or instance.protected_resident_context_created_at != instance.opening_completed_at
+        or not instance.protected_resident_context_created_at
+        < instance.protected_resident_context_usable_until
+        or instance.protected_resident_context_usable_until
+        > instance.protected_resident_context_created_at
+        + timedelta(
+            seconds=(
+                WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_RESIDENT_CONTEXT_MAXIMUM_LIFETIME_SECONDS
+            )
+        )
+        or instance.protected_resident_context_is_bearer_capability is not False
+        or instance.capsule_opened_in_protected_boundary is not True
+        or instance.target_context_pair_verified is not True
+        or instance.opening_outcome_known is not True
+        or instance.protected_source_closed is not True
+        or instance.source_capsule_zeroized is not True
+        or instance.consumer_subject_id != policy.consumer_subject_id
+        or instance.consumer_audience != policy.consumer_audience
+        or instance.consumer_contract_id != policy.consumer_contract_id
+        or instance.consumer_contract_version != policy.consumer_contract_version
+        or instance.purpose_id != policy.purpose_id
+        or instance.policy_id != policy.policy_id
+        or instance.policy_version != policy.policy_version
+        or instance.policy_digest != policy.canonical_digest
+    ):
+        raise ValueError("protected resident context authorization source is ineligible")
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedResidentContextAccessAuthorizationClaim:
+    claim_id: str
+    opening_id: str
+    opening_result_digest: str
+    opening_attempt_id: str
+    opening_attempt_digest: str
+    opening_consumption_claim_id: str
+    opening_consumption_claim_digest: str
+    opening_authorization_lease_id: str
+    opening_authorization_lease_digest: str
+    opening_receipt_digest: str
+    opening_result_state: WorkflowProtectedTransportTargetContextCapsuleOpeningResultState
+    opening_completed_at: datetime
+    opening_deadline: datetime
+    protected_resident_context_id: str
+    protected_resident_context_digest: str
+    protected_resident_context_created_at: datetime
+    protected_resident_context_usable_until: datetime
+    protected_resident_context_is_bearer_capability: bool
+    capsule_opened_in_protected_boundary: bool
+    target_context_pair_verified: bool
+    opening_outcome_known: bool
+    protected_source_closed: bool
+    source_capsule_zeroized: bool
+    scope: WorkflowScope
+    consumer_subject_id: str
+    consumer_audience: str
+    consumer_contract_id: str
+    consumer_contract_version: str
+    purpose_id: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    request_fingerprint: str
+    idempotency_digest: str
+    authorization_audit_digest: str
+    claimed_at: datetime
+    endpoint_resolution_authorized: bool = False
+    route_selection_authorized: bool = False
+    route_binding_authorized: bool = False
+    credential_selection_authorized: bool = False
+    credential_assignment_binding_authorized: bool = False
+    credential_access_authorized: bool = False
+    credential_brokerage_authorized: bool = False
+    credential_resolution_authorized: bool = False
+    protected_artifact_access_authorized: bool = False
+    credential_delivery_authorized: bool = False
+    network_access_authorized: bool = False
+    readiness_probe_authorized: bool = False
+    publication_authorized: bool = False
+    delivery_authorized: bool = False
+    dispatch_authorized: bool = False
+    execution_authorized: bool = False
+    infrastructure_mutation_authorized: bool = False
+    target_context_capsule_handoff_authorized: bool = False
+    target_context_capsule_opening_authorized: bool = False
+    protected_resident_context_access_authority_granted: bool = False
+    canonical_digest: str = ""
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.claim_id,
+            self.opening_id,
+            self.opening_attempt_id,
+            self.opening_consumption_claim_id,
+            self.opening_authorization_lease_id,
+            self.protected_resident_context_id,
+            self.consumer_subject_id,
+            self.consumer_audience,
+            self.consumer_contract_id,
+            self.consumer_contract_version,
+            self.purpose_id,
+            self.policy_id,
+            self.policy_version,
+        ):
+            _require_identifier(value, name="resident context authorization claim identifier")
+        for value in (
+            self.opening_result_digest,
+            self.opening_attempt_digest,
+            self.opening_consumption_claim_digest,
+            self.opening_authorization_lease_digest,
+            self.opening_receipt_digest,
+            self.protected_resident_context_digest,
+            self.policy_digest,
+            self.request_fingerprint,
+            self.idempotency_digest,
+            self.authorization_audit_digest,
+            self.canonical_digest,
+        ):
+            _require_digest(value, name="resident context authorization claim digest")
+        if self.claimed_at.tzinfo is None:
+            raise ValueError("resident context authorization claim time must be aware")
+        _validate_protected_resident_context_source(self)
+        if (
+            not self.opening_completed_at
+            <= self.claimed_at
+            < self.protected_resident_context_usable_until
+        ):
+            raise ValueError("resident context authorization claim time is outside source lifetime")
+        _require_protected_resident_context_authority(self, access_granted=False)
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("resident context access authorization claim digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return _target_context_capsule_handoff_consumption_payload(self)
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedResidentContextAccessAuthorizationLease:
+    authorization_lease_id: str
+    claim_id: str
+    claim_digest: str
+    opening_id: str
+    opening_result_digest: str
+    opening_attempt_id: str
+    opening_attempt_digest: str
+    opening_consumption_claim_id: str
+    opening_consumption_claim_digest: str
+    opening_authorization_lease_id: str
+    opening_authorization_lease_digest: str
+    opening_receipt_digest: str
+    opening_result_state: WorkflowProtectedTransportTargetContextCapsuleOpeningResultState
+    opening_completed_at: datetime
+    opening_deadline: datetime
+    protected_resident_context_id: str
+    protected_resident_context_digest: str
+    protected_resident_context_created_at: datetime
+    protected_resident_context_usable_until: datetime
+    protected_resident_context_is_bearer_capability: bool
+    capsule_opened_in_protected_boundary: bool
+    target_context_pair_verified: bool
+    opening_outcome_known: bool
+    protected_source_closed: bool
+    source_capsule_zeroized: bool
+    scope: WorkflowScope
+    consumer_subject_id: str
+    consumer_audience: str
+    consumer_contract_id: str
+    consumer_contract_version: str
+    purpose_id: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    lifecycle_attestation_id: str
+    lifecycle_attestation_digest: str
+    lifecycle_attestation_valid_until: datetime
+    issued_at: datetime
+    valid_until: datetime
+    effective_until: datetime
+    single_use: bool
+    renewable: bool
+    transferable: bool
+    lease_is_bearer_capability: bool
+    state: WorkflowProtectedResidentContextAccessAuthorizationLeaseState
+    endpoint_resolution_authorized: bool = False
+    route_selection_authorized: bool = False
+    route_binding_authorized: bool = False
+    credential_selection_authorized: bool = False
+    credential_assignment_binding_authorized: bool = False
+    credential_access_authorized: bool = False
+    credential_brokerage_authorized: bool = False
+    credential_resolution_authorized: bool = False
+    protected_artifact_access_authorized: bool = False
+    credential_delivery_authorized: bool = False
+    network_access_authorized: bool = False
+    readiness_probe_authorized: bool = False
+    publication_authorized: bool = False
+    delivery_authorized: bool = False
+    dispatch_authorized: bool = False
+    execution_authorized: bool = False
+    infrastructure_mutation_authorized: bool = False
+    target_context_capsule_handoff_authorized: bool = False
+    target_context_capsule_opening_authorized: bool = False
+    protected_resident_context_access_authority_granted: bool = True
+    canonical_digest: str = ""
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.authorization_lease_id,
+            self.claim_id,
+            self.opening_id,
+            self.opening_attempt_id,
+            self.opening_consumption_claim_id,
+            self.opening_authorization_lease_id,
+            self.protected_resident_context_id,
+            self.consumer_subject_id,
+            self.consumer_audience,
+            self.consumer_contract_id,
+            self.consumer_contract_version,
+            self.purpose_id,
+            self.policy_id,
+            self.policy_version,
+            self.lifecycle_attestation_id,
+        ):
+            _require_identifier(value, name="resident context authorization lease identifier")
+        for value in (
+            self.claim_digest,
+            self.opening_result_digest,
+            self.opening_attempt_digest,
+            self.opening_consumption_claim_digest,
+            self.opening_authorization_lease_digest,
+            self.opening_receipt_digest,
+            self.protected_resident_context_digest,
+            self.policy_digest,
+            self.lifecycle_attestation_digest,
+            self.canonical_digest,
+        ):
+            _require_digest(value, name="resident context authorization lease digest")
+        _validate_protected_resident_context_source(self)
+        policy = code_owned_workflow_protected_resident_context_access_authorization_policy()
+        if any(
+            value.tzinfo is None
+            for value in (
+                self.issued_at,
+                self.valid_until,
+                self.lifecycle_attestation_valid_until,
+                self.effective_until,
+            )
+        ):
+            raise ValueError("resident context access authorization lease time must be aware")
+        if (
+            not self.opening_completed_at <= self.issued_at < self.valid_until
+            or self.valid_until - self.issued_at
+            > timedelta(seconds=policy.maximum_lifetime_seconds)
+            or self.valid_until > self.effective_until
+            or self.effective_until > self.protected_resident_context_usable_until
+            or self.effective_until > self.lifecycle_attestation_valid_until
+            or self.single_use is not policy.single_use_required
+            or self.renewable is not policy.renewable_allowed
+            or self.transferable is not policy.transferable_allowed
+            or self.lease_is_bearer_capability is not policy.bearer_capability_allowed
+            or self.state
+            is not (
+                WorkflowProtectedResidentContextAccessAuthorizationLeaseState.AUTHORIZED_UNCONSUMED
+            )
+        ):
+            raise ValueError("resident context access authorization lease is invalid")
+        _require_protected_resident_context_authority(self, access_granted=True)
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("resident context access authorization lease digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return _target_context_capsule_handoff_consumption_payload(self)
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+    def effective_state(
+        self, *, evaluated_at: datetime
+    ) -> WorkflowProtectedResidentContextAccessAuthorizationLeaseEffectiveState:
+        if evaluated_at.tzinfo is None:
+            raise ValueError("resident context access lease evaluation time must be aware")
+        if self.issued_at <= evaluated_at < self.valid_until:
+            return WorkflowProtectedResidentContextAccessAuthorizationLeaseEffectiveState.ACTIVE
+        return WorkflowProtectedResidentContextAccessAuthorizationLeaseEffectiveState.EXPIRED

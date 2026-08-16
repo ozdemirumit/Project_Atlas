@@ -158,9 +158,7 @@ def upgrade() -> None:
         sa.Column("resident_context_undestroyed", sa.Boolean(), nullable=False),
         sa.Column("resident_context_unconsumed", sa.Boolean(), nullable=False),
         sa.Column("resident_context_handle_outstanding", sa.Boolean(), nullable=False),
-        sa.Column(
-            "protected_resident_context_is_bearer_capability", sa.Boolean(), nullable=False
-        ),
+        sa.Column("protected_resident_context_is_bearer_capability", sa.Boolean(), nullable=False),
         sa.Column("capsule_opened_in_protected_boundary", sa.Boolean(), nullable=False),
         sa.Column("target_context_pair_verified", sa.Boolean(), nullable=False),
         sa.Column("opening_outcome_known", sa.Boolean(), nullable=False),
@@ -346,9 +344,7 @@ def upgrade() -> None:
         sa.Column(
             "protected_resident_context_usable_until", sa.DateTime(timezone=True), nullable=False
         ),
-        sa.Column(
-            "protected_resident_context_is_bearer_capability", sa.Boolean(), nullable=False
-        ),
+        sa.Column("protected_resident_context_is_bearer_capability", sa.Boolean(), nullable=False),
         sa.Column("capsule_opened_in_protected_boundary", sa.Boolean(), nullable=False),
         sa.Column("target_context_pair_verified", sa.Boolean(), nullable=False),
         sa.Column("opening_outcome_known", sa.Boolean(), nullable=False),
@@ -462,7 +458,7 @@ def downgrade() -> None:
                 IF EXISTS (SELECT 1 FROM {LEASE_TABLE} LIMIT 1)
                    OR EXISTS (SELECT 1 FROM {CLAIM_TABLE} LIMIT 1) THEN
                     RAISE EXCEPTION
-                        'refusing guarded downgrade: resident-context access authorization evidence exists'
+                        'refusing downgrade: resident-context access evidence exists'
                         USING ERRCODE = '55000';
                 END IF;
             END $$;
