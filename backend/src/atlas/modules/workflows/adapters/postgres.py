@@ -75,8 +75,11 @@ from atlas.core.persistence.models import (
     WorkflowOutboxPublicationLeaseAcquireClaimModel,
     WorkflowOutboxPublicationLeaseModel,
     WorkflowPlanTransitionModel,
+    WorkflowProtectedResidentContextAccessAttemptModel,
     WorkflowProtectedResidentContextAccessAuthorizationClaimModel,
     WorkflowProtectedResidentContextAccessAuthorizationLeaseModel,
+    WorkflowProtectedResidentContextAccessConsumptionClaimModel,
+    WorkflowProtectedResidentContextAccessResultModel,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel,
@@ -226,6 +229,23 @@ from atlas.modules.workflows.application.physical_route_binding_ports import (
     WorkflowEventPhysicalTransportRouteBindingRequest,
     WorkflowEventPhysicalTransportRouteBindingResult,
     WorkflowEventPhysicalTransportRouteBindingStatus,
+)
+from atlas.modules.workflows.application.protected_resident_context_access_authorization_ports import (  # noqa: E501
+    WorkflowProtectedResidentContextLifecycleAttestation,
+)
+from atlas.modules.workflows.application.protected_resident_context_access_consumption_ports import (  # noqa: E501
+    WorkflowProtectedResidentContextAccessConsumptionClaimRequest,
+    WorkflowProtectedResidentContextAccessConsumptionClaimStatus,
+    WorkflowProtectedResidentContextAccessConsumptionClaimWrite,
+    WorkflowProtectedResidentContextAccessConsumptionError,
+    WorkflowProtectedResidentContextAccessConsumptionReplayLookup,
+    WorkflowProtectedResidentContextAccessConsumptionReplayLookupRequest,
+    WorkflowProtectedResidentContextAccessConsumptionReplayStatus,
+    WorkflowProtectedResidentContextAccessConsumptionResultRequest,
+    WorkflowProtectedResidentContextAccessConsumptionResultWrite,
+    WorkflowProtectedResidentContextAccessConsumptionResultWriteStatus,
+    WorkflowProtectedResidentContextAccessConsumptionSource,
+    validate_workflow_protected_resident_context_access_consumption_claim_request,
 )
 from atlas.modules.workflows.application.publication_lease_ports import (
     WorkflowOutboxPublicationLeaseAcquireIdempotencyRecord,
@@ -433,6 +453,13 @@ from atlas.modules.workflows.domain import (
     WorkflowProtectedResidentContextAccessAuthorizationClaim,
     WorkflowProtectedResidentContextAccessAuthorizationLease,
     WorkflowProtectedResidentContextAccessAuthorizationLeaseState,
+    WorkflowProtectedResidentContextAccessConsumptionAttempt,
+    WorkflowProtectedResidentContextAccessConsumptionAttemptState,
+    WorkflowProtectedResidentContextAccessConsumptionAuthority,
+    WorkflowProtectedResidentContextAccessConsumptionClaim,
+    WorkflowProtectedResidentContextAccessConsumptionFailureClass,
+    WorkflowProtectedResidentContextAccessConsumptionResult,
+    WorkflowProtectedResidentContextAccessConsumptionResultState,
     WorkflowProtectedTargetContextCapsuleLifecycleAttestation,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBinding,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBindingAuthority,
@@ -474,6 +501,7 @@ from atlas.modules.workflows.domain import (
     code_owned_workflow_event_physical_transport_target_context_artifact_opening_policy,
     code_owned_workflow_event_physical_transport_target_context_binding_policy,
     code_owned_workflow_event_transport_admission_policy,
+    code_owned_workflow_protected_resident_context_access_consumption_policy,
     code_owned_workflow_protected_transport_target_context_capsule_consumer_binding_policy,
     select_deployment_physical_transport_credential_assignment_head,
 )
@@ -648,6 +676,26 @@ class _ProtectedResidentContextAccessAuthorizationLockedSources:
     opening_result: WorkflowProtectedTransportTargetContextCapsuleOpeningResultModel | None
     existing_leases: tuple[WorkflowProtectedResidentContextAccessAuthorizationLeaseModel, ...]
     idempotency_claim: WorkflowProtectedResidentContextAccessAuthorizationClaimModel | None
+    first_observed_at: datetime
+    observed_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class _ProtectedResidentContextAccessConsumptionLockedSources:
+    opening_authorization_lease: (
+        WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseModel | None
+    )
+    opening_authorization_claim: (
+        WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationClaimModel | None
+    )
+    authorization_lease: WorkflowProtectedResidentContextAccessAuthorizationLeaseModel | None
+    authorization_claim: WorkflowProtectedResidentContextAccessAuthorizationClaimModel | None
+    opening_claim: WorkflowProtectedTransportTargetContextCapsuleOpeningConsumptionClaimModel | None
+    opening_attempt: WorkflowProtectedTransportTargetContextCapsuleOpeningAttemptModel | None
+    opening_result: WorkflowProtectedTransportTargetContextCapsuleOpeningResultModel | None
+    consumption_claims: tuple[WorkflowProtectedResidentContextAccessConsumptionClaimModel, ...]
+    attempt: WorkflowProtectedResidentContextAccessAttemptModel | None
+    result: WorkflowProtectedResidentContextAccessResultModel | None
     first_observed_at: datetime
     observed_at: datetime
 
@@ -5625,6 +5673,267 @@ class PostgreSQLWorkflowPlanRepository:
             ).all()
         return tuple(self._resident_context_access_lease_from_row(row) for row in rows)
 
+    async def get_protected_resident_context_access_consumption_source(
+        self, *, authorization_lease_id: str
+    ) -> WorkflowProtectedResidentContextAccessConsumptionSource | None:
+        """Resolve the canonical ADR-166 source without trusting a caller-supplied digest."""
+        async with self._sessions() as session:
+            lease_row = await session.get(
+                WorkflowProtectedResidentContextAccessAuthorizationLeaseModel,
+                authorization_lease_id,
+            )
+            if lease_row is None:
+                return None
+            lease = self._resident_context_access_lease_from_row(lease_row)
+        source = await self.get_protected_resident_context_access_authorization_source(
+            opening_id=lease.opening_id
+        )
+        if source is None:
+            return None
+        return WorkflowProtectedResidentContextAccessConsumptionSource(
+            authorization_lease=lease,
+            authorization_source=source,
+        )
+
+    async def lookup_protected_resident_context_access_consumption_replay(
+        self, request: WorkflowProtectedResidentContextAccessConsumptionReplayLookupRequest
+    ) -> WorkflowProtectedResidentContextAccessConsumptionReplayLookup:
+        statuses = WorkflowProtectedResidentContextAccessConsumptionReplayStatus
+        result_type = WorkflowProtectedResidentContextAccessConsumptionReplayLookup
+        scope_id = self._protected_resident_context_access_consumption_idempotency_scope(
+            request.scope, request.consumer_subject_id, request.consumer_audience
+        )
+        async with self._sessions() as session:
+            observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+            rows = tuple(
+                (
+                    await session.scalars(
+                        select(WorkflowProtectedResidentContextAccessConsumptionClaimModel).where(
+                            or_(
+                                WorkflowProtectedResidentContextAccessConsumptionClaimModel.authorization_lease_id
+                                == request.authorization_lease_id,
+                                and_(
+                                    WorkflowProtectedResidentContextAccessConsumptionClaimModel.idempotency_scope_id
+                                    == scope_id,
+                                    WorkflowProtectedResidentContextAccessConsumptionClaimModel.idempotency_digest
+                                    == request.idempotency_digest,
+                                ),
+                            )
+                        )
+                    )
+                ).all()
+            )
+            return await self._protected_resident_context_access_consumption_replay_from_rows(
+                session,
+                request=request,
+                claims=rows,
+                observed_at=observed_at,
+                for_update=False,
+                statuses=statuses,
+                result_type=result_type,
+            )
+
+    async def claim_protected_resident_context_access_consumption(
+        self, request: WorkflowProtectedResidentContextAccessConsumptionClaimRequest
+    ) -> WorkflowProtectedResidentContextAccessConsumptionClaimWrite:
+        """Atomically append the single-use claim and started attempt before accessor I/O."""
+        statuses = WorkflowProtectedResidentContextAccessConsumptionClaimStatus
+        result_type = WorkflowProtectedResidentContextAccessConsumptionClaimWrite
+        try:
+            validate_workflow_protected_resident_context_access_consumption_claim_request(request)
+        except (TypeError, ValueError):
+            return result_type(statuses.EVIDENCE_CONFLICT, None, None, None)
+        async with self._sessions() as session:
+            locked = await self._lock_protected_resident_context_access_consumption_sources(
+                session, request=request
+            )
+            replay = await self._protected_resident_context_access_consumption_locked_replay(
+                session, request=request, locked=locked
+            )
+            if replay is not None:
+                await session.rollback()
+                return replay
+            if not self._protected_resident_context_access_consumption_request_is_valid(
+                request=request, locked=locked
+            ):
+                await session.rollback()
+                return result_type(statuses.EVIDENCE_CONFLICT, None, None, None)
+            claim = self._protected_resident_context_access_consumption_claim(
+                request, claimed_at=locked.observed_at
+            )
+            deadline = self._protected_resident_context_access_consumption_deadline(
+                request, started_at=locked.observed_at
+            )
+            if deadline is None:
+                await session.rollback()
+                return result_type(statuses.EVIDENCE_CONFLICT, None, None, None)
+            attempt = self._protected_resident_context_access_consumption_attempt(
+                request, claim=claim, started_at=locked.observed_at, access_deadline=deadline
+            )
+            precommit_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+            if (
+                precommit_at >= attempt.access_deadline
+                or not self._protected_resident_context_access_consumption_request_is_valid(
+                    request=request,
+                    locked=dataclass_replace(locked, observed_at=precommit_at),
+                )
+            ):
+                await session.rollback()
+                return result_type(statuses.EVIDENCE_CONFLICT, None, None, None)
+            try:
+                session.add(
+                    self._protected_resident_context_access_consumption_claim_model(
+                        request, claim=claim
+                    )
+                )
+                await session.flush()
+                session.add(
+                    self._protected_resident_context_access_attempt_model(request, attempt=attempt)
+                )
+                await session.flush()
+                await session.commit()
+                return result_type(statuses.CLAIMED, claim, attempt, None)
+            except IntegrityError:
+                await session.rollback()
+        replay_request = WorkflowProtectedResidentContextAccessConsumptionReplayLookupRequest(
+            authorization_lease_id=request.source.authorization_lease.authorization_lease_id,
+            scope=request.scope,
+            consumer_subject_id=request.consumer_subject_id,
+            consumer_audience=request.consumer_audience,
+            policy_id=request.expected_policy_id,
+            policy_version=request.expected_policy_version,
+            policy_digest=request.expected_policy_digest,
+            idempotency_digest=request.idempotency_digest,
+            request_fingerprint=request.request_fingerprint,
+            consumption_id=request.consumption_id,
+        )
+        retry_replay = await self.lookup_protected_resident_context_access_consumption_replay(
+            replay_request
+        )
+        replay_statuses = WorkflowProtectedResidentContextAccessConsumptionReplayStatus
+        mapping = {
+            replay_statuses.TERMINAL: statuses.REPLAY_COMPLETED,
+            replay_statuses.CLAIM_ONLY_PENDING: statuses.CLAIM_ONLY_PENDING,
+            replay_statuses.CLAIM_ONLY_UNCERTAIN: statuses.CLAIM_ONLY_UNCERTAIN,
+            replay_statuses.IDEMPOTENCY_CONFLICT: statuses.IDEMPOTENCY_CONFLICT,
+            replay_statuses.ALREADY_CONSUMED: statuses.ALREADY_CONSUMED,
+        }
+        return result_type(
+            mapping.get(retry_replay.status, statuses.EVIDENCE_CONFLICT),
+            None,
+            retry_replay.attempt,
+            retry_replay.result,
+        )
+
+    async def record_protected_resident_context_access_consumption_result(
+        self, request: WorkflowProtectedResidentContextAccessConsumptionResultRequest
+    ) -> WorkflowProtectedResidentContextAccessConsumptionResultWrite:
+        statuses = WorkflowProtectedResidentContextAccessConsumptionResultWriteStatus
+        result_type = WorkflowProtectedResidentContextAccessConsumptionResultWrite
+        result = request.result
+        async with self._sessions() as session:
+            claim_row = await session.get(
+                WorkflowProtectedResidentContextAccessConsumptionClaimModel,
+                result.consumption_claim_id,
+                with_for_update=True,
+            )
+            attempt_row = await session.get(
+                WorkflowProtectedResidentContextAccessAttemptModel,
+                result.attempt_id,
+                with_for_update=True,
+            )
+            existing = await session.get(
+                WorkflowProtectedResidentContextAccessResultModel,
+                result.access_id,
+                with_for_update=True,
+            )
+            if existing is not None:
+                stored = self._protected_resident_context_access_result_from_row(existing)
+                await session.rollback()
+                exact = stored.canonical_digest == result.canonical_digest
+                return result_type(
+                    statuses.REPLAY if exact else statuses.CONFLICT,
+                    stored if exact else None,
+                )
+            observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+            if not self._protected_resident_context_access_result_matches(
+                request=request,
+                claim_row=claim_row,
+                attempt_row=attempt_row,
+                observed_at=observed_at,
+            ):
+                await session.rollback()
+                return result_type(statuses.CONFLICT, None)
+            try:
+                session.add(self._protected_resident_context_access_result_model(request))
+                await session.commit()
+                return result_type(statuses.RECORDED, result)
+            except IntegrityError:
+                await session.rollback()
+        async with self._sessions() as session:
+            existing = await session.get(
+                WorkflowProtectedResidentContextAccessResultModel,
+                result.access_id,
+            )
+        if existing is None:
+            return result_type(statuses.CONFLICT, None)
+        stored = self._protected_resident_context_access_result_from_row(existing)
+        exact = stored.canonical_digest == result.canonical_digest
+        return result_type(
+            statuses.REPLAY if exact else statuses.CONFLICT, stored if exact else None
+        )
+
+    async def list_protected_resident_context_access_consumption_attempts(
+        self, *, scope: WorkflowScope, limit: int = 256
+    ) -> tuple[WorkflowProtectedResidentContextAccessConsumptionAttempt, ...]:
+        async with self._sessions() as session:
+            rows = tuple(
+                (
+                    await session.scalars(
+                        select(WorkflowProtectedResidentContextAccessAttemptModel)
+                        .where(
+                            WorkflowProtectedResidentContextAccessAttemptModel.organization_id
+                            == scope.organization_id,
+                            WorkflowProtectedResidentContextAccessAttemptModel.environment_id
+                            == scope.environment_id,
+                            WorkflowProtectedResidentContextAccessAttemptModel.site_id
+                            == scope.site_id,
+                        )
+                        .order_by(
+                            WorkflowProtectedResidentContextAccessAttemptModel.started_at.desc(),
+                            WorkflowProtectedResidentContextAccessAttemptModel.attempt_id,
+                        )
+                        .limit(max(1, min(limit, 1000)))
+                    )
+                ).all()
+            )
+        return tuple(self._protected_resident_context_access_attempt_from_row(row) for row in rows)
+
+    async def get_protected_resident_context_access_consumption_results(
+        self, *, scope: WorkflowScope, consumption_ids: tuple[str, ...]
+    ) -> tuple[WorkflowProtectedResidentContextAccessConsumptionResult, ...]:
+        if not consumption_ids:
+            return ()
+        async with self._sessions() as session:
+            rows = tuple(
+                (
+                    await session.scalars(
+                        select(WorkflowProtectedResidentContextAccessResultModel).where(
+                            WorkflowProtectedResidentContextAccessResultModel.access_id.in_(
+                                consumption_ids
+                            ),
+                            WorkflowProtectedResidentContextAccessResultModel.organization_id
+                            == scope.organization_id,
+                            WorkflowProtectedResidentContextAccessResultModel.environment_id
+                            == scope.environment_id,
+                            WorkflowProtectedResidentContextAccessResultModel.site_id
+                            == scope.site_id,
+                        )
+                    )
+                ).all()
+            )
+        return tuple(self._protected_resident_context_access_result_from_row(row) for row in rows)
+
     async def authorize_target_context_capsule_opening(
         self,
         request: WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseRequest,
@@ -6045,6 +6354,847 @@ class PostgreSQLWorkflowPlanRepository:
                 ).all()
             )
         return tuple(self._target_context_capsule_opening_result_from_row(row) for row in rows)
+
+    async def _lock_protected_resident_context_access_consumption_sources(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowProtectedResidentContextAccessConsumptionClaimRequest,
+    ) -> _ProtectedResidentContextAccessConsumptionLockedSources:
+        first_observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+        lease_id = request.source.authorization_lease.authorization_lease_id
+        lease_hint = await session.get(
+            WorkflowProtectedResidentContextAccessAuthorizationLeaseModel, lease_id
+        )
+        opening_authorization_lease = opening_authorization_claim = None
+        opening_claim = opening_attempt = opening_result = None
+        if lease_hint is not None:
+            opening_authorization_lease = await session.get(
+                WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseModel,
+                lease_hint.opening_authorization_lease_id,
+                with_for_update=True,
+            )
+            opening_authorization_claim = cast(
+                WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationClaimModel | None,
+                await session.scalar(
+                    select(
+                        WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationClaimModel
+                    )
+                    .where(
+                        WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationClaimModel.authorization_lease_id
+                        == lease_hint.opening_authorization_lease_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            opening_claim = await session.get(
+                WorkflowProtectedTransportTargetContextCapsuleOpeningConsumptionClaimModel,
+                lease_hint.opening_consumption_claim_id,
+                with_for_update=True,
+            )
+            opening_attempt = await session.get(
+                WorkflowProtectedTransportTargetContextCapsuleOpeningAttemptModel,
+                lease_hint.opening_attempt_id,
+                with_for_update=True,
+            )
+            opening_result = await session.get(
+                WorkflowProtectedTransportTargetContextCapsuleOpeningResultModel,
+                lease_hint.opening_id,
+                with_for_update=True,
+            )
+        authorization_lease = await session.get(
+            WorkflowProtectedResidentContextAccessAuthorizationLeaseModel,
+            lease_id,
+            with_for_update=True,
+        )
+        authorization_claim = cast(
+            WorkflowProtectedResidentContextAccessAuthorizationClaimModel | None,
+            await session.scalar(
+                select(WorkflowProtectedResidentContextAccessAuthorizationClaimModel)
+                .where(
+                    WorkflowProtectedResidentContextAccessAuthorizationClaimModel.access_authorization_lease_id
+                    == lease_id
+                )
+                .with_for_update()
+            ),
+        )
+        idempotency_scope_id = (
+            self._protected_resident_context_access_consumption_idempotency_scope(
+                request.scope,
+                request.consumer_subject_id,
+                request.consumer_audience,
+            )
+        )
+        claims = tuple(
+            (
+                await session.scalars(
+                    select(WorkflowProtectedResidentContextAccessConsumptionClaimModel)
+                    .where(
+                        or_(
+                            WorkflowProtectedResidentContextAccessConsumptionClaimModel.authorization_lease_id
+                            == lease_id,
+                            WorkflowProtectedResidentContextAccessConsumptionClaimModel.protected_resident_context_id
+                            == request.source.authorization_lease.protected_resident_context_id,
+                            and_(
+                                WorkflowProtectedResidentContextAccessConsumptionClaimModel.idempotency_scope_id
+                                == idempotency_scope_id,
+                                WorkflowProtectedResidentContextAccessConsumptionClaimModel.idempotency_key
+                                == request.idempotency_key,
+                            ),
+                        )
+                    )
+                    .with_for_update()
+                )
+            ).all()
+        )
+        attempt = cast(
+            WorkflowProtectedResidentContextAccessAttemptModel | None,
+            await session.scalar(
+                select(WorkflowProtectedResidentContextAccessAttemptModel)
+                .where(
+                    or_(
+                        WorkflowProtectedResidentContextAccessAttemptModel.access_id
+                        == request.consumption_id,
+                        WorkflowProtectedResidentContextAccessAttemptModel.authorization_lease_id
+                        == lease_id,
+                        WorkflowProtectedResidentContextAccessAttemptModel.protected_resident_context_id
+                        == request.source.authorization_lease.protected_resident_context_id,
+                    )
+                )
+                .with_for_update()
+            ),
+        )
+        result = cast(
+            WorkflowProtectedResidentContextAccessResultModel | None,
+            await session.scalar(
+                select(WorkflowProtectedResidentContextAccessResultModel)
+                .where(
+                    or_(
+                        WorkflowProtectedResidentContextAccessResultModel.access_id
+                        == request.consumption_id,
+                        WorkflowProtectedResidentContextAccessResultModel.authorization_lease_id
+                        == lease_id,
+                        WorkflowProtectedResidentContextAccessResultModel.protected_resident_context_id
+                        == request.source.authorization_lease.protected_resident_context_id,
+                    )
+                )
+                .with_for_update()
+            ),
+        )
+        observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+        return _ProtectedResidentContextAccessConsumptionLockedSources(
+            opening_authorization_lease=opening_authorization_lease,
+            opening_authorization_claim=opening_authorization_claim,
+            authorization_lease=authorization_lease,
+            authorization_claim=authorization_claim,
+            opening_claim=opening_claim,
+            opening_attempt=opening_attempt,
+            opening_result=opening_result,
+            consumption_claims=claims,
+            attempt=attempt,
+            result=result,
+            first_observed_at=first_observed_at,
+            observed_at=observed_at,
+        )
+
+    async def _protected_resident_context_access_consumption_locked_replay(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowProtectedResidentContextAccessConsumptionClaimRequest,
+        locked: _ProtectedResidentContextAccessConsumptionLockedSources,
+    ) -> WorkflowProtectedResidentContextAccessConsumptionClaimWrite | None:
+        if not locked.consumption_claims:
+            return None
+        lookup_request = WorkflowProtectedResidentContextAccessConsumptionReplayLookupRequest(
+            authorization_lease_id=request.source.authorization_lease.authorization_lease_id,
+            scope=request.scope,
+            consumer_subject_id=request.consumer_subject_id,
+            consumer_audience=request.consumer_audience,
+            policy_id=request.expected_policy_id,
+            policy_version=request.expected_policy_version,
+            policy_digest=request.expected_policy_digest,
+            idempotency_digest=request.idempotency_digest,
+            request_fingerprint=request.request_fingerprint,
+            consumption_id=request.consumption_id,
+        )
+        lookup = await self._protected_resident_context_access_consumption_replay_from_rows(
+            session,
+            request=lookup_request,
+            claims=locked.consumption_claims,
+            observed_at=locked.observed_at,
+            for_update=True,
+            statuses=WorkflowProtectedResidentContextAccessConsumptionReplayStatus,
+            result_type=WorkflowProtectedResidentContextAccessConsumptionReplayLookup,
+        )
+        statuses = WorkflowProtectedResidentContextAccessConsumptionClaimStatus
+        replay_statuses = WorkflowProtectedResidentContextAccessConsumptionReplayStatus
+        mapping = {
+            replay_statuses.TERMINAL: statuses.REPLAY_COMPLETED,
+            replay_statuses.CLAIM_ONLY_PENDING: statuses.CLAIM_ONLY_PENDING,
+            replay_statuses.CLAIM_ONLY_UNCERTAIN: statuses.CLAIM_ONLY_UNCERTAIN,
+            replay_statuses.IDEMPOTENCY_CONFLICT: statuses.IDEMPOTENCY_CONFLICT,
+            replay_statuses.ALREADY_CONSUMED: statuses.ALREADY_CONSUMED,
+        }
+        return WorkflowProtectedResidentContextAccessConsumptionClaimWrite(
+            mapping.get(lookup.status, statuses.EVIDENCE_CONFLICT),
+            None,
+            lookup.attempt,
+            lookup.result,
+        )
+
+    async def _protected_resident_context_access_consumption_replay_from_rows(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowProtectedResidentContextAccessConsumptionReplayLookupRequest,
+        claims: tuple[WorkflowProtectedResidentContextAccessConsumptionClaimModel, ...],
+        observed_at: datetime,
+        for_update: bool,
+        statuses: type[WorkflowProtectedResidentContextAccessConsumptionReplayStatus],
+        result_type: type[WorkflowProtectedResidentContextAccessConsumptionReplayLookup],
+    ) -> WorkflowProtectedResidentContextAccessConsumptionReplayLookup:
+        if not claims:
+            return result_type(statuses.NONE, None, None)
+        scope_id = self._protected_resident_context_access_consumption_idempotency_scope(
+            request.scope, request.consumer_subject_id, request.consumer_audience
+        )
+        row = next(
+            (
+                value
+                for value in claims
+                if value.idempotency_scope_id == scope_id
+                and value.idempotency_digest == request.idempotency_digest
+            ),
+            None,
+        )
+        if row is None:
+            return result_type(statuses.ALREADY_CONSUMED, None, None)
+        claim = self._protected_resident_context_access_consumption_claim_from_row(row)
+        if (
+            claim.request_fingerprint != request.request_fingerprint
+            or claim.authorization_lease_id != request.authorization_lease_id
+            or claim.access_id != request.consumption_id
+            or claim.scope != request.scope
+            or claim.consumer_subject_id != request.consumer_subject_id
+            or claim.consumer_audience != request.consumer_audience
+            or claim.policy_id != request.policy_id
+            or claim.policy_version != request.policy_version
+            or claim.policy_digest != request.policy_digest
+        ):
+            return result_type(statuses.IDEMPOTENCY_CONFLICT, None, None)
+        attempt_statement = select(WorkflowProtectedResidentContextAccessAttemptModel).where(
+            WorkflowProtectedResidentContextAccessAttemptModel.consumption_claim_id
+            == claim.claim_id
+        )
+        if for_update:
+            attempt_statement = attempt_statement.with_for_update()
+        attempt_row = await session.scalar(attempt_statement)
+        if attempt_row is None:
+            self._protected_resident_context_access_consumption_contract_violation()
+        attempt = self._protected_resident_context_access_attempt_from_row(attempt_row)
+        result_statement = select(WorkflowProtectedResidentContextAccessResultModel).where(
+            WorkflowProtectedResidentContextAccessResultModel.access_id == claim.access_id
+        )
+        if for_update:
+            result_statement = result_statement.with_for_update()
+        stored_row = await session.scalar(result_statement)
+        if stored_row is None:
+            return result_type(
+                statuses.CLAIM_ONLY_PENDING
+                if observed_at < attempt.access_deadline
+                else statuses.CLAIM_ONLY_UNCERTAIN,
+                attempt,
+                None,
+            )
+        stored = self._protected_resident_context_access_result_from_row(stored_row)
+        if (
+            stored.attempt_id != attempt.attempt_id
+            or stored.attempt_digest != attempt.canonical_digest
+            or stored.consumption_claim_id != claim.claim_id
+            or stored.consumption_claim_digest != claim.canonical_digest
+        ):
+            self._protected_resident_context_access_consumption_contract_violation()
+        return result_type(statuses.TERMINAL, attempt, stored)
+
+    @classmethod
+    def _protected_resident_context_access_consumption_request_is_valid(
+        cls,
+        *,
+        request: WorkflowProtectedResidentContextAccessConsumptionClaimRequest,
+        locked: _ProtectedResidentContextAccessConsumptionLockedSources,
+    ) -> bool:
+        if (
+            any(
+                value is None
+                for value in (
+                    locked.opening_authorization_lease,
+                    locked.opening_authorization_claim,
+                    locked.authorization_lease,
+                    locked.authorization_claim,
+                    locked.opening_claim,
+                    locked.opening_attempt,
+                    locked.opening_result,
+                )
+            )
+            or locked.consumption_claims
+            or locked.attempt is not None
+            or locked.result is not None
+        ):
+            return False
+        assert locked.authorization_lease is not None
+        assert locked.authorization_claim is not None
+        assert locked.opening_authorization_lease is not None
+        assert locked.opening_authorization_claim is not None
+        assert locked.opening_claim is not None
+        assert locked.opening_attempt is not None
+        assert locked.opening_result is not None
+        try:
+            validate_workflow_protected_resident_context_access_consumption_claim_request(request)
+            lease = cls._resident_context_access_lease_from_row(locked.authorization_lease)
+            opening_authorization_lease = cls._target_context_capsule_opening_lease_from_row(
+                locked.opening_authorization_lease
+            )
+            opening_claim = cls._target_context_capsule_opening_consumption_claim_from_row(
+                locked.opening_claim
+            )
+            opening_attempt = cls._target_context_capsule_opening_attempt_from_row(
+                locked.opening_attempt
+            )
+            opening_result = cls._target_context_capsule_opening_result_from_row(
+                locked.opening_result
+            )
+            stored_lifecycle = cls._protected_resident_context_stored_lifecycle_attestation(
+                locked.authorization_lease
+            )
+            stored_lifecycle_valid = (
+                request.offline_lifecycle_signature_verifier.verify_lifecycle_attestation(
+                    stored_lifecycle
+                )
+            )
+            lifecycle_valid = (
+                request.offline_lifecycle_signature_verifier.verify_lifecycle_attestation(
+                    request.lifecycle_attestation
+                )
+            )
+            readiness_valid = (
+                request.offline_readiness_signature_verifier.verify_accessor_readiness_attestation(
+                    request.accessor_readiness_attestation
+                )
+            )
+        except Exception:
+            return False
+        audit_valid = request.consumption_authorization_audit_digest == canonical_digest(
+            request.consumption_authorization_audit_payload
+        )
+        minimum = timedelta(milliseconds=request.minimum_remaining_budget_milliseconds)
+        source = request.source.authorization_source
+        authorization_claim = locked.authorization_claim
+        return bool(
+            locked.first_observed_at <= locked.observed_at
+            and request.source.authorization_lease == lease
+            and source.consumption_claim == opening_claim
+            and source.attempt == opening_attempt
+            and source.result == opening_result
+            and source.authorization_lease == opening_authorization_lease
+            and locked.opening_authorization_claim.authorization_lease_id
+            == opening_authorization_lease.authorization_lease_id
+            and authorization_claim.access_authorization_lease_id == lease.authorization_lease_id
+            and authorization_claim.claim_id == lease.claim_id
+            and authorization_claim.canonical_digest == lease.claim_digest
+            and authorization_claim.opening_id == lease.opening_id
+            and authorization_claim.protected_resident_context_id
+            == lease.protected_resident_context_id
+            and lease.state.value == "authorized_unconsumed"
+            and lease.single_use
+            and not lease.renewable
+            and not lease.transferable
+            and not lease.lease_is_bearer_capability
+            and lease.protected_resident_context_access_authority_granted
+            and lease.issued_at <= locked.observed_at < lease.valid_until
+            and locked.observed_at + minimum <= lease.valid_until
+            and locked.observed_at + minimum <= lease.protected_resident_context_usable_until
+            and locked.observed_at + minimum <= request.lifecycle_attestation.valid_until
+            and locked.observed_at + minimum <= request.accessor_readiness_attestation.valid_until
+            and request.lifecycle_attestation.resident_context_unconsumed is True
+            and request.lifecycle_attestation.resident_context_handle_outstanding is False
+            and request.lifecycle_attestation.resident_context_unrevoked is True
+            and request.lifecycle_attestation.resident_context_undestroyed is True
+            and lifecycle_valid is True
+            and stored_lifecycle_valid is True
+            and readiness_valid is True
+            and audit_valid
+        )
+
+    @staticmethod
+    def _protected_resident_context_stored_lifecycle_attestation(
+        row: WorkflowProtectedResidentContextAccessAuthorizationLeaseModel,
+    ) -> WorkflowProtectedResidentContextLifecycleAttestation:
+        payload = dict(row.lifecycle_attestation_payload)
+        payload["scope"] = WorkflowScope(**cast(dict[str, str], payload["scope"]))
+        for name in (
+            "observed_at",
+            "valid_until",
+            "protected_resident_context_created_at",
+            "protected_resident_context_usable_until",
+        ):
+            payload[name] = datetime.fromisoformat(str(payload[name]))
+        return WorkflowProtectedResidentContextLifecycleAttestation(
+            **cast(Any, payload), canonical_digest=row.lifecycle_attestation_digest
+        )
+
+    @staticmethod
+    def _protected_resident_context_access_consumption_deadline(
+        request: WorkflowProtectedResidentContextAccessConsumptionClaimRequest,
+        *,
+        started_at: datetime,
+    ) -> datetime | None:
+        lease = request.source.authorization_lease
+        deadline = min(
+            lease.valid_until,
+            lease.protected_resident_context_usable_until,
+            request.lifecycle_attestation.valid_until,
+            request.accessor_readiness_attestation.valid_until,
+        )
+        minimum = timedelta(milliseconds=request.minimum_remaining_budget_milliseconds)
+        return deadline if started_at + minimum <= deadline else None
+
+    @staticmethod
+    def _protected_resident_context_access_consumption_claim(
+        request: WorkflowProtectedResidentContextAccessConsumptionClaimRequest,
+        *,
+        claimed_at: datetime,
+    ) -> WorkflowProtectedResidentContextAccessConsumptionClaim:
+        lease = request.source.authorization_lease
+        policy = code_owned_workflow_protected_resident_context_access_consumption_policy()
+        values: dict[str, object] = {
+            "claim_id": request.claim_id,
+            "access_id": request.consumption_id,
+            "attempt_id": request.attempt_id,
+            "authorization_lease_id": lease.authorization_lease_id,
+            "authorization_lease_digest": lease.canonical_digest,
+            "authorization_claim_id": lease.claim_id,
+            "authorization_claim_digest": lease.claim_digest,
+            "opening_id": lease.opening_id,
+            "opening_result_digest": lease.opening_result_digest,
+            "protected_resident_context_id": lease.protected_resident_context_id,
+            "protected_resident_context_digest": lease.protected_resident_context_digest,
+            "scope": request.scope,
+            "consumer_subject_id": request.consumer_subject_id,
+            "consumer_audience": request.consumer_audience,
+            "consumer_contract_id": policy.consumer_contract_id,
+            "consumer_contract_version": policy.consumer_contract_version,
+            "purpose_id": policy.purpose_id,
+            "policy_id": policy.policy_id,
+            "policy_version": policy.policy_version,
+            "policy_digest": policy.canonical_digest,
+            "irreversible_consumption_acknowledged": (
+                request.irreversible_consumption_acknowledged
+            ),
+            "uncertain_outcome_requires_new_authorization_acknowledged": (
+                request.uncertain_outcome_requires_new_authorization_acknowledged
+            ),
+            "request_fingerprint": request.request_fingerprint,
+            "idempotency_digest": request.idempotency_digest,
+            "consumption_authorization_audit_digest": (
+                request.consumption_authorization_audit_digest
+            ),
+            "claimed_at": claimed_at,
+            "authority": WorkflowProtectedResidentContextAccessConsumptionAuthority(),
+        }
+        return WorkflowProtectedResidentContextAccessConsumptionClaim(
+            **cast(Any, values),
+            canonical_digest=canonical_digest(
+                PostgreSQLWorkflowPlanRepository._target_context_capsule_opening_payload(values)
+            ),
+        )
+
+    @staticmethod
+    def _protected_resident_context_access_consumption_attempt(
+        request: WorkflowProtectedResidentContextAccessConsumptionClaimRequest,
+        *,
+        claim: WorkflowProtectedResidentContextAccessConsumptionClaim,
+        started_at: datetime,
+        access_deadline: datetime,
+    ) -> WorkflowProtectedResidentContextAccessConsumptionAttempt:
+        lease = request.source.authorization_lease
+        policy = code_owned_workflow_protected_resident_context_access_consumption_policy()
+        values: dict[str, object] = {
+            "attempt_id": request.attempt_id,
+            "access_id": request.consumption_id,
+            "consumption_claim_id": claim.claim_id,
+            "consumption_claim_digest": claim.canonical_digest,
+            "authorization_lease_id": lease.authorization_lease_id,
+            "authorization_lease_digest": lease.canonical_digest,
+            "protected_resident_context_id": lease.protected_resident_context_id,
+            "protected_resident_context_digest": lease.protected_resident_context_digest,
+            "scope": request.scope,
+            "consumer_subject_id": request.consumer_subject_id,
+            "consumer_audience": request.consumer_audience,
+            "consumer_contract_id": policy.consumer_contract_id,
+            "consumer_contract_version": policy.consumer_contract_version,
+            "purpose_id": policy.purpose_id,
+            "policy_id": policy.policy_id,
+            "policy_version": policy.policy_version,
+            "policy_digest": policy.canonical_digest,
+            "required_accessor_contract_id": policy.required_accessor_contract_id,
+            "required_accessor_contract_version": policy.required_accessor_contract_version,
+            "approved_accessor_id": policy.approved_accessor_id,
+            "approved_accessor_version": policy.approved_accessor_version,
+            "destination_boundary_id": policy.destination_boundary_id,
+            "destination_deployment_id": policy.destination_deployment_id,
+            "destination_generation": policy.destination_generation,
+            "destination_fencing_token_digest": policy.destination_fencing_token_digest,
+            "runtime_handle_profile_id": policy.runtime_handle_profile_id,
+            "runtime_handle_profile_version": policy.runtime_handle_profile_version,
+            "runtime_handle_profile_digest": policy.runtime_handle_profile_digest,
+            "verification_signing_key_id": policy.verification_signing_key_id,
+            "lifecycle_attestation_id": request.lifecycle_attestation.attestation_id,
+            "lifecycle_attestation_digest": request.lifecycle_attestation.canonical_digest,
+            "readiness_attestation_id": request.accessor_readiness_attestation.attestation_id,
+            "readiness_attestation_digest": (
+                request.accessor_readiness_attestation.canonical_digest
+            ),
+            "request_nonce_digest": request.expected_request_nonce_digest,
+            "started_at": started_at,
+            "access_deadline": access_deadline,
+            "authorization_lease_valid_until": lease.valid_until,
+            "protected_resident_context_usable_until": (
+                lease.protected_resident_context_usable_until
+            ),
+            "lifecycle_attestation_valid_until": request.lifecycle_attestation.valid_until,
+            "readiness_attestation_valid_until": (
+                request.accessor_readiness_attestation.valid_until
+            ),
+            "state": WorkflowProtectedResidentContextAccessConsumptionAttemptState.STARTED,
+            "authority": WorkflowProtectedResidentContextAccessConsumptionAuthority(),
+        }
+        return WorkflowProtectedResidentContextAccessConsumptionAttempt(
+            **cast(Any, values),
+            canonical_digest=canonical_digest(
+                PostgreSQLWorkflowPlanRepository._target_context_capsule_opening_payload(values)
+            ),
+        )
+
+    @staticmethod
+    def _protected_resident_context_access_consumption_idempotency_scope(
+        scope: WorkflowScope, subject_id: str, audience: str
+    ) -> str:
+        return canonical_digest(
+            {
+                "scope": scope.canonical_value(),
+                "subject_id": subject_id,
+                "audience": audience,
+            }
+        )
+
+    @staticmethod
+    def _protected_resident_context_access_consumption_authority_is_zero(
+        authority: Any,
+    ) -> bool:
+        return all(value is False for value in authority.canonical_value().values())
+
+    @staticmethod
+    def _protected_resident_context_access_consumption_authority_columns(
+        authority: Any,
+    ) -> dict[str, bool]:
+        return {
+            (
+                name
+                if name.endswith("_authority_granted")
+                else name.replace("_authorized", "_authority_granted")
+            ): bool(value)
+            for name, value in authority.canonical_value().items()
+        }
+
+    @classmethod
+    def _protected_resident_context_access_consumption_claim_model(
+        cls,
+        request: WorkflowProtectedResidentContextAccessConsumptionClaimRequest,
+        *,
+        claim: WorkflowProtectedResidentContextAccessConsumptionClaim,
+    ) -> WorkflowProtectedResidentContextAccessConsumptionClaimModel:
+        values = cls._protected_resident_context_access_consumption_model_values(
+            WorkflowProtectedResidentContextAccessConsumptionClaimModel, claim
+        )
+        values.update(
+            idempotency_scope_id=cls._protected_resident_context_access_consumption_idempotency_scope(
+                claim.scope, claim.consumer_subject_id, claim.consumer_audience
+            ),
+            idempotency_key=request.idempotency_key,
+            consumption_authorization_audit_payload=(
+                request.consumption_authorization_audit_payload
+            ),
+        )
+        return WorkflowProtectedResidentContextAccessConsumptionClaimModel(**values)
+
+    @classmethod
+    def _protected_resident_context_access_attempt_model(
+        cls,
+        request: WorkflowProtectedResidentContextAccessConsumptionClaimRequest,
+        *,
+        attempt: WorkflowProtectedResidentContextAccessConsumptionAttempt,
+    ) -> WorkflowProtectedResidentContextAccessAttemptModel:
+        values = cls._protected_resident_context_access_consumption_model_values(
+            WorkflowProtectedResidentContextAccessAttemptModel, attempt
+        )
+        values.update(
+            lifecycle_attestation_payload={
+                **request.lifecycle_attestation.digest_payload(),
+                "canonical_digest": request.lifecycle_attestation.canonical_digest,
+            },
+            readiness_attestation_payload={
+                **request.accessor_readiness_attestation.digest_payload(),
+                "canonical_digest": request.accessor_readiness_attestation.canonical_digest,
+            },
+        )
+        return WorkflowProtectedResidentContextAccessAttemptModel(**values)
+
+    @classmethod
+    def _protected_resident_context_access_result_model(
+        cls, request: WorkflowProtectedResidentContextAccessConsumptionResultRequest
+    ) -> WorkflowProtectedResidentContextAccessResultModel:
+        result = request.result
+        values = cls._protected_resident_context_access_consumption_model_values(
+            WorkflowProtectedResidentContextAccessResultModel, result
+        )
+        values["accessor_receipt_payload"] = (
+            None
+            if request.receipt is None
+            else {
+                **request.receipt.digest_payload(),
+                "canonical_digest": request.receipt.canonical_digest,
+            }
+        )
+        return WorkflowProtectedResidentContextAccessResultModel(**values)
+
+    @classmethod
+    def _protected_resident_context_access_consumption_model_values(
+        cls, model_type: Any, value: Any
+    ) -> dict[str, object]:
+        columns = {column.name for column in model_type.__table__.columns}
+        values: dict[str, object] = {
+            name: getattr(value, name)
+            for name in columns
+            if hasattr(value, name)
+            and name
+            not in {
+                "state",
+                "failure_class",
+                "canonical_digest",
+                "payload",
+            }
+            and not name.endswith("_authority_granted")
+        }
+        values.update(
+            organization_id=value.scope.organization_id,
+            environment_id=value.scope.environment_id,
+            site_id=value.scope.site_id,
+            **cls._protected_resident_context_access_consumption_authority_columns(value.authority),
+            canonical_digest=value.canonical_digest,
+            payload=value.digest_payload(),
+        )
+        if "state" in columns:
+            values["state"] = getattr(value.state, "value", value.state)
+        if "failure_class" in columns:
+            failure_class = value.failure_class
+            values["failure_class"] = (
+                None if failure_class is None else getattr(failure_class, "value", failure_class)
+            )
+        return values
+
+    @classmethod
+    def _protected_resident_context_access_consumption_claim_from_row(
+        cls, row: WorkflowProtectedResidentContextAccessConsumptionClaimModel
+    ) -> WorkflowProtectedResidentContextAccessConsumptionClaim:
+        claim = cast(
+            WorkflowProtectedResidentContextAccessConsumptionClaim,
+            cls._protected_resident_context_access_consumption_domain_from_payload(
+                row.payload,
+                row.canonical_digest,
+                "WorkflowProtectedResidentContextAccessConsumptionClaim",
+            ),
+        )
+        if (
+            row.payload != claim.digest_payload()
+            or row.consumption_authorization_audit_digest
+            != canonical_digest(dict(row.consumption_authorization_audit_payload))
+        ):
+            cls._protected_resident_context_access_consumption_contract_violation()
+        cls._protected_resident_context_access_consumption_assert_row_matches(row, claim)
+        return claim
+
+    @classmethod
+    def _protected_resident_context_access_attempt_from_row(
+        cls, row: WorkflowProtectedResidentContextAccessAttemptModel
+    ) -> WorkflowProtectedResidentContextAccessConsumptionAttempt:
+        attempt = cast(
+            WorkflowProtectedResidentContextAccessConsumptionAttempt,
+            cls._protected_resident_context_access_consumption_domain_from_payload(
+                row.payload,
+                row.canonical_digest,
+                "WorkflowProtectedResidentContextAccessConsumptionAttempt",
+            ),
+        )
+        cls._protected_resident_context_access_consumption_assert_row_matches(row, attempt)
+        return attempt
+
+    @classmethod
+    def _protected_resident_context_access_result_from_row(
+        cls, row: WorkflowProtectedResidentContextAccessResultModel
+    ) -> WorkflowProtectedResidentContextAccessConsumptionResult:
+        result = cast(
+            WorkflowProtectedResidentContextAccessConsumptionResult,
+            cls._protected_resident_context_access_consumption_domain_from_payload(
+                row.payload,
+                row.canonical_digest,
+                "WorkflowProtectedResidentContextAccessConsumptionResult",
+            ),
+        )
+        cls._protected_resident_context_access_consumption_assert_row_matches(row, result)
+        return result
+
+    @classmethod
+    def _protected_resident_context_access_consumption_assert_row_matches(
+        cls, row: Any, value: Any
+    ) -> None:
+        scalar_names = (
+            name
+            for name in value.__dataclass_fields__
+            if name not in {"scope", "state", "failure_class", "authority", "canonical_digest"}
+            and hasattr(row, name)
+        )
+        failure_class = getattr(value, "failure_class", None)
+        if (
+            any(getattr(row, name) != getattr(value, name) for name in scalar_names)
+            or row.organization_id != value.scope.organization_id
+            or row.environment_id != value.scope.environment_id
+            or row.site_id != value.scope.site_id
+            or (hasattr(row, "state") and row.state != value.state.value)
+            or (
+                hasattr(row, "failure_class")
+                and row.failure_class != (None if failure_class is None else failure_class.value)
+            )
+            or row.canonical_digest != value.canonical_digest
+            or row.payload != value.digest_payload()
+            or {
+                name: bool(getattr(row, name))
+                for name in cls._protected_resident_context_access_consumption_authority_columns(
+                    value.authority
+                )
+            }
+            != cls._protected_resident_context_access_consumption_authority_columns(value.authority)
+        ):
+            cls._protected_resident_context_access_consumption_contract_violation()
+
+    @classmethod
+    def _protected_resident_context_access_consumption_domain_from_payload(
+        cls,
+        raw: dict[str, Any],
+        stored_digest: str,
+        class_name: str,
+    ) -> Any:
+        payload = dict(raw)
+        payload["scope"] = WorkflowScope(**cast(dict[str, str], payload["scope"]))
+        for name, value in tuple(payload.items()):
+            if (
+                value is not None
+                and isinstance(value, str)
+                and (name.endswith("_at") or name.endswith("_until") or name.endswith("_deadline"))
+            ):
+                payload[name] = datetime.fromisoformat(value)
+        if "authority" in payload:
+            payload["authority"] = WorkflowProtectedResidentContextAccessConsumptionAuthority(
+                **cast(Any, payload["authority"])
+            )
+        if "state" in payload:
+            payload["state"] = (
+                WorkflowProtectedResidentContextAccessConsumptionAttemptState(str(payload["state"]))
+                if class_name.endswith("Attempt")
+                else WorkflowProtectedResidentContextAccessConsumptionResultState(
+                    str(payload["state"])
+                )
+            )
+        if payload.get("failure_class") is not None:
+            payload["failure_class"] = (
+                WorkflowProtectedResidentContextAccessConsumptionFailureClass(
+                    str(payload["failure_class"])
+                )
+            )
+        domain_types: dict[str, type[Any]] = {
+            "WorkflowProtectedResidentContextAccessConsumptionClaim": (
+                WorkflowProtectedResidentContextAccessConsumptionClaim
+            ),
+            "WorkflowProtectedResidentContextAccessConsumptionAttempt": (
+                WorkflowProtectedResidentContextAccessConsumptionAttempt
+            ),
+            "WorkflowProtectedResidentContextAccessConsumptionResult": (
+                WorkflowProtectedResidentContextAccessConsumptionResult
+            ),
+        }
+        value = domain_types[class_name](**cast(Any, payload), canonical_digest=stored_digest)
+        if canonical_digest(value.digest_payload()) != stored_digest:
+            cls._protected_resident_context_access_consumption_contract_violation()
+        return value
+
+    @classmethod
+    def _protected_resident_context_access_result_matches(
+        cls,
+        *,
+        request: WorkflowProtectedResidentContextAccessConsumptionResultRequest,
+        claim_row: WorkflowProtectedResidentContextAccessConsumptionClaimModel | None,
+        attempt_row: WorkflowProtectedResidentContextAccessAttemptModel | None,
+        observed_at: datetime,
+    ) -> bool:
+        if claim_row is None or attempt_row is None:
+            return False
+        try:
+            claim = cls._protected_resident_context_access_consumption_claim_from_row(claim_row)
+            attempt = cls._protected_resident_context_access_attempt_from_row(attempt_row)
+            result = request.result
+            receipt = request.receipt
+            receipt_valid = receipt is None or receipt.canonical_digest == canonical_digest(
+                receipt.digest_payload()
+            )
+        except Exception:
+            return False
+        return bool(
+            receipt_valid
+            and result.canonical_digest == canonical_digest(result.digest_payload())
+            and result.consumption_claim_id == claim.claim_id
+            and result.consumption_claim_digest == claim.canonical_digest
+            and result.attempt_id == attempt.attempt_id
+            and result.attempt_digest == attempt.canonical_digest
+            and result.authorization_lease_id == claim.authorization_lease_id
+            and result.authorization_lease_digest == claim.authorization_lease_digest
+            and result.protected_resident_context_id == claim.protected_resident_context_id
+            and result.scope == claim.scope == attempt.scope
+            and result.recorded_at <= observed_at
+            and request.expected_claim_digest == claim.canonical_digest
+            and request.expected_attempt_digest == attempt.canonical_digest
+            and (
+                receipt is None
+                or (
+                    receipt.access_id == result.access_id == attempt.access_id
+                    and receipt.attempt_id == attempt.attempt_id
+                    and receipt.consumption_claim_id == claim.claim_id
+                    and receipt.authorization_lease_id == claim.authorization_lease_id
+                    and receipt.protected_resident_context_id == claim.protected_resident_context_id
+                    and result.accessor_receipt_digest == receipt.canonical_digest
+                    and receipt.completed_at == result.completed_at
+                    and receipt.completed_at < attempt.access_deadline
+                )
+            )
+            and cls._protected_resident_context_access_consumption_authority_is_zero(
+                result.authority
+            )
+        )
+
+    @staticmethod
+    def _protected_resident_context_access_consumption_contract_violation() -> NoReturn:
+        raise WorkflowProtectedResidentContextAccessConsumptionError(
+            "protected_resident_context_access_consumption_repository_contract_violation"
+        )
 
     async def _lock_protected_resident_context_access_authorization_sources(
         self,
