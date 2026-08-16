@@ -1581,6 +1581,10 @@ from atlas.modules.workflows.adapters.protected_runtime_context_injectors import
 from atlas.modules.workflows.adapters.protected_runtime_handle_lifecycle_attestors import (
     DeterministicDevelopmentWorkflowProtectedRuntimeHandleLifecycleAttestor,
 )
+from atlas.modules.workflows.adapters.protected_runtime_slot_lifecycle_attestors import (
+    DeterministicDevelopmentWorkflowProtectedRuntimeSlotLifecycleAttestor,
+    UnavailableWorkflowProtectedRuntimeSlotLifecycleAttestor,
+)
 from atlas.modules.workflows.adapters.target_context_access_status_attestors import (
     DenyAllWorkflowProtectedArtifactStatusSignatureVerifier,
     UnavailableWorkflowProtectedCredentialStatusAttestor,
@@ -1644,10 +1648,14 @@ from atlas.modules.workflows.application import (
     WorkflowProtectedRuntimeContextInjectionConsumptionService,
     WorkflowProtectedRuntimeContextTrustedInjector,
     WorkflowProtectedRuntimeContextTrustedInjectorReceiptSignatureVerifier,
+    WorkflowProtectedRuntimeContextUseAuthorizationRepository,
+    WorkflowProtectedRuntimeContextUseAuthorizationService,
     WorkflowProtectedRuntimeHandleLifecycleAttestation,
     WorkflowProtectedRuntimeHandleLifecycleAttestationRequest,
     WorkflowProtectedRuntimeHandleLifecycleAttestor,
     WorkflowProtectedRuntimeHandleLifecycleSignatureVerifier,
+    WorkflowProtectedRuntimeSlotLifecycleAttestor,
+    WorkflowProtectedRuntimeSlotLifecycleSignatureVerifier,
     WorkflowProtectedRuntimeSlotReadinessAttestor,
     WorkflowProtectedRuntimeSlotReadinessSignatureVerifier,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseRepository,
@@ -1721,6 +1729,7 @@ class _WorkflowCredentialAccessAuthorizationNoStoreMiddleware(BaseHTTPMiddleware
             "/api/v1/workflows/protected-resident-context-access-consumptions",
             "/api/v1/workflows/protected-runtime-context-injection-authorizations",
             "/api/v1/workflows/protected-runtime-context-injection-consumptions",
+            "/api/v1/workflows/protected-runtime-context-use-authorizations",
         }
     )
 
@@ -1972,6 +1981,35 @@ class _UnavailableWorkflowProtectedRuntimeContextInjectionConsumptionRepository:
         self, *_: object, **__: object
     ) -> None:
         raise RuntimeError("runtime-context injection consumption is unavailable")
+
+
+class _UnavailableWorkflowProtectedRuntimeContextUseAuthorizationRepository:
+    """Fail-closed ADR-170 composition placeholder with no memory fallback."""
+
+    @property
+    def durable(self) -> bool:
+        return False
+
+    async def get_authoritative_time(self) -> datetime:
+        raise RuntimeError("runtime-context use authorization is unavailable")
+
+    async def preflight_protected_runtime_context_use_authorization(
+        self, *_: object, **__: object
+    ) -> None:
+        raise RuntimeError("runtime-context use authorization is unavailable")
+
+    async def get_protected_runtime_context_use_authorization_source(
+        self, *_: object, **__: object
+    ) -> None:
+        raise RuntimeError("runtime-context use authorization is unavailable")
+
+    async def authorize_protected_runtime_context_use(self, *_: object, **__: object) -> None:
+        raise RuntimeError("runtime-context use authorization is unavailable")
+
+    async def list_protected_runtime_context_use_authorization_presentations(
+        self, *_: object, **__: object
+    ) -> None:
+        raise RuntimeError("runtime-context use authorization is unavailable")
 
 
 class _WorkflowProtectedResidentContextOpeningReceiptSignatureVerifierAdapter:
@@ -2491,6 +2529,9 @@ def create_app(
     workflow_protected_runtime_context_injection_consumption_service: (
         WorkflowProtectedRuntimeContextInjectionConsumptionService | None
     ) = None,
+    workflow_protected_runtime_context_use_authorization_service: (
+        WorkflowProtectedRuntimeContextUseAuthorizationService | None
+    ) = None,
     workflow_protected_runtime_handle_lifecycle_attestor: (
         WorkflowProtectedRuntimeHandleLifecycleAttestor | None
     ) = None,
@@ -2502,6 +2543,12 @@ def create_app(
     ) = None,
     workflow_protected_runtime_slot_readiness_signature_verifier: (
         WorkflowProtectedRuntimeSlotReadinessSignatureVerifier | None
+    ) = None,
+    workflow_protected_runtime_slot_lifecycle_attestor: (
+        WorkflowProtectedRuntimeSlotLifecycleAttestor | None
+    ) = None,
+    workflow_protected_runtime_slot_lifecycle_signature_verifier: (
+        WorkflowProtectedRuntimeSlotLifecycleSignatureVerifier | None
     ) = None,
     workflow_protected_runtime_context_trusted_injector: (
         WorkflowProtectedRuntimeContextTrustedInjector | None
@@ -7778,6 +7825,122 @@ def create_app(
         resolved_protected_runtime_context_injection_consumption_service = (
             workflow_protected_runtime_context_injection_consumption_service
         )
+    if workflow_protected_runtime_context_use_authorization_service is None:
+        runtime_context_use_authorization_repository_methods = (
+            "get_authoritative_time",
+            "preflight_protected_runtime_context_use_authorization",
+            "get_protected_runtime_context_use_authorization_source",
+            "authorize_protected_runtime_context_use",
+            "list_protected_runtime_context_use_authorization_presentations",
+        )
+        if isinstance(workflow_repository, PostgreSQLWorkflowPlanRepository) and all(
+            callable(getattr(workflow_repository, method_name, None))
+            for method_name in runtime_context_use_authorization_repository_methods
+        ):
+            runtime_context_use_authorization_repository = cast(
+                WorkflowProtectedRuntimeContextUseAuthorizationRepository,
+                workflow_repository,
+            )
+        else:
+            runtime_context_use_authorization_repository = cast(
+                WorkflowProtectedRuntimeContextUseAuthorizationRepository,
+                _UnavailableWorkflowProtectedRuntimeContextUseAuthorizationRepository(),
+            )
+
+        development_runtime_context_use_authorization = (
+            resolved_settings.environment == "development"
+            and resolved_settings.development_identity_enabled
+        )
+        unavailable_slot_lifecycle = UnavailableWorkflowProtectedRuntimeSlotLifecycleAttestor()
+        default_slot_lifecycle: WorkflowProtectedRuntimeSlotLifecycleAttestor
+        default_use_receipt_verifier: (
+            WorkflowProtectedRuntimeContextTrustedInjectorReceiptSignatureVerifier
+        )
+        if development_runtime_context_use_authorization:
+            default_slot_lifecycle = (
+                DeterministicDevelopmentWorkflowProtectedRuntimeSlotLifecycleAttestor(
+                    development_enabled=True
+                )
+            )
+            default_use_receipt_verifier = (
+                DeterministicDevelopmentWorkflowProtectedRuntimeContextTrustedInjector(
+                    development_enabled=True
+                )
+            )
+        else:
+            default_slot_lifecycle = unavailable_slot_lifecycle
+            default_use_receipt_verifier = (
+                DenyAllWorkflowProtectedRuntimeContextTrustedInjectorReceiptSignatureVerifier()
+            )
+
+        runtime_context_use_slot_attestor = (
+            workflow_protected_runtime_slot_lifecycle_attestor or default_slot_lifecycle
+        )
+        if workflow_protected_runtime_slot_lifecycle_signature_verifier is not None:
+            runtime_context_use_slot_verifier = (
+                workflow_protected_runtime_slot_lifecycle_signature_verifier
+            )
+        elif callable(
+            getattr(
+                runtime_context_use_slot_attestor,
+                "verify_runtime_slot_lifecycle_attestation",
+                None,
+            )
+        ):
+            runtime_context_use_slot_verifier = cast(
+                WorkflowProtectedRuntimeSlotLifecycleSignatureVerifier,
+                runtime_context_use_slot_attestor,
+            )
+        else:
+            runtime_context_use_slot_verifier = unavailable_slot_lifecycle
+
+        already_bound_use_receipt_verifier = getattr(
+            runtime_context_use_authorization_repository,
+            "_protected_runtime_context_injection_receipt_signature_verifier",
+            None,
+        )
+        if (
+            workflow_protected_runtime_context_trusted_injector_receipt_signature_verifier
+            is not None
+        ):
+            runtime_context_use_receipt_verifier = (
+                workflow_protected_runtime_context_trusted_injector_receipt_signature_verifier
+            )
+        elif already_bound_use_receipt_verifier is not None:
+            runtime_context_use_receipt_verifier = cast(
+                WorkflowProtectedRuntimeContextTrustedInjectorReceiptSignatureVerifier,
+                already_bound_use_receipt_verifier,
+            )
+        elif workflow_protected_runtime_context_trusted_injector is not None and callable(
+            getattr(workflow_protected_runtime_context_trusted_injector, "verify_receipt", None)
+        ):
+            runtime_context_use_receipt_verifier = cast(
+                WorkflowProtectedRuntimeContextTrustedInjectorReceiptSignatureVerifier,
+                workflow_protected_runtime_context_trusted_injector,
+            )
+        else:
+            runtime_context_use_receipt_verifier = default_use_receipt_verifier
+
+        bind_use_receipt_verifier = getattr(
+            runtime_context_use_authorization_repository,
+            "bind_protected_runtime_context_injection_receipt_signature_verifier",
+            None,
+        )
+        if callable(bind_use_receipt_verifier):
+            bind_use_receipt_verifier(runtime_context_use_receipt_verifier)
+        resolved_protected_runtime_context_use_authorization_service = (
+            WorkflowProtectedRuntimeContextUseAuthorizationService(
+                authorization_repository=runtime_context_use_authorization_repository,
+                lifecycle_attestor=runtime_context_use_slot_attestor,
+                lifecycle_signature_verifier=runtime_context_use_slot_verifier,
+                injector_receipt_signature_verifier=runtime_context_use_receipt_verifier,
+                audit_sink=resolved_audit_sink,
+            )
+        )
+    else:
+        resolved_protected_runtime_context_use_authorization_service = (
+            workflow_protected_runtime_context_use_authorization_service
+        )
     configured_transport_route_selection_heads = (
         _deployment_event_transport_route_selection_heads(
             resolved_settings,
@@ -8249,6 +8412,12 @@ def create_app(
         )
         app.state.workflow_protected_runtime_context_injection_consumption_repository = (
             resolved_protected_runtime_context_injection_consumption_service.repository
+        )
+        app.state.workflow_protected_runtime_context_use_authorization_service = (
+            resolved_protected_runtime_context_use_authorization_service
+        )
+        app.state.workflow_protected_runtime_context_use_authorization_repository = (
+            resolved_protected_runtime_context_use_authorization_service.repository
         )
         app.state.workflow_transport_route_selection_heads = (
             configured_transport_route_selection_heads

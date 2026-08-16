@@ -104,6 +104,9 @@ WORKFLOW_PROTECTED_RUNTIME_CONTEXT_INJECTION_AUTHORIZATION_READ = (
 WORKFLOW_PROTECTED_RUNTIME_CONTEXT_INJECTION_CONSUMPTION_READ = (
     "workflow.protected-runtime-context-injection-consumptions.read"
 )
+WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_AUTHORIZATION_READ = (
+    "workflow.protected-runtime-context-use-authorizations.read"
+)
 WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_CAPSULE_OPENING_READ = (
     "workflow.physical-transport-target-context-capsule-openings.read"
 )
@@ -2012,6 +2015,20 @@ def workflow_protected_runtime_context_injection_consumption_scope(
     )
 
 
+def workflow_protected_runtime_context_use_authorization_scope(
+    organization_id: str,
+    environment: str,
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.workflow",
+        resource_id="resource.workflow.protected-runtime-context-use-authorizations",
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
 def workflow_physical_transport_target_context_capsule_opening_scope(
     organization_id: str,
     environment: str,
@@ -2399,6 +2416,10 @@ def build_development_authorization_service(
             description=(
                 "Read minimized immutable protected runtime-context injection consumption outcomes."
             ),
+        ),
+        PermissionDefinition(
+            permission_id=WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_AUTHORIZATION_READ,
+            description=("Read minimized immutable protected runtime-context use authorizations."),
         ),
         PermissionDefinition(
             permission_id=WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_CAPSULE_OPENING_READ,
@@ -3317,6 +3338,7 @@ def build_development_authorization_service(
                 WORKFLOW_PROTECTED_RESIDENT_CONTEXT_ACCESS_CONSUMPTION_READ,
                 WORKFLOW_PROTECTED_RUNTIME_CONTEXT_INJECTION_AUTHORIZATION_READ,
                 WORKFLOW_PROTECTED_RUNTIME_CONTEXT_INJECTION_CONSUMPTION_READ,
+                WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_AUTHORIZATION_READ,
                 WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_CAPSULE_OPENING_READ,
                 WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMISSION_READ,
                 WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_RESOLUTION_AUTHORIZATION_LEASE_READ,
@@ -5524,6 +5546,19 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=workflow_protected_runtime_context_injection_consumption_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id=(
+                    "assignment.development.workflow-protected-runtime-context-use-authorizations"
+                ),
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=workflow_protected_runtime_context_use_authorization_scope(
                     settings.development_organization_id,
                     settings.environment,
                 ),

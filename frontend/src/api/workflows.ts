@@ -1465,6 +1465,60 @@ export type WorkflowProtectedRuntimeContextInjectionAuthorizationInventory = {
   durable: true;
 };
 
+export type WorkflowProtectedRuntimeContextUseAuthorizationAuthority = {
+  protected_runtime_context_use_authority_granted: boolean;
+  runtime_use_authorized: false;
+  runtime_start_authorized: false;
+  runtime_resume_authorized: false;
+  connector_activity_authorized: false;
+  protected_runtime_context_injection_authority_granted: false;
+  protected_resident_context_access_authority_granted: false;
+  target_context_capsule_opening_authorized: false;
+  target_context_capsule_handoff_authorized: false;
+  endpoint_resolution_authorized: false;
+  route_selection_authorized: false;
+  route_binding_authorized: false;
+  credential_selection_authorized: false;
+  credential_assignment_binding_authorized: false;
+  credential_access_authorized: false;
+  credential_brokerage_authorized: false;
+  credential_resolution_authorized: false;
+  protected_artifact_access_authorized: false;
+  credential_delivery_authorized: false;
+  network_access_authorized: false;
+  readiness_probe_authorized: false;
+  publication_authorized: false;
+  delivery_authorized: false;
+  dispatch_authorized: false;
+  execution_authorized: false;
+  infrastructure_mutation_authorized: false;
+};
+
+export type WorkflowProtectedRuntimeContextUseAuthorization = {
+  authorization_lease_id: string;
+  state: "authorized_unconsumed";
+  effective_state: "active" | "expired";
+  issued_at: string;
+  valid_until: string;
+  effective_until: string;
+  consumer_contract_id: "contract.workflow-protected-transport-target-context-capsule-consumer";
+  consumer_contract_version: "1.0";
+  purpose_id: "purpose.workflow-protected-runtime-context-use-evaluation";
+  policy_id: "policy.workflow-protected-runtime-context-use-authorization";
+  policy_version: "1.0";
+  use_profile_reference: string;
+  runtime_slot_profile_reference: string;
+  destination_profile_reference: string;
+  authority: WorkflowProtectedRuntimeContextUseAuthorizationAuthority;
+  integrity_reference: string;
+};
+
+export type WorkflowProtectedRuntimeContextUseAuthorizationInventory = {
+  authorizations: WorkflowProtectedRuntimeContextUseAuthorization[];
+  server_time: string;
+  durable: true;
+};
+
 export type WorkflowProtectedRuntimeContextInjectionConsumption = {
   injection_id: string;
   attempt_state: "started" | "completed";
@@ -2848,6 +2902,57 @@ const protectedRuntimeContextInjectionAuthorizationFields = [
   "integrity_reference",
 ] as const;
 const protectedRuntimeContextInjectionAuthorizationInventoryFields = [
+  "authorizations",
+  "server_time",
+  "durable",
+] as const;
+const protectedRuntimeContextUseAuthorizationAuthorityFields = [
+  "protected_runtime_context_use_authority_granted",
+  "runtime_use_authorized",
+  "runtime_start_authorized",
+  "runtime_resume_authorized",
+  "connector_activity_authorized",
+  "protected_runtime_context_injection_authority_granted",
+  "protected_resident_context_access_authority_granted",
+  "target_context_capsule_opening_authorized",
+  "target_context_capsule_handoff_authorized",
+  "endpoint_resolution_authorized",
+  "route_selection_authorized",
+  "route_binding_authorized",
+  "credential_selection_authorized",
+  "credential_assignment_binding_authorized",
+  "credential_access_authorized",
+  "credential_brokerage_authorized",
+  "credential_resolution_authorized",
+  "protected_artifact_access_authorized",
+  "credential_delivery_authorized",
+  "network_access_authorized",
+  "readiness_probe_authorized",
+  "publication_authorized",
+  "delivery_authorized",
+  "dispatch_authorized",
+  "execution_authorized",
+  "infrastructure_mutation_authorized",
+] as const;
+const protectedRuntimeContextUseAuthorizationFields = [
+  "authorization_lease_id",
+  "state",
+  "effective_state",
+  "issued_at",
+  "valid_until",
+  "effective_until",
+  "consumer_contract_id",
+  "consumer_contract_version",
+  "purpose_id",
+  "policy_id",
+  "policy_version",
+  "use_profile_reference",
+  "runtime_slot_profile_reference",
+  "destination_profile_reference",
+  "authority",
+  "integrity_reference",
+] as const;
+const protectedRuntimeContextUseAuthorizationInventoryFields = [
   "authorizations",
   "server_time",
   "durable",
@@ -5117,6 +5222,78 @@ function isProtectedRuntimeContextInjectionAuthorization(
   );
 }
 
+function hasProtectedRuntimeContextUseOnlyAuthority(
+  value: unknown,
+  useAuthorityGranted: boolean,
+): value is WorkflowProtectedRuntimeContextUseAuthorizationAuthority {
+  return (
+    isObject(value) &&
+    hasExactKeys(value, protectedRuntimeContextUseAuthorizationAuthorityFields) &&
+    protectedRuntimeContextUseAuthorizationAuthorityFields.every((field) =>
+      field === "protected_runtime_context_use_authority_granted"
+        ? value[field] === useAuthorityGranted
+        : value[field] === false,
+    )
+  );
+}
+
+function isProtectedRuntimeContextUseAuthorization(
+  value: unknown,
+  serverTime: string,
+): value is WorkflowProtectedRuntimeContextUseAuthorization {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, protectedRuntimeContextUseAuthorizationFields) ||
+    containsCredentialMaterial(value) ||
+    !isTimezoneAwareTimestamp(value.issued_at) ||
+    !isTimezoneAwareTimestamp(value.valid_until) ||
+    !isTimezoneAwareTimestamp(value.effective_until)
+  ) {
+    return false;
+  }
+  const issuedAt = Date.parse(value.issued_at);
+  const validUntil = Date.parse(value.valid_until);
+  const effectiveUntil = Date.parse(value.effective_until);
+  const evaluatedAt = Date.parse(serverTime);
+  const expectedEffectiveState = evaluatedAt >= validUntil ? "expired" : "active";
+  const useAuthorityGranted = expectedEffectiveState === "active";
+  return (
+    isStableIdentifier(value.authorization_lease_id) &&
+    value.authorization_lease_id.startsWith(
+      "workflow-protected-runtime-context-use-lease.",
+    ) &&
+    value.state === "authorized_unconsumed" &&
+    value.effective_state === expectedEffectiveState &&
+    issuedAt <= evaluatedAt &&
+    issuedAt < validUntil &&
+    validUntil - issuedAt <= 1_000 &&
+    validUntil <= effectiveUntil &&
+    value.consumer_contract_id ===
+      "contract.workflow-protected-transport-target-context-capsule-consumer" &&
+    value.consumer_contract_version === "1.0" &&
+    value.purpose_id === "purpose.workflow-protected-runtime-context-use-evaluation" &&
+    value.policy_id === "policy.workflow-protected-runtime-context-use-authorization" &&
+    value.policy_version === "1.0" &&
+    isStableIdentifier(value.use_profile_reference) &&
+    value.use_profile_reference.startsWith(
+      "integrity.workflow-protected-runtime-context-use-profile.",
+    ) &&
+    isStableIdentifier(value.runtime_slot_profile_reference) &&
+    value.runtime_slot_profile_reference.startsWith(
+      "integrity.workflow-protected-runtime-slot-profile.",
+    ) &&
+    isStableIdentifier(value.destination_profile_reference) &&
+    value.destination_profile_reference.startsWith(
+      "integrity.workflow-protected-destination-profile.",
+    ) &&
+    hasProtectedRuntimeContextUseOnlyAuthority(value.authority, useAuthorityGranted) &&
+    isStableIdentifier(value.integrity_reference) &&
+    value.integrity_reference.startsWith(
+      "integrity.workflow-protected-runtime-context-use-authorization.",
+    )
+  );
+}
+
 function isProtectedRuntimeContextInjectionConsumption(
   value: unknown,
   serverTime: string,
@@ -6886,6 +7063,57 @@ export async function listWorkflowProtectedRuntimeContextInjectionAuthorizations
     authorizationIds.add(authorization.authorization_lease_id);
   }
   return data as WorkflowProtectedRuntimeContextInjectionAuthorizationInventory;
+}
+
+export async function listWorkflowProtectedRuntimeContextUseAuthorizations(): Promise<WorkflowProtectedRuntimeContextUseAuthorizationInventory> {
+  const response = await apiFetch(
+    "/api/v1/workflows/protected-runtime-context-use-authorizations",
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(
+    response,
+    "Workflow protected runtime-context use authorization retrieval failed",
+  );
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, protectedRuntimeContextUseAuthorizationInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    !Array.isArray(data.authorizations) ||
+    data.authorizations.length > 256 ||
+    !isTimezoneAwareTimestamp(data.server_time) ||
+    data.durable !== true
+  ) {
+    throw new ApiRequestError(
+      "Workflow protected runtime-context use authorization response was unsafe",
+      response.status,
+    );
+  }
+  const serverTime = data.server_time;
+  if (
+    !data.authorizations.every((authorization) =>
+      isProtectedRuntimeContextUseAuthorization(authorization, serverTime),
+    )
+  ) {
+    throw new ApiRequestError(
+      "Workflow protected runtime-context use authorization response was unsafe",
+      response.status,
+    );
+  }
+  const authorizationIds = new Set<string>();
+  for (const authorization of data.authorizations) {
+    if (
+      !isObject(authorization) ||
+      typeof authorization.authorization_lease_id !== "string" ||
+      authorizationIds.has(authorization.authorization_lease_id)
+    ) {
+      throw new ApiRequestError(
+        "Workflow protected runtime-context use authorization response was unsafe",
+        response.status,
+      );
+    }
+    authorizationIds.add(authorization.authorization_lease_id);
+  }
+  return data as WorkflowProtectedRuntimeContextUseAuthorizationInventory;
 }
 
 export async function listWorkflowProtectedRuntimeContextInjectionConsumptions(): Promise<WorkflowProtectedRuntimeContextInjectionConsumptionInventory> {

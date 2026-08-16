@@ -4,14 +4,78 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-219 |
-| Title | Atomic protected runtime-context injection lease consumption and inert protected-slot injection without runtime use, network, execution or infrastructure mutation authority |
+| Task ID | ATLAS-IMP-220 |
+| Title | Bounded single-use protected runtime-context use authorization lease without runtime use, start, resume, network, connector, execution or infrastructure mutation authority |
 | Status | In Progress |
-| Branch | `agent/protected-runtime-context-injection-consumption` |
+| Branch | `agent/protected-runtime-context-use-authorization` |
 | Pull Request | Pending |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-169 |
-| Last Updated | 2026-08-16 |
-| Next Action | Deliver the completed ADR-169 slice through pull request, exact-head CI, merge and independent `main` CI |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-170 |
+| Last Updated | 2026-08-17 |
+| Next Action | Deliver the completed ADR-170 slice through PR, exact-head CI, merge and independent `main` CI |
+
+### ATLAS-IMP-220 Scope Rationale
+
+- IMP-219 can prove that exact protected context was injected into one exact runtime slot, but the
+  context remains inert and every runtime-use and operational authority remains false.
+- The next smallest functional boundary is an at-most-one-second lease authorizing only a future
+  request to consume protected runtime-context use authority. Lease issuance does not itself use,
+  activate, start or resume a runtime.
+- Fresh passive protected-slot lifecycle evidence must prove that the canonical injected context
+  remains present, inert, unused and bound to the current destination fence and exact post-injection
+  slot generation without disclosing slot or context material to ordinary Atlas processes.
+
+### ATLAS-IMP-220 Acceptance Criteria
+
+- Only the exact protected consumer workload and audience bound through the complete canonical
+  ADR-160 through ADR-169 lineage may POST. Human sessions, personal tokens, AI agents, MCP tools,
+  injectors and generic workers fail closed.
+- Caller input is limited to the ADR-169 result identity and digest, code-owned policy identity and
+  idempotency metadata. Slot, destination, fence, runtime-use profile, lifetime and authority fields
+  are server-derived.
+- Only a canonical timely signed `injected_into_protected_runtime_slot` result is eligible. Failed,
+  uncertain, pending, late, invalid, unsigned, malformed or receipt-free evidence fails closed.
+- Durable exact replay is classified before external evidence I/O. Changed or competing replay
+  fails closed; expiry or future consumption projects zero effective authority without mutating
+  append-only history.
+- Fresh signed, server-nonce-bound and metadata-only lifecycle/use-eligibility evidence proves the
+  exact slot still contains the inert, unused context at the expected post-generation and current
+  destination fence, with no competing authorization or use.
+- PostgreSQL obtains two authoritative database times, locks and revalidates complete canonical
+  lineage plus current destination and slot heads, and atomically appends one idempotency claim and
+  one single-use, non-renewable, non-transferable, non-bearer lease valid for at most one second.
+- The claim grants no authority. Only the active, unconsumed lease declares
+  `protected_runtime_context_use_authority_granted=true`; every existing operational authority
+  declaration remains false.
+- IMP-220 performs no runtime-context use, activation, start, resume, query or code execution;
+  endpoint, credential, DNS, TLS, socket, network, connector, MCP, readiness, publication, delivery,
+  dispatch, workflow-transition and infrastructure-mutation authority all remain unavailable.
+- Production fails closed without PostgreSQL, trusted slot lifecycle attestation and verification
+  keys. There is no process-memory, caller-asserted or permissive production fallback.
+- Workload POST and normal username/password-session GET are minimized, non-oracle and `no-store`.
+  The read-only UI requires neither MFA nor a second authorized-browser-session prompt and exposes
+  no operational control or protected slot/context material.
+
+### ATLAS-IMP-220 Verification Evidence
+
+- Ruff format/check passed across `1503` backend source, test and migration files. Full MyPy passed
+  across `1359` source and test files with no issues.
+- The focused ADR-168 through ADR-170 regression suite passed `85` tests; one live PostgreSQL test
+  was skipped locally only because `ATLAS_TEST_POSTGRES_DSN` is not configured. CI now enrolls both
+  the ADR-169 and ADR-170 repository suites against PostgreSQL 17.
+- Full backend regression passed `2774` tests; `39` environment-dependent tests were skipped only
+  for unavailable Windows symlink support or an unconfigured local `ATLAS_TEST_POSTGRES_DSN`.
+- Alembic reports the single head `20260816_0143`.
+- Frontend ESLint and TypeScript checks passed. All `95` frontend test files passed all `830` tests,
+  and the production Vite build completed successfully.
+- Review found and closed six issues: destination generation/fence locking, injected-context lifetime
+  bounding, composite upstream lineage constraints, meaningful database-time ordering, durable GET
+  repository enforcement and rejection of premature consumed UI state. Independent re-review found
+  no remaining issues.
+- Live validation at `http://127.0.0.1:5271/#/workspace/workflows` used one normal `atlas-demo` /
+  `local-demo` username/password session. The ADR-170 GET returned the expected fail-closed `503`
+  without a configured durable repository; its read-only UI exposed zero operation controls and no
+  protected material. Desktop and `390x844` mobile layouts had no horizontal overflow, and the
+  browser console contained no errors or warnings.
 
 ### ATLAS-IMP-219 Scope Rationale
 
@@ -71,6 +135,17 @@
   configured durable repository and no browser console errors.
 - Review fixes preserve metadata-only lifecycle evidence with zero injection authority and keep
   verifier binding compatible with legacy repository construction used by the ADR-168 test suite.
+
+### ATLAS-IMP-219 Delivery Evidence
+
+- Merged through [PR #232](https://github.com/ozdemirumit/Project_Atlas/pull/232) from exact reviewed
+  head `31166abdacc45b39fe813eddb26c1d5ed13af969` to `main` merge
+  `a2831ee77bcc7f0c12cbe1eaf403993fe7d9bc26`.
+- Exact-head [PR CI run 31969767026](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31969767026)
+  passed backend in 11m02s and frontend in 8m47s, including real PostgreSQL integration, migration
+  and migration round-trip validation.
+- Independent [main CI run 31970423013](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31970423013)
+  passed backend in 11m50s and frontend in 9m01s for the exact merge commit.
 
 ### ATLAS-IMP-218 Delivery Evidence
 

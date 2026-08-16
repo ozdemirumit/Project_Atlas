@@ -30,6 +30,7 @@ from atlas.api.security import (
     authorize_workflow_protected_resident_context_access_consumption_read,
     authorize_workflow_protected_runtime_context_injection_authorization_read,
     authorize_workflow_protected_runtime_context_injection_consumption_read,
+    authorize_workflow_protected_runtime_context_use_authorization_read,
     authorize_workflow_target_context_capsule_handoff_authorization_lease_read,
     authorize_workflow_target_context_capsule_handoff_read,
     authorize_workflow_target_context_capsule_opening_authorization_lease_read,
@@ -81,6 +82,7 @@ from atlas.api.workflow_schemas import (
     CreateWorkflowProtectedResidentContextAccessConsumptionInput,
     CreateWorkflowProtectedRuntimeContextInjectionAuthorizationInput,
     CreateWorkflowProtectedRuntimeContextInjectionConsumptionInput,
+    CreateWorkflowProtectedRuntimeContextUseAuthorizationInput,
     CreateWorkflowProtectedTransportTargetContextCapsuleConsumerBindingInput,
     CreateWorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseInput,
     CreateWorkflowProtectedTransportTargetContextCapsuleHandoffInput,
@@ -216,6 +218,10 @@ from atlas.api.workflow_schemas import (
     WorkflowProtectedRuntimeContextInjectionConsumptionInventoryData,
     WorkflowProtectedRuntimeContextInjectionConsumptionInventoryResponse,
     WorkflowProtectedRuntimeContextInjectionConsumptionResponse,
+    WorkflowProtectedRuntimeContextUseAuthorizationData,
+    WorkflowProtectedRuntimeContextUseAuthorizationInventoryData,
+    WorkflowProtectedRuntimeContextUseAuthorizationInventoryResponse,
+    WorkflowProtectedRuntimeContextUseAuthorizationResponse,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBindingData,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBindingInventoryData,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBindingInventoryItemData,
@@ -317,6 +323,8 @@ from atlas.modules.workflows.application import (
     WorkflowProtectedRuntimeContextInjectionAuthorizationService,
     WorkflowProtectedRuntimeContextInjectionConsumptionError,
     WorkflowProtectedRuntimeContextInjectionConsumptionService,
+    WorkflowProtectedRuntimeContextUseAuthorizationError,
+    WorkflowProtectedRuntimeContextUseAuthorizationService,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationContext,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseError,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseService,
@@ -6811,6 +6819,152 @@ async def create_workflow_protected_runtime_context_injection_consumption(
             retryable=True,
         ) from error
     return WorkflowProtectedRuntimeContextInjectionConsumptionResponse(
+        data=data,
+        meta=_meta(request),
+    )
+
+
+@router.get(
+    "/protected-runtime-context-use-authorizations",
+    response_model=WorkflowProtectedRuntimeContextUseAuthorizationInventoryResponse,
+)
+async def list_workflow_protected_runtime_context_use_authorizations(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_workflow_protected_runtime_context_use_authorization_read),
+    ],
+) -> WorkflowProtectedRuntimeContextUseAuthorizationInventoryResponse:
+    del decision
+    _no_store(response)
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    service = cast(
+        WorkflowProtectedRuntimeContextUseAuthorizationService,
+        request.app.state.workflow_protected_runtime_context_use_authorization_service,
+    )
+    try:
+        presentations = await service.list_presentations(scope=scope, limit=256)
+        server_time = await service.repository.get_authoritative_time()
+        if any(presentation.lease.scope != scope for presentation in presentations):
+            raise RuntimeError("protected runtime-context use authorization scope mismatch")
+        items = [
+            WorkflowProtectedRuntimeContextUseAuthorizationData.from_domain(presentation)
+            for presentation in presentations
+        ]
+        inventory_data = WorkflowProtectedRuntimeContextUseAuthorizationInventoryData(
+            authorizations=items,
+            server_time=server_time,
+            durable=service.durable,
+        )
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_protected_runtime_context_use_authorization_service_unavailable",
+            title="Protected runtime-context use authorization unavailable",
+            detail="Runtime-context use authorization metadata is temporarily unavailable.",
+            retryable=True,
+        ) from error
+    return WorkflowProtectedRuntimeContextUseAuthorizationInventoryResponse(
+        data=inventory_data,
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    "/protected-runtime-context-use-authorizations",
+    response_model=WorkflowProtectedRuntimeContextUseAuthorizationResponse,
+    status_code=201,
+)
+async def create_workflow_protected_runtime_context_use_authorization(
+    payload: CreateWorkflowProtectedRuntimeContextUseAuthorizationInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[
+        AuthenticatedSubject,
+        Depends(workflow_protected_transport_target_context_capsule_consumer_subject),
+    ],
+) -> WorkflowProtectedRuntimeContextUseAuthorizationResponse:
+    _no_store(response)
+    service = cast(
+        WorkflowProtectedRuntimeContextUseAuthorizationService,
+        request.app.state.workflow_protected_runtime_context_use_authorization_service,
+    )
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    try:
+        lease = await service.authorize(
+            injection_result_id=payload.injection_result_id,
+            injection_result_digest=payload.injection_result_digest,
+            policy_id=payload.policy_id,
+            policy_version=payload.policy_version,
+            idempotency_key=payload.idempotency_key,
+            context=WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationContext(
+                subject_id=subject.subject_id,
+                actor_type=subject.kind.value,
+                authentication_method=subject.authentication_method.value,
+                credential_audience=WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_AUDIENCE,
+                scope=scope,
+                correlation_id=str(request.state.correlation_id),
+                decision_id=(
+                    "decision.workflow-protected-runtime-context-use-consumer-authenticated"
+                ),
+                requested_at=datetime.now(UTC),
+            ),
+        )
+        presentations = await (
+            service.repository.list_protected_runtime_context_use_authorization_presentations(
+                scope=scope,
+                authorization_lease_ids=(lease.authorization_lease_id,),
+                limit=1,
+            )
+        )
+        if len(presentations) != 1:
+            raise RuntimeError("runtime-context use authorization projection unavailable")
+        presentation = presentations[0]
+        if presentation.lease.canonical_digest != lease.canonical_digest:
+            raise RuntimeError("runtime-context use authorization projection mismatch")
+        data = WorkflowProtectedRuntimeContextUseAuthorizationData.from_domain(presentation)
+    except WorkflowProtectedRuntimeContextUseAuthorizationError as error:
+        unavailable = "unavailable" in error.code or error.code.endswith(
+            "durable_repository_required"
+        )
+        raise AtlasError(
+            status=503 if unavailable else 409,
+            code=(
+                "workflow_protected_runtime_context_use_authorization_service_unavailable"
+                if unavailable
+                else "authorization_denied"
+            ),
+            title=(
+                "Protected runtime-context use authorization unavailable"
+                if unavailable
+                else "Request denied"
+            ),
+            detail=(
+                "Runtime-context use authorization metadata is temporarily unavailable."
+                if unavailable
+                else "The current identity or evidence is not authorized for this operation."
+            ),
+            retryable=unavailable,
+        ) from error
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_protected_runtime_context_use_authorization_service_unavailable",
+            title="Protected runtime-context use authorization unavailable",
+            detail="Runtime-context use authorization metadata is temporarily unavailable.",
+            retryable=True,
+        ) from error
+    return WorkflowProtectedRuntimeContextUseAuthorizationResponse(
         data=data,
         meta=_meta(request),
     )
