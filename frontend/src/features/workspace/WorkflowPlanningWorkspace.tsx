@@ -45,6 +45,7 @@ import {
   listWorkflowProtectedResidentContextAccessAuthorizations,
   listWorkflowProtectedResidentContextAccessConsumptions,
   listWorkflowProtectedRuntimeContextInjectionAuthorizations,
+  listWorkflowProtectedRuntimeContextInjectionConsumptions,
   listWorkflowPhysicalTransportTargetContextBindings,
   listWorkflowPhysicalTransportCredentialAssignmentSnapshots,
   listWorkflowPhysicalTransportCredentialAssignmentFreshnessAdmissions,
@@ -333,6 +334,16 @@ export default function WorkflowPlanningWorkspace({
       siteId,
     ],
     queryFn: listWorkflowProtectedRuntimeContextInjectionAuthorizations,
+    retry: false,
+  });
+  const protectedRuntimeContextInjectionConsumptionQuery = useQuery({
+    queryKey: [
+      "workflow-protected-runtime-context-injection-consumptions",
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: listWorkflowProtectedRuntimeContextInjectionConsumptions,
     retry: false,
   });
   const targetQuery = useQuery({
@@ -834,6 +845,10 @@ export default function WorkflowPlanningWorkspace({
   const protectedRuntimeContextInjectionAuthorizationErrorStatus =
     protectedRuntimeContextInjectionAuthorizationQuery.error instanceof ApiRequestError
       ? protectedRuntimeContextInjectionAuthorizationQuery.error.status
+      : undefined;
+  const protectedRuntimeContextInjectionConsumptionErrorStatus =
+    protectedRuntimeContextInjectionConsumptionQuery.error instanceof ApiRequestError
+      ? protectedRuntimeContextInjectionConsumptionQuery.error.status
       : undefined;
   const eventEnvelopes = eventEnvelopesForAdmission;
   const transportAdmissions = transportAdmissionsForArtifacts;
@@ -4069,6 +4084,143 @@ export default function WorkflowPlanningWorkspace({
             Future-request-only authorization evidence. It does not inject, retrieve, reveal or use
             a runtime handle; use a runtime; connect to a target; call a connector; probe readiness;
             publish, deliver or dispatch work; execute a step; or mutate infrastructure.
+          </span>
+        </div>
+      </section>
+
+      <section
+        className="workflow-physical-route-binding-band workflow-target-context-opening-band"
+        aria-labelledby="workflow-protected-runtime-context-injection-consumption-title"
+      >
+        <div className="workflow-section-heading">
+          <div>
+            <p className="eyebrow">PROTECTED INJECTION EVIDENCE</p>
+            <h2 id="workflow-protected-runtime-context-injection-consumption-title">
+              Protected runtime-context injection consumptions
+            </h2>
+          </div>
+          <span>Read only</span>
+        </div>
+        {protectedRuntimeContextInjectionConsumptionQuery.isLoading && (
+          <div className="workflow-empty-state" role="status">
+            <RefreshCw className="spin" size={18} />
+            <span>Loading protected runtime-context injection consumption evidence...</span>
+          </div>
+        )}
+        {protectedRuntimeContextInjectionConsumptionQuery.isError && (
+          <div className="workflow-inline-error" role="alert">
+            <AlertTriangle aria-hidden="true" size={18} />
+            <div>
+              <strong>
+                {protectedRuntimeContextInjectionConsumptionErrorStatus === 401
+                  ? "Your session has expired"
+                  : protectedRuntimeContextInjectionConsumptionErrorStatus === 403
+                    ? "Runtime-context injection consumption permission is missing"
+                    : "Runtime-context injection consumptions are unavailable"}
+              </strong>
+              <span>
+                {protectedRuntimeContextInjectionConsumptionErrorStatus === 401
+                  ? "Sign in again to continue."
+                  : protectedRuntimeContextInjectionConsumptionErrorStatus === 403
+                    ? "Your current role or scope cannot inspect runtime-context injection consumption evidence."
+                    : "No protected injection outcome or operational state is inferred from this failed read."}
+              </span>
+            </div>
+          </div>
+        )}
+        {protectedRuntimeContextInjectionConsumptionQuery.isSuccess &&
+          protectedRuntimeContextInjectionConsumptionQuery.data.consumptions.length === 0 && (
+            <div className="workflow-empty-state" role="status">
+              <LockKeyhole size={19} />
+              <span>
+                No protected runtime-context injection consumptions are recorded in this scope.
+              </span>
+            </div>
+          )}
+        {protectedRuntimeContextInjectionConsumptionQuery.isSuccess &&
+          protectedRuntimeContextInjectionConsumptionQuery.data.consumptions.length > 0 && (
+            <ol
+              className="workflow-step-preview workflow-physical-route-binding-list workflow-target-context-opening-list"
+              aria-label="Protected runtime-context injection consumptions"
+            >
+              {protectedRuntimeContextInjectionConsumptionQuery.data.consumptions.map(
+                (consumption) => (
+                  <li key={consumption.injection_id}>
+                    {consumption.result_state === "injected_into_protected_runtime_slot" ? (
+                      <ShieldCheck size={18} />
+                    ) : (
+                      <FileClock size={18} />
+                    )}
+                    <div>
+                      <strong>
+                        <code title={consumption.injection_id}>
+                          {safeHolderIdentifier(consumption.injection_id)}
+                        </code>
+                        <span
+                          className={`state-badge ${
+                            consumption.result_state === "injection_failed"
+                              ? "failed"
+                              : consumption.result_state === "injection_pending"
+                                ? "neutral"
+                                : consumption.result_state ===
+                                    "injected_into_protected_runtime_slot"
+                                  ? "neutral"
+                                  : "warning"
+                          }`}
+                        >
+                          {readableKind(consumption.result_state)}
+                        </span>
+                      </strong>
+                      <div className="workflow-physical-route-binding-grid">
+                        <span>
+                          Attempt state {readableKind(consumption.attempt_state)} | result state{" "}
+                          {readableKind(consumption.result_state)}
+                        </span>
+                        <span>
+                          Started {formatTimestamp(consumption.started_at)}
+                          {consumption.completed_at === null
+                            ? " | completion not recorded"
+                            : ` | completed ${formatTimestamp(consumption.completed_at)}`}
+                        </span>
+                        <span>
+                          Injector profile{" "}
+                          <code title={consumption.injector_profile_reference}>
+                            {safeHolderIdentifier(consumption.injector_profile_reference)}
+                          </code>
+                        </span>
+                        <span>
+                          Runtime-slot profile{" "}
+                          <code title={consumption.runtime_slot_profile_reference}>
+                            {safeHolderIdentifier(consumption.runtime_slot_profile_reference)}
+                          </code>
+                        </span>
+                        <span>
+                          Policy{" "}
+                          <code title={consumption.policy_id}>
+                            {safeHolderIdentifier(consumption.policy_id)}
+                          </code>{" "}
+                          v{consumption.policy_version}
+                        </span>
+                        <span>
+                          Integrity reference{" "}
+                          <code title={consumption.integrity_reference}>
+                            {safeHolderIdentifier(consumption.integrity_reference)}
+                          </code>
+                        </span>
+                      </div>
+                    </div>
+                  </li>
+                ),
+              )}
+            </ol>
+          )}
+        <div className="workflow-safety-boundary" role="note">
+          <LockKeyhole size={18} />
+          <span>
+            Historical metadata only. Protected handles, slot locators, protected references and raw
+            receipts remain inside the trusted boundary. Recorded injection does not grant runtime
+            use, network, connector, readiness, dispatch, execution or infrastructure-mutation
+            authority.
           </span>
         </div>
       </section>

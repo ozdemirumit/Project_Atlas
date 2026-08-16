@@ -33,6 +33,7 @@ import {
   type WorkflowProtectedResidentContextAccessAuthorization,
   type WorkflowProtectedResidentContextAccessConsumption,
   type WorkflowProtectedRuntimeContextInjectionAuthorization,
+  type WorkflowProtectedRuntimeContextInjectionConsumption,
   type WorkflowPhysicalTransportTargetContextBinding,
   type WorkflowPhysicalTransportCredentialAssignmentSnapshot,
   type WorkflowPhysicalTransportCredentialAssignmentBinding,
@@ -1347,6 +1348,23 @@ const protectedRuntimeContextInjectionAuthorization: WorkflowProtectedRuntimeCon
     "integrity.workflow-protected-runtime-context-injection-authorization.1234567890abcdef",
 };
 
+const protectedRuntimeContextInjectionConsumption: WorkflowProtectedRuntimeContextInjectionConsumption = {
+  injection_id:
+    "workflow-protected-runtime-context-injection-consumption.1234567890abcdef12345678",
+  attempt_state: "completed",
+  result_state: "injected_into_protected_runtime_slot",
+  started_at: "2026-08-14T10:08:28Z",
+  completed_at: "2026-08-14T10:08:28.250Z",
+  policy_id: "policy.workflow-protected-runtime-context-injection-consumption",
+  policy_version: "1.0",
+  injector_profile_reference:
+    "integrity.workflow-protected-runtime-context-injector-profile.1234567890abcdef",
+  runtime_slot_profile_reference:
+    "integrity.workflow-protected-runtime-slot-profile.1234567890abcdef",
+  integrity_reference:
+    "integrity.workflow-protected-runtime-context-injection-consumption.1234567890abcdef",
+};
+
 const credentialAssignmentSnapshot: WorkflowPhysicalTransportCredentialAssignmentSnapshot = {
   snapshot_id: "workflow-credential-assignment-snapshot.1234567890abcdef",
   assignment_id: "deployment-credential-assignment.1234567890abcdef",
@@ -2074,6 +2092,27 @@ function protectedRuntimeContextInjectionAuthorizationResponse(
   );
 }
 
+function protectedRuntimeContextInjectionConsumptionResponse(
+  consumptions: unknown[],
+  status = 200,
+  serverTime = "2026-08-14T10:08:28.500Z",
+  durable = true,
+): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: { consumptions, server_time: serverTime, durable },
+          meta: {
+            correlation_id:
+              "correlation.workflow.protected-runtime-context-injection-consumption",
+            generated_at: serverTime,
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function credentialAssignmentSnapshotResponse(
   snapshots: unknown[],
   status = 200,
@@ -2171,6 +2210,9 @@ function mockReadResponses(input: {
   protectedRuntimeContextInjectionAuthorizations?: unknown[];
   protectedRuntimeContextInjectionAuthorizationServerTime?: string;
   protectedRuntimeContextInjectionAuthorizationDurable?: boolean;
+  protectedRuntimeContextInjectionConsumptions?: unknown[];
+  protectedRuntimeContextInjectionConsumptionServerTime?: string;
+  protectedRuntimeContextInjectionConsumptionDurable?: boolean;
   credentialAssignmentSnapshots?: unknown[];
   transportCompatibilityAdmissions?: unknown[];
   pendingTransportAdmissionResponse?: Promise<Response>;
@@ -2197,6 +2239,7 @@ function mockReadResponses(input: {
   pendingProtectedResidentContextAccessAuthorizationResponse?: Promise<Response>;
   pendingProtectedResidentContextAccessConsumptionResponse?: Promise<Response>;
   pendingProtectedRuntimeContextInjectionAuthorizationResponse?: Promise<Response>;
+  pendingProtectedRuntimeContextInjectionConsumptionResponse?: Promise<Response>;
   pendingCredentialAssignmentSnapshotResponse?: Promise<Response>;
   pendingTransportCompatibilityAdmissionResponse?: Promise<Response>;
   leaseStatus?: number;
@@ -2254,6 +2297,8 @@ function mockReadResponses(input: {
   protectedResidentContextAccessConsumptionStatuses?: number[];
   protectedRuntimeContextInjectionAuthorizationStatus?: number;
   protectedRuntimeContextInjectionAuthorizationStatuses?: number[];
+  protectedRuntimeContextInjectionConsumptionStatus?: number;
+  protectedRuntimeContextInjectionConsumptionStatuses?: number[];
   credentialAssignmentSnapshotStatus?: number;
   credentialAssignmentSnapshotStatuses?: number[];
   transportCompatibilityAdmissionStatus?: number;
@@ -2283,10 +2328,31 @@ function mockReadResponses(input: {
   let protectedResidentContextAccessAuthorizationReadCount = 0;
   let protectedResidentContextAccessConsumptionReadCount = 0;
   let protectedRuntimeContextInjectionAuthorizationReadCount = 0;
+  let protectedRuntimeContextInjectionConsumptionReadCount = 0;
   let credentialAssignmentSnapshotReadCount = 0;
   let transportCompatibilityAdmissionReadCount = 0;
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (url.endsWith("/api/v1/workflows/protected-runtime-context-injection-consumptions")) {
+      if (input.pendingProtectedRuntimeContextInjectionConsumptionResponse) {
+        return input.pendingProtectedRuntimeContextInjectionConsumptionResponse;
+      }
+      const status =
+        input.protectedRuntimeContextInjectionConsumptionStatuses?.[
+          Math.min(
+            protectedRuntimeContextInjectionConsumptionReadCount++,
+            input.protectedRuntimeContextInjectionConsumptionStatuses.length - 1,
+          )
+        ] ?? input.protectedRuntimeContextInjectionConsumptionStatus ?? 200;
+      return Promise.resolve(
+        protectedRuntimeContextInjectionConsumptionResponse(
+          input.protectedRuntimeContextInjectionConsumptions ?? [],
+          status,
+          input.protectedRuntimeContextInjectionConsumptionServerTime,
+          input.protectedRuntimeContextInjectionConsumptionDurable,
+        ),
+      );
+    }
     if (
       url.endsWith(
         "/api/v1/workflows/protected-runtime-context-injection-authorizations",
@@ -7545,6 +7611,153 @@ describe("WorkflowPlanningWorkspace", () => {
     ).toBeVisible();
     expect(within(section).queryByRole("list")).toBeNull();
     expect(section).not.toHaveTextContent("runtime-handle.hidden");
+  });
+
+  it("renders protected runtime-context injection consumptions as minimized read-only evidence", async () => {
+    expect(Object.keys(protectedRuntimeContextInjectionConsumption).sort()).toEqual(
+      [
+        "injection_id",
+        "attempt_state",
+        "result_state",
+        "started_at",
+        "completed_at",
+        "policy_id",
+        "policy_version",
+        "injector_profile_reference",
+        "runtime_slot_profile_reference",
+        "integrity_reference",
+      ].sort(),
+    );
+    const pendingConsumption: WorkflowProtectedRuntimeContextInjectionConsumption = {
+      ...protectedRuntimeContextInjectionConsumption,
+      injection_id:
+        "workflow-protected-runtime-context-injection-consumption.abcdef1234567890abcdef12",
+      attempt_state: "started",
+      result_state: "injection_pending",
+      completed_at: null,
+    };
+    const uncertainConsumption: WorkflowProtectedRuntimeContextInjectionConsumption = {
+      ...pendingConsumption,
+      injection_id:
+        "workflow-protected-runtime-context-injection-consumption.0123456789abcdef01234567",
+      result_state: "injection_outcome_uncertain",
+    };
+    mockReadResponses({
+      protectedRuntimeContextInjectionConsumptions: [
+        protectedRuntimeContextInjectionConsumption,
+        pendingConsumption,
+        uncertainConsumption,
+      ],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Protected runtime-context injection consumptions",
+    })).closest("section") as HTMLElement;
+    const records = await within(section).findByRole("list", {
+      name: "Protected runtime-context injection consumptions",
+    });
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) =>
+        (request instanceof Request ? request.url : request.toString()).endsWith(
+          "/api/v1/workflows/protected-runtime-context-injection-consumptions",
+        ),
+      ),
+    ).toBe(true);
+    expect(records).toHaveTextContent("injected into protected runtime slot");
+    expect(records).toHaveTextContent("injection pending");
+    expect(records).toHaveTextContent("injection outcome uncertain");
+    expect(records).toHaveTextContent("completion not recorded");
+    expect(
+      within(section).getAllByTitle(
+        protectedRuntimeContextInjectionConsumption.injector_profile_reference,
+      )[0],
+    ).toBeVisible();
+    expect(
+      within(section).getAllByTitle(
+        protectedRuntimeContextInjectionConsumption.runtime_slot_profile_reference,
+      )[0],
+    ).toBeVisible();
+    expect(
+      within(section).getAllByTitle(
+        protectedRuntimeContextInjectionConsumption.integrity_reference,
+      )[0],
+    ).toBeVisible();
+    expect(section).toHaveTextContent(/Historical metadata only/i);
+    expect(section).toHaveTextContent(/does not grant runtime use, network, connector/i);
+    expect(within(section).queryByRole("button")).toBeNull();
+    expect(within(section).queryByRole("link")).toBeNull();
+    expect(within(section).queryByRole("textbox")).toBeNull();
+    expect(within(section).queryByRole("combobox")).toBeNull();
+    expect(within(section).queryByRole("checkbox")).toBeNull();
+    expect(section).not.toHaveTextContent(/authorized browser session|MFA/i);
+    expect(section).not.toHaveTextContent(
+      /runtime-handle\.hidden|slot-locator\.hidden|claim\.hidden|receipt\.hidden|nonce\.hidden|idempotency\.hidden|credential\.hidden/i,
+    );
+  });
+
+  it.each([
+    [
+      "an extra protected handle field",
+      {
+        ...protectedRuntimeContextInjectionConsumption,
+        runtime_handle_id: "runtime-handle.hidden",
+      },
+    ],
+    [
+      "a completed pending result",
+      {
+        ...protectedRuntimeContextInjectionConsumption,
+        result_state: "injection_pending",
+      },
+    ],
+    [
+      "a terminal result without completion",
+      {
+        ...protectedRuntimeContextInjectionConsumption,
+        completed_at: null,
+      },
+    ],
+    [
+      "a future start time",
+      {
+        ...protectedRuntimeContextInjectionConsumption,
+        started_at: "2026-08-14T10:08:29Z",
+        completed_at: "2026-08-14T10:08:29.250Z",
+      },
+    ],
+    [
+      "an untrusted injector profile reference",
+      {
+        ...protectedRuntimeContextInjectionConsumption,
+        injector_profile_reference: "integrity.untrusted-injector.1234567890abcdef",
+      },
+    ],
+  ])("fails closed for protected runtime-context injection consumption with %s", async (_case, unsafe) => {
+    mockReadResponses({ protectedRuntimeContextInjectionConsumptions: [unsafe] });
+    renderWorkspace();
+    const section = (await screen.findByRole("heading", {
+      name: "Protected runtime-context injection consumptions",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Runtime-context injection consumptions are unavailable"),
+    ).toBeVisible();
+    expect(within(section).queryByRole("list")).toBeNull();
+    expect(section).not.toHaveTextContent("runtime-handle.hidden");
+  });
+
+  it("uses the existing username/password session for injection consumption reads", async () => {
+    mockReadResponses({ protectedRuntimeContextInjectionConsumptionStatus: 401 });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Protected runtime-context injection consumptions",
+    })).closest("section") as HTMLElement;
+    expect(await within(section).findByText("Your session has expired")).toBeVisible();
+    expect(within(section).getByText("Sign in again to continue.")).toBeVisible();
+    expect(section).not.toHaveTextContent(/authorized browser session|MFA/i);
+    expect(within(section).queryByRole("button")).toBeNull();
+    expect(within(section).queryByRole("link")).toBeNull();
   });
 
   it("creates and presents a planned-only workflow without requesting another login", async () => {
