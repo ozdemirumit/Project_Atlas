@@ -717,6 +717,18 @@ MVP workflows do not execute C3 through C5 capabilities.
   Exact replay never calls the accessor again, uncertain outcomes never restore the lease and all
   20 authority fields remain false. Handle retrieval, injection, network, connector calls,
   dispatch, execution and infrastructure mutation remain separately authorized future boundaries.
+- ADR-168 establishes one append-only, single-use, non-renewable, non-transferable and non-bearer
+  injection-authorization lease from one canonical ADR-167
+  `handle_established_in_protected_boundary` result. Only the exact protected consumer workload may
+  request its own lease. Fresh signed, server-nonce-bound metadata-only evidence must prove the
+  handle remains present, unexpired, unrevoked, uninjected, unused and non-bearer; the destination
+  generation and fence remain current; and the exact code-owned injector/runtime-slot profile is
+  eligible. PostgreSQL applies canonical locks, complete revalidation and two database-time
+  observations before appending an idempotency claim and an at-most-one-second lease. Only
+  `protected_runtime_context_injection_authority_granted` is effectively true, and only while the
+  lease is active and unconsumed; the existing 20 authority fields remain false. Injection,
+  handle retrieval or use, runtime use, network, connectors, readiness, publication, delivery,
+  dispatch, execution and infrastructure mutation remain separately authorized future boundaries.
 
 ## 39. Assumptions
 
@@ -760,3 +772,4 @@ This document is ready to enter Review when:
 | 1.6.0 | 2026-08-16 | Workflow Architecture | Added atomic consumer-side capsule opening consumption and protected resident-context lineage |
 | 1.7.0 | 2026-08-16 | Workflow Architecture | Added bounded protected resident-context access-authorization lease |
 | 1.8.0 | 2026-08-16 | Workflow Architecture | Added atomic protected resident-context access consumption and non-bearer runtime-handle lineage |
+| 1.9.0 | 2026-08-16 | Workflow Architecture | Added bounded protected runtime-context injection-authorization lease |

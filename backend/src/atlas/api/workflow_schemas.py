@@ -7,6 +7,9 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from atlas.api.schemas import ResponseMeta
+from atlas.modules.workflows.application.protected_runtime_context_injection_authorization_ports import (  # noqa: E501
+    WorkflowProtectedRuntimeContextInjectionAuthorizationPresentation,
+)
 from atlas.modules.workflows.domain import (
     EventPhysicalTransportCredentialAssignmentSnapshot,
     EventPhysicalTransportProfileSnapshot,
@@ -44,6 +47,7 @@ from atlas.modules.workflows.domain import (
     WorkflowProtectedResidentContextAccessAuthorizationLease,
     WorkflowProtectedResidentContextAccessConsumptionAttempt,
     WorkflowProtectedResidentContextAccessConsumptionResult,
+    WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseState,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBinding,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAttempt,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLease,
@@ -53,6 +57,7 @@ from atlas.modules.workflows.domain import (
     WorkflowProtectedTransportTargetContextCapsuleOpeningResult,
     WorkflowRunPlan,
     code_owned_workflow_protected_resident_context_access_authorization_policy,
+    code_owned_workflow_protected_runtime_context_injection_authorization_policy,
 )
 
 STABLE_ID = r"^[a-z][a-z0-9_.:-]{2,239}$"
@@ -3005,6 +3010,187 @@ class WorkflowProtectedResidentContextAccessAuthorizationResponse(BaseModel):
 
 class WorkflowProtectedResidentContextAccessAuthorizationInventoryResponse(BaseModel):
     data: WorkflowProtectedResidentContextAccessAuthorizationInventoryData
+    meta: ResponseMeta
+
+
+class CreateWorkflowProtectedRuntimeContextInjectionAuthorizationInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    access_result_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    access_result_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    policy_id: Literal["policy.workflow-protected-runtime-context-injection-authorization"]
+    policy_version: Literal["1.0"]
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class WorkflowProtectedRuntimeContextInjectionAuthorizationAuthorityData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    protected_runtime_context_injection_authority_granted: bool
+    protected_resident_context_access_authority_granted: Literal[False]
+    target_context_capsule_opening_authorized: Literal[False]
+    target_context_capsule_handoff_authorized: Literal[False]
+    endpoint_resolution_authorized: Literal[False]
+    route_selection_authorized: Literal[False]
+    route_binding_authorized: Literal[False]
+    credential_selection_authorized: Literal[False]
+    credential_assignment_binding_authorized: Literal[False]
+    credential_access_authorized: Literal[False]
+    credential_brokerage_authorized: Literal[False]
+    credential_resolution_authorized: Literal[False]
+    protected_artifact_access_authorized: Literal[False]
+    credential_delivery_authorized: Literal[False]
+    network_access_authorized: Literal[False]
+    readiness_probe_authorized: Literal[False]
+    publication_authorized: Literal[False]
+    delivery_authorized: Literal[False]
+    dispatch_authorized: Literal[False]
+    execution_authorized: Literal[False]
+    infrastructure_mutation_authorized: Literal[False]
+
+
+class WorkflowProtectedRuntimeContextInjectionAuthorizationData(BaseModel):
+    """Minimized future-request authorization with no runtime-handle lineage."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    authorization_lease_id: str = Field(
+        min_length=75,
+        max_length=75,
+        pattern=r"^workflow-protected-runtime-context-injection-lease\.[0-9a-f]{24}$",
+    )
+    state: Literal["authorized_unconsumed"]
+    effective_state: Literal["active", "expired"]
+    issued_at: datetime
+    valid_until: datetime
+    effective_until: datetime
+    consumer_contract_id: Literal[
+        "contract.workflow-protected-transport-target-context-capsule-consumer"
+    ]
+    consumer_contract_version: Literal["1.0"]
+    purpose_id: Literal["purpose.workflow-protected-runtime-context-injection-evaluation"]
+    policy_id: Literal["policy.workflow-protected-runtime-context-injection-authorization"]
+    policy_version: Literal["1.0"]
+    injector_profile_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    runtime_slot_profile_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    destination_profile_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    authority: WorkflowProtectedRuntimeContextInjectionAuthorizationAuthorityData
+    integrity_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+
+    @model_validator(mode="after")
+    def validate_effective_authority(
+        self,
+    ) -> WorkflowProtectedRuntimeContextInjectionAuthorizationData:
+        if self.authority.protected_runtime_context_injection_authority_granted != (
+            self.effective_state == "active"
+        ):
+            raise ValueError("runtime-context injection authorization projection is inconsistent")
+        return self
+
+    @classmethod
+    def from_domain(
+        cls,
+        presentation: WorkflowProtectedRuntimeContextInjectionAuthorizationPresentation,
+    ) -> WorkflowProtectedRuntimeContextInjectionAuthorizationData:
+        lease = presentation.lease
+        policy = code_owned_workflow_protected_runtime_context_injection_authorization_policy()
+        injector_profile = "|".join(
+            (
+                policy.required_injector_contract_id,
+                policy.required_injector_contract_version,
+                policy.approved_injector_id,
+                policy.approved_injector_version,
+            )
+        )
+        destination_profile = "|".join(
+            (
+                policy.destination_boundary_id,
+                policy.destination_deployment_id,
+                str(policy.destination_generation),
+                policy.destination_fencing_token_digest,
+            )
+        )
+        return cls(
+            authorization_lease_id=lease.authorization_lease_id,
+            state=WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseState.AUTHORIZED_UNCONSUMED.value,
+            effective_state=presentation.effective_state.value,
+            issued_at=lease.issued_at,
+            valid_until=lease.valid_until,
+            effective_until=lease.effective_until,
+            consumer_contract_id=lease.consumer_contract_id,
+            consumer_contract_version=lease.consumer_contract_version,
+            purpose_id=lease.purpose_id,
+            policy_id=lease.policy_id,
+            policy_version=lease.policy_version,
+            injector_profile_reference=(
+                "integrity.workflow-protected-runtime-context-injector-profile."
+                f"{sha256(injector_profile.encode('utf-8')).hexdigest()[:24]}"
+            ),
+            runtime_slot_profile_reference=(
+                "integrity.workflow-protected-runtime-slot-profile."
+                f"{sha256(policy.runtime_slot_profile_digest.encode('utf-8')).hexdigest()[:24]}"
+            ),
+            destination_profile_reference=(
+                "integrity.workflow-protected-destination-profile."
+                f"{sha256(destination_profile.encode('utf-8')).hexdigest()[:24]}"
+            ),
+            authority=WorkflowProtectedRuntimeContextInjectionAuthorizationAuthorityData(
+                protected_runtime_context_injection_authority_granted=(
+                    presentation.protected_runtime_context_injection_authority_granted
+                ),
+                protected_resident_context_access_authority_granted=(
+                    lease.protected_resident_context_access_authority_granted
+                ),
+                target_context_capsule_opening_authorized=(
+                    lease.target_context_capsule_opening_authorized
+                ),
+                target_context_capsule_handoff_authorized=(
+                    lease.target_context_capsule_handoff_authorized
+                ),
+                endpoint_resolution_authorized=lease.endpoint_resolution_authorized,
+                route_selection_authorized=lease.route_selection_authorized,
+                route_binding_authorized=lease.route_binding_authorized,
+                credential_selection_authorized=lease.credential_selection_authorized,
+                credential_assignment_binding_authorized=(
+                    lease.credential_assignment_binding_authorized
+                ),
+                credential_access_authorized=lease.credential_access_authorized,
+                credential_brokerage_authorized=lease.credential_brokerage_authorized,
+                credential_resolution_authorized=lease.credential_resolution_authorized,
+                protected_artifact_access_authorized=lease.protected_artifact_access_authorized,
+                credential_delivery_authorized=lease.credential_delivery_authorized,
+                network_access_authorized=lease.network_access_authorized,
+                readiness_probe_authorized=lease.readiness_probe_authorized,
+                publication_authorized=lease.publication_authorized,
+                delivery_authorized=lease.delivery_authorized,
+                dispatch_authorized=lease.dispatch_authorized,
+                execution_authorized=lease.execution_authorized,
+                infrastructure_mutation_authorized=lease.infrastructure_mutation_authorized,
+            ),
+            integrity_reference=(
+                "integrity.workflow-protected-runtime-context-injection-authorization."
+                f"{sha256(lease.authorization_lease_id.encode('utf-8')).hexdigest()[:24]}"
+            ),
+        )
+
+
+class WorkflowProtectedRuntimeContextInjectionAuthorizationInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    authorizations: list[WorkflowProtectedRuntimeContextInjectionAuthorizationData] = Field(
+        max_length=256
+    )
+    server_time: datetime
+    durable: Literal[True]
+
+
+class WorkflowProtectedRuntimeContextInjectionAuthorizationResponse(BaseModel):
+    data: WorkflowProtectedRuntimeContextInjectionAuthorizationData
+    meta: ResponseMeta
+
+
+class WorkflowProtectedRuntimeContextInjectionAuthorizationInventoryResponse(BaseModel):
+    data: WorkflowProtectedRuntimeContextInjectionAuthorizationInventoryData
     meta: ResponseMeta
 
 

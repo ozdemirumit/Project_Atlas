@@ -523,6 +523,24 @@ Exact replay never calls the accessor again. All 20 authority declarations are f
 context injection, network, connector calls, dispatch, execution and infrastructure mutation remain
 separate later boundaries.
 
+Protected runtime-context injection authorization is the next independent append-only lease
+boundary. Only the exact protected consumer workload bound through the canonical ADR-167
+`handle_established_in_protected_boundary` result may submit that result ID and digest, code-owned
+policy identity and idempotency metadata. A fresh signed, server-nonce-bound and metadata-only
+handle lifecycle/injection-eligibility attestation must prove the exact non-bearer handle remains
+present, unexpired, unrevoked, uninjected and unused; the destination generation and fence remain
+current; and the exact code-owned injector/runtime-slot profile remains eligible. It reveals no
+handle identity, locator, material or bearer capability to ordinary Atlas paths.
+
+PostgreSQL performs canonical oldest-to-newest lineage locking, complete revalidation and two
+authoritative database-time observations before atomically appending one idempotency claim and one
+positive, at-most-one-second lease. Exact replay returns the same minimized state without external
+I/O. Only `protected_runtime_context_injection_authority_granted` is effectively true, and only
+while the immutable lease is active and unconsumed; the existing 20 authority declarations remain
+false. IMP-218 performs no injection, handle retrieval or use, runtime use, network or connector
+activity, readiness probing, publication, delivery, dispatch, execution or infrastructure
+mutation. Actual injection-lease consumption is a separate later boundary.
+
 ### 10.2 Publication State
 
 Outbox records track:
@@ -923,3 +941,4 @@ This document is ready to enter Review when:
 | 1.6.0 | 2026-08-16 | Workflow Architecture | Added atomic consumer-side capsule opening-consumption and protected resident-context evidence boundary |
 | 1.7.0 | 2026-08-16 | Workflow Architecture | Added bounded protected resident-context access-authorization lease boundary |
 | 1.8.0 | 2026-08-16 | Workflow Architecture | Added atomic resident-context access consumption and protected non-bearer runtime-handle boundary |
+| 1.9.0 | 2026-08-16 | Workflow Architecture | Added bounded protected runtime-context injection-authorization lease boundary |
