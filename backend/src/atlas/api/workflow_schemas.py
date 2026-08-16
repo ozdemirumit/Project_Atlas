@@ -45,7 +45,9 @@ from atlas.modules.workflows.domain import (
     WorkflowProtectedTransportTargetContextCapsuleHandoffAttempt,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLease,
     WorkflowProtectedTransportTargetContextCapsuleHandoffResult,
+    WorkflowProtectedTransportTargetContextCapsuleOpeningAttempt,
     WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLease,
+    WorkflowProtectedTransportTargetContextCapsuleOpeningResult,
     WorkflowRunPlan,
 )
 
@@ -2841,6 +2843,155 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseInv
     BaseModel
 ):
     data: WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseInventoryData
+    meta: ResponseMeta
+
+
+class CreateWorkflowProtectedTransportTargetContextCapsuleOpeningInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    authorization_lease_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    authorization_lease_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    policy_id: Literal[
+        "policy.workflow-protected-transport-target-context-capsule-opening-consumption"
+    ]
+    policy_version: Literal["1.0"]
+    irreversible_consumption_acknowledged: Literal[True]
+    uncertain_outcome_requires_new_authorization_acknowledged: Literal[True]
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorityData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    endpoint_resolution_authorized: Literal[False]
+    route_selection_authorized: Literal[False]
+    route_binding_authorized: Literal[False]
+    credential_selection_authorized: Literal[False]
+    credential_assignment_binding_authorized: Literal[False]
+    credential_access_authorized: Literal[False]
+    credential_brokerage_authorized: Literal[False]
+    credential_resolution_authorized: Literal[False]
+    protected_artifact_access_authorized: Literal[False]
+    credential_delivery_authorized: Literal[False]
+    network_access_authorized: Literal[False]
+    readiness_probe_authorized: Literal[False]
+    publication_authorized: Literal[False]
+    delivery_authorized: Literal[False]
+    dispatch_authorized: Literal[False]
+    execution_authorized: Literal[False]
+    infrastructure_mutation_authorized: Literal[False]
+    target_context_capsule_handoff_authorized: Literal[False]
+    target_context_capsule_opening_authorized: Literal[False]
+
+
+class WorkflowProtectedTransportTargetContextCapsuleOpeningData(BaseModel):
+    """Minimized opening evidence without protected capsule or context lineage."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    opening_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    scope: WorkflowScopeData
+    attempt_state: Literal["started", "completed"]
+    result_state: Literal[
+        "pending",
+        "opened_in_protected_consumer_boundary",
+        "opening_failed",
+        "opening_outcome_uncertain",
+    ]
+    started_at: datetime
+    completed_at: datetime | None
+    consumer_contract_id: Literal[
+        "contract.workflow-protected-transport-target-context-capsule-consumer"
+    ]
+    consumer_contract_version: Literal["1.0"]
+    purpose_id: Literal[
+        "purpose.workflow-protected-transport-target-context-capsule-opening-evaluation"
+    ]
+    opener_contract_id: Literal[
+        "contract.workflow-protected-target-context-capsule-consumer-boundary-opener"
+    ]
+    opener_contract_version: Literal["1.0"]
+    resident_context_profile_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    capsule_opened_in_protected_boundary: bool
+    target_context_pair_verified: bool
+    resident_context_is_bearer_capability: Literal[False]
+    policy_id: Literal[
+        "policy.workflow-protected-transport-target-context-capsule-opening-consumption"
+    ]
+    policy_version: Literal["1.0"]
+    authority: WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorityData
+    integrity_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+
+    @classmethod
+    def from_domain(
+        cls,
+        attempt: WorkflowProtectedTransportTargetContextCapsuleOpeningAttempt,
+        result: WorkflowProtectedTransportTargetContextCapsuleOpeningResult | None,
+        *,
+        evaluated_at: datetime,
+    ) -> WorkflowProtectedTransportTargetContextCapsuleOpeningData:
+        if evaluated_at.tzinfo is None:
+            raise ValueError("capsule opening presentation time must be timezone-aware")
+        result_state = (
+            result.state.value
+            if result is not None
+            else "pending"
+            if evaluated_at < attempt.opening_deadline
+            else "opening_outcome_uncertain"
+        )
+        terminal = result is not None and result.completed_at is not None
+        return cls(
+            opening_id=attempt.opening_id,
+            scope=WorkflowScopeData.model_validate(attempt.scope.canonical_value()),
+            attempt_state="completed" if terminal else "started",
+            result_state=result_state,
+            started_at=attempt.started_at,
+            completed_at=None if result is None else result.completed_at,
+            consumer_contract_id=attempt.consumer_contract_id,
+            consumer_contract_version=attempt.consumer_contract_version,
+            purpose_id=attempt.purpose_id,
+            opener_contract_id=attempt.required_opener_contract_id,
+            opener_contract_version=attempt.required_opener_contract_version,
+            resident_context_profile_reference=(
+                "integrity.workflow-target-context-capsule-resident-context-profile."
+                f"{sha256(attempt.trusted_opener_profile_digest.encode('utf-8')).hexdigest()[:24]}"
+            ),
+            capsule_opened_in_protected_boundary=(
+                False if result is None else result.capsule_opened_in_protected_boundary
+            ),
+            target_context_pair_verified=(
+                False if result is None else result.target_context_pair_verified
+            ),
+            resident_context_is_bearer_capability=False,
+            policy_id=attempt.policy_id,
+            policy_version=attempt.policy_version,
+            authority=WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorityData.model_validate(
+                attempt.authority.canonical_value()
+            ),
+            integrity_reference=(
+                "integrity.workflow-target-context-capsule-opening."
+                f"{sha256(attempt.opening_id.encode('utf-8')).hexdigest()[:24]}"
+            ),
+        )
+
+
+class WorkflowProtectedTransportTargetContextCapsuleOpeningInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    physical_transport_target_context_capsule_openings: list[
+        WorkflowProtectedTransportTargetContextCapsuleOpeningData
+    ] = Field(max_length=256)
+    server_time: datetime
+    durable: Literal[True]
+
+
+class WorkflowProtectedTransportTargetContextCapsuleOpeningResponse(BaseModel):
+    data: WorkflowProtectedTransportTargetContextCapsuleOpeningData
+    meta: ResponseMeta
+
+
+class WorkflowProtectedTransportTargetContextCapsuleOpeningInventoryResponse(BaseModel):
+    data: WorkflowProtectedTransportTargetContextCapsuleOpeningInventoryData
     meta: ResponseMeta
 
 

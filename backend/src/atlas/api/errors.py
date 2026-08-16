@@ -67,6 +67,7 @@ def _requires_no_store(request: Request) -> bool:
             "/api/v1/audit-export",
             "/api/v1/workflows/physical-transport-target-context-capsule-handoffs",
             "/api/v1/workflows/physical-transport-target-context-capsule-opening-authorization-leases",
+            "/api/v1/workflows/physical-transport-target-context-capsule-openings",
         )
     )
 

@@ -29,6 +29,7 @@ from atlas.api.security import (
     authorize_workflow_target_context_capsule_handoff_authorization_lease_read,
     authorize_workflow_target_context_capsule_handoff_read,
     authorize_workflow_target_context_capsule_opening_authorization_lease_read,
+    authorize_workflow_target_context_capsule_opening_read,
     authorize_workflow_transport_compatibility_admission_read,
     authorize_workflow_transport_credential_assignment_snapshot_read,
     authorize_workflow_transport_profile_read,
@@ -76,6 +77,7 @@ from atlas.api.workflow_schemas import (
     CreateWorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseInput,
     CreateWorkflowProtectedTransportTargetContextCapsuleHandoffInput,
     CreateWorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseInput,
+    CreateWorkflowProtectedTransportTargetContextCapsuleOpeningInput,
     EventPhysicalTransportCredentialAssignmentSnapshotData,
     EventPhysicalTransportCredentialAssignmentSnapshotInventoryData,
     EventPhysicalTransportCredentialAssignmentSnapshotInventoryResponse,
@@ -207,6 +209,10 @@ from atlas.api.workflow_schemas import (
     WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseInventoryData,
     WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseInventoryResponse,
     WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseResponse,
+    WorkflowProtectedTransportTargetContextCapsuleOpeningData,
+    WorkflowProtectedTransportTargetContextCapsuleOpeningInventoryData,
+    WorkflowProtectedTransportTargetContextCapsuleOpeningInventoryResponse,
+    WorkflowProtectedTransportTargetContextCapsuleOpeningResponse,
     WorkflowRunPlanData,
     WorkflowRunPlanResponse,
 )
@@ -286,6 +292,8 @@ from atlas.modules.workflows.application import (
     WorkflowProtectedTransportTargetContextCapsuleHandoffService,
     WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseError,
     WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseService,
+    WorkflowProtectedTransportTargetContextCapsuleOpeningError,
+    WorkflowProtectedTransportTargetContextCapsuleOpeningService,
     WorkflowRunMaterializationError,
     WorkflowRunMaterializationRepository,
     WorkflowRunMaterializationService,
@@ -6182,6 +6190,158 @@ async def create_workflow_physical_transport_target_context_capsule_opening_auth
         data=WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseData.from_domain(
             lease, evaluated_at=server_time
         ),
+        meta=_meta(request),
+    )
+
+
+@router.get(
+    "/physical-transport-target-context-capsule-openings",
+    response_model=WorkflowProtectedTransportTargetContextCapsuleOpeningInventoryResponse,
+)
+async def list_workflow_physical_transport_target_context_capsule_openings(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_workflow_target_context_capsule_opening_read),
+    ],
+) -> WorkflowProtectedTransportTargetContextCapsuleOpeningInventoryResponse:
+    del decision
+    _no_store(response)
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    service = cast(
+        WorkflowProtectedTransportTargetContextCapsuleOpeningService,
+        request.app.state.workflow_target_context_capsule_opening_service,
+    )
+    try:
+        presentations = await service.list_presentations(scope=scope, limit=256)
+        server_time = await service.repository.get_authoritative_time()
+        opening_ids = tuple(presentation.attempt.opening_id for presentation in presentations)
+        if len(opening_ids) != len(set(opening_ids)) or any(
+            presentation.attempt.scope != scope for presentation in presentations
+        ):
+            raise RuntimeError("target-context capsule opening scope mismatch")
+        items = [
+            WorkflowProtectedTransportTargetContextCapsuleOpeningData.from_domain(
+                presentation.attempt,
+                presentation.result,
+                evaluated_at=server_time,
+            )
+            for presentation in presentations
+        ]
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_target_context_capsule_opening_service_unavailable",
+            title="Workflow target-context capsule opening unavailable",
+            detail="Opening metadata is temporarily unavailable.",
+            retryable=True,
+        ) from error
+    return WorkflowProtectedTransportTargetContextCapsuleOpeningInventoryResponse(
+        data=WorkflowProtectedTransportTargetContextCapsuleOpeningInventoryData(
+            physical_transport_target_context_capsule_openings=items,
+            server_time=server_time,
+            durable=True,
+        ),
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    "/physical-transport-target-context-capsule-openings",
+    response_model=WorkflowProtectedTransportTargetContextCapsuleOpeningResponse,
+    status_code=201,
+)
+async def create_workflow_physical_transport_target_context_capsule_opening(
+    payload: CreateWorkflowProtectedTransportTargetContextCapsuleOpeningInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[
+        AuthenticatedSubject,
+        Depends(workflow_protected_transport_target_context_capsule_consumer_subject),
+    ],
+) -> WorkflowProtectedTransportTargetContextCapsuleOpeningResponse:
+    _no_store(response)
+    service = cast(
+        WorkflowProtectedTransportTargetContextCapsuleOpeningService,
+        request.app.state.workflow_target_context_capsule_opening_service,
+    )
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    try:
+        presentation = await service.open(
+            authorization_lease_id=payload.authorization_lease_id,
+            authorization_lease_digest=payload.authorization_lease_digest,
+            policy_id=payload.policy_id,
+            policy_version=payload.policy_version,
+            irreversible_consumption_acknowledged=(payload.irreversible_consumption_acknowledged),
+            uncertain_outcome_requires_new_authorization_acknowledged=(
+                payload.uncertain_outcome_requires_new_authorization_acknowledged
+            ),
+            idempotency_key=payload.idempotency_key,
+            context=WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationContext(
+                subject_id=subject.subject_id,
+                actor_type=subject.kind.value,
+                authentication_method=subject.authentication_method.value,
+                credential_audience=(WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_AUDIENCE),
+                scope=scope,
+                correlation_id=str(request.state.correlation_id),
+                decision_id=(
+                    "decision.workflow-protected-transport-target-context-capsule-consumer-"
+                    "authenticated"
+                ),
+                requested_at=datetime.now(UTC),
+            ),
+        )
+        server_time = await service.repository.get_authoritative_time()
+        if presentation.attempt.scope != scope:
+            raise RuntimeError("target-context capsule opening scope mismatch")
+        data = WorkflowProtectedTransportTargetContextCapsuleOpeningData.from_domain(
+            presentation.attempt,
+            presentation.result,
+            evaluated_at=server_time,
+        )
+    except WorkflowProtectedTransportTargetContextCapsuleOpeningError as error:
+        unavailable = "unavailable" in error.code or error.code.endswith(
+            "durable_repository_required"
+        )
+        raise AtlasError(
+            status=503 if unavailable else 422,
+            code=(
+                "workflow_target_context_capsule_opening_service_unavailable"
+                if unavailable
+                else "authorization_denied"
+            ),
+            title=(
+                "Workflow target-context capsule opening unavailable"
+                if unavailable
+                else "Request denied"
+            ),
+            detail=(
+                "The sealed capsule opening request cannot be completed."
+                if unavailable
+                else "The current identity or evidence is not authorized for this operation."
+            ),
+            retryable=unavailable,
+        ) from error
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_target_context_capsule_opening_service_unavailable",
+            title="Workflow target-context capsule opening unavailable",
+            detail="The sealed capsule opening request cannot be completed.",
+            retryable=True,
+        ) from error
+    return WorkflowProtectedTransportTargetContextCapsuleOpeningResponse(
+        data=data,
         meta=_meta(request),
     )
 
