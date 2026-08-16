@@ -262,6 +262,22 @@ class WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseEff
     EXPIRED = "expired"
 
 
+class WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptState(StrEnum):
+    STARTED = "started"
+
+
+class WorkflowProtectedTransportTargetContextCapsuleHandoffResultState(StrEnum):
+    HANDED_OFF_SEALED = "handed_off_sealed"
+    HANDOFF_FAILED = "handoff_failed"
+
+
+class WorkflowProtectedTransportTargetContextCapsuleHandoffFailureClass(StrEnum):
+    CAPSULE_NOT_HANDOFF_ELIGIBLE = "capsule_not_handoff_eligible"
+    CONSUMER_BOUNDARY_REJECTED = "consumer_boundary_rejected"
+    SEALED_HANDOFF_REJECTED = "sealed_handoff_rejected"
+    DEADLINE_EXPIRED = "deadline_expired"
+
+
 class WorkflowEventPhysicalTransportCredentialMaterializationFailureClass(StrEnum):
     SEALED_LINEAGE_REJECTED = "sealed_lineage_rejected"
     CREDENTIAL_SOURCE_INVALID = "credential_source_invalid"
@@ -9108,3 +9124,964 @@ class WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLease:
         return (
             WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseEffectiveState
         ).EXPIRED
+
+
+def _target_context_capsule_handoff_consumption_payload(
+    instance: object,
+) -> dict[str, object]:
+    return {
+        name: (
+            value.isoformat()
+            if isinstance(value, datetime)
+            else value.value
+            if isinstance(value, StrEnum)
+            else value.canonical_value()
+            if hasattr(value, "canonical_value")
+            else value
+        )
+        for name, value in (
+            (field.name, getattr(instance, field.name)) for field in fields(cast(Any, instance))
+        )
+        if name != "canonical_digest"
+    }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedTransportTargetContextCapsuleHandoffAuthority:
+    """Explicit zero-authority evidence after lease consumption."""
+
+    endpoint_resolution_authorized: bool = False
+    route_selection_authorized: bool = False
+    route_binding_authorized: bool = False
+    credential_selection_authorized: bool = False
+    credential_assignment_binding_authorized: bool = False
+    credential_access_authorized: bool = False
+    credential_brokerage_authorized: bool = False
+    credential_resolution_authorized: bool = False
+    protected_artifact_access_authorized: bool = False
+    credential_delivery_authorized: bool = False
+    network_access_authorized: bool = False
+    readiness_probe_authorized: bool = False
+    publication_authorized: bool = False
+    delivery_authorized: bool = False
+    dispatch_authorized: bool = False
+    execution_authorized: bool = False
+    infrastructure_mutation_authorized: bool = False
+    target_context_capsule_handoff_authorized: bool = False
+
+    def __post_init__(self) -> None:
+        if any(self.canonical_value().values()):
+            raise ValueError("consumed target context capsule handoff evidence grants no authority")
+
+    def canonical_value(self) -> dict[str, bool]:
+        return {
+            "credential_access_authorized": self.credential_access_authorized,
+            "credential_assignment_binding_authorized": (
+                self.credential_assignment_binding_authorized
+            ),
+            "credential_brokerage_authorized": self.credential_brokerage_authorized,
+            "credential_delivery_authorized": self.credential_delivery_authorized,
+            "credential_resolution_authorized": self.credential_resolution_authorized,
+            "credential_selection_authorized": self.credential_selection_authorized,
+            "delivery_authorized": self.delivery_authorized,
+            "dispatch_authorized": self.dispatch_authorized,
+            "endpoint_resolution_authorized": self.endpoint_resolution_authorized,
+            "execution_authorized": self.execution_authorized,
+            "infrastructure_mutation_authorized": self.infrastructure_mutation_authorized,
+            "network_access_authorized": self.network_access_authorized,
+            "protected_artifact_access_authorized": self.protected_artifact_access_authorized,
+            "publication_authorized": self.publication_authorized,
+            "readiness_probe_authorized": self.readiness_probe_authorized,
+            "route_binding_authorized": self.route_binding_authorized,
+            "route_selection_authorized": self.route_selection_authorized,
+            "target_context_capsule_handoff_authorized": (
+                self.target_context_capsule_handoff_authorized
+            ),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionPolicy:
+    policy_id: str
+    policy_version: str
+    consumer_subject_id: str
+    consumer_audience: str
+    consumer_contract_id: str
+    consumer_contract_version: str
+    purpose_id: str
+    required_lifecycle_attestor_id: str
+    required_lifecycle_attestor_version: str
+    required_acceptance_attestor_id: str
+    required_acceptance_attestor_version: str
+    required_adapter_contract_id: str
+    required_adapter_contract_version: str
+    approved_adapter_id: str
+    approved_adapter_version: str
+    destination_boundary_id: str
+    destination_deployment_id: str
+    destination_generation: int
+    destination_fencing_token_digest: str
+    custody_contract_id: str
+    custody_contract_version: str
+    verification_signing_key_id: str
+    trusted_profile_digest: str
+    minimum_remaining_budget_milliseconds: int
+    irreversible_consumption_required: bool
+    automatic_retry_allowed: bool
+    unsealing_allowed: bool
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.policy_id,
+            self.policy_version,
+            self.consumer_subject_id,
+            self.consumer_audience,
+            self.consumer_contract_id,
+            self.consumer_contract_version,
+            self.purpose_id,
+            self.required_lifecycle_attestor_id,
+            self.required_lifecycle_attestor_version,
+            self.required_acceptance_attestor_id,
+            self.required_acceptance_attestor_version,
+            self.required_adapter_contract_id,
+            self.required_adapter_contract_version,
+            self.approved_adapter_id,
+            self.approved_adapter_version,
+            self.destination_boundary_id,
+            self.destination_deployment_id,
+            self.custody_contract_id,
+            self.custody_contract_version,
+            self.verification_signing_key_id,
+        ):
+            _require_identifier(value, name="target context capsule handoff consumption policy")
+        if (
+            self.policy_id
+            != "policy.workflow-protected-transport-target-context-capsule-handoff-consumption"
+            or self.policy_version != "1.0"
+            or self.consumer_subject_id
+            != "service.workflow-protected-transport-target-context-capsule-consumer"
+            or self.consumer_audience
+            != "audience.workflow-protected-transport-target-context-capsule-consumer"
+            or self.consumer_contract_id
+            != "contract.workflow-protected-transport-target-context-capsule-consumer"
+            or self.consumer_contract_version != "1.0"
+            or self.purpose_id
+            != "purpose.workflow-protected-transport-target-context-capsule-handoff-evaluation"
+            or self.required_lifecycle_attestor_id
+            != "attestor.workflow-protected-target-context-capsule-handoff-lifecycle"
+            or self.required_lifecycle_attestor_version != "1.0"
+            or self.required_acceptance_attestor_id
+            != "attestor.workflow-protected-target-context-consumer-boundary-acceptance"
+            or self.required_acceptance_attestor_version != "1.0"
+            or self.required_adapter_contract_id
+            != "contract.workflow-protected-target-context-capsule-sealed-handoff"
+            or self.required_adapter_contract_version != "1.0"
+            or self.approved_adapter_id
+            != "adapter.workflow-protected-target-context-capsule-sealed-handoff"
+            or self.approved_adapter_version != "1.0"
+            or self.destination_boundary_id
+            != "boundary.workflow-protected-target-context-capsule-consumer"
+            or self.destination_deployment_id
+            != "deployment.workflow-protected-target-context-capsule-consumer"
+            or self.destination_generation != 1
+            or self.custody_contract_id
+            != "contract.workflow-protected-target-context-capsule-custody"
+            or self.custody_contract_version != "1.0"
+            or self.verification_signing_key_id
+            != "key.workflow-protected-target-context-capsule-handoff-receipt.v1"
+            or self.minimum_remaining_budget_milliseconds != 100
+            or self.irreversible_consumption_required is not True
+            or self.automatic_retry_allowed is not False
+            or self.unsealing_allowed is not False
+        ):
+            raise ValueError("target context capsule handoff consumption policy is not code-owned")
+        _require_digest(self.canonical_digest, name="handoff consumption policy digest")
+        _require_digest(
+            self.destination_fencing_token_digest,
+            name="handoff destination fencing token digest",
+        )
+        _require_digest(self.trusted_profile_digest, name="handoff trusted profile digest")
+        profile = {
+            "approved_adapter_id": self.approved_adapter_id,
+            "approved_adapter_version": self.approved_adapter_version,
+            "custody_contract_id": self.custody_contract_id,
+            "custody_contract_version": self.custody_contract_version,
+            "destination_boundary_id": self.destination_boundary_id,
+            "destination_deployment_id": self.destination_deployment_id,
+            "destination_fencing_token_digest": self.destination_fencing_token_digest,
+            "destination_generation": self.destination_generation,
+            "verification_signing_key_id": self.verification_signing_key_id,
+        }
+        if self.trusted_profile_digest != canonical_digest(profile):
+            raise ValueError("handoff trusted profile digest mismatch")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("handoff consumption policy canonical digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return _target_context_capsule_handoff_consumption_payload(self)
+
+
+def code_owned_workflow_protected_transport_target_context_capsule_handoff_consumption_policy() -> (
+    WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionPolicy
+):
+    destination_fencing_token_digest = canonical_digest(
+        {
+            "destination_boundary_id": (
+                "boundary.workflow-protected-target-context-capsule-consumer"
+            ),
+            "destination_deployment_id": (
+                "deployment.workflow-protected-target-context-capsule-consumer"
+            ),
+            "destination_generation": 1,
+        }
+    )
+    trusted_profile = {
+        "approved_adapter_id": ("adapter.workflow-protected-target-context-capsule-sealed-handoff"),
+        "approved_adapter_version": "1.0",
+        "custody_contract_id": ("contract.workflow-protected-target-context-capsule-custody"),
+        "custody_contract_version": "1.0",
+        "destination_boundary_id": ("boundary.workflow-protected-target-context-capsule-consumer"),
+        "destination_deployment_id": (
+            "deployment.workflow-protected-target-context-capsule-consumer"
+        ),
+        "destination_fencing_token_digest": destination_fencing_token_digest,
+        "destination_generation": 1,
+        "verification_signing_key_id": (
+            "key.workflow-protected-target-context-capsule-handoff-receipt.v1"
+        ),
+    }
+    values: dict[str, object] = {
+        "policy_id": (
+            "policy.workflow-protected-transport-target-context-capsule-handoff-consumption"
+        ),
+        "policy_version": "1.0",
+        "consumer_subject_id": (
+            "service.workflow-protected-transport-target-context-capsule-consumer"
+        ),
+        "consumer_audience": (
+            "audience.workflow-protected-transport-target-context-capsule-consumer"
+        ),
+        "consumer_contract_id": (
+            "contract.workflow-protected-transport-target-context-capsule-consumer"
+        ),
+        "consumer_contract_version": "1.0",
+        "purpose_id": (
+            "purpose.workflow-protected-transport-target-context-capsule-handoff-evaluation"
+        ),
+        "required_lifecycle_attestor_id": (
+            "attestor.workflow-protected-target-context-capsule-handoff-lifecycle"
+        ),
+        "required_lifecycle_attestor_version": "1.0",
+        "required_acceptance_attestor_id": (
+            "attestor.workflow-protected-target-context-consumer-boundary-acceptance"
+        ),
+        "required_acceptance_attestor_version": "1.0",
+        "required_adapter_contract_id": (
+            "contract.workflow-protected-target-context-capsule-sealed-handoff"
+        ),
+        "required_adapter_contract_version": "1.0",
+        **trusted_profile,
+        "trusted_profile_digest": canonical_digest(trusted_profile),
+        "minimum_remaining_budget_milliseconds": 100,
+        "irreversible_consumption_required": True,
+        "automatic_retry_allowed": False,
+        "unsealing_allowed": False,
+    }
+    return WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionPolicy(
+        **cast(Any, values), canonical_digest=canonical_digest(values)
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedTargetContextCapsuleHandoffLifecycleAttestation:
+    attestation_id: str
+    attestor_id: str
+    attestor_version: str
+    authorization_lease_id: str
+    authorization_lease_digest: str
+    consumer_binding_id: str
+    consumer_binding_digest: str
+    sealed_capsule_id: str
+    sealed_capsule_digest: str
+    capsule_schema_id: str
+    capsule_schema_version: str
+    request_nonce_digest: str
+    observed_at: datetime
+    valid_until: datetime
+    handoff_eligible: bool
+    revoked: bool
+    destroyed: bool
+    sealed: bool
+    already_handed_off: bool
+    capsule_is_bearer_capability: bool
+    signing_key_id: str
+    signature_algorithm: str
+    integrity_signature: str
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.attestation_id,
+            self.attestor_id,
+            self.attestor_version,
+            self.authorization_lease_id,
+            self.consumer_binding_id,
+            self.sealed_capsule_id,
+            self.capsule_schema_id,
+            self.capsule_schema_version,
+            self.signing_key_id,
+            self.signature_algorithm,
+        ):
+            _require_identifier(value, name="capsule handoff lifecycle attestation identifier")
+        for value in (
+            self.authorization_lease_digest,
+            self.consumer_binding_digest,
+            self.sealed_capsule_digest,
+            self.request_nonce_digest,
+            self.canonical_digest,
+        ):
+            _require_digest(value, name="capsule handoff lifecycle attestation digest")
+        if (
+            self.observed_at.tzinfo is None
+            or self.valid_until.tzinfo is None
+            or self.observed_at >= self.valid_until
+            or self.handoff_eligible is not True
+            or self.revoked is not False
+            or self.destroyed is not False
+            or self.sealed is not True
+            or self.already_handed_off is not False
+            or self.capsule_is_bearer_capability is not False
+            or not self.integrity_signature
+            or any(character.isspace() for character in self.integrity_signature)
+        ):
+            raise ValueError("capsule handoff lifecycle attestation is unsafe")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("capsule handoff lifecycle attestation digest mismatch")
+
+    def signature_payload(self) -> dict[str, object]:
+        return {
+            name: value
+            for name, value in _target_context_capsule_handoff_consumption_payload(self).items()
+            if name not in {"integrity_signature"}
+        }
+
+    def digest_payload(self) -> dict[str, object]:
+        return {**self.signature_payload(), "integrity_signature": self.integrity_signature}
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedTargetContextConsumerBoundaryAcceptanceAttestation:
+    attestation_id: str
+    attestor_id: str
+    attestor_version: str
+    authorization_lease_id: str
+    authorization_lease_digest: str
+    consumer_binding_id: str
+    consumer_binding_digest: str
+    consumer_subject_id: str
+    consumer_audience: str
+    consumer_contract_id: str
+    consumer_contract_version: str
+    purpose_id: str
+    capsule_schema_id: str
+    capsule_schema_version: str
+    destination_boundary_id: str
+    destination_deployment_id: str
+    destination_generation: int
+    destination_fencing_token_digest: str
+    custody_contract_id: str
+    custody_contract_version: str
+    approved_adapter_id: str
+    approved_adapter_version: str
+    verification_signing_key_id: str
+    trusted_profile_digest: str
+    request_nonce_digest: str
+    observed_at: datetime
+    valid_until: datetime
+    acceptance_eligible: bool
+    destination_is_protected_boundary: bool
+    runtime_use_authorized: bool
+    signing_key_id: str
+    signature_algorithm: str
+    integrity_signature: str
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.attestation_id,
+            self.attestor_id,
+            self.attestor_version,
+            self.authorization_lease_id,
+            self.consumer_binding_id,
+            self.consumer_subject_id,
+            self.consumer_audience,
+            self.consumer_contract_id,
+            self.consumer_contract_version,
+            self.purpose_id,
+            self.capsule_schema_id,
+            self.capsule_schema_version,
+            self.destination_boundary_id,
+            self.destination_deployment_id,
+            self.custody_contract_id,
+            self.custody_contract_version,
+            self.approved_adapter_id,
+            self.approved_adapter_version,
+            self.verification_signing_key_id,
+            self.signing_key_id,
+            self.signature_algorithm,
+        ):
+            _require_identifier(value, name="consumer boundary acceptance identifier")
+        for value in (
+            self.authorization_lease_digest,
+            self.consumer_binding_digest,
+            self.request_nonce_digest,
+            self.destination_fencing_token_digest,
+            self.trusted_profile_digest,
+            self.canonical_digest,
+        ):
+            _require_digest(value, name="consumer boundary acceptance digest")
+        if (
+            self.observed_at.tzinfo is None
+            or self.valid_until.tzinfo is None
+            or self.observed_at >= self.valid_until
+            or self.acceptance_eligible is not True
+            or self.destination_is_protected_boundary is not True
+            or self.runtime_use_authorized is not False
+            or self.destination_generation < 1
+            or not self.integrity_signature
+            or any(character.isspace() for character in self.integrity_signature)
+        ):
+            raise ValueError("consumer boundary acceptance attestation is unsafe")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("consumer boundary acceptance attestation digest mismatch")
+
+    def signature_payload(self) -> dict[str, object]:
+        return {
+            name: value
+            for name, value in _target_context_capsule_handoff_consumption_payload(self).items()
+            if name not in {"integrity_signature"}
+        }
+
+    def digest_payload(self) -> dict[str, object]:
+        return {**self.signature_payload(), "integrity_signature": self.integrity_signature}
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaim:
+    claim_id: str
+    handoff_id: str
+    attempt_id: str
+    authorization_lease_id: str
+    authorization_lease_digest: str
+    consumer_binding_id: str
+    consumer_binding_digest: str
+    sealed_capsule_id: str
+    sealed_capsule_digest: str
+    scope: WorkflowScope
+    consumer_subject_id: str
+    consumer_audience: str
+    consumer_contract_id: str
+    consumer_contract_version: str
+    purpose_id: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    request_fingerprint: str
+    idempotency_digest: str
+    consumption_authorization_audit_digest: str
+    claimed_at: datetime
+    authority: WorkflowProtectedTransportTargetContextCapsuleHandoffAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.claim_id,
+            self.handoff_id,
+            self.attempt_id,
+            self.authorization_lease_id,
+            self.consumer_binding_id,
+            self.sealed_capsule_id,
+            self.consumer_subject_id,
+            self.consumer_audience,
+            self.consumer_contract_id,
+            self.consumer_contract_version,
+            self.purpose_id,
+            self.policy_id,
+            self.policy_version,
+        ):
+            _require_identifier(value, name="capsule handoff claim identifier")
+        for value in (
+            self.authorization_lease_digest,
+            self.consumer_binding_digest,
+            self.sealed_capsule_digest,
+            self.policy_digest,
+            self.request_fingerprint,
+            self.idempotency_digest,
+            self.consumption_authorization_audit_digest,
+            self.canonical_digest,
+        ):
+            _require_digest(value, name="capsule handoff claim digest")
+        policy = code_owned_workflow_protected_transport_target_context_capsule_handoff_consumption_policy()  # noqa: E501
+        if (
+            self.claimed_at.tzinfo is None
+            or self.consumer_subject_id != policy.consumer_subject_id
+            or self.consumer_audience != policy.consumer_audience
+            or self.consumer_contract_id != policy.consumer_contract_id
+            or self.consumer_contract_version != policy.consumer_contract_version
+            or self.purpose_id != policy.purpose_id
+            or self.policy_id != policy.policy_id
+            or self.policy_version != policy.policy_version
+            or self.policy_digest != policy.canonical_digest
+            or any(self.authority.canonical_value().values())
+            or self.canonical_digest != canonical_digest(self.digest_payload())
+        ):
+            raise ValueError("capsule handoff claim is invalid")
+
+    def digest_payload(self) -> dict[str, object]:
+        return _target_context_capsule_handoff_consumption_payload(self)
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedTransportTargetContextCapsuleHandoffAttempt:
+    attempt_id: str
+    handoff_id: str
+    consumption_claim_id: str
+    consumption_claim_digest: str
+    authorization_lease_id: str
+    authorization_lease_digest: str
+    consumer_binding_id: str
+    consumer_binding_digest: str
+    sealed_capsule_id: str
+    sealed_capsule_digest: str
+    capsule_schema_id: str
+    capsule_schema_version: str
+    scope: WorkflowScope
+    consumer_subject_id: str
+    consumer_audience: str
+    consumer_contract_id: str
+    consumer_contract_version: str
+    purpose_id: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    adapter_contract_id: str
+    adapter_contract_version: str
+    approved_adapter_id: str
+    approved_adapter_version: str
+    destination_boundary_id: str
+    destination_deployment_id: str
+    destination_generation: int
+    destination_fencing_token_digest: str
+    custody_contract_id: str
+    custody_contract_version: str
+    verification_signing_key_id: str
+    trusted_profile_digest: str
+    lifecycle_attestation_id: str
+    lifecycle_attestation_digest: str
+    acceptance_attestation_id: str
+    acceptance_attestation_digest: str
+    request_nonce_digest: str
+    started_at: datetime
+    handoff_deadline: datetime
+    lease_valid_until: datetime
+    binding_effective_until: datetime
+    source_effective_until: datetime
+    lifecycle_attestation_valid_until: datetime
+    acceptance_attestation_valid_until: datetime
+    state: WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptState
+    authority: WorkflowProtectedTransportTargetContextCapsuleHandoffAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.attempt_id,
+            self.handoff_id,
+            self.consumption_claim_id,
+            self.authorization_lease_id,
+            self.consumer_binding_id,
+            self.sealed_capsule_id,
+            self.capsule_schema_id,
+            self.capsule_schema_version,
+            self.consumer_subject_id,
+            self.consumer_audience,
+            self.consumer_contract_id,
+            self.consumer_contract_version,
+            self.purpose_id,
+            self.policy_id,
+            self.policy_version,
+            self.adapter_contract_id,
+            self.adapter_contract_version,
+            self.approved_adapter_id,
+            self.approved_adapter_version,
+            self.destination_boundary_id,
+            self.destination_deployment_id,
+            self.custody_contract_id,
+            self.custody_contract_version,
+            self.verification_signing_key_id,
+            self.lifecycle_attestation_id,
+            self.acceptance_attestation_id,
+        ):
+            _require_identifier(value, name="capsule handoff attempt identifier")
+        for value in (
+            self.consumption_claim_digest,
+            self.authorization_lease_digest,
+            self.consumer_binding_digest,
+            self.sealed_capsule_digest,
+            self.policy_digest,
+            self.lifecycle_attestation_digest,
+            self.acceptance_attestation_digest,
+            self.request_nonce_digest,
+            self.destination_fencing_token_digest,
+            self.trusted_profile_digest,
+            self.canonical_digest,
+        ):
+            _require_digest(value, name="capsule handoff attempt digest")
+        policy = code_owned_workflow_protected_transport_target_context_capsule_handoff_consumption_policy()  # noqa: E501
+        if (
+            self.started_at.tzinfo is None
+            or self.handoff_deadline.tzinfo is None
+            or any(
+                value.tzinfo is None
+                for value in (
+                    self.lease_valid_until,
+                    self.binding_effective_until,
+                    self.source_effective_until,
+                    self.lifecycle_attestation_valid_until,
+                    self.acceptance_attestation_valid_until,
+                )
+            )
+            or not self.started_at < self.handoff_deadline
+            or self.handoff_deadline
+            > min(
+                self.lease_valid_until,
+                self.binding_effective_until,
+                self.source_effective_until,
+                self.lifecycle_attestation_valid_until,
+                self.acceptance_attestation_valid_until,
+            )
+            or self.state
+            is not WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptState.STARTED
+            or self.adapter_contract_id != policy.required_adapter_contract_id
+            or self.adapter_contract_version != policy.required_adapter_contract_version
+            or self.approved_adapter_id != policy.approved_adapter_id
+            or self.approved_adapter_version != policy.approved_adapter_version
+            or self.destination_boundary_id != policy.destination_boundary_id
+            or self.destination_deployment_id != policy.destination_deployment_id
+            or self.destination_generation != policy.destination_generation
+            or self.destination_fencing_token_digest != policy.destination_fencing_token_digest
+            or self.custody_contract_id != policy.custody_contract_id
+            or self.custody_contract_version != policy.custody_contract_version
+            or self.verification_signing_key_id != policy.verification_signing_key_id
+            or self.trusted_profile_digest != policy.trusted_profile_digest
+            or any(self.authority.canonical_value().values())
+            or self.canonical_digest != canonical_digest(self.digest_payload())
+        ):
+            raise ValueError("capsule handoff attempt is invalid")
+
+    def digest_payload(self) -> dict[str, object]:
+        return _target_context_capsule_handoff_consumption_payload(self)
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedTransportTargetContextCapsuleHandoffInstruction:
+    handoff_id: str
+    attempt_id: str
+    consumption_claim_id: str
+    authorization_lease_id: str
+    authorization_lease_digest: str
+    consumer_binding_id: str
+    consumer_binding_digest: str
+    sealed_capsule_id: str
+    sealed_capsule_digest: str
+    capsule_schema_id: str
+    capsule_schema_version: str
+    consumer_subject_id: str
+    consumer_audience: str
+    consumer_contract_id: str
+    consumer_contract_version: str
+    purpose_id: str
+    adapter_contract_id: str
+    adapter_contract_version: str
+    approved_adapter_id: str
+    approved_adapter_version: str
+    destination_boundary_id: str
+    destination_deployment_id: str
+    destination_generation: int
+    destination_fencing_token_digest: str
+    custody_contract_id: str
+    custody_contract_version: str
+    verification_signing_key_id: str
+    trusted_profile_digest: str
+    started_at: datetime
+    handoff_deadline: datetime
+    lifecycle_attestation_digest: str
+    acceptance_attestation_digest: str
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.handoff_id,
+            self.attempt_id,
+            self.consumption_claim_id,
+            self.authorization_lease_id,
+            self.consumer_binding_id,
+            self.sealed_capsule_id,
+            self.capsule_schema_id,
+            self.capsule_schema_version,
+            self.consumer_subject_id,
+            self.consumer_audience,
+            self.consumer_contract_id,
+            self.consumer_contract_version,
+            self.purpose_id,
+            self.adapter_contract_id,
+            self.adapter_contract_version,
+            self.approved_adapter_id,
+            self.approved_adapter_version,
+            self.destination_boundary_id,
+            self.destination_deployment_id,
+            self.custody_contract_id,
+            self.custody_contract_version,
+            self.verification_signing_key_id,
+        ):
+            _require_identifier(value, name="sealed capsule handoff instruction identifier")
+        for value in (
+            self.authorization_lease_digest,
+            self.consumer_binding_digest,
+            self.sealed_capsule_digest,
+            self.lifecycle_attestation_digest,
+            self.acceptance_attestation_digest,
+            self.destination_fencing_token_digest,
+            self.trusted_profile_digest,
+            self.canonical_digest,
+        ):
+            _require_digest(value, name="sealed capsule handoff instruction digest")
+        if (
+            self.started_at.tzinfo is None
+            or self.handoff_deadline.tzinfo is None
+            or not self.started_at < self.handoff_deadline
+            or self.destination_generation < 1
+            or self.canonical_digest != canonical_digest(self.digest_payload())
+        ):
+            raise ValueError("sealed capsule handoff instruction is invalid")
+
+    def digest_payload(self) -> dict[str, object]:
+        return _target_context_capsule_handoff_consumption_payload(self)
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedTransportTargetContextCapsuleHandoffReceipt:
+    handoff_id: str
+    attempt_id: str
+    consumption_claim_id: str
+    instruction_digest: str
+    adapter_id: str
+    adapter_version: str
+    adapter_contract_id: str
+    adapter_contract_version: str
+    destination_boundary_id: str
+    destination_deployment_id: str
+    destination_generation: int
+    destination_fencing_token_digest: str
+    custody_contract_id: str
+    custody_contract_version: str
+    trusted_profile_digest: str
+    state: WorkflowProtectedTransportTargetContextCapsuleHandoffResultState
+    failure_class: WorkflowProtectedTransportTargetContextCapsuleHandoffFailureClass | None
+    consumer_receipt_id: str | None
+    consumer_receipt_is_bearer_capability: bool
+    sealed_capsule_handed_off: bool
+    capsule_remained_sealed: bool
+    source_cleanup_confirmed: bool
+    runtime_use_performed: bool
+    network_activity_performed: bool
+    completed_at: datetime
+    usable_until: datetime | None
+    attested_by: str
+    signing_key_id: str
+    signature_algorithm: str
+    integrity_signature: str
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.handoff_id,
+            self.attempt_id,
+            self.consumption_claim_id,
+            self.adapter_id,
+            self.adapter_version,
+            self.adapter_contract_id,
+            self.adapter_contract_version,
+            self.destination_boundary_id,
+            self.destination_deployment_id,
+            self.custody_contract_id,
+            self.custody_contract_version,
+            self.attested_by,
+            self.signing_key_id,
+            self.signature_algorithm,
+        ):
+            _require_identifier(value, name="sealed capsule handoff receipt identifier")
+        for value in (
+            self.instruction_digest,
+            self.destination_fencing_token_digest,
+            self.trusted_profile_digest,
+            self.canonical_digest,
+        ):
+            _require_digest(value, name="sealed capsule handoff receipt digest")
+        if (
+            self.completed_at.tzinfo is None
+            or self.consumer_receipt_is_bearer_capability is not False
+            or self.capsule_remained_sealed is not True
+            or self.runtime_use_performed is not False
+            or self.network_activity_performed is not False
+            or self.destination_generation < 1
+            or not self.integrity_signature
+            or any(character.isspace() for character in self.integrity_signature)
+        ):
+            raise ValueError("sealed capsule handoff receipt is unsafe")
+        if (
+            self.state
+            is WorkflowProtectedTransportTargetContextCapsuleHandoffResultState.HANDED_OFF_SEALED
+        ):
+            if (
+                self.failure_class is not None
+                or self.consumer_receipt_id is None
+                or self.sealed_capsule_handed_off is not True
+                or self.usable_until is None
+                or not self.completed_at < self.usable_until
+            ):
+                raise ValueError("successful sealed capsule handoff receipt is invalid")
+            _require_identifier(self.consumer_receipt_id, name="consumer receipt id")
+        elif (
+            self.failure_class is None
+            or self.consumer_receipt_id is not None
+            or self.sealed_capsule_handed_off is not False
+            or self.usable_until is not None
+            or self.source_cleanup_confirmed is not True
+        ):
+            raise ValueError("failed sealed capsule handoff receipt is invalid")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("sealed capsule handoff receipt digest mismatch")
+
+    def signature_payload(self) -> dict[str, object]:
+        return {
+            name: value
+            for name, value in _target_context_capsule_handoff_consumption_payload(self).items()
+            if name != "integrity_signature"
+        }
+
+    def digest_payload(self) -> dict[str, object]:
+        return {**self.signature_payload(), "integrity_signature": self.integrity_signature}
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedTransportTargetContextCapsuleHandoffResult:
+    handoff_id: str
+    attempt_id: str
+    attempt_digest: str
+    consumption_claim_id: str
+    consumption_claim_digest: str
+    authorization_lease_id: str
+    authorization_lease_digest: str
+    consumer_binding_id: str
+    consumer_binding_digest: str
+    scope: WorkflowScope
+    consumer_contract_id: str
+    consumer_contract_version: str
+    purpose_id: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    adapter_contract_id: str
+    adapter_contract_version: str
+    receipt_digest: str
+    state: WorkflowProtectedTransportTargetContextCapsuleHandoffResultState
+    failure_class: WorkflowProtectedTransportTargetContextCapsuleHandoffFailureClass | None
+    consumer_receipt_id: str | None
+    consumer_receipt_is_bearer_capability: bool
+    sealed_capsule_handed_off: bool
+    completed_at: datetime
+    usable_until: datetime | None
+    source_cleanup_confirmed: bool
+    authority: WorkflowProtectedTransportTargetContextCapsuleHandoffAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.handoff_id,
+            self.attempt_id,
+            self.consumption_claim_id,
+            self.authorization_lease_id,
+            self.consumer_binding_id,
+            self.consumer_contract_id,
+            self.consumer_contract_version,
+            self.purpose_id,
+            self.policy_id,
+            self.policy_version,
+            self.adapter_contract_id,
+            self.adapter_contract_version,
+        ):
+            _require_identifier(value, name="sealed capsule handoff result identifier")
+        for value in (
+            self.attempt_digest,
+            self.consumption_claim_digest,
+            self.authorization_lease_digest,
+            self.consumer_binding_digest,
+            self.policy_digest,
+            self.receipt_digest,
+            self.canonical_digest,
+        ):
+            _require_digest(value, name="sealed capsule handoff result digest")
+        policy = code_owned_workflow_protected_transport_target_context_capsule_handoff_consumption_policy()  # noqa: E501
+        if (
+            self.completed_at.tzinfo is None
+            or self.consumer_receipt_is_bearer_capability is not False
+            or self.policy_id != policy.policy_id
+            or self.policy_version != policy.policy_version
+            or self.policy_digest != policy.canonical_digest
+            or self.adapter_contract_id != policy.required_adapter_contract_id
+            or self.adapter_contract_version != policy.required_adapter_contract_version
+            or any(self.authority.canonical_value().values())
+        ):
+            raise ValueError("sealed capsule handoff result is invalid")
+        if (
+            self.state
+            is WorkflowProtectedTransportTargetContextCapsuleHandoffResultState.HANDED_OFF_SEALED
+        ):
+            if (
+                self.failure_class is not None
+                or self.consumer_receipt_id is None
+                or self.sealed_capsule_handed_off is not True
+                or self.usable_until is None
+                or not self.completed_at < self.usable_until
+            ):
+                raise ValueError("successful sealed capsule handoff result is invalid")
+            _require_identifier(self.consumer_receipt_id, name="consumer receipt id")
+        elif (
+            self.failure_class is None
+            or self.consumer_receipt_id is not None
+            or self.sealed_capsule_handed_off is not False
+            or self.usable_until is not None
+            or self.source_cleanup_confirmed is not True
+        ):
+            raise ValueError("failed sealed capsule handoff result is invalid")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("sealed capsule handoff result digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return _target_context_capsule_handoff_consumption_payload(self)
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}

@@ -452,6 +452,15 @@ authority declarations remain false. Issuance performs no capsule retrieval, han
 delivery, network, publication, dispatch, execution or mutation. Lease consumption and every
 runtime operation remain explicitly deferred.
 
+The separate capsule-handoff consumption boundary commits one append-only consumption claim and
+started attempt before calling a trusted protected-boundary adapter. A successful adapter call
+may move only the still-sealed capsule to the exact consumer custody boundary and returns only a
+signed minimized receipt. Claim, attempt and result are evidence, never events that grant authority:
+the dedicated handoff declaration and all 17 operational authority declarations are false.
+Timeout, crash or uncertainty never restores the lease and never triggers automatic retry.
+Unsealing, runtime use, event publication, delivery, dispatch, execution and infrastructure
+mutation remain separate and explicitly deferred.
+
 ### 10.2 Publication State
 
 Outbox records track:
@@ -847,3 +856,4 @@ This document is ready to enter Review when:
 | 1.1.0 | 2026-08-15 | Workflow Architecture | Added atomic paired target-context artifact-opening event boundary and zero-authority capsule lineage |
 | 1.2.0 | 2026-08-16 | Workflow Architecture | Added immutable zero-authority target-context capsule consumer-binding event boundary |
 | 1.3.0 | 2026-08-16 | Workflow Architecture | Added bounded single-use target-context capsule handoff-authorization lease boundary |
+| 1.4.0 | 2026-08-16 | Workflow Architecture | Added atomic lease-consumption and sealed protected-boundary handoff evidence |

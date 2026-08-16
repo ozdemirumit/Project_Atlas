@@ -77,8 +77,11 @@ from atlas.core.persistence.models import (
     WorkflowPlanTransitionModel,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationClaimModel,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseModel,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaimModel,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffResultModel,
     WorkflowRunMaterializationClaimModel,
     WorkflowRunPlanModel,
 )
@@ -256,6 +259,19 @@ from atlas.modules.workflows.application.target_context_capsule_consumer_binding
     WorkflowTargetContextCapsuleConsumerBindingStatus,
     validate_workflow_target_context_capsule_consumer_binding_request,
 )
+from atlas.modules.workflows.application.target_context_capsule_handoff_ports import (
+    WorkflowProtectedTransportTargetContextCapsuleHandoffClaimStatus,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffError,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffReplayStatus,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffResultWriteStatus,
+    WorkflowTargetContextCapsuleHandoffClaimRequest,
+    WorkflowTargetContextCapsuleHandoffClaimResult,
+    WorkflowTargetContextCapsuleHandoffReplayLookup,
+    WorkflowTargetContextCapsuleHandoffReplayLookupRequest,
+    WorkflowTargetContextCapsuleHandoffResultRequest,
+    WorkflowTargetContextCapsuleHandoffResultWrite,
+    validate_workflow_target_context_capsule_handoff_claim_request,
+)
 from atlas.modules.workflows.application.transport_admission_ports import (
     WorkflowEventTransportAdmissionError,
     WorkflowEventTransportAdmissionIdempotencyRecord,
@@ -385,9 +401,16 @@ from atlas.modules.workflows.domain import (
     WorkflowProtectedTransportTargetContextCapsuleConsumerBinding,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBindingAuthority,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBindingState,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffAttempt,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptState,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffAuthority,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLease,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseState,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaim,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffFailureClass,
     WorkflowProtectedTransportTargetContextCapsuleHandoffLeaseAuthority,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffResult,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffResultState,
     WorkflowRunPlan,
     WorkflowScope,
     WorkflowStepKind,
@@ -409,6 +432,9 @@ from atlas.modules.workflows.domain import (
 )
 from atlas.modules.workflows.domain.models import (
     code_owned_workflow_protected_transport_target_context_capsule_handoff_authorization_policy as _handoff_authorization_policy,  # noqa: E501
+)
+from atlas.modules.workflows.domain.models import (
+    code_owned_workflow_protected_transport_target_context_capsule_handoff_consumption_policy as _handoff_consumption_policy,  # noqa: E501
 )
 
 
@@ -482,6 +508,24 @@ class _TargetContextCapsuleHandoffAuthorizationLockedSources:
         WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationClaimModel | None
     )
     observed_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class _TargetContextCapsuleHandoffLockedSources:
+    authorization: _TargetContextCapsuleHandoffAuthorizationLockedSources
+    authorization_lease: (
+        WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseModel | None
+    )
+    authorization_claim: (
+        WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationClaimModel | None
+    )
+    consumption_claim: (
+        WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaimModel | None
+    )
+    attempt: WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel | None
+    result: WorkflowProtectedTransportTargetContextCapsuleHandoffResultModel | None
+    observed_at: datetime
+    source_deadline: datetime | None
 
 
 class PostgreSQLWorkflowPlanRepository:
@@ -5183,6 +5227,342 @@ class PostgreSQLWorkflowPlanRepository:
             else self._target_context_capsule_handoff_lease_from_claim(claim, row)
         )
 
+    async def lookup_target_context_capsule_handoff_replay(
+        self, request: WorkflowTargetContextCapsuleHandoffReplayLookupRequest
+    ) -> WorkflowTargetContextCapsuleHandoffReplayLookup:
+        statuses = WorkflowProtectedTransportTargetContextCapsuleHandoffReplayStatus
+        scope_id = self._target_context_capsule_handoff_consumption_idempotency_scope(
+            request.scope, request.consumer_subject_id, request.consumer_audience
+        )
+        async with self._sessions() as session:
+            rows = tuple(
+                (
+                    await session.scalars(
+                        select(
+                            WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaimModel
+                        ).where(
+                            WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaimModel.organization_id
+                            == request.scope.organization_id,
+                            WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaimModel.environment_id
+                            == request.scope.environment_id,
+                            WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaimModel.site_id
+                            == request.scope.site_id,
+                            or_(
+                                and_(
+                                    WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaimModel.idempotency_scope_id
+                                    == scope_id,
+                                    WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaimModel.idempotency_digest
+                                    == request.idempotency_digest,
+                                ),
+                                WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaimModel.authorization_lease_id
+                                == request.authorization_lease_id,
+                            ),
+                        )
+                    )
+                ).all()
+            )
+            if not rows:
+                return WorkflowTargetContextCapsuleHandoffReplayLookup(statuses.NONE, None, None)
+            row = next(
+                (
+                    value
+                    for value in rows
+                    if value.idempotency_scope_id == scope_id
+                    and value.idempotency_digest == request.idempotency_digest
+                ),
+                None,
+            )
+            if row is None:
+                return WorkflowTargetContextCapsuleHandoffReplayLookup(
+                    statuses.ALREADY_CONSUMED, None, None
+                )
+            claim = self._target_context_capsule_handoff_consumption_claim_from_row(row)
+            attempt_row = cast(
+                WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel | None,
+                await session.scalar(
+                    select(WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel).where(
+                        WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel.consumption_claim_id
+                        == claim.claim_id
+                    )
+                ),
+            )
+            if attempt_row is None:
+                self._target_context_capsule_handoff_consumption_contract_violation()
+            attempt = self._target_context_capsule_handoff_attempt_from_row(attempt_row)
+            if (
+                claim.request_fingerprint != request.request_fingerprint
+                or claim.authorization_lease_id != request.authorization_lease_id
+                or claim.authorization_lease_digest != request.authorization_lease_digest
+                or claim.handoff_id != request.handoff_id
+                or claim.scope != request.scope
+                or claim.consumer_subject_id != request.consumer_subject_id
+                or claim.consumer_audience != request.consumer_audience
+                or claim.policy_id != request.policy_id
+                or claim.policy_version != request.policy_version
+                or claim.policy_digest != request.policy_digest
+                or attempt.consumption_claim_id != claim.claim_id
+                or attempt.consumption_claim_digest != claim.canonical_digest
+            ):
+                return WorkflowTargetContextCapsuleHandoffReplayLookup(
+                    statuses.IDEMPOTENCY_CONFLICT, None, None
+                )
+            result_row = await session.get(
+                WorkflowProtectedTransportTargetContextCapsuleHandoffResultModel,
+                attempt.handoff_id,
+            )
+            if result_row is None:
+                return WorkflowTargetContextCapsuleHandoffReplayLookup(
+                    statuses.CLAIM_ONLY_UNCERTAIN, attempt, None
+                )
+            result = self._target_context_capsule_handoff_result_from_row(result_row)
+            if (
+                result.attempt_id != attempt.attempt_id
+                or result.attempt_digest != attempt.canonical_digest
+                or result.consumption_claim_id != claim.claim_id
+                or result.consumption_claim_digest != claim.canonical_digest
+            ):
+                self._target_context_capsule_handoff_consumption_contract_violation()
+            return WorkflowTargetContextCapsuleHandoffReplayLookup(
+                statuses.TERMINAL, attempt, result
+            )
+
+    async def claim_target_context_capsule_handoff(
+        self, request: WorkflowTargetContextCapsuleHandoffClaimRequest
+    ) -> WorkflowTargetContextCapsuleHandoffClaimResult:
+        statuses = WorkflowProtectedTransportTargetContextCapsuleHandoffClaimStatus
+        async with self._sessions() as session:
+            locked = await self._lock_target_context_capsule_handoff_sources(
+                session, request=request
+            )
+            replay = self._target_context_capsule_handoff_locked_replay(
+                request=request, locked=locked
+            )
+            if replay is not None:
+                await session.rollback()
+                return replay
+            if not self._target_context_capsule_handoff_claim_is_valid(
+                request=request, locked=locked
+            ):
+                await session.rollback()
+                return WorkflowTargetContextCapsuleHandoffClaimResult(
+                    statuses.EVIDENCE_CONFLICT, None, None, None
+                )
+            commit_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+            locked = dataclass_replace(locked, observed_at=commit_at)
+            if not self._target_context_capsule_handoff_claim_is_valid(
+                request=request, locked=locked
+            ):
+                await session.rollback()
+                return WorkflowTargetContextCapsuleHandoffClaimResult(
+                    statuses.EVIDENCE_CONFLICT, None, None, None
+                )
+            deadline = self._target_context_capsule_handoff_deadline(request, locked=locked)
+            if deadline is None:
+                await session.rollback()
+                return WorkflowTargetContextCapsuleHandoffClaimResult(
+                    statuses.EVIDENCE_CONFLICT, None, None, None
+                )
+            claim = self._target_context_capsule_handoff_consumption_claim(
+                request, claimed_at=commit_at
+            )
+            attempt = self._target_context_capsule_handoff_attempt(
+                request,
+                claim=claim,
+                started_at=commit_at,
+                handoff_deadline=deadline,
+                lease_valid_until=cast(Any, locked.authorization_lease).valid_until,
+                binding_effective_until=cast(
+                    Any, locked.authorization.consumer_binding
+                ).effective_until,
+                source_effective_until=cast(datetime, locked.source_deadline),
+            )
+            try:
+                session.add(
+                    self._target_context_capsule_handoff_consumption_claim_model(
+                        request, claim=claim
+                    )
+                )
+                await session.flush()
+                session.add(
+                    self._target_context_capsule_handoff_attempt_model(
+                        request,
+                        attempt=attempt,
+                        locked=locked,
+                    )
+                )
+                await session.flush()
+                precommit_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+                if precommit_at >= deadline:
+                    await session.rollback()
+                    return WorkflowTargetContextCapsuleHandoffClaimResult(
+                        statuses.EVIDENCE_CONFLICT, None, None, None
+                    )
+                await session.commit()
+                return WorkflowTargetContextCapsuleHandoffClaimResult(
+                    statuses.CLAIMED, claim, attempt, None
+                )
+            except IntegrityError:
+                await session.rollback()
+        lookup = await self.lookup_target_context_capsule_handoff_replay(
+            WorkflowTargetContextCapsuleHandoffReplayLookupRequest(
+                authorization_lease_id=request.authorization_lease_id,
+                authorization_lease_digest=request.authorization_lease_digest,
+                scope=request.scope,
+                consumer_subject_id=request.consumer_subject_id,
+                consumer_audience=request.consumer_audience,
+                policy_id=request.expected_policy_id,
+                policy_version=request.expected_policy_version,
+                policy_digest=request.expected_policy_digest,
+                idempotency_digest=request.idempotency_digest,
+                request_fingerprint=request.request_fingerprint,
+                handoff_id=request.handoff_id,
+            )
+        )
+        if (
+            lookup.status
+            is WorkflowProtectedTransportTargetContextCapsuleHandoffReplayStatus.TERMINAL
+        ):
+            return WorkflowTargetContextCapsuleHandoffClaimResult(
+                statuses.REPLAY_COMPLETED, None, lookup.attempt, lookup.result
+            )
+        replay_statuses = WorkflowProtectedTransportTargetContextCapsuleHandoffReplayStatus
+        if lookup.status is replay_statuses.CLAIM_ONLY_UNCERTAIN:
+            return WorkflowTargetContextCapsuleHandoffClaimResult(
+                statuses.CLAIM_ONLY_UNCERTAIN, None, lookup.attempt, None
+            )
+        return WorkflowTargetContextCapsuleHandoffClaimResult(
+            statuses.EVIDENCE_CONFLICT, None, None, None
+        )
+
+    async def record_target_context_capsule_handoff_result(
+        self, request: WorkflowTargetContextCapsuleHandoffResultRequest
+    ) -> WorkflowTargetContextCapsuleHandoffResultWrite:
+        statuses = WorkflowProtectedTransportTargetContextCapsuleHandoffResultWriteStatus
+        result = request.result
+        async with self._sessions() as session:
+            claim_row = cast(
+                WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaimModel | None,
+                await session.scalar(
+                    select(
+                        WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaimModel
+                    )
+                    .where(
+                        WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaimModel.claim_id
+                        == result.consumption_claim_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            attempt_row = cast(
+                WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel | None,
+                await session.scalar(
+                    select(WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel)
+                    .where(
+                        WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel.attempt_id
+                        == result.attempt_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            existing = cast(
+                WorkflowProtectedTransportTargetContextCapsuleHandoffResultModel | None,
+                await session.scalar(
+                    select(WorkflowProtectedTransportTargetContextCapsuleHandoffResultModel)
+                    .where(
+                        WorkflowProtectedTransportTargetContextCapsuleHandoffResultModel.handoff_id
+                        == result.handoff_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            if existing is not None:
+                stored = self._target_context_capsule_handoff_result_from_row(existing)
+                await session.rollback()
+                return WorkflowTargetContextCapsuleHandoffResultWrite(
+                    statuses.REPLAY
+                    if stored.canonical_digest == result.canonical_digest
+                    else statuses.CONFLICT,
+                    stored if stored.canonical_digest == result.canonical_digest else None,
+                )
+            if not self._target_context_capsule_handoff_result_matches(
+                request=request, claim_row=claim_row, attempt_row=attempt_row
+            ):
+                await session.rollback()
+                return WorkflowTargetContextCapsuleHandoffResultWrite(statuses.CONFLICT, None)
+            try:
+                session.add(self._target_context_capsule_handoff_result_model(request))
+                await session.commit()
+                return WorkflowTargetContextCapsuleHandoffResultWrite(statuses.RECORDED, result)
+            except IntegrityError:
+                await session.rollback()
+        async with self._sessions() as session:
+            existing = await session.get(
+                WorkflowProtectedTransportTargetContextCapsuleHandoffResultModel,
+                result.handoff_id,
+            )
+            if existing is None:
+                return WorkflowTargetContextCapsuleHandoffResultWrite(statuses.CONFLICT, None)
+            stored = self._target_context_capsule_handoff_result_from_row(existing)
+            return WorkflowTargetContextCapsuleHandoffResultWrite(
+                statuses.REPLAY
+                if stored.canonical_digest == result.canonical_digest
+                else statuses.CONFLICT,
+                stored if stored.canonical_digest == result.canonical_digest else None,
+            )
+
+    async def list_target_context_capsule_handoff_attempts(
+        self, *, scope: WorkflowScope, limit: int = 256
+    ) -> tuple[WorkflowProtectedTransportTargetContextCapsuleHandoffAttempt, ...]:
+        async with self._sessions() as session:
+            rows = tuple(
+                (
+                    await session.scalars(
+                        select(WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel)
+                        .where(
+                            WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel.organization_id
+                            == scope.organization_id,
+                            WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel.environment_id
+                            == scope.environment_id,
+                            WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel.site_id
+                            == scope.site_id,
+                        )
+                        .order_by(
+                            WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel.started_at.desc(),
+                            WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel.attempt_id,
+                        )
+                        .limit(max(1, min(limit, 1000)))
+                    )
+                ).all()
+            )
+        return tuple(self._target_context_capsule_handoff_attempt_from_row(row) for row in rows)
+
+    async def get_target_context_capsule_handoff_results_by_handoff_ids(
+        self, *, scope: WorkflowScope, handoff_ids: tuple[str, ...]
+    ) -> tuple[WorkflowProtectedTransportTargetContextCapsuleHandoffResult, ...]:
+        if not handoff_ids:
+            return ()
+        async with self._sessions() as session:
+            rows = tuple(
+                (
+                    await session.scalars(
+                        select(
+                            WorkflowProtectedTransportTargetContextCapsuleHandoffResultModel
+                        ).where(
+                            WorkflowProtectedTransportTargetContextCapsuleHandoffResultModel.handoff_id.in_(
+                                handoff_ids
+                            ),
+                            WorkflowProtectedTransportTargetContextCapsuleHandoffResultModel.organization_id
+                            == scope.organization_id,
+                            WorkflowProtectedTransportTargetContextCapsuleHandoffResultModel.environment_id
+                            == scope.environment_id,
+                            WorkflowProtectedTransportTargetContextCapsuleHandoffResultModel.site_id
+                            == scope.site_id,
+                        )
+                    )
+                ).all()
+            )
+        return tuple(self._target_context_capsule_handoff_result_from_row(row) for row in rows)
+
     async def bind_target_context_capsule_consumer(
         self, request: WorkflowTargetContextCapsuleConsumerBindingRequest
     ) -> WorkflowTargetContextCapsuleConsumerBindingResult:
@@ -9252,6 +9632,951 @@ class PostgreSQLWorkflowPlanRepository:
         raise WorkflowTargetContextAccessAuthorizationLeaseError(
             "workflow_target_context_access_repository_contract_violation",
             "Stored target-context access authorization evidence is invalid.",
+        )
+
+    @staticmethod
+    def _target_context_capsule_handoff_consumption_idempotency_scope(
+        scope: WorkflowScope,
+        consumer_subject_id: str,
+        consumer_audience: str,
+    ) -> str:
+        return canonical_digest(
+            {
+                "consumer_audience": consumer_audience,
+                "consumer_subject_id": consumer_subject_id,
+                "operation": "consume-workflow-target-context-capsule-handoff",
+                "scope": scope.canonical_value(),
+            }
+        )
+
+    @staticmethod
+    def _target_context_capsule_handoff_consumption_contract_violation() -> NoReturn:
+        raise WorkflowProtectedTransportTargetContextCapsuleHandoffError(
+            "target_context_capsule_handoff_repository_contract_violation",
+            "Stored target-context capsule handoff consumption evidence is invalid.",
+        )
+
+    @staticmethod
+    def _target_context_capsule_handoff_consumption_authority_columns(
+        authority: WorkflowProtectedTransportTargetContextCapsuleHandoffAuthority,
+    ) -> dict[str, bool]:
+        return {
+            name.replace("_authorized", "_authority_granted"): value
+            for name, value in authority.canonical_value().items()
+        }
+
+    @staticmethod
+    def _row_target_context_capsule_handoff_consumption_authority(
+        row: Any,
+    ) -> dict[str, bool]:
+        return {
+            name: bool(getattr(row, name.replace("_authorized", "_authority_granted")))
+            for name in (
+                WorkflowProtectedTransportTargetContextCapsuleHandoffAuthority()
+            ).canonical_value()
+        }
+
+    async def _lock_target_context_capsule_handoff_sources(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowTargetContextCapsuleHandoffClaimRequest,
+    ) -> _TargetContextCapsuleHandoffLockedSources:
+        lease_hint = await session.get(
+            WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseModel,
+            request.authorization_lease_id,
+        )
+        authorization_claim_hint = None
+        binding_hint = binding_claim_hint = binding_request = None
+        if lease_hint is not None:
+            authorization_claim_hint = cast(
+                WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationClaimModel | None,
+                await session.scalar(
+                    select(
+                        WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationClaimModel
+                    ).where(
+                        WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationClaimModel.authorization_lease_id
+                        == lease_hint.authorization_lease_id
+                    )
+                ),
+            )
+            binding_hint = await session.get(
+                WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel,
+                lease_hint.consumer_binding_id,
+            )
+        if binding_hint is not None:
+            binding_claim_hint = cast(
+                WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel | None,
+                await session.scalar(
+                    select(
+                        WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel
+                    ).where(
+                        WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel.binding_id
+                        == binding_hint.binding_id
+                    )
+                ),
+            )
+        if binding_hint is not None and binding_claim_hint is not None:
+            binding_request = self._target_context_capsule_handoff_binding_request(
+                binding_hint,
+                binding_claim_hint,
+                requested_at=request.lifecycle_attestation.observed_at,
+            )
+        binding_sources = (
+            None
+            if binding_request is None
+            else await self._lock_target_context_capsule_consumer_binding_sources(
+                session, request=binding_request
+            )
+        )
+        authorization_lease = cast(
+            WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseModel | None,
+            await session.scalar(
+                select(WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseModel)
+                .where(
+                    WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseModel.authorization_lease_id
+                    == request.authorization_lease_id
+                )
+                .with_for_update()
+            ),
+        )
+        authorization_claim = cast(
+            WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationClaimModel | None,
+            await session.scalar(
+                select(WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationClaimModel)
+                .where(
+                    WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationClaimModel.authorization_lease_id
+                    == request.authorization_lease_id
+                )
+                .with_for_update()
+            ),
+        )
+        scope_id = self._target_context_capsule_handoff_consumption_idempotency_scope(
+            request.scope, request.consumer_subject_id, request.consumer_audience
+        )
+        claims = tuple(
+            (
+                await session.scalars(
+                    select(
+                        WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaimModel
+                    )
+                    .where(
+                        or_(
+                            and_(
+                                WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaimModel.idempotency_scope_id
+                                == scope_id,
+                                WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaimModel.idempotency_digest
+                                == request.idempotency_digest,
+                            ),
+                            WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaimModel.authorization_lease_id
+                            == request.authorization_lease_id,
+                        )
+                    )
+                    .with_for_update()
+                )
+            ).all()
+        )
+        consumption_claim = next(
+            (
+                row
+                for row in claims
+                if row.idempotency_scope_id == scope_id
+                and row.idempotency_digest == request.idempotency_digest
+            ),
+            next(iter(claims), None),
+        )
+        attempt = result = None
+        if consumption_claim is not None:
+            attempt = cast(
+                WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel | None,
+                await session.scalar(
+                    select(WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel)
+                    .where(
+                        WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel.consumption_claim_id
+                        == consumption_claim.claim_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            if attempt is not None:
+                result = cast(
+                    WorkflowProtectedTransportTargetContextCapsuleHandoffResultModel | None,
+                    await session.scalar(
+                        select(WorkflowProtectedTransportTargetContextCapsuleHandoffResultModel)
+                        .where(
+                            WorkflowProtectedTransportTargetContextCapsuleHandoffResultModel.handoff_id
+                            == attempt.handoff_id
+                        )
+                        .with_for_update()
+                    ),
+                )
+        observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+        source_deadline = None
+        authorization = _TargetContextCapsuleHandoffAuthorizationLockedSources(
+            consumer_binding_sources=binding_sources,
+            consumer_binding=binding_hint,
+            consumer_binding_claim=binding_claim_hint,
+            existing_leases=(() if authorization_lease is None else (authorization_lease,)),
+            idempotency_claim=authorization_claim_hint,
+            observed_at=observed_at,
+        )
+        if (
+            binding_sources is not None
+            and binding_hint is not None
+            and binding_claim_hint is not None
+        ):
+            try:
+                current = dataclass_replace(binding_sources, observed_at=observed_at)
+                evidence = self._target_context_capsule_consumer_binding_evidence(
+                    current,
+                    request=self._target_context_capsule_handoff_binding_request(
+                        binding_hint, binding_claim_hint, requested_at=observed_at
+                    ),
+                )
+                if evidence is not None:
+                    source_deadline = cast(datetime, evidence["deadline"])
+            except Exception:
+                source_deadline = None
+        return _TargetContextCapsuleHandoffLockedSources(
+            authorization=authorization,
+            authorization_lease=authorization_lease,
+            authorization_claim=authorization_claim,
+            consumption_claim=consumption_claim,
+            attempt=attempt,
+            result=result,
+            observed_at=observed_at,
+            source_deadline=source_deadline,
+        )
+
+    def _target_context_capsule_handoff_locked_replay(
+        self,
+        *,
+        request: WorkflowTargetContextCapsuleHandoffClaimRequest,
+        locked: _TargetContextCapsuleHandoffLockedSources,
+    ) -> WorkflowTargetContextCapsuleHandoffClaimResult | None:
+        row = locked.consumption_claim
+        if row is None:
+            return None
+        statuses = WorkflowProtectedTransportTargetContextCapsuleHandoffClaimStatus
+        scope_id = self._target_context_capsule_handoff_consumption_idempotency_scope(
+            request.scope, request.consumer_subject_id, request.consumer_audience
+        )
+        if (
+            row.idempotency_scope_id != scope_id
+            or row.idempotency_digest != request.idempotency_digest
+        ):
+            return WorkflowTargetContextCapsuleHandoffClaimResult(
+                statuses.ALREADY_CONSUMED, None, None, None
+            )
+        claim = self._target_context_capsule_handoff_consumption_claim_from_row(row)
+        if (
+            claim.request_fingerprint != request.request_fingerprint
+            or claim.authorization_lease_id != request.authorization_lease_id
+            or claim.authorization_lease_digest != request.authorization_lease_digest
+            or claim.handoff_id != request.handoff_id
+        ):
+            return WorkflowTargetContextCapsuleHandoffClaimResult(
+                statuses.IDEMPOTENCY_CONFLICT, None, None, None
+            )
+        if locked.attempt is None:
+            self._target_context_capsule_handoff_consumption_contract_violation()
+        attempt = self._target_context_capsule_handoff_attempt_from_row(locked.attempt)
+        if locked.result is None:
+            return WorkflowTargetContextCapsuleHandoffClaimResult(
+                statuses.CLAIM_ONLY_UNCERTAIN, None, attempt, None
+            )
+        result = self._target_context_capsule_handoff_result_from_row(locked.result)
+        return WorkflowTargetContextCapsuleHandoffClaimResult(
+            statuses.REPLAY_COMPLETED, None, attempt, result
+        )
+
+    def _target_context_capsule_handoff_claim_is_valid(
+        self,
+        *,
+        request: WorkflowTargetContextCapsuleHandoffClaimRequest,
+        locked: _TargetContextCapsuleHandoffLockedSources,
+    ) -> bool:
+        try:
+            validate_workflow_target_context_capsule_handoff_claim_request(request)
+            lease = self._target_context_capsule_handoff_lease_from_claim(
+                locked.authorization_claim, locked.authorization_lease
+            )
+            binding_row = locked.authorization.consumer_binding
+            binding_claim = locked.authorization.consumer_binding_claim
+            if binding_row is None or binding_claim is None:
+                return False
+            binding = self._target_context_capsule_consumer_binding_from_claim(
+                binding_claim, binding_row=binding_row
+            )
+            policy = _handoff_consumption_policy()
+            deadline = self._target_context_capsule_handoff_deadline(request, locked=locked)
+            authority = lease.authority.canonical_value()
+        except Exception:
+            return False
+        return bool(
+            deadline is not None
+            and locked.consumption_claim is None
+            and lease.authorization_lease_id == request.authorization_lease_id
+            and lease.canonical_digest == request.authorization_lease_digest
+            and lease.consumer_binding_id
+            == binding.binding_id
+            == request.expected_consumer_binding_id
+            and lease.consumer_binding_digest
+            == binding.canonical_digest
+            == request.expected_consumer_binding_digest
+            and lease.sealed_capsule_id
+            == binding.sealed_capsule_id
+            == request.expected_sealed_capsule_id
+            and lease.sealed_capsule_digest
+            == binding.sealed_capsule_digest
+            == request.expected_sealed_capsule_digest
+            and lease.capsule_schema_id
+            == binding.capsule_schema_id
+            == request.expected_capsule_schema_id
+            and lease.capsule_schema_version
+            == binding.capsule_schema_version
+            == request.expected_capsule_schema_version
+            and lease.scope == binding.scope == request.scope
+            and lease.consumer_subject_id
+            == binding.consumer_subject_id
+            == request.consumer_subject_id
+            and lease.consumer_audience == binding.consumer_audience == request.consumer_audience
+            and lease.consumer_contract_id
+            == binding.consumer_contract_id
+            == request.consumer_contract_id
+            == policy.consumer_contract_id
+            and lease.consumer_contract_version
+            == binding.consumer_contract_version
+            == request.consumer_contract_version
+            == policy.consumer_contract_version
+            and lease.purpose_id == binding.purpose_id == request.purpose_id == policy.purpose_id
+            and request.expected_policy_id == policy.policy_id
+            and request.expected_policy_version == policy.policy_version
+            and request.expected_policy_digest == policy.canonical_digest
+            and request.expected_trusted_profile_digest == policy.trusted_profile_digest
+            and request.expected_destination_boundary_id == policy.destination_boundary_id
+            and request.expected_destination_deployment_id == policy.destination_deployment_id
+            and request.expected_destination_generation == policy.destination_generation
+            and request.expected_destination_fencing_token_digest
+            == policy.destination_fencing_token_digest
+            and request.expected_custody_contract_id == policy.custody_contract_id
+            and request.expected_custody_contract_version == policy.custody_contract_version
+            and request.expected_approved_adapter_id == policy.approved_adapter_id
+            and request.expected_approved_adapter_version == policy.approved_adapter_version
+            and request.expected_verification_signing_key_id == policy.verification_signing_key_id
+            and lease.state
+            is (
+                WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseState
+            ).AUTHORIZED_UNCONSUMED
+            and lease.issued_at <= locked.observed_at < lease.valid_until
+            and authority.get("target_context_capsule_handoff_authorized") is True
+            and all(
+                value is False
+                for name, value in authority.items()
+                if name != "target_context_capsule_handoff_authorized"
+            )
+            and not any(binding.authority.canonical_value().values())
+            and request.lifecycle_attestation.observed_at <= locked.observed_at
+            and request.acceptance_attestation.observed_at <= locked.observed_at
+            and locked.observed_at
+            + timedelta(milliseconds=request.minimum_remaining_budget_milliseconds)
+            <= deadline
+        )
+
+    @staticmethod
+    def _target_context_capsule_handoff_deadline(
+        request: WorkflowTargetContextCapsuleHandoffClaimRequest,
+        *,
+        locked: _TargetContextCapsuleHandoffLockedSources,
+    ) -> datetime | None:
+        if (
+            locked.authorization_lease is None
+            or locked.authorization.consumer_binding is None
+            or locked.source_deadline is None
+        ):
+            return None
+        return min(
+            locked.authorization_lease.valid_until,
+            locked.authorization.consumer_binding.effective_until,
+            locked.source_deadline,
+            request.lifecycle_attestation.valid_until,
+            request.acceptance_attestation.valid_until,
+        )
+
+    @staticmethod
+    def _target_context_capsule_handoff_consumption_claim(
+        request: WorkflowTargetContextCapsuleHandoffClaimRequest,
+        *,
+        claimed_at: datetime,
+    ) -> WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaim:
+        values: dict[str, object] = {
+            "claim_id": request.claim_id,
+            "handoff_id": request.handoff_id,
+            "attempt_id": request.attempt_id,
+            "authorization_lease_id": request.authorization_lease_id,
+            "authorization_lease_digest": request.authorization_lease_digest,
+            "consumer_binding_id": request.expected_consumer_binding_id,
+            "consumer_binding_digest": request.expected_consumer_binding_digest,
+            "sealed_capsule_id": request.expected_sealed_capsule_id,
+            "sealed_capsule_digest": request.expected_sealed_capsule_digest,
+            "scope": request.scope,
+            "consumer_subject_id": request.consumer_subject_id,
+            "consumer_audience": request.consumer_audience,
+            "consumer_contract_id": request.consumer_contract_id,
+            "consumer_contract_version": request.consumer_contract_version,
+            "purpose_id": request.purpose_id,
+            "policy_id": request.expected_policy_id,
+            "policy_version": request.expected_policy_version,
+            "policy_digest": request.expected_policy_digest,
+            "request_fingerprint": request.request_fingerprint,
+            "idempotency_digest": request.idempotency_digest,
+            "consumption_authorization_audit_digest": (
+                request.consumption_authorization_audit_digest
+            ),
+            "claimed_at": claimed_at,
+            "authority": WorkflowProtectedTransportTargetContextCapsuleHandoffAuthority(),
+        }
+        payload = {
+            name: value.isoformat()
+            if isinstance(value, datetime)
+            else value.canonical_value()
+            if hasattr(value, "canonical_value")
+            else value
+            for name, value in values.items()
+        }
+        return WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaim(
+            **cast(Any, values), canonical_digest=canonical_digest(payload)
+        )
+
+    @staticmethod
+    def _target_context_capsule_handoff_attempt(
+        request: WorkflowTargetContextCapsuleHandoffClaimRequest,
+        *,
+        claim: WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaim,
+        started_at: datetime,
+        handoff_deadline: datetime,
+        lease_valid_until: datetime,
+        binding_effective_until: datetime,
+        source_effective_until: datetime,
+    ) -> WorkflowProtectedTransportTargetContextCapsuleHandoffAttempt:
+        values: dict[str, object] = {
+            "attempt_id": request.attempt_id,
+            "handoff_id": request.handoff_id,
+            "consumption_claim_id": claim.claim_id,
+            "consumption_claim_digest": claim.canonical_digest,
+            "authorization_lease_id": request.authorization_lease_id,
+            "authorization_lease_digest": request.authorization_lease_digest,
+            "consumer_binding_id": request.expected_consumer_binding_id,
+            "consumer_binding_digest": request.expected_consumer_binding_digest,
+            "sealed_capsule_id": request.expected_sealed_capsule_id,
+            "sealed_capsule_digest": request.expected_sealed_capsule_digest,
+            "capsule_schema_id": request.expected_capsule_schema_id,
+            "capsule_schema_version": request.expected_capsule_schema_version,
+            "scope": request.scope,
+            "consumer_subject_id": request.consumer_subject_id,
+            "consumer_audience": request.consumer_audience,
+            "consumer_contract_id": request.consumer_contract_id,
+            "consumer_contract_version": request.consumer_contract_version,
+            "purpose_id": request.purpose_id,
+            "policy_id": request.expected_policy_id,
+            "policy_version": request.expected_policy_version,
+            "policy_digest": request.expected_policy_digest,
+            "adapter_contract_id": request.expected_adapter_contract_id,
+            "adapter_contract_version": request.expected_adapter_contract_version,
+            "approved_adapter_id": request.expected_approved_adapter_id,
+            "approved_adapter_version": request.expected_approved_adapter_version,
+            "destination_boundary_id": request.expected_destination_boundary_id,
+            "destination_deployment_id": request.expected_destination_deployment_id,
+            "destination_generation": request.expected_destination_generation,
+            "destination_fencing_token_digest": request.expected_destination_fencing_token_digest,
+            "custody_contract_id": request.expected_custody_contract_id,
+            "custody_contract_version": request.expected_custody_contract_version,
+            "verification_signing_key_id": request.expected_verification_signing_key_id,
+            "trusted_profile_digest": request.expected_trusted_profile_digest,
+            "lifecycle_attestation_id": request.lifecycle_attestation.attestation_id,
+            "lifecycle_attestation_digest": request.lifecycle_attestation.canonical_digest,
+            "acceptance_attestation_id": request.acceptance_attestation.attestation_id,
+            "acceptance_attestation_digest": request.acceptance_attestation.canonical_digest,
+            "request_nonce_digest": request.expected_request_nonce_digest,
+            "started_at": started_at,
+            "handoff_deadline": handoff_deadline,
+            "lease_valid_until": lease_valid_until,
+            "binding_effective_until": binding_effective_until,
+            "source_effective_until": source_effective_until,
+            "lifecycle_attestation_valid_until": request.lifecycle_attestation.valid_until,
+            "acceptance_attestation_valid_until": request.acceptance_attestation.valid_until,
+            "state": WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptState.STARTED,
+            "authority": WorkflowProtectedTransportTargetContextCapsuleHandoffAuthority(),
+        }
+        payload = {
+            name: value.isoformat()
+            if isinstance(value, datetime)
+            else value.value
+            if isinstance(value, Enum)
+            else value.canonical_value()
+            if hasattr(value, "canonical_value")
+            else value
+            for name, value in values.items()
+        }
+        return WorkflowProtectedTransportTargetContextCapsuleHandoffAttempt(
+            **cast(Any, values), canonical_digest=canonical_digest(payload)
+        )
+
+    @classmethod
+    def _target_context_capsule_handoff_consumption_claim_model(
+        cls,
+        request: WorkflowTargetContextCapsuleHandoffClaimRequest,
+        *,
+        claim: WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaim,
+    ) -> WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaimModel:
+        return WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaimModel(
+            **{
+                name: getattr(claim, name)
+                for name in (
+                    "claim_id",
+                    "handoff_id",
+                    "attempt_id",
+                    "authorization_lease_id",
+                    "authorization_lease_digest",
+                    "consumer_binding_id",
+                    "consumer_binding_digest",
+                    "sealed_capsule_id",
+                    "sealed_capsule_digest",
+                    "consumer_subject_id",
+                    "consumer_audience",
+                    "consumer_contract_id",
+                    "consumer_contract_version",
+                    "purpose_id",
+                    "policy_id",
+                    "policy_version",
+                    "policy_digest",
+                    "idempotency_digest",
+                    "request_fingerprint",
+                    "consumption_authorization_audit_digest",
+                    "claimed_at",
+                )
+            },
+            organization_id=claim.scope.organization_id,
+            environment_id=claim.scope.environment_id,
+            site_id=claim.scope.site_id,
+            idempotency_scope_id=cls._target_context_capsule_handoff_consumption_idempotency_scope(
+                claim.scope, claim.consumer_subject_id, claim.consumer_audience
+            ),
+            idempotency_key=request.idempotency_key,
+            irreversible_consumption_acknowledged=True,
+            uncertain_outcome_requires_new_authorization_acknowledged=True,
+            **cls._target_context_capsule_handoff_consumption_authority_columns(claim.authority),
+            canonical_digest=claim.canonical_digest,
+            payload=claim.digest_payload(),
+            consumption_authorization_audit_payload=(
+                request.consumption_authorization_audit_payload
+            ),
+        )
+
+    @classmethod
+    def _target_context_capsule_handoff_attempt_model(
+        cls,
+        request: WorkflowTargetContextCapsuleHandoffClaimRequest,
+        *,
+        attempt: WorkflowProtectedTransportTargetContextCapsuleHandoffAttempt,
+        locked: _TargetContextCapsuleHandoffLockedSources,
+    ) -> WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel:
+        del locked
+        return WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel(
+            **{
+                name: getattr(attempt, name)
+                for name in (
+                    "attempt_id",
+                    "handoff_id",
+                    "consumption_claim_id",
+                    "authorization_lease_id",
+                    "authorization_lease_digest",
+                    "consumer_binding_id",
+                    "consumer_binding_digest",
+                    "sealed_capsule_id",
+                    "sealed_capsule_digest",
+                    "capsule_schema_id",
+                    "capsule_schema_version",
+                    "consumer_subject_id",
+                    "consumer_audience",
+                    "consumer_contract_id",
+                    "consumer_contract_version",
+                    "purpose_id",
+                    "policy_id",
+                    "policy_version",
+                    "policy_digest",
+                    "adapter_contract_id",
+                    "adapter_contract_version",
+                    "approved_adapter_id",
+                    "approved_adapter_version",
+                    "destination_boundary_id",
+                    "destination_deployment_id",
+                    "destination_generation",
+                    "destination_fencing_token_digest",
+                    "custody_contract_id",
+                    "custody_contract_version",
+                    "verification_signing_key_id",
+                    "trusted_profile_digest",
+                    "lifecycle_attestation_id",
+                    "lifecycle_attestation_digest",
+                    "lifecycle_attestation_valid_until",
+                    "acceptance_attestation_id",
+                    "acceptance_attestation_digest",
+                    "acceptance_attestation_valid_until",
+                    "request_nonce_digest",
+                    "started_at",
+                    "handoff_deadline",
+                    "lease_valid_until",
+                    "binding_effective_until",
+                    "source_effective_until",
+                )
+            },
+            organization_id=attempt.scope.organization_id,
+            environment_id=attempt.scope.environment_id,
+            site_id=attempt.scope.site_id,
+            state=attempt.state.value,
+            **cls._target_context_capsule_handoff_consumption_authority_columns(attempt.authority),
+            canonical_digest=attempt.canonical_digest,
+            payload=attempt.digest_payload(),
+            lifecycle_attestation_payload=request.lifecycle_attestation.canonical_value(),
+            acceptance_attestation_payload=request.acceptance_attestation.canonical_value(),
+        )
+
+    @classmethod
+    def _target_context_capsule_handoff_consumption_claim_from_row(
+        cls,
+        row: WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaimModel,
+    ) -> WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaim:
+        try:
+            values = dict(row.payload)
+            values["scope"] = WorkflowScope(**cast(Any, values["scope"]))
+            values["claimed_at"] = datetime.fromisoformat(str(values["claimed_at"]))
+            values["authority"] = WorkflowProtectedTransportTargetContextCapsuleHandoffAuthority(
+                **cast(Any, values["authority"])
+            )
+            claim = WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaim(
+                **cast(Any, values), canonical_digest=row.canonical_digest
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowProtectedTransportTargetContextCapsuleHandoffError(
+                "target_context_capsule_handoff_repository_contract_violation"
+            ) from exc
+        scalar_names = (
+            "claim_id",
+            "handoff_id",
+            "attempt_id",
+            "authorization_lease_id",
+            "authorization_lease_digest",
+            "consumer_binding_id",
+            "consumer_binding_digest",
+            "sealed_capsule_id",
+            "sealed_capsule_digest",
+            "consumer_subject_id",
+            "consumer_audience",
+            "consumer_contract_id",
+            "consumer_contract_version",
+            "purpose_id",
+            "policy_id",
+            "policy_version",
+            "policy_digest",
+            "idempotency_digest",
+            "request_fingerprint",
+            "consumption_authorization_audit_digest",
+            "claimed_at",
+        )
+        if (
+            any(getattr(row, name) != getattr(claim, name) for name in scalar_names)
+            or row.organization_id != claim.scope.organization_id
+            or row.environment_id != claim.scope.environment_id
+            or row.site_id != claim.scope.site_id
+            or row.idempotency_scope_id
+            != cls._target_context_capsule_handoff_consumption_idempotency_scope(
+                claim.scope, claim.consumer_subject_id, claim.consumer_audience
+            )
+            or row.payload != claim.digest_payload()
+            or row.consumption_authorization_audit_digest
+            != canonical_digest(dict(row.consumption_authorization_audit_payload))
+            or cls._row_target_context_capsule_handoff_consumption_authority(row)
+            != claim.authority.canonical_value()
+        ):
+            cls._target_context_capsule_handoff_consumption_contract_violation()
+        return claim
+
+    @classmethod
+    def _target_context_capsule_handoff_attempt_from_row(
+        cls,
+        row: WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel,
+    ) -> WorkflowProtectedTransportTargetContextCapsuleHandoffAttempt:
+        try:
+            values = dict(row.payload)
+            values["scope"] = WorkflowScope(**cast(Any, values["scope"]))
+            for name in (
+                "started_at",
+                "handoff_deadline",
+                "lease_valid_until",
+                "binding_effective_until",
+                "source_effective_until",
+                "lifecycle_attestation_valid_until",
+                "acceptance_attestation_valid_until",
+            ):
+                values[name] = datetime.fromisoformat(str(values[name]))
+            values["state"] = WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptState(
+                str(values["state"])
+            )
+            values["authority"] = WorkflowProtectedTransportTargetContextCapsuleHandoffAuthority(
+                **cast(Any, values["authority"])
+            )
+            attempt = WorkflowProtectedTransportTargetContextCapsuleHandoffAttempt(
+                **cast(Any, values), canonical_digest=row.canonical_digest
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowProtectedTransportTargetContextCapsuleHandoffError(
+                "target_context_capsule_handoff_repository_contract_violation"
+            ) from exc
+        scalar_names = tuple(
+            name
+            for name in (
+                "attempt_id",
+                "handoff_id",
+                "consumption_claim_id",
+                "authorization_lease_id",
+                "authorization_lease_digest",
+                "consumer_binding_id",
+                "consumer_binding_digest",
+                "sealed_capsule_id",
+                "sealed_capsule_digest",
+                "capsule_schema_id",
+                "capsule_schema_version",
+                "consumer_subject_id",
+                "consumer_audience",
+                "consumer_contract_id",
+                "consumer_contract_version",
+                "purpose_id",
+                "policy_id",
+                "policy_version",
+                "policy_digest",
+                "adapter_contract_id",
+                "adapter_contract_version",
+                "approved_adapter_id",
+                "approved_adapter_version",
+                "destination_boundary_id",
+                "destination_deployment_id",
+                "destination_generation",
+                "destination_fencing_token_digest",
+                "custody_contract_id",
+                "custody_contract_version",
+                "verification_signing_key_id",
+                "trusted_profile_digest",
+                "lifecycle_attestation_id",
+                "lifecycle_attestation_digest",
+                "lifecycle_attestation_valid_until",
+                "acceptance_attestation_id",
+                "acceptance_attestation_digest",
+                "acceptance_attestation_valid_until",
+                "request_nonce_digest",
+                "started_at",
+                "handoff_deadline",
+                "lease_valid_until",
+                "binding_effective_until",
+                "source_effective_until",
+            )
+        )
+        if (
+            any(getattr(row, name) != getattr(attempt, name) for name in scalar_names)
+            or row.organization_id != attempt.scope.organization_id
+            or row.environment_id != attempt.scope.environment_id
+            or row.site_id != attempt.scope.site_id
+            or row.state != attempt.state.value
+            or row.payload != attempt.digest_payload()
+            or cls._row_target_context_capsule_handoff_consumption_authority(row)
+            != attempt.authority.canonical_value()
+        ):
+            cls._target_context_capsule_handoff_consumption_contract_violation()
+        return attempt
+
+    @classmethod
+    def _target_context_capsule_handoff_result_model(
+        cls,
+        request: WorkflowTargetContextCapsuleHandoffResultRequest,
+    ) -> WorkflowProtectedTransportTargetContextCapsuleHandoffResultModel:
+        result = request.result
+        return WorkflowProtectedTransportTargetContextCapsuleHandoffResultModel(
+            **{
+                name: getattr(result, name)
+                for name in (
+                    "handoff_id",
+                    "attempt_id",
+                    "attempt_digest",
+                    "consumption_claim_id",
+                    "consumption_claim_digest",
+                    "authorization_lease_id",
+                    "authorization_lease_digest",
+                    "consumer_binding_id",
+                    "consumer_binding_digest",
+                    "consumer_contract_id",
+                    "consumer_contract_version",
+                    "purpose_id",
+                    "policy_id",
+                    "policy_version",
+                    "policy_digest",
+                    "adapter_contract_id",
+                    "adapter_contract_version",
+                    "receipt_digest",
+                    "consumer_receipt_id",
+                    "consumer_receipt_is_bearer_capability",
+                    "sealed_capsule_handed_off",
+                    "completed_at",
+                    "usable_until",
+                    "source_cleanup_confirmed",
+                )
+            },
+            organization_id=result.scope.organization_id,
+            environment_id=result.scope.environment_id,
+            site_id=result.scope.site_id,
+            state=result.state.value,
+            failure_class=None if result.failure_class is None else result.failure_class.value,
+            **cls._target_context_capsule_handoff_consumption_authority_columns(result.authority),
+            canonical_digest=result.canonical_digest,
+            payload=result.digest_payload(),
+            receipt_payload=request.receipt.digest_payload(),
+        )
+
+    @classmethod
+    def _target_context_capsule_handoff_result_from_row(
+        cls,
+        row: WorkflowProtectedTransportTargetContextCapsuleHandoffResultModel,
+    ) -> WorkflowProtectedTransportTargetContextCapsuleHandoffResult:
+        try:
+            values = dict(row.payload)
+            values["scope"] = WorkflowScope(**cast(Any, values["scope"]))
+            values["completed_at"] = datetime.fromisoformat(str(values["completed_at"]))
+            if values["usable_until"] is not None:
+                values["usable_until"] = datetime.fromisoformat(str(values["usable_until"]))
+            values["state"] = WorkflowProtectedTransportTargetContextCapsuleHandoffResultState(
+                str(values["state"])
+            )
+            if values["failure_class"] is not None:
+                values["failure_class"] = (
+                    WorkflowProtectedTransportTargetContextCapsuleHandoffFailureClass(
+                        str(values["failure_class"])
+                    )
+                )
+            values["authority"] = WorkflowProtectedTransportTargetContextCapsuleHandoffAuthority(
+                **cast(Any, values["authority"])
+            )
+            result = WorkflowProtectedTransportTargetContextCapsuleHandoffResult(
+                **cast(Any, values), canonical_digest=row.canonical_digest
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowProtectedTransportTargetContextCapsuleHandoffError(
+                "target_context_capsule_handoff_repository_contract_violation"
+            ) from exc
+        if (
+            row.organization_id != result.scope.organization_id
+            or row.environment_id != result.scope.environment_id
+            or row.site_id != result.scope.site_id
+            or row.state != result.state.value
+            or row.failure_class
+            != (None if result.failure_class is None else result.failure_class.value)
+            or row.payload != result.digest_payload()
+            or row.receipt_digest != canonical_digest(dict(row.receipt_payload))
+            or cls._row_target_context_capsule_handoff_consumption_authority(row)
+            != result.authority.canonical_value()
+        ):
+            cls._target_context_capsule_handoff_consumption_contract_violation()
+        return result
+
+    @classmethod
+    def _target_context_capsule_handoff_result_matches(
+        cls,
+        *,
+        request: WorkflowTargetContextCapsuleHandoffResultRequest,
+        claim_row: WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaimModel
+        | None,
+        attempt_row: WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel | None,
+    ) -> bool:
+        if claim_row is None or attempt_row is None:
+            return False
+        try:
+            claim = cls._target_context_capsule_handoff_consumption_claim_from_row(claim_row)
+            attempt = cls._target_context_capsule_handoff_attempt_from_row(attempt_row)
+            result = request.result
+            receipt = request.receipt
+            policy = _handoff_consumption_policy()
+        except Exception:
+            return False
+        result_states = WorkflowProtectedTransportTargetContextCapsuleHandoffResultState
+        success_before_deadline = result.state is not result_states.HANDED_OFF_SEALED or (
+            result.completed_at < attempt.handoff_deadline
+            and result.usable_until is not None
+            and result.usable_until <= attempt.handoff_deadline
+        )
+        return bool(
+            result.canonical_digest == canonical_digest(result.digest_payload())
+            and receipt.canonical_digest == canonical_digest(receipt.digest_payload())
+            and result.receipt_digest == receipt.canonical_digest
+            and result.consumption_claim_id == claim.claim_id == attempt.consumption_claim_id
+            and result.consumption_claim_digest
+            == request.expected_claim_digest
+            == claim.canonical_digest
+            == attempt.consumption_claim_digest
+            and result.attempt_id == attempt.attempt_id
+            and result.attempt_digest == request.expected_attempt_digest == attempt.canonical_digest
+            and result.handoff_id == claim.handoff_id == attempt.handoff_id == receipt.handoff_id
+            and receipt.attempt_id == attempt.attempt_id
+            and receipt.consumption_claim_id == claim.claim_id
+            and result.authorization_lease_id
+            == claim.authorization_lease_id
+            == attempt.authorization_lease_id
+            and result.authorization_lease_digest
+            == claim.authorization_lease_digest
+            == attempt.authorization_lease_digest
+            and result.consumer_binding_id
+            == claim.consumer_binding_id
+            == attempt.consumer_binding_id
+            and result.consumer_binding_digest
+            == claim.consumer_binding_digest
+            == attempt.consumer_binding_digest
+            and result.scope == claim.scope == attempt.scope
+            and result.consumer_contract_id == attempt.consumer_contract_id
+            and result.consumer_contract_version == attempt.consumer_contract_version
+            and result.purpose_id == attempt.purpose_id
+            and result.policy_id == attempt.policy_id == policy.policy_id
+            and result.policy_version == attempt.policy_version == policy.policy_version
+            and result.policy_digest == attempt.policy_digest == policy.canonical_digest
+            and result.adapter_contract_id
+            == attempt.adapter_contract_id
+            == receipt.adapter_contract_id
+            == policy.required_adapter_contract_id
+            and result.adapter_contract_version
+            == attempt.adapter_contract_version
+            == receipt.adapter_contract_version
+            == policy.required_adapter_contract_version
+            and receipt.adapter_id == attempt.approved_adapter_id == policy.approved_adapter_id
+            and receipt.adapter_version
+            == attempt.approved_adapter_version
+            == policy.approved_adapter_version
+            and receipt.destination_boundary_id == attempt.destination_boundary_id
+            and receipt.destination_deployment_id == attempt.destination_deployment_id
+            and receipt.destination_generation == attempt.destination_generation
+            and receipt.destination_fencing_token_digest == attempt.destination_fencing_token_digest
+            and receipt.custody_contract_id == attempt.custody_contract_id
+            and receipt.custody_contract_version == attempt.custody_contract_version
+            and receipt.signing_key_id == attempt.verification_signing_key_id
+            and receipt.trusted_profile_digest == attempt.trusted_profile_digest
+            and result.state == receipt.state
+            and result.failure_class == receipt.failure_class
+            and result.consumer_receipt_id == receipt.consumer_receipt_id
+            and result.consumer_receipt_is_bearer_capability
+            is receipt.consumer_receipt_is_bearer_capability
+            is False
+            and result.sealed_capsule_handed_off is receipt.sealed_capsule_handed_off
+            and result.completed_at == receipt.completed_at
+            and result.usable_until == receipt.usable_until
+            and result.source_cleanup_confirmed is receipt.source_cleanup_confirmed
+            and result.completed_at >= attempt.started_at
+            and success_before_deadline
+            and not any(result.authority.canonical_value().values())
         )
 
     @staticmethod

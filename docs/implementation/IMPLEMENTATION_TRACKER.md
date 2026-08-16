@@ -4,14 +4,85 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-212 |
-| Title | Bounded single-use protected target-context capsule handoff authorization lease without retrieval, unsealing, transfer, delivery or runtime authority |
-| Status | Review; pull request open and exact-head CI pending |
-| Branch | `agent/protected-capsule-handoff-authorization-lease` |
-| Pull Request | [#225](https://github.com/ozdemirumit/Project_Atlas/pull/225) |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-158, ADR-159, ADR-160, ADR-161, ADR-162 |
+| Task ID | ATLAS-IMP-213 |
+| Title | Atomic single-use protected target-context capsule handoff-authorization lease consumption and sealed protected-boundary capsule handoff without unsealing, runtime, execution or infrastructure mutation authority |
+| Status | In Review |
+| Branch | `agent/protected-capsule-handoff-consumption` |
+| Pull Request | [#226](https://github.com/ozdemirumit/Project_Atlas/pull/226) |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-158, ADR-159, ADR-160, ADR-161, ADR-162, ADR-163 |
 | Last Updated | 2026-08-16 |
-| Next Action | Complete exact-head CI, SHA-locked merge and independent `main` CI |
+| Next Action | Open the exact-head pull request, pass CI, merge by SHA and verify independent `main` CI |
+
+### ATLAS-IMP-213 Scope Rationale
+
+- IMP-212 authorizes one exact consumer to request a one-time capsule handoff but performs no
+  handoff and leaves the immutable lease unconsumed.
+- The next smallest irreversible boundary commits a unique consumption claim before invoking a
+  trusted sealed-capsule handoff adapter, so crash or uncertainty cannot make a used lease reusable.
+- The handoff keeps the capsule sealed and creates only non-bearer receipt evidence. Consumer-side
+  retrieval, unsealing, runtime use and every operational authority remain deferred.
+
+### ATLAS-IMP-213 Acceptance Criteria
+
+- Only the exact code-owned capsule consumer subject/audience may consume its own lease. Caller
+  input is limited to lease identity/digest, code-owned policy, two irreversible acknowledgements
+  and idempotency metadata.
+- Fresh signed capsule-lifecycle and consumer-boundary acceptance attestations are verified before
+  the transaction and offline again while locks are held; they contain no protected material or
+  retrievable coordinates. The destination attestation binds exact boundary/deployment identity,
+  generation, fence, custody contract, approved adapter/key head and trusted profile digest.
+- Durable exact replay is classified before any attestor call. Existing claim/attempt state never
+  triggers fresh attestation or adapter I/O and becomes uncertain when its immutable deadline passes.
+- PostgreSQL revalidates the complete authoritative lineage and all deadlines twice, then atomically
+  appends one consumption claim and one started attempt before any trusted adapter call.
+- The durable claim is the point of no return. After commit, success, known failure, crash or
+  uncertainty permanently consumes the lease and never permits automatic retry or replacement.
+- The trusted adapter may transfer only the still-sealed capsule inside the exact protected
+  boundary and returns only a signed minimized receipt. No capsule bytes, locator, endpoint,
+  credential, secret, access token or provider payload enters ordinary platform paths.
+- The attempt stores a server-derived handoff deadline bounded by the lease and every source and
+  attestation deadline. Adapter transfer and a successful receipt must occur strictly before it.
+- Success/known failure requires a trusted signed receipt. Observed uncertainty may append explicit
+  receipts-free evidence; crash-only claim/attempt state is presented as pending before its
+  deadline and derived uncertain afterward without fabricating a receipt or completion time.
+- Claim, attempt and result set the dedicated handoff field and all 17 operational authority fields
+  exactly false. Handoff success is historical evidence, not unsealing, runtime or delivery power.
+- Production requires PostgreSQL, an approved trusted adapter, protected store and destination;
+  there is no memory fallback. Development may use only a deterministic no-I/O synthetic adapter.
+- Workload POST and normal-session human GET are minimized, non-oracle and `no-store`. The UI is
+  read-only with no handoff/retry/reveal/unseal/delivery/runtime control and no MFA, second login or
+  authorized-browser prompt.
+- Full local suites, PostgreSQL concurrency/migration CI, live desktop/mobile inspection,
+  independent review, exact-head PR CI, SHA-locked merge and independent `main` CI must pass.
+
+### ATLAS-IMP-213 Local Verification
+
+- Backend Ruff formatting/lint and strict MyPy passed for `1303` source and test files. The full
+  backend suite passed `2354` tests with `28` environment-dependent skips; the focused capsule
+  handoff, API, migration-contract and authorization regression set passed `41` tests with `3`
+  live-PostgreSQL skips.
+- Frontend TypeScript and ESLint passed. All `95` test files and `769` tests passed, including all
+  `480` workflow-planning workspace scenarios. The production Vite bundle built successfully.
+- Alembic reports the single `20260816_0136` head. Contract coverage verifies the guarded
+  downgrade, append-only claim/attempt/result tables, precommit authoritative-time recheck,
+  composite result-to-attempt/claim lineage and all `18` zero-authority declarations. Live
+  PostgreSQL cases remain CI-bound through `ATLAS_TEST_POSTGRES_DSN`.
+- Independent review found no remaining P0, P1 or P2 issue after adding the precommit database
+  deadline check, consumer-attestation freshness lower bound, explicit test-only synthetic
+  adapter enablement, composite database lineage constraints, session-only human GET and
+  fail-closed `503`/`no-store` error handling.
+- Live inspection at desktop `1440x900` and mobile `390x844` confirmed the read-only
+  `Target-context capsule handoffs` region, zero handoff/retry/reveal/unseal/runtime controls, no
+  horizontal page overflow and no browser console warning/error. With the protected backend
+  intentionally unavailable, the UI disclosed no capsule, binding, attestation, receipt,
+  destination or operational state.
+
+### ATLAS-IMP-212 Delivery Evidence
+
+- Completed through [PR #225](https://github.com/ozdemirumit/Project_Atlas/pull/225) at merge
+  `eeb92dffdfd1837680427fab3aa1319a430339c8`.
+- Exact-head PR run `31923569495` and independent `main` run `31924021075` passed all backend,
+  frontend, migration round-trip and PostgreSQL integration gates.
 
 ### ATLAS-IMP-212 Scope Rationale
 

@@ -673,6 +673,13 @@ MVP workflows do not execute C3 through C5 capabilities.
   `target_context_capsule_handoff_authorized` declaration is true; all existing 17 operational
   authority declarations remain false. Capsule retrieval, handoff consumption, unsealing,
   delivery, network, runtime, dispatch, execution and mutation remain separate later boundaries.
+- ADR-163 irreversibly consumes that exact lease by atomically committing one append-only claim
+  and started attempt before any trusted adapter call. The adapter may hand the still-sealed
+  capsule only to the exact ADR-161 consumer protected boundary and returns only a signed,
+  minimized, non-bearer receipt. Claim-only or uncertain outcomes are never retried, the dedicated
+  handoff field and all 17 operational authority fields are false on claim, attempt and result,
+  and unsealing, runtime, dispatch, execution and infrastructure mutation remain separately
+  authorized future boundaries.
 
 ## 39. Assumptions
 
@@ -711,3 +718,4 @@ This document is ready to enter Review when:
 | 1.1.0 | 2026-08-15 | Workflow Architecture | Added atomic single-use target-context artifact opening and sealed zero-authority capsule lineage |
 | 1.2.0 | 2026-08-16 | Workflow Architecture | Added immutable zero-authority target-context capsule consumer binding |
 | 1.3.0 | 2026-08-16 | Workflow Architecture | Added bounded single-use target-context capsule handoff-authorization lease |
+| 1.4.0 | 2026-08-16 | Workflow Architecture | Added atomic lease consumption and sealed protected-boundary capsule handoff |

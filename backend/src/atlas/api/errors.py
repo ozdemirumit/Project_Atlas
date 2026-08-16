@@ -61,6 +61,15 @@ def _correlation_id(request: Request) -> str:
     return str(getattr(request.state, "correlation_id", "cor_unavailable"))
 
 
+def _requires_no_store(request: Request) -> bool:
+    return request.url.path.startswith(
+        (
+            "/api/v1/audit-export",
+            "/api/v1/workflows/physical-transport-target-context-capsule-handoffs",
+        )
+    )
+
+
 def _validation_errors(exc: RequestValidationError) -> list[FieldError]:
     errors: list[FieldError] = []
     for error in exc.errors():
@@ -88,7 +97,7 @@ def register_error_handlers(app: FastAPI) -> None:
                 correlation_id=_correlation_id(request),
                 retryable=exc.retryable,
             ),
-            no_store=request.url.path.startswith("/api/v1/audit-export"),
+            no_store=_requires_no_store(request),
         )
 
     @app.exception_handler(RequestValidationError)
@@ -105,7 +114,7 @@ def register_error_handlers(app: FastAPI) -> None:
                 correlation_id=_correlation_id(request),
                 errors=_validation_errors(exc),
             ),
-            no_store=request.url.path.startswith("/api/v1/audit-export"),
+            no_store=_requires_no_store(request),
         )
 
     @app.exception_handler(Exception)
@@ -124,5 +133,5 @@ def register_error_handlers(app: FastAPI) -> None:
                 correlation_id=_correlation_id(request),
                 retryable=False,
             ),
-            no_store=request.url.path.startswith("/api/v1/audit-export"),
+            no_store=_requires_no_store(request),
         )
