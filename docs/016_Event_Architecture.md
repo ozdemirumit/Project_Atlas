@@ -508,6 +508,21 @@ artifact, route, credential, network, publication, delivery, dispatch, execution
 authority. Actual lease consumption, handle creation, context access and injection remain a later
 boundary.
 
+Protected resident-context access consumption is the irreversible boundary after that lease. A
+durable exact-replay preflight performs no external I/O. Only a request without an existing claim
+may obtain fresh signed resident-lifecycle and trusted-accessor readiness evidence. PostgreSQL
+verifies those attestations offline, locks and revalidates the complete authoritative lineage,
+evaluates database time twice and atomically appends one claim and started attempt. Their commit
+permanently consumes the lease before the trusted accessor can touch resident state.
+
+The trusted accessor may atomically exchange only the exact resident context for one short-lived,
+non-bearer runtime-context handle inside the exact protected boundary. Atlas persists only signed
+metadata lineage, never the handle or locator. Known failure requires signed no-handle evidence;
+crash, timeout, late receipt or partial-transition uncertainty remains `access_outcome_uncertain`.
+Exact replay never calls the accessor again. All 20 authority declarations are false. Handle use,
+context injection, network, connector calls, dispatch, execution and infrastructure mutation remain
+separate later boundaries.
+
 ### 10.2 Publication State
 
 Outbox records track:
@@ -907,3 +922,4 @@ This document is ready to enter Review when:
 | 1.5.0 | 2026-08-16 | Workflow Architecture | Added bounded consumer-side target-context capsule opening-authorization lease boundary |
 | 1.6.0 | 2026-08-16 | Workflow Architecture | Added atomic consumer-side capsule opening-consumption and protected resident-context evidence boundary |
 | 1.7.0 | 2026-08-16 | Workflow Architecture | Added bounded protected resident-context access-authorization lease boundary |
+| 1.8.0 | 2026-08-16 | Workflow Architecture | Added atomic resident-context access consumption and protected non-bearer runtime-handle boundary |

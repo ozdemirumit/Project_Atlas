@@ -709,6 +709,14 @@ MVP workflows do not execute C3 through C5 capabilities.
   at-most-one-second lease. The lease grants only a future access-consumption request and creates no
   handle or runtime access; protected-artifact, route, credential, network, publication, delivery,
   dispatch, execution and infrastructure-mutation authorities remain false.
+- ADR-167 irreversibly consumes that exact resident-context access lease by atomically committing
+  one append-only claim and started attempt before any trusted protected-boundary accessor call.
+  Fresh resident lifecycle and accessor-readiness evidence is verified outside and offline inside
+  the PostgreSQL transaction. The accessor may create one short-lived non-bearer runtime-context
+  handle that remains inside the protected boundary; Atlas receives only signed metadata lineage.
+  Exact replay never calls the accessor again, uncertain outcomes never restore the lease and all
+  20 authority fields remain false. Handle retrieval, injection, network, connector calls,
+  dispatch, execution and infrastructure mutation remain separately authorized future boundaries.
 
 ## 39. Assumptions
 
@@ -751,3 +759,4 @@ This document is ready to enter Review when:
 | 1.5.0 | 2026-08-16 | Workflow Architecture | Added bounded consumer-side target-context capsule opening-authorization lease |
 | 1.6.0 | 2026-08-16 | Workflow Architecture | Added atomic consumer-side capsule opening consumption and protected resident-context lineage |
 | 1.7.0 | 2026-08-16 | Workflow Architecture | Added bounded protected resident-context access-authorization lease |
+| 1.8.0 | 2026-08-16 | Workflow Architecture | Added atomic protected resident-context access consumption and non-bearer runtime-handle lineage |
