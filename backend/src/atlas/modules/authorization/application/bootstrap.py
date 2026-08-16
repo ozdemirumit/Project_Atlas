@@ -92,6 +92,9 @@ WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_CAPSULE_HANDOFF_READ = (
 WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_CAPSULE_OPENING_AUTHORIZATION_LEASE_READ = (
     "workflow.physical-transport-target-context-capsule-opening-authorization-leases.read"
 )
+WORKFLOW_PROTECTED_RESIDENT_CONTEXT_ACCESS_AUTHORIZATION_READ = (
+    "workflow.protected-resident-context-access-authorizations.read"
+)
 WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_CAPSULE_OPENING_READ = (
     "workflow.physical-transport-target-context-capsule-openings.read"
 )
@@ -2337,6 +2340,12 @@ def build_development_authorization_service(
             ),
         ),
         PermissionDefinition(
+            permission_id=WORKFLOW_PROTECTED_RESIDENT_CONTEXT_ACCESS_AUTHORIZATION_READ,
+            description=(
+                "Read minimized immutable protected resident-context access authorizations."
+            ),
+        ),
+        PermissionDefinition(
             permission_id=WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_CAPSULE_OPENING_READ,
             description="Read minimized immutable target-context capsule opening outcomes.",
         ),
@@ -3249,6 +3258,7 @@ def build_development_authorization_service(
                 WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_CAPSULE_HANDOFF_AUTHORIZATION_LEASE_READ,
                 WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_CAPSULE_HANDOFF_READ,
                 WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_CAPSULE_OPENING_AUTHORIZATION_LEASE_READ,
+                WORKFLOW_PROTECTED_RESIDENT_CONTEXT_ACCESS_AUTHORIZATION_READ,
                 WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_CAPSULE_OPENING_READ,
                 WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMISSION_READ,
                 WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_RESOLUTION_AUTHORIZATION_LEASE_READ,

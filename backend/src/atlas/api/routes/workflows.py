@@ -26,6 +26,7 @@ from atlas.api.security import (
     authorize_workflow_plan_cancel,
     authorize_workflow_plan_create,
     authorize_workflow_plan_read,
+    authorize_workflow_protected_resident_context_access_authorization_read,
     authorize_workflow_target_context_capsule_handoff_authorization_lease_read,
     authorize_workflow_target_context_capsule_handoff_read,
     authorize_workflow_target_context_capsule_opening_authorization_lease_read,
@@ -73,6 +74,7 @@ from atlas.api.workflow_schemas import (
     CreateWorkflowEventPhysicalTransportTargetContextBindingInput,
     CreateWorkflowEventTransportCompatibilityAdmissionInput,
     CreateWorkflowPlanInput,
+    CreateWorkflowProtectedResidentContextAccessAuthorizationInput,
     CreateWorkflowProtectedTransportTargetContextCapsuleConsumerBindingInput,
     CreateWorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseInput,
     CreateWorkflowProtectedTransportTargetContextCapsuleHandoffInput,
@@ -192,6 +194,10 @@ from atlas.api.workflow_schemas import (
     WorkflowOutboxPublicationLeaseResponse,
     WorkflowPlanInventoryData,
     WorkflowPlanInventoryResponse,
+    WorkflowProtectedResidentContextAccessAuthorizationData,
+    WorkflowProtectedResidentContextAccessAuthorizationInventoryData,
+    WorkflowProtectedResidentContextAccessAuthorizationInventoryResponse,
+    WorkflowProtectedResidentContextAccessAuthorizationResponse,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBindingData,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBindingInventoryData,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBindingInventoryItemData,
@@ -285,6 +291,8 @@ from atlas.modules.workflows.application import (
     WorkflowPhysicalTransportTargetContextBinderContext,
     WorkflowPlanningError,
     WorkflowPlanningService,
+    WorkflowProtectedResidentContextAccessAuthorizationError,
+    WorkflowProtectedResidentContextAccessAuthorizationService,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationContext,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseError,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseService,
@@ -6188,6 +6196,144 @@ async def create_workflow_physical_transport_target_context_capsule_opening_auth
         ) from error
     return WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseResponse(
         data=WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseData.from_domain(
+            lease, evaluated_at=server_time
+        ),
+        meta=_meta(request),
+    )
+
+
+@router.get(
+    "/protected-resident-context-access-authorizations",
+    response_model=WorkflowProtectedResidentContextAccessAuthorizationInventoryResponse,
+)
+async def list_workflow_protected_resident_context_access_authorizations(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_workflow_protected_resident_context_access_authorization_read),
+    ],
+) -> WorkflowProtectedResidentContextAccessAuthorizationInventoryResponse:
+    del decision
+    _no_store(response)
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    service = cast(
+        WorkflowProtectedResidentContextAccessAuthorizationService,
+        request.app.state.workflow_protected_resident_context_access_authorization_service,
+    )
+    try:
+        leases = await service.list_leases(scope=scope, limit=256)
+        server_time = await service.repository.get_authoritative_time()
+    except WorkflowProtectedResidentContextAccessAuthorizationError as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_protected_access_authorization_service_unavailable",
+            title="Protected access authorization unavailable",
+            detail="Authorization metadata is temporarily unavailable.",
+            retryable=True,
+        ) from error
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_protected_access_authorization_service_unavailable",
+            title="Protected access authorization unavailable",
+            detail="Authorization metadata is temporarily unavailable.",
+            retryable=True,
+        ) from error
+    return WorkflowProtectedResidentContextAccessAuthorizationInventoryResponse(
+        data=WorkflowProtectedResidentContextAccessAuthorizationInventoryData(
+            authorizations=[
+                WorkflowProtectedResidentContextAccessAuthorizationData.from_domain(
+                    lease, evaluated_at=server_time
+                )
+                for lease in leases
+            ],
+            server_time=server_time,
+            durable=True,
+        ),
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    "/protected-resident-context-access-authorizations",
+    response_model=WorkflowProtectedResidentContextAccessAuthorizationResponse,
+    status_code=201,
+)
+async def create_workflow_protected_resident_context_access_authorization(
+    payload: CreateWorkflowProtectedResidentContextAccessAuthorizationInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[
+        AuthenticatedSubject,
+        Depends(workflow_protected_transport_target_context_capsule_consumer_subject),
+    ],
+) -> WorkflowProtectedResidentContextAccessAuthorizationResponse:
+    _no_store(response)
+    service = cast(
+        WorkflowProtectedResidentContextAccessAuthorizationService,
+        request.app.state.workflow_protected_resident_context_access_authorization_service,
+    )
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    try:
+        lease = await service.authorize(
+            opening_result_id=payload.opening_result_id,
+            opening_result_digest=payload.opening_result_digest,
+            policy_id=payload.policy_id,
+            policy_version=payload.policy_version,
+            idempotency_key=payload.idempotency_key,
+            context=WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationContext(
+                subject_id=subject.subject_id,
+                actor_type=subject.kind.value,
+                authentication_method=subject.authentication_method.value,
+                credential_audience=WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_AUDIENCE,
+                scope=scope,
+                correlation_id=str(request.state.correlation_id),
+                decision_id=("decision.workflow-protected-resident-context-consumer-authenticated"),
+                requested_at=datetime.now(UTC),
+            ),
+        )
+        server_time = await service.repository.get_authoritative_time()
+    except WorkflowProtectedResidentContextAccessAuthorizationError as error:
+        unavailable = "unavailable" in error.code or error.code.endswith(
+            "durable_repository_required"
+        )
+        raise AtlasError(
+            status=503 if unavailable else 409,
+            code=(
+                "workflow_protected_access_authorization_service_unavailable"
+                if unavailable
+                else "authorization_denied"
+            ),
+            title=(
+                "Protected access authorization unavailable" if unavailable else "Request denied"
+            ),
+            detail=(
+                "Authorization metadata is temporarily unavailable."
+                if unavailable
+                else "The current identity or evidence is not authorized for this operation."
+            ),
+            retryable=unavailable,
+        ) from error
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_protected_access_authorization_service_unavailable",
+            title="Protected access authorization unavailable",
+            detail="Authorization metadata is temporarily unavailable.",
+            retryable=True,
+        ) from error
+    return WorkflowProtectedResidentContextAccessAuthorizationResponse(
+        data=WorkflowProtectedResidentContextAccessAuthorizationData.from_domain(
             lease, evaluated_at=server_time
         ),
         meta=_meta(request),

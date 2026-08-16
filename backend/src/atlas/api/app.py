@@ -1558,6 +1558,11 @@ from atlas.modules.workflows.adapters.endpoint_materialization_unavailable impor
 )
 from atlas.modules.workflows.adapters.memory import InMemoryWorkflowPlanRepository
 from atlas.modules.workflows.adapters.postgres import PostgreSQLWorkflowPlanRepository
+from atlas.modules.workflows.adapters.protected_resident_context_lifecycle_attestors import (
+    DenyAllWorkflowProtectedResidentContextLifecycleSignatureVerifier,
+    DeterministicDevelopmentWorkflowProtectedResidentContextLifecycleAttestor,
+    UnavailableWorkflowProtectedResidentContextLifecycleAttestor,
+)
 from atlas.modules.workflows.adapters.target_context_access_status_attestors import (
     DenyAllWorkflowProtectedArtifactStatusSignatureVerifier,
     UnavailableWorkflowProtectedCredentialStatusAttestor,
@@ -1608,6 +1613,11 @@ from atlas.modules.workflows.application import (
     WorkflowOutboxPublicationLeaseService,
     WorkflowPlanningService,
     WorkflowPlanRepository,
+    WorkflowProtectedResidentContextAccessAuthorizationRepository,
+    WorkflowProtectedResidentContextAccessAuthorizationService,
+    WorkflowProtectedResidentContextLifecycleAttestor,
+    WorkflowProtectedResidentContextLifecycleSignatureVerifier,
+    WorkflowProtectedResidentContextOpeningReceiptSignatureVerifier,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseRepository,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseService,
     WorkflowProtectedTransportTargetContextCapsuleHandoffService,
@@ -1646,6 +1656,7 @@ from atlas.modules.workflows.domain import (
     DeploymentEventTransportRoute,
     DeploymentEventTransportRouteSelectionHead,
     DeploymentPhysicalTransportCredentialAssignment,
+    WorkflowProtectedTransportTargetContextCapsuleTrustedOpenerReceipt,
     WorkflowScope,
     canonical_digest,
     code_owned_workflow_registry,
@@ -1671,6 +1682,7 @@ class _WorkflowCredentialAccessAuthorizationNoStoreMiddleware(BaseHTTPMiddleware
                 "physical-transport-target-context-capsule-opening-authorization-leases"
             ),
             "/api/v1/workflows/physical-transport-target-context-capsule-openings",
+            "/api/v1/workflows/protected-resident-context-access-authorizations",
         }
     )
 
@@ -1762,6 +1774,48 @@ class _UnavailableWorkflowTargetContextCapsuleOpeningAuthorizationLeaseRepositor
         self, *_: object, **__: object
     ) -> None:
         raise RuntimeError("target-context capsule opening authorization is unavailable")
+
+
+class _UnavailableWorkflowProtectedResidentContextAccessAuthorizationRepository:
+    """Fail-closed IMP-216 composition placeholder with no memory fallback."""
+
+    @property
+    def durable(self) -> bool:
+        return False
+
+    async def get_authoritative_time(self) -> datetime:
+        raise RuntimeError("protected access authorization is unavailable")
+
+    async def preflight_protected_resident_context_access_authorization(
+        self, *_: object, **__: object
+    ) -> None:
+        raise RuntimeError("protected access authorization is unavailable")
+
+    async def get_protected_resident_context_access_authorization_source(
+        self, *_: object, **__: object
+    ) -> None:
+        raise RuntimeError("protected access authorization is unavailable")
+
+    async def authorize_protected_resident_context_access(self, *_: object, **__: object) -> None:
+        raise RuntimeError("protected access authorization is unavailable")
+
+    async def list_protected_resident_context_access_authorizations(
+        self, *_: object, **__: object
+    ) -> None:
+        raise RuntimeError("protected access authorization is unavailable")
+
+
+class _WorkflowProtectedResidentContextOpeningReceiptSignatureVerifierAdapter:
+    """Expose an opener's offline receipt verification through the IMP-216 port."""
+
+    def __init__(self, verifier: object) -> None:
+        self._verifier = verifier
+
+    def verify_opening_receipt(
+        self, receipt: WorkflowProtectedTransportTargetContextCapsuleTrustedOpenerReceipt
+    ) -> bool:
+        verify = getattr(self._verifier, "verify_receipt", None)
+        return callable(verify) and bool(verify(receipt))
 
 
 class _UnavailableWorkflowTargetContextCapsuleOpeningRepository:
@@ -2255,6 +2309,9 @@ def create_app(
     ) = None,
     workflow_protected_transport_target_context_capsule_opening_authorization_lease_service: (
         WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseService | None
+    ) = None,
+    workflow_protected_resident_context_access_authorization_service: (
+        WorkflowProtectedResidentContextAccessAuthorizationService | None
     ) = None,
     workflow_protected_transport_target_context_capsule_opening_service: (
         WorkflowProtectedTransportTargetContextCapsuleOpeningService | None
@@ -7087,6 +7144,77 @@ def create_app(
         resolved_target_context_capsule_opening_service = (
             workflow_protected_transport_target_context_capsule_opening_service
         )
+    if workflow_protected_resident_context_access_authorization_service is None:
+        resident_context_access_repository_methods = (
+            "get_authoritative_time",
+            "preflight_protected_resident_context_access_authorization",
+            "get_protected_resident_context_access_authorization_source",
+            "authorize_protected_resident_context_access",
+            "list_protected_resident_context_access_authorizations",
+        )
+        if isinstance(workflow_repository, PostgreSQLWorkflowPlanRepository) and all(
+            callable(getattr(workflow_repository, method_name, None))
+            for method_name in resident_context_access_repository_methods
+        ):
+            resident_context_access_repository = cast(
+                WorkflowProtectedResidentContextAccessAuthorizationRepository,
+                workflow_repository,
+            )
+        else:
+            resident_context_access_repository = cast(
+                WorkflowProtectedResidentContextAccessAuthorizationRepository,
+                _UnavailableWorkflowProtectedResidentContextAccessAuthorizationRepository(),
+            )
+        resident_context_lifecycle_attestor: WorkflowProtectedResidentContextLifecycleAttestor
+        resident_context_lifecycle_signature_verifier: (
+            WorkflowProtectedResidentContextLifecycleSignatureVerifier
+        )
+        resident_context_opening_receipt_signature_verifier: (
+            WorkflowProtectedResidentContextOpeningReceiptSignatureVerifier
+        )
+        if (
+            resolved_settings.environment == "development"
+            and resolved_settings.development_identity_enabled
+        ):
+            development_lifecycle_attestor = (
+                DeterministicDevelopmentWorkflowProtectedResidentContextLifecycleAttestor(
+                    development_enabled=True
+                )
+            )
+            resident_context_lifecycle_attestor = development_lifecycle_attestor
+            resident_context_lifecycle_signature_verifier = development_lifecycle_attestor
+            resident_context_opening_receipt_signature_verifier = (
+                _WorkflowProtectedResidentContextOpeningReceiptSignatureVerifierAdapter(
+                    SyntheticWorkflowProtectedTargetContextCapsuleTrustedOpener(test_enabled=True)
+                )
+            )
+        else:
+            resident_context_lifecycle_attestor = (
+                UnavailableWorkflowProtectedResidentContextLifecycleAttestor()
+            )
+            resident_context_lifecycle_signature_verifier = (
+                DenyAllWorkflowProtectedResidentContextLifecycleSignatureVerifier()
+            )
+            resident_context_opening_receipt_signature_verifier = (
+                _WorkflowProtectedResidentContextOpeningReceiptSignatureVerifierAdapter(
+                    UnavailableWorkflowProtectedTargetContextCapsuleTrustedOpener()
+                )
+            )
+        resolved_protected_resident_context_access_authorization_service = (
+            WorkflowProtectedResidentContextAccessAuthorizationService(
+                authorization_repository=resident_context_access_repository,
+                lifecycle_attestor=resident_context_lifecycle_attestor,
+                lifecycle_signature_verifier=(resident_context_lifecycle_signature_verifier),
+                opening_receipt_signature_verifier=(
+                    resident_context_opening_receipt_signature_verifier
+                ),
+                audit_sink=resolved_audit_sink,
+            )
+        )
+    else:
+        resolved_protected_resident_context_access_authorization_service = (
+            workflow_protected_resident_context_access_authorization_service
+        )
     configured_transport_route_selection_heads = (
         _deployment_event_transport_route_selection_heads(
             resolved_settings,
@@ -7534,6 +7662,12 @@ def create_app(
         )
         app.state.workflow_target_context_capsule_opening_repository = (
             resolved_target_context_capsule_opening_service.repository
+        )
+        app.state.workflow_protected_resident_context_access_authorization_service = (
+            resolved_protected_resident_context_access_authorization_service
+        )
+        app.state.workflow_protected_resident_context_access_authorization_repository = (
+            resolved_protected_resident_context_access_authorization_service.repository
         )
         app.state.workflow_transport_route_selection_heads = (
             configured_transport_route_selection_heads

@@ -267,6 +267,7 @@ from atlas.modules.authorization.application.bootstrap import (
     WORKFLOW_PLAN_CANCEL,
     WORKFLOW_PLAN_CREATE,
     WORKFLOW_PLAN_READ,
+    WORKFLOW_PROTECTED_RESIDENT_CONTEXT_ACCESS_AUTHORIZATION_READ,
     WORKFLOW_TRANSPORT_COMPATIBILITY_ADMISSION_READ,
     WORKFLOW_TRANSPORT_CREDENTIAL_ASSIGNMENT_SNAPSHOT_READ,
     WORKFLOW_TRANSPORT_PROFILE_READ,
@@ -399,7 +400,11 @@ from atlas.modules.authorization.application.bootstrap import (
     workload_identity_governance_scope,
 )
 from atlas.modules.authorization.application.service import AuthorizationService
-from atlas.modules.authorization.domain.models import AuthorizationDecision, AuthorizationRequest
+from atlas.modules.authorization.domain.models import (
+    AuthorizationDecision,
+    AuthorizationRequest,
+    ResourceScope,
+)
 from atlas.modules.identity.application.api_credentials import (
     ApiCredentialOperationsError,
     ApiCredentialService,
@@ -441,6 +446,14 @@ from atlas.modules.workflows.application import (
     WORKFLOW_TRANSPORT_ROUTE_REGISTRY_AUDIENCE,
     WORKFLOW_WORKER_AUDIENCE,
 )
+
+
+def workflow_protected_resident_context_access_authorization_scope(
+    organization_id: str, environment: str
+) -> ResourceScope:
+    return workflow_physical_transport_target_context_capsule_opening_authorization_lease_scope(
+        organization_id, environment
+    )
 
 
 def _presented_authorization(request: Request) -> tuple[str | None, str | None]:
@@ -3716,6 +3729,44 @@ async def authorize_workflow_target_context_capsule_opening_authorization_lease_
                 "physical-transport-target-context-capsule-opening-authorization-lease"
             ),
             scope=workflow_physical_transport_target_context_capsule_opening_authorization_lease_scope(
+                subject.organization_id, settings.environment
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_workflow_protected_resident_context_access_authorization_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    """Authorize the IMP-216 inventory through its dedicated workflow read grant."""
+
+    if subject.kind is not SubjectKind.HUMAN:
+        raise AtlasError(
+            status=403,
+            code="human_identity_required",
+            title="Human identity required",
+            detail="This read-only inventory is available only to an authenticated human.",
+        )
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=WORKFLOW_PROTECTED_RESIDENT_CONTEXT_ACCESS_AUTHORIZATION_READ,
+            resource_type="resource.workflow.protected-resident-context-access-authorization",
+            scope=workflow_protected_resident_context_access_authorization_scope(
                 subject.organization_id, settings.environment
             ),
             correlation_id=str(request.state.correlation_id),

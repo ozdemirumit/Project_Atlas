@@ -41,6 +41,7 @@ from atlas.modules.workflows.domain import (
     WorkflowExecutionRun,
     WorkflowOrchestrationLease,
     WorkflowOutboxPublicationLease,
+    WorkflowProtectedResidentContextAccessAuthorizationLease,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBinding,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAttempt,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLease,
@@ -49,6 +50,7 @@ from atlas.modules.workflows.domain import (
     WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLease,
     WorkflowProtectedTransportTargetContextCapsuleOpeningResult,
     WorkflowRunPlan,
+    code_owned_workflow_protected_resident_context_access_authorization_policy,
 )
 
 STABLE_ID = r"^[a-z][a-z0-9_.:-]{2,239}$"
@@ -2843,6 +2845,150 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseInv
     BaseModel
 ):
     data: WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseInventoryData
+    meta: ResponseMeta
+
+
+class CreateWorkflowProtectedResidentContextAccessAuthorizationInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    opening_result_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    opening_result_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    policy_id: Literal["policy.workflow-protected-resident-context-access-authorization"]
+    policy_version: Literal["1.0"]
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class WorkflowProtectedResidentContextAccessAuthorizationAuthorityData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    protected_access_authority_granted: Literal[True]
+    endpoint_resolution_authorized: Literal[False]
+    route_selection_authorized: Literal[False]
+    route_binding_authorized: Literal[False]
+    credential_selection_authorized: Literal[False]
+    credential_assignment_binding_authorized: Literal[False]
+    credential_access_authorized: Literal[False]
+    credential_brokerage_authorized: Literal[False]
+    credential_resolution_authorized: Literal[False]
+    protected_artifact_access_authorized: Literal[False]
+    credential_delivery_authorized: Literal[False]
+    network_access_authorized: Literal[False]
+    readiness_probe_authorized: Literal[False]
+    publication_authorized: Literal[False]
+    delivery_authorized: Literal[False]
+    dispatch_authorized: Literal[False]
+    execution_authorized: Literal[False]
+    infrastructure_mutation_authorized: Literal[False]
+    handoff_authorized: Literal[False]
+    protected_opening_authorized: Literal[False]
+
+
+class WorkflowProtectedResidentContextAccessAuthorizationData(BaseModel):
+    """Minimized, non-oracle protected-access authorization evidence."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    authorization_lease_id: str = Field(
+        min_length=73,
+        max_length=73,
+        pattern=r"^workflow-protected-resident-context-access-lease\.[0-9a-f]{24}$",
+    )
+    state: Literal["authorized_unconsumed"]
+    effective_state: Literal["active", "expired"]
+    issued_at: datetime
+    valid_until: datetime
+    effective_until: datetime
+    consumer_contract_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    consumer_contract_version: str = Field(min_length=1, max_length=32)
+    purpose_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    policy_id: Literal["policy.workflow-protected-resident-context-access-authorization"]
+    policy_version: Literal["1.0"]
+    destination_profile_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    authority: WorkflowProtectedResidentContextAccessAuthorizationAuthorityData
+    integrity_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+
+    @classmethod
+    def from_domain(
+        cls,
+        lease: WorkflowProtectedResidentContextAccessAuthorizationLease,
+        *,
+        evaluated_at: datetime,
+    ) -> WorkflowProtectedResidentContextAccessAuthorizationData:
+        policy = code_owned_workflow_protected_resident_context_access_authorization_policy()
+        profile_input = "|".join(
+            (
+                policy.destination_boundary_id,
+                policy.destination_deployment_id,
+                str(policy.destination_generation),
+                policy.trusted_opener_profile_digest,
+            )
+        )
+        return cls(
+            authorization_lease_id=lease.authorization_lease_id,
+            state=lease.state.value,
+            effective_state=lease.effective_state(evaluated_at=evaluated_at).value,
+            issued_at=lease.issued_at,
+            valid_until=lease.valid_until,
+            effective_until=lease.effective_until,
+            consumer_contract_id=lease.consumer_contract_id,
+            consumer_contract_version=lease.consumer_contract_version,
+            purpose_id=lease.purpose_id,
+            policy_id=lease.policy_id,
+            policy_version=lease.policy_version,
+            destination_profile_reference=(
+                "integrity.workflow-protected-destination-profile."
+                f"{sha256(profile_input.encode('utf-8')).hexdigest()[:24]}"
+            ),
+            authority=WorkflowProtectedResidentContextAccessAuthorizationAuthorityData(
+                protected_access_authority_granted=(
+                    lease.protected_resident_context_access_authority_granted
+                ),
+                endpoint_resolution_authorized=lease.endpoint_resolution_authorized,
+                route_selection_authorized=lease.route_selection_authorized,
+                route_binding_authorized=lease.route_binding_authorized,
+                credential_selection_authorized=lease.credential_selection_authorized,
+                credential_assignment_binding_authorized=(
+                    lease.credential_assignment_binding_authorized
+                ),
+                credential_access_authorized=lease.credential_access_authorized,
+                credential_brokerage_authorized=lease.credential_brokerage_authorized,
+                credential_resolution_authorized=lease.credential_resolution_authorized,
+                protected_artifact_access_authorized=lease.protected_artifact_access_authorized,
+                credential_delivery_authorized=lease.credential_delivery_authorized,
+                network_access_authorized=lease.network_access_authorized,
+                readiness_probe_authorized=lease.readiness_probe_authorized,
+                publication_authorized=lease.publication_authorized,
+                delivery_authorized=lease.delivery_authorized,
+                dispatch_authorized=lease.dispatch_authorized,
+                execution_authorized=lease.execution_authorized,
+                infrastructure_mutation_authorized=lease.infrastructure_mutation_authorized,
+                handoff_authorized=lease.target_context_capsule_handoff_authorized,
+                protected_opening_authorized=lease.target_context_capsule_opening_authorized,
+            ),
+            integrity_reference=(
+                "integrity.workflow-protected-access-authorization."
+                f"{sha256(lease.authorization_lease_id.encode('utf-8')).hexdigest()[:24]}"
+            ),
+        )
+
+
+class WorkflowProtectedResidentContextAccessAuthorizationInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    authorizations: list[WorkflowProtectedResidentContextAccessAuthorizationData] = Field(
+        max_length=256
+    )
+    server_time: datetime
+    durable: Literal[True]
+
+
+class WorkflowProtectedResidentContextAccessAuthorizationResponse(BaseModel):
+    data: WorkflowProtectedResidentContextAccessAuthorizationData
+    meta: ResponseMeta
+
+
+class WorkflowProtectedResidentContextAccessAuthorizationInventoryResponse(BaseModel):
+    data: WorkflowProtectedResidentContextAccessAuthorizationInventoryData
     meta: ResponseMeta
 
 
