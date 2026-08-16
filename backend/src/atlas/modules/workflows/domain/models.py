@@ -10116,6 +10116,9 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningFailureClass(StrEnum)
     OPENING_OUTCOME_UNCERTAIN = "opening_outcome_uncertain"
 
 
+WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_RESIDENT_CONTEXT_MAXIMUM_LIFETIME_SECONDS = 30
+
+
 @dataclass(frozen=True, slots=True)
 class WorkflowProtectedTransportTargetContextCapsuleOpeningLeaseAuthority:
     endpoint_resolution_authorized: bool = False
@@ -10814,6 +10817,7 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningAttempt:
     lease_valid_until: datetime
     custody_attestation_valid_until: datetime
     openability_attestation_valid_until: datetime
+    resident_context_usable_until_limit: datetime
     state: WorkflowProtectedTransportTargetContextCapsuleOpeningAttemptState
     authority: WorkflowProtectedTransportTargetContextCapsuleOpeningAuthority
     canonical_digest: str
@@ -10867,6 +10871,7 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningAttempt:
             self.lease_valid_until,
             self.custody_attestation_valid_until,
             self.openability_attestation_valid_until,
+            self.resident_context_usable_until_limit,
         )
         if (
             self.started_at.tzinfo is None
@@ -10946,6 +10951,7 @@ class WorkflowProtectedTransportTargetContextCapsuleTrustedOpenerInstruction:
     openability_attestation_digest: str
     started_at: datetime
     opening_deadline: datetime
+    resident_context_usable_until_limit: datetime
     canonical_digest: str
 
     def __post_init__(self) -> None:
@@ -10989,7 +10995,9 @@ class WorkflowProtectedTransportTargetContextCapsuleTrustedOpenerInstruction:
         if (
             self.started_at.tzinfo is None
             or self.opening_deadline.tzinfo is None
+            or self.resident_context_usable_until_limit.tzinfo is None
             or not self.started_at < self.opening_deadline
+            or self.opening_deadline > self.resident_context_usable_until_limit
             or self.consumer_subject_id != policy.consumer_subject_id
             or self.consumer_audience != policy.consumer_audience
             or self.consumer_contract_id != policy.consumer_contract_id
@@ -11046,6 +11054,8 @@ class WorkflowProtectedTransportTargetContextCapsuleTrustedOpenerReceipt:
     failure_class: WorkflowProtectedTransportTargetContextCapsuleOpeningFailureClass | None
     protected_resident_context_id: str | None
     protected_resident_context_digest: str | None
+    protected_resident_context_created_at: datetime | None
+    protected_resident_context_usable_until: datetime | None
     protected_resident_context_is_bearer_capability: bool
     capsule_opened_in_protected_boundary: bool
     target_context_pair_verified: bool
@@ -11104,7 +11114,15 @@ class WorkflowProtectedTransportTargetContextCapsuleTrustedOpenerReceipt:
         if (
             self.completed_at.tzinfo is None
             or self.opening_deadline.tzinfo is None
-            or self.completed_at > self.opening_deadline
+            or self.completed_at >= self.opening_deadline
+            or (
+                self.protected_resident_context_created_at is not None
+                and self.protected_resident_context_created_at.tzinfo is None
+            )
+            or (
+                self.protected_resident_context_usable_until is not None
+                and self.protected_resident_context_usable_until.tzinfo is None
+            )
             or self.opener_contract_id != policy.required_opener_contract_id
             or self.opener_contract_version != policy.required_opener_contract_version
             or self.opener_id != policy.approved_opener_id
@@ -11132,6 +11150,16 @@ class WorkflowProtectedTransportTargetContextCapsuleTrustedOpenerReceipt:
                 self.failure_class is not None
                 or self.protected_resident_context_id is None
                 or self.protected_resident_context_digest is None
+                or self.protected_resident_context_created_at != self.completed_at
+                or self.protected_resident_context_usable_until is None
+                or not self.completed_at < self.protected_resident_context_usable_until
+                or self.protected_resident_context_usable_until
+                > self.completed_at
+                + timedelta(
+                    seconds=(
+                        WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_RESIDENT_CONTEXT_MAXIMUM_LIFETIME_SECONDS
+                    )
+                )
                 or self.capsule_opened_in_protected_boundary is not True
                 or self.target_context_pair_verified is not True
                 or self.protected_source_closed is not True
@@ -11152,6 +11180,8 @@ class WorkflowProtectedTransportTargetContextCapsuleTrustedOpenerReceipt:
             or self.failure_class is uncertain_failure
             or self.protected_resident_context_id is not None
             or self.protected_resident_context_digest is not None
+            or self.protected_resident_context_created_at is not None
+            or self.protected_resident_context_usable_until is not None
             or self.capsule_opened_in_protected_boundary is not False
             or self.target_context_pair_verified is not False
             or self.protected_source_closed is not True
@@ -11203,6 +11233,8 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningResult:
     failure_class: WorkflowProtectedTransportTargetContextCapsuleOpeningFailureClass | None
     protected_resident_context_id: str | None
     protected_resident_context_digest: str | None
+    protected_resident_context_created_at: datetime | None
+    protected_resident_context_usable_until: datetime | None
     protected_resident_context_is_bearer_capability: bool
     capsule_opened_in_protected_boundary: bool
     target_context_pair_verified: bool
@@ -11259,6 +11291,14 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningResult:
             self.recorded_at.tzinfo is None
             or self.opening_deadline.tzinfo is None
             or (self.completed_at is not None and self.completed_at.tzinfo is None)
+            or (
+                self.protected_resident_context_created_at is not None
+                and self.protected_resident_context_created_at.tzinfo is None
+            )
+            or (
+                self.protected_resident_context_usable_until is not None
+                and self.protected_resident_context_usable_until.tzinfo is None
+            )
             or self.consumer_subject_id != policy.consumer_subject_id
             or self.consumer_audience != policy.consumer_audience
             or self.consumer_contract_id != policy.consumer_contract_id
@@ -11279,13 +11319,23 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningResult:
                 or self.opening_receipt_digest is None
                 or self.protected_resident_context_id is None
                 or self.protected_resident_context_digest is None
+                or self.completed_at is None
+                or self.protected_resident_context_created_at != self.completed_at
+                or self.protected_resident_context_usable_until is None
+                or not self.completed_at < self.protected_resident_context_usable_until
+                or self.protected_resident_context_usable_until
+                > self.completed_at
+                + timedelta(
+                    seconds=(
+                        WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_RESIDENT_CONTEXT_MAXIMUM_LIFETIME_SECONDS
+                    )
+                )
                 or self.capsule_opened_in_protected_boundary is not True
                 or self.target_context_pair_verified is not True
                 or self.outcome_known is not True
                 or self.protected_source_closed is not True
                 or self.source_capsule_zeroized is not True
-                or self.completed_at is None
-                or self.completed_at > self.opening_deadline
+                or self.completed_at >= self.opening_deadline
                 or self.recorded_at < self.completed_at
             ):
                 raise ValueError("successful capsule opening result is invalid")
@@ -11304,13 +11354,15 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningResult:
                 or self.opening_receipt_digest is None
                 or self.protected_resident_context_id is not None
                 or self.protected_resident_context_digest is not None
+                or self.protected_resident_context_created_at is not None
+                or self.protected_resident_context_usable_until is not None
                 or self.capsule_opened_in_protected_boundary is not False
                 or self.target_context_pair_verified is not False
                 or self.outcome_known is not True
                 or self.protected_source_closed is not True
                 or self.source_capsule_zeroized is not True
                 or self.completed_at is None
-                or self.completed_at > self.opening_deadline
+                or self.completed_at >= self.opening_deadline
                 or self.recorded_at < self.completed_at
             ):
                 raise ValueError("failed capsule opening result is invalid")
@@ -11320,6 +11372,8 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningResult:
             or self.opening_receipt_digest is not None
             or self.protected_resident_context_id is not None
             or self.protected_resident_context_digest is not None
+            or self.protected_resident_context_created_at is not None
+            or self.protected_resident_context_usable_until is not None
             or self.capsule_opened_in_protected_boundary is not False
             or self.target_context_pair_verified is not False
             or self.outcome_known is not False

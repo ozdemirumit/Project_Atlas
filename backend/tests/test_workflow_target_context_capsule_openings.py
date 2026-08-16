@@ -147,10 +147,17 @@ def _context(
 
 
 class _AuditSink:
-    def __init__(self) -> None:
+    def __init__(self, repository: _Repository | None = None, *, fail: bool = False) -> None:
         self.records: list[AuditRecord] = []
+        self.commit_states: list[bool] = []
+        self._repository = repository
+        self._fail = fail
 
     async def record(self, record: AuditRecord) -> None:
+        if self._repository is not None:
+            self.commit_states.append(self._repository.claim_committed)
+        if self._fail:
+            raise RuntimeError("synthetic audit export failure")
         self.records.append(record)
 
 
@@ -217,7 +224,6 @@ class _Repository:
         self.claim_calls += 1
         self.last_claim_request = request
         validate_workflow_target_context_capsule_opening_claim_request(request)
-        await request.required_precommit_audit()
         policy = code_owned_workflow_protected_transport_target_context_capsule_opening_consumption_policy()  # noqa: E501
         lease = request.source.lease
         claim_values: dict[str, object] = {
@@ -309,6 +315,11 @@ class _Repository:
             "lease_valid_until": lease.valid_until,
             "custody_attestation_valid_until": request.custody_attestation.valid_until,
             "openability_attestation_valid_until": request.openability_attestation.valid_until,
+            "resident_context_usable_until_limit": min(
+                lease.effective_until,
+                request.custody_attestation.valid_until,
+                request.openability_attestation.valid_until,
+            ),
             "state": WorkflowProtectedTransportTargetContextCapsuleOpeningAttemptState.STARTED,
             "authority": WorkflowProtectedTransportTargetContextCapsuleOpeningAuthority(),
         }
@@ -374,6 +385,7 @@ def _service(
     *,
     attestors: SyntheticWorkflowProtectedTargetContextCapsuleOpeningAttestors | None = None,
     opener: SyntheticWorkflowProtectedTargetContextCapsuleTrustedOpener | None = None,
+    audit: _AuditSink | None = None,
 ) -> tuple[
     WorkflowProtectedTransportTargetContextCapsuleOpeningService,
     SyntheticWorkflowProtectedTargetContextCapsuleOpeningAttestors,
@@ -384,7 +396,7 @@ def _service(
         test_enabled=True, clock=lambda: NOW + timedelta(milliseconds=50)
     )
     trusted_opener = opener or _CommitCheckingOpener(repository)
-    audit = _AuditSink()
+    audit_sink = audit or _AuditSink(repository)
     return (
         WorkflowProtectedTransportTargetContextCapsuleOpeningService(
             repository=repository,
@@ -392,11 +404,11 @@ def _service(
             openability_attestor=evidence,
             attestation_signature_verifier=evidence,
             opener=trusted_opener,
-            audit_sink=audit,
+            audit_sink=audit_sink,
         ),
         evidence,
         trusted_opener,
-        audit,
+        audit_sink,
     )
 
 
@@ -433,6 +445,7 @@ async def test_success_commits_before_one_opener_call_and_returns_zero_authority
     assert len(attestors.custody_calls) == len(attestors.openability_calls) == 1
     assert len(opener.calls) == 1
     assert len(audit.records) == 1
+    assert audit.commit_states == [True]
     assert presentation.result is not None
     assert presentation.result.state is (
         WorkflowProtectedTransportTargetContextCapsuleOpeningResultState.OPENED_IN_PROTECTED_CONSUMER_BOUNDARY
@@ -449,6 +462,21 @@ async def test_success_commits_before_one_opener_call_and_returns_zero_authority
     assert (
         custody_request.request_nonce_digest != repository.source.lease.custody_attestation_digest
     )
+
+
+@pytest.mark.asyncio
+async def test_postcommit_audit_export_failure_does_not_retry_or_block_opening() -> None:
+    repository = _Repository()
+    audit = _AuditSink(repository, fail=True)
+    service, _, opener, _ = _service(repository, audit=audit)
+
+    presentation = await _open(service)
+
+    assert audit.commit_states == [True]
+    assert repository.claim_calls == 1
+    assert len(opener.calls) == 1
+    assert repository.result_calls == 1
+    assert presentation.result is not None
 
 
 @pytest.mark.asyncio

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, fields
-from datetime import datetime
+from datetime import datetime, timedelta
 from hashlib import sha256
 from typing import Any, NoReturn, cast
 from uuid import uuid4
@@ -34,6 +34,7 @@ from atlas.modules.workflows.application.target_context_capsule_opening_ports im
     WorkflowTargetContextCapsuleOpeningResultRequest,
 )
 from atlas.modules.workflows.domain import (
+    WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_RESIDENT_CONTEXT_MAXIMUM_LIFETIME_SECONDS,
     WorkflowProtectedTransportTargetContextCapsuleOpeningAttempt,
     WorkflowProtectedTransportTargetContextCapsuleOpeningAuthority,
     WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseEffectiveState,
@@ -205,15 +206,6 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningService:
             "uncertain_outcome_requires_new_authorization_acknowledged": True,
         }
 
-        async def required_precommit_audit() -> None:
-            await self._audit(
-                context=context,
-                opening_id=opening_id,
-                authorization_lease_id=authorization_lease_id,
-                outcome="succeeded",
-                result_code="target_context_capsule_opening_claim_ready",
-            )
-
         claimed = await self._repository.claim_target_context_capsule_opening(
             WorkflowTargetContextCapsuleOpeningClaimRequest(
                 claim_id=claim_id,
@@ -252,7 +244,6 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningService:
                 uncertain_outcome_requires_new_authorization_acknowledged=True,
                 consumption_authorization_audit_payload=audit_payload,
                 consumption_authorization_audit_digest=canonical_digest(audit_payload),
-                required_precommit_audit=required_precommit_audit,
             )
         )
         claim_presentation = self._resolve_claim(claimed.status, claimed.attempt, claimed.result)
@@ -260,6 +251,13 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningService:
             return claim_presentation
         if claimed.claim is None or claimed.attempt is None or claimed.result is not None:
             self._raise("target_context_capsule_opening_claim_commit_uncertain")
+        await self._export_audit_best_effort(
+            context=context,
+            opening_id=opening_id,
+            authorization_lease_id=authorization_lease_id,
+            outcome="succeeded",
+            result_code="target_context_capsule_opening_claim_committed",
+        )
 
         instruction = self._build_instruction(
             source=evidence.source,
@@ -556,8 +554,8 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningService:
             "openability_attestation_digest": attempt.openability_attestation_digest,
             "started_at": attempt.started_at,
             "opening_deadline": attempt.opening_deadline,
+            "resident_context_usable_until_limit": (attempt.resident_context_usable_until_limit),
         }
-        del source
         return WorkflowProtectedTransportTargetContextCapsuleTrustedOpenerInstruction(
             **cast(Any, values), canonical_digest=canonical_digest(_payload(values))
         )
@@ -584,6 +582,25 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningService:
             or receipt.opener_version != self._policy.approved_opener_version
             or receipt.completed_at < instruction.started_at
             or receipt.completed_at >= instruction.opening_deadline
+            or (
+                receipt.state
+                is (
+                    WorkflowProtectedTransportTargetContextCapsuleOpeningResultState
+                ).OPENED_IN_PROTECTED_CONSUMER_BOUNDARY
+                and (
+                    receipt.protected_resident_context_created_at != receipt.completed_at
+                    or receipt.protected_resident_context_usable_until is None
+                    or receipt.protected_resident_context_usable_until
+                    > instruction.resident_context_usable_until_limit
+                    or receipt.protected_resident_context_usable_until
+                    > receipt.completed_at
+                    + timedelta(
+                        seconds=(
+                            WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_RESIDENT_CONTEXT_MAXIMUM_LIFETIME_SECONDS
+                        )
+                    )
+                )
+            )
             or receipt.raw_target_context_returned is not False
             or receipt.runtime_handle_created is not False
             or receipt.network_activity_performed is not False
@@ -635,6 +652,12 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningService:
             "failure_class": receipt.failure_class,
             "protected_resident_context_id": receipt.protected_resident_context_id,
             "protected_resident_context_digest": receipt.protected_resident_context_digest,
+            "protected_resident_context_created_at": (
+                receipt.protected_resident_context_created_at
+            ),
+            "protected_resident_context_usable_until": (
+                receipt.protected_resident_context_usable_until
+            ),
             "protected_resident_context_is_bearer_capability": False,
             "capsule_opened_in_protected_boundary": (receipt.capsule_opened_in_protected_boundary),
             "target_context_pair_verified": receipt.target_context_pair_verified,
@@ -698,6 +721,8 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningService:
             ),
             "protected_resident_context_id": None,
             "protected_resident_context_digest": None,
+            "protected_resident_context_created_at": None,
+            "protected_resident_context_usable_until": None,
             "protected_resident_context_is_bearer_capability": False,
             "capsule_opened_in_protected_boundary": False,
             "target_context_pair_verified": False,
@@ -861,6 +886,12 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningService:
                 ),
             )
         )
+
+    async def _export_audit_best_effort(self, **values: Any) -> None:
+        try:
+            await self._audit(**values)
+        except Exception:
+            return
 
     @staticmethod
     def _raise(code: str) -> NoReturn:

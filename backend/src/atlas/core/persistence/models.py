@@ -10263,7 +10263,8 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningAttemptModel(Base):
             "started_at < opening_deadline "
             "AND opening_deadline <= lease_valid_until "
             "AND opening_deadline <= custody_attestation_valid_until "
-            "AND opening_deadline <= openability_attestation_valid_until",
+            "AND opening_deadline <= openability_attestation_valid_until "
+            "AND opening_deadline <= resident_context_usable_until_limit",
             name="ck_wf_tctx_open_attempt_window",
         ),
         CheckConstraint(
@@ -10392,6 +10393,9 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningAttemptModel(Base):
     openability_attestation_valid_until: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
+    resident_context_usable_until_limit: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
     state: Mapped[str] = mapped_column(String(64), nullable=False)
     endpoint_resolution_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
     route_selection_authority_granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
@@ -10496,24 +10500,34 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningResultModel(Base):
             "AND opening_receipt_payload IS NOT NULL "
             "AND protected_resident_context_id IS NOT NULL "
             "AND protected_resident_context_digest IS NOT NULL "
+            "AND protected_resident_context_created_at IS NOT NULL "
+            "AND protected_resident_context_usable_until IS NOT NULL "
+            "AND protected_resident_context_created_at = completed_at "
+            "AND protected_resident_context_usable_until > protected_resident_context_created_at "
+            "AND protected_resident_context_usable_until <= "
+            "protected_resident_context_created_at + INTERVAL '30 seconds' "
             "AND capsule_opened_in_protected_boundary AND target_context_pair_verified "
             "AND outcome_known AND protected_source_closed AND source_capsule_zeroized "
-            "AND completed_at IS NOT NULL AND completed_at <= opening_deadline "
+            "AND completed_at IS NOT NULL AND completed_at < opening_deadline "
             "AND recorded_at >= completed_at) OR "
             "(state = 'opening_failed' AND failure_class IS NOT NULL "
             "AND failure_class <> 'opening_outcome_uncertain' "
             "AND opening_receipt_digest IS NOT NULL AND opening_receipt_payload IS NOT NULL "
             "AND protected_resident_context_id IS NULL "
             "AND protected_resident_context_digest IS NULL "
+            "AND protected_resident_context_created_at IS NULL "
+            "AND protected_resident_context_usable_until IS NULL "
             "AND NOT capsule_opened_in_protected_boundary AND NOT target_context_pair_verified "
             "AND outcome_known AND protected_source_closed AND source_capsule_zeroized "
-            "AND completed_at IS NOT NULL AND completed_at <= opening_deadline "
+            "AND completed_at IS NOT NULL AND completed_at < opening_deadline "
             "AND recorded_at >= completed_at) OR "
             "(state = 'opening_outcome_uncertain' "
             "AND failure_class = 'opening_outcome_uncertain' "
             "AND opening_receipt_digest IS NULL AND opening_receipt_payload IS NULL "
             "AND protected_resident_context_id IS NULL "
             "AND protected_resident_context_digest IS NULL "
+            "AND protected_resident_context_created_at IS NULL "
+            "AND protected_resident_context_usable_until IS NULL "
             "AND NOT capsule_opened_in_protected_boundary AND NOT target_context_pair_verified "
             "AND NOT outcome_known AND NOT protected_source_closed AND NOT source_capsule_zeroized "
             "AND completed_at IS NULL AND recorded_at >= opening_deadline)",
@@ -10581,6 +10595,12 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningResultModel(Base):
     failure_class: Mapped[str | None] = mapped_column(String(64), nullable=True)
     protected_resident_context_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     protected_resident_context_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    protected_resident_context_created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    protected_resident_context_usable_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     protected_resident_context_is_bearer_capability: Mapped[bool] = mapped_column(
         Boolean, nullable=False
     )

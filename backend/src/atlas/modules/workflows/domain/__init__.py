@@ -1,5 +1,6 @@
 from atlas.modules.workflows.domain.models import (
     NO_EXECUTION_SAFETY_NOTICE,
+    WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_RESIDENT_CONTEXT_MAXIMUM_LIFETIME_SECONDS,
     DeploymentEventTransportProfile,
     DeploymentEventTransportRoute,
     DeploymentEventTransportRouteSelectionHead,
@@ -194,6 +195,7 @@ from atlas.modules.workflows.domain.models import (
 
 __all__ = [
     "NO_EXECUTION_SAFETY_NOTICE",
+    "WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_RESIDENT_CONTEXT_MAXIMUM_LIFETIME_SECONDS",
     "DeploymentEventTransportProfile",
     "DeploymentEventTransportRoute",
     "DeploymentEventTransportRouteSelectionHead",

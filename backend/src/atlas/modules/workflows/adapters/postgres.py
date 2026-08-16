@@ -5578,23 +5578,6 @@ class PostgreSQLWorkflowPlanRepository:
                 opening_deadline=deadline,
             )
             try:
-                session.add(
-                    self._target_context_capsule_opening_consumption_claim_model(
-                        request, claim=claim
-                    )
-                )
-                await session.flush()
-                session.add(
-                    self._target_context_capsule_opening_attempt_model(request, attempt=attempt)
-                )
-                await session.flush()
-                try:
-                    await request.required_precommit_audit()
-                except Exception:
-                    await session.rollback()
-                    return WorkflowTargetContextCapsuleOpeningClaimResult(
-                        statuses.PRECOMMIT_AUDIT_FAILED, None, None, None
-                    )
                 precommit_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
                 if (
                     precommit_at >= deadline
@@ -5607,6 +5590,16 @@ class PostgreSQLWorkflowPlanRepository:
                     return WorkflowTargetContextCapsuleOpeningClaimResult(
                         statuses.EVIDENCE_CONFLICT, None, None, None
                     )
+                session.add(
+                    self._target_context_capsule_opening_consumption_claim_model(
+                        request, claim=claim
+                    )
+                )
+                await session.flush()
+                session.add(
+                    self._target_context_capsule_opening_attempt_model(request, attempt=attempt)
+                )
+                await session.flush()
                 await session.commit()
                 return WorkflowTargetContextCapsuleOpeningClaimResult(
                     statuses.CLAIMED, claim, attempt, None
@@ -11814,6 +11807,100 @@ class PostgreSQLWorkflowPlanRepository:
         request: WorkflowTargetContextCapsuleOpeningClaimRequest,
     ) -> _TargetContextCapsuleOpeningLockedSources:
         requested_lease = request.source.lease
+        lease_hint = cast(
+            WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseModel | None,
+            await session.scalar(
+                select(
+                    WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseModel
+                ).where(
+                    WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseModel.authorization_lease_id
+                    == requested_lease.authorization_lease_id
+                )
+            ),
+        )
+        binding_hint = binding_claim_hint = None
+        if lease_hint is not None:
+            binding_hint = await session.get(
+                WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel,
+                lease_hint.consumer_binding_id,
+            )
+        if binding_hint is not None:
+            binding_claim_hint = cast(
+                WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel | None,
+                await session.scalar(
+                    select(
+                        WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel
+                    ).where(
+                        WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel.binding_id
+                        == binding_hint.binding_id
+                    )
+                ),
+            )
+
+        consumer_binding_sources = (
+            None
+            if binding_hint is None or binding_claim_hint is None
+            else await self._lock_target_context_capsule_consumer_binding_sources(
+                session,
+                request=self._target_context_capsule_handoff_binding_request(
+                    binding_hint,
+                    binding_claim_hint,
+                    requested_at=request.custody_attestation.observed_at,
+                ),
+            )
+        )
+        authorization_claim = handoff_result = handoff_attempt = handoff_claim = None
+        upstream_lease = upstream_claim = consumer_binding = consumer_binding_claim = None
+        if lease_hint is not None:
+            consumer_binding = await session.get(
+                WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel,
+                lease_hint.consumer_binding_id,
+                with_for_update=True,
+            )
+            consumer_binding_claim = cast(
+                WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel | None,
+                await session.scalar(
+                    select(WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel)
+                    .where(
+                        WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel.binding_id
+                        == lease_hint.consumer_binding_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            upstream_lease = await session.get(
+                WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseModel,
+                lease_hint.upstream_authorization_lease_id,
+                with_for_update=True,
+            )
+            upstream_claim = cast(
+                WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationClaimModel | None,
+                await session.scalar(
+                    select(
+                        WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationClaimModel
+                    )
+                    .where(
+                        WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationClaimModel.authorization_lease_id
+                        == lease_hint.upstream_authorization_lease_id
+                    )
+                    .with_for_update()
+                ),
+            )
+            handoff_claim = await session.get(
+                WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaimModel,
+                lease_hint.consumption_claim_id,
+                with_for_update=True,
+            )
+            handoff_attempt = await session.get(
+                WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel,
+                lease_hint.attempt_id,
+                with_for_update=True,
+            )
+            handoff_result = await session.get(
+                WorkflowProtectedTransportTargetContextCapsuleHandoffResultModel,
+                lease_hint.handoff_id,
+                with_for_update=True,
+            )
         lease_row = cast(
             WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationLeaseModel | None,
             await session.scalar(
@@ -11825,9 +11912,6 @@ class PostgreSQLWorkflowPlanRepository:
                 .with_for_update()
             ),
         )
-        authorization_claim = handoff_result = handoff_attempt = handoff_claim = None
-        upstream_lease = upstream_claim = consumer_binding = consumer_binding_claim = None
-        consumer_binding_sources = None
         if lease_row is not None:
             authorization_claim = cast(
                 WorkflowProtectedTransportTargetContextCapsuleOpeningAuthorizationClaimModel | None,
@@ -11842,66 +11926,6 @@ class PostgreSQLWorkflowPlanRepository:
                     .with_for_update()
                 ),
             )
-            handoff_result = await session.get(
-                WorkflowProtectedTransportTargetContextCapsuleHandoffResultModel,
-                lease_row.handoff_id,
-                with_for_update=True,
-            )
-            handoff_attempt = await session.get(
-                WorkflowProtectedTransportTargetContextCapsuleHandoffAttemptModel,
-                lease_row.attempt_id,
-                with_for_update=True,
-            )
-            handoff_claim = await session.get(
-                WorkflowProtectedTransportTargetContextCapsuleHandoffConsumptionClaimModel,
-                lease_row.consumption_claim_id,
-                with_for_update=True,
-            )
-            upstream_lease = await session.get(
-                WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseModel,
-                lease_row.upstream_authorization_lease_id,
-                with_for_update=True,
-            )
-            upstream_claim = cast(
-                WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationClaimModel | None,
-                await session.scalar(
-                    select(
-                        WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationClaimModel
-                    )
-                    .where(
-                        WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationClaimModel.authorization_lease_id
-                        == lease_row.upstream_authorization_lease_id
-                    )
-                    .with_for_update()
-                ),
-            )
-            consumer_binding = await session.get(
-                WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel,
-                lease_row.consumer_binding_id,
-                with_for_update=True,
-            )
-            consumer_binding_claim = cast(
-                WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel | None,
-                await session.scalar(
-                    select(WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel)
-                    .where(
-                        WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel.binding_id
-                        == lease_row.consumer_binding_id
-                    )
-                    .with_for_update()
-                ),
-            )
-            if consumer_binding is not None and consumer_binding_claim is not None:
-                consumer_binding_sources = (
-                    await self._lock_target_context_capsule_consumer_binding_sources(
-                        session,
-                        request=self._target_context_capsule_handoff_binding_request(
-                            consumer_binding,
-                            consumer_binding_claim,
-                            requested_at=request.custody_attestation.observed_at,
-                        ),
-                    )
-                )
         consumption_claims = await self._load_target_context_capsule_opening_consumption_claims(
             session,
             authorization_lease_id=requested_lease.authorization_lease_id,
@@ -12269,6 +12293,11 @@ class PostgreSQLWorkflowPlanRepository:
             "lease_valid_until": lease.valid_until,
             "custody_attestation_valid_until": request.custody_attestation.valid_until,
             "openability_attestation_valid_until": request.openability_attestation.valid_until,
+            "resident_context_usable_until_limit": min(
+                lease.effective_until,
+                request.custody_attestation.valid_until,
+                request.openability_attestation.valid_until,
+            ),
             "state": WorkflowProtectedTransportTargetContextCapsuleOpeningAttemptState.STARTED,
             "authority": WorkflowProtectedTransportTargetContextCapsuleOpeningAuthority(),
         }
@@ -12423,6 +12452,7 @@ class PostgreSQLWorkflowPlanRepository:
                 "lease_valid_until",
                 "custody_attestation_valid_until",
                 "openability_attestation_valid_until",
+                "resident_context_usable_until_limit",
             ):
                 values[name] = datetime.fromisoformat(str(values[name]))
             values["state"] = WorkflowProtectedTransportTargetContextCapsuleOpeningAttemptState(
@@ -12504,8 +12534,13 @@ class PostgreSQLWorkflowPlanRepository:
             values["scope"] = WorkflowScope(**cast(Any, values["scope"]))
             values["recorded_at"] = datetime.fromisoformat(str(values["recorded_at"]))
             values["opening_deadline"] = datetime.fromisoformat(str(values["opening_deadline"]))
-            if values["completed_at"] is not None:
-                values["completed_at"] = datetime.fromisoformat(str(values["completed_at"]))
+            for name in (
+                "completed_at",
+                "protected_resident_context_created_at",
+                "protected_resident_context_usable_until",
+            ):
+                if values[name] is not None:
+                    values[name] = datetime.fromisoformat(str(values[name]))
             values["state"] = WorkflowProtectedTransportTargetContextCapsuleOpeningResultState(
                 str(values["state"])
             )
@@ -12596,6 +12631,10 @@ class PostgreSQLWorkflowPlanRepository:
                 and receipt.protected_resident_context_id == result.protected_resident_context_id
                 and receipt.protected_resident_context_digest
                 == result.protected_resident_context_digest
+                and receipt.protected_resident_context_created_at
+                == result.protected_resident_context_created_at
+                and receipt.protected_resident_context_usable_until
+                == result.protected_resident_context_usable_until
                 and receipt.protected_resident_context_is_bearer_capability
                 is result.protected_resident_context_is_bearer_capability
                 is False
@@ -12659,10 +12698,22 @@ class PostgreSQLWorkflowPlanRepository:
             == policy.approved_opener_version
             and result.opening_deadline == attempt.opening_deadline
             and result.recorded_at <= observed_at
+            and cls._target_context_capsule_opening_resident_context_within_source_lifetime(
+                usable_until=result.protected_resident_context_usable_until,
+                attempt=attempt,
+            )
             and receipt_matches
             and ((receipt is None and uncertain) or (receipt is not None and not uncertain))
             and not any(result.authority.canonical_value().values())
         )
+
+    @staticmethod
+    def _target_context_capsule_opening_resident_context_within_source_lifetime(
+        *,
+        usable_until: datetime | None,
+        attempt: WorkflowProtectedTransportTargetContextCapsuleOpeningAttempt,
+    ) -> bool:
+        return usable_until is None or usable_until <= attempt.resident_context_usable_until_limit
 
     @staticmethod
     def _target_context_artifact_opening_request_is_valid(

@@ -284,6 +284,9 @@ def upgrade() -> None:
         sa.Column(
             "openability_attestation_valid_until", sa.DateTime(timezone=True), nullable=False
         ),
+        sa.Column(
+            "resident_context_usable_until_limit", sa.DateTime(timezone=True), nullable=False
+        ),
         sa.Column("state", sa.String(64), nullable=False),
         *_authority_columns(),
         sa.Column("canonical_digest", sa.String(64), nullable=False),
@@ -296,7 +299,8 @@ def upgrade() -> None:
             "started_at < opening_deadline "
             "AND opening_deadline <= lease_valid_until "
             "AND opening_deadline <= custody_attestation_valid_until "
-            "AND opening_deadline <= openability_attestation_valid_until",
+            "AND opening_deadline <= openability_attestation_valid_until "
+            "AND opening_deadline <= resident_context_usable_until_limit",
             name="ck_wf_tctx_open_attempt_window",
         ),
         sa.CheckConstraint(
@@ -408,6 +412,12 @@ def upgrade() -> None:
         sa.Column("failure_class", sa.String(64), nullable=True),
         sa.Column("protected_resident_context_id", sa.String(128), nullable=True),
         sa.Column("protected_resident_context_digest", sa.String(64), nullable=True),
+        sa.Column(
+            "protected_resident_context_created_at", sa.DateTime(timezone=True), nullable=True
+        ),
+        sa.Column(
+            "protected_resident_context_usable_until", sa.DateTime(timezone=True), nullable=True
+        ),
         sa.Column("protected_resident_context_is_bearer_capability", sa.Boolean(), nullable=False),
         sa.Column("capsule_opened_in_protected_boundary", sa.Boolean(), nullable=False),
         sa.Column("target_context_pair_verified", sa.Boolean(), nullable=False),
@@ -433,24 +443,34 @@ def upgrade() -> None:
             "AND opening_receipt_payload IS NOT NULL "
             "AND protected_resident_context_id IS NOT NULL "
             "AND protected_resident_context_digest IS NOT NULL "
+            "AND protected_resident_context_created_at IS NOT NULL "
+            "AND protected_resident_context_usable_until IS NOT NULL "
+            "AND protected_resident_context_created_at = completed_at "
+            "AND protected_resident_context_usable_until > protected_resident_context_created_at "
+            "AND protected_resident_context_usable_until <= "
+            "protected_resident_context_created_at + INTERVAL '30 seconds' "
             "AND capsule_opened_in_protected_boundary AND target_context_pair_verified "
             "AND outcome_known AND protected_source_closed AND source_capsule_zeroized "
-            "AND completed_at IS NOT NULL AND completed_at <= opening_deadline "
+            "AND completed_at IS NOT NULL AND completed_at < opening_deadline "
             "AND recorded_at >= completed_at) OR "
             "(state = 'opening_failed' AND failure_class IS NOT NULL "
             "AND failure_class <> 'opening_outcome_uncertain' "
             "AND opening_receipt_digest IS NOT NULL AND opening_receipt_payload IS NOT NULL "
             "AND protected_resident_context_id IS NULL "
             "AND protected_resident_context_digest IS NULL "
+            "AND protected_resident_context_created_at IS NULL "
+            "AND protected_resident_context_usable_until IS NULL "
             "AND NOT capsule_opened_in_protected_boundary AND NOT target_context_pair_verified "
             "AND outcome_known AND protected_source_closed AND source_capsule_zeroized "
-            "AND completed_at IS NOT NULL AND completed_at <= opening_deadline "
+            "AND completed_at IS NOT NULL AND completed_at < opening_deadline "
             "AND recorded_at >= completed_at) OR "
             "(state = 'opening_outcome_uncertain' "
             "AND failure_class = 'opening_outcome_uncertain' "
             "AND opening_receipt_digest IS NULL AND opening_receipt_payload IS NULL "
             "AND protected_resident_context_id IS NULL "
             "AND protected_resident_context_digest IS NULL "
+            "AND protected_resident_context_created_at IS NULL "
+            "AND protected_resident_context_usable_until IS NULL "
             "AND NOT capsule_opened_in_protected_boundary AND NOT target_context_pair_verified "
             "AND NOT outcome_known AND NOT protected_source_closed AND NOT source_capsule_zeroized "
             "AND completed_at IS NULL AND recorded_at >= opening_deadline)",

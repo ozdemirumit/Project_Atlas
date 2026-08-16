@@ -145,6 +145,7 @@ def _attempt() -> WorkflowProtectedTransportTargetContextCapsuleOpeningAttempt:
         "lease_valid_until": NOW + timedelta(seconds=1),
         "custody_attestation_valid_until": NOW + timedelta(seconds=1),
         "openability_attestation_valid_until": NOW + timedelta(seconds=1),
+        "resident_context_usable_until_limit": NOW + timedelta(seconds=1),
         "state": WorkflowProtectedTransportTargetContextCapsuleOpeningAttemptState.STARTED,
         "authority": WorkflowProtectedTransportTargetContextCapsuleOpeningAuthority(),
     }
@@ -194,6 +195,7 @@ def _instruction() -> WorkflowProtectedTransportTargetContextCapsuleTrustedOpene
             "opening_deadline",
         )
     }
+    values["resident_context_usable_until_limit"] = NOW + timedelta(seconds=1)
     return WorkflowProtectedTransportTargetContextCapsuleTrustedOpenerInstruction(
         **cast(Any, values), canonical_digest=canonical_digest(_payload(values))
     )
@@ -235,6 +237,12 @@ def _receipt(
             "protected-resident-target-context.imp-215" if succeeded else None
         ),
         "protected_resident_context_digest": "e" * 64 if succeeded else None,
+        "protected_resident_context_created_at": (
+            NOW + timedelta(milliseconds=250) if succeeded else None
+        ),
+        "protected_resident_context_usable_until": (
+            NOW + timedelta(milliseconds=750) if succeeded else None
+        ),
         "protected_resident_context_is_bearer_capability": False,
         "capsule_opened_in_protected_boundary": succeeded,
         "target_context_pair_verified": succeeded,
@@ -299,6 +307,12 @@ def _result(
             "protected-resident-target-context.imp-215" if success else None
         ),
         "protected_resident_context_digest": "e" * 64 if success else None,
+        "protected_resident_context_created_at": (
+            NOW + timedelta(milliseconds=250) if success else None
+        ),
+        "protected_resident_context_usable_until": (
+            NOW + timedelta(milliseconds=750) if success else None
+        ),
         "protected_resident_context_is_bearer_capability": False,
         "capsule_opened_in_protected_boundary": success,
         "target_context_pair_verified": success,
@@ -413,6 +427,9 @@ def test_trusted_opener_receipt_supports_only_signed_success_or_known_failure() 
     failure = _receipt(FAILURE_STATE)
 
     assert success.protected_resident_context_id is not None
+    assert success.protected_resident_context_created_at == success.completed_at
+    assert success.protected_resident_context_usable_until is not None
+    assert success.protected_resident_context_usable_until > success.completed_at
     assert success.protected_resident_context_is_bearer_capability is False
     assert success.runtime_handle_created is False
     assert success.network_activity_performed is False
@@ -426,6 +443,17 @@ def test_trusted_opener_receipt_supports_only_signed_success_or_known_failure() 
             failure,
             state=UNCERTAIN_STATE,
             failure_class=UNCERTAIN_FAILURE,
+        )
+    with pytest.raises(ValueError, match="successful trusted capsule opener receipt"):
+        replace(
+            success,
+            protected_resident_context_usable_until=(success.completed_at + timedelta(seconds=31)),
+        )
+    with pytest.raises(ValueError, match="receipt is unsafe"):
+        replace(
+            success,
+            completed_at=OPENING_DEADLINE,
+            protected_resident_context_created_at=OPENING_DEADLINE,
         )
 
 
@@ -454,6 +482,8 @@ def test_result_models_distinguish_success_failure_and_receiptless_uncertainty()
 
     assert success.opening_receipt_digest is not None
     assert success.protected_resident_context_id is not None
+    assert success.protected_resident_context_created_at == success.completed_at
+    assert success.protected_resident_context_usable_until is not None
     assert success.protected_resident_context_is_bearer_capability is False
     assert failure.opening_receipt_digest is not None
     assert failure.outcome_known is True
@@ -472,3 +502,9 @@ def test_result_rejects_receipt_for_uncertainty_and_unconfirmed_known_cleanup() 
         replace(uncertain, opening_receipt_digest="f" * 64)
     with pytest.raises(ValueError, match="failed capsule opening result"):
         replace(failure, protected_source_closed=False)
+    with pytest.raises(ValueError, match="successful capsule opening result"):
+        replace(
+            _result(SUCCESS_STATE),
+            completed_at=OPENING_DEADLINE,
+            protected_resident_context_created_at=OPENING_DEADLINE,
+        )

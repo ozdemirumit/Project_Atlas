@@ -15,6 +15,7 @@ from atlas.modules.workflows.application.target_context_capsule_opening_ports im
     WorkflowProtectedTransportTargetContextCapsuleOpeningError,
 )
 from atlas.modules.workflows.domain import (
+    WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_RESIDENT_CONTEXT_MAXIMUM_LIFETIME_SECONDS,
     WorkflowProtectedTransportTargetContextCapsuleOpeningConsumptionPolicy,
     WorkflowProtectedTransportTargetContextCapsuleOpeningFailureClass,
     WorkflowProtectedTransportTargetContextCapsuleOpeningResultState,
@@ -276,6 +277,20 @@ class SyntheticWorkflowProtectedTargetContextCapsuleTrustedOpener:
                 WorkflowProtectedTransportTargetContextCapsuleOpeningFailureClass.DEADLINE_EXPIRED
             )
         failed = failure is not None
+        resident_context_created_at = None if failed else completed_at
+        resident_context_usable_until = (
+            None
+            if failed
+            else min(
+                instruction.resident_context_usable_until_limit,
+                completed_at
+                + timedelta(
+                    seconds=(
+                        WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_RESIDENT_CONTEXT_MAXIMUM_LIFETIME_SECONDS
+                    )
+                ),
+            )
+        )
         resident_digest = canonical_digest(
             {
                 "attempt_id": instruction.attempt_id,
@@ -317,6 +332,8 @@ class SyntheticWorkflowProtectedTargetContextCapsuleTrustedOpener:
                 None if failed else f"protected-resident-target-context.{resident_digest[:24]}"
             ),
             "protected_resident_context_digest": None if failed else resident_digest,
+            "protected_resident_context_created_at": resident_context_created_at,
+            "protected_resident_context_usable_until": resident_context_usable_until,
             "protected_resident_context_is_bearer_capability": False,
             "capsule_opened_in_protected_boundary": not failed,
             "target_context_pair_verified": not failed,

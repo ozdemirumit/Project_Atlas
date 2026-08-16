@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-215 |
 | Title | Atomic single-use consumer-side protected target-context capsule opening lease consumption without runtime, delivery, execution or infrastructure mutation authority |
-| Status | In Progress |
+| Status | Validation In Progress |
 | Branch | `agent/protected-capsule-opening-consumption` |
 | Pull Request | Not opened |
 | Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-159, ADR-160, ADR-161, ADR-162, ADR-163, ADR-164, ADR-165 |
 | Last Updated | 2026-08-16 |
-| Next Action | Implement ADR-165 as an isolated backend, API and read-only UI vertical slice and add live PostgreSQL behavior gates for IMP-213 and IMP-215 |
+| Next Action | Complete independent review, full regression, exact-head PR CI, SHA-locked merge and merged-main CI for ADR-165 |
 
 ### ATLAS-IMP-215 Scope Rationale
 
@@ -34,8 +34,9 @@
   openability attestations are obtained outside the transaction and verified offline again under
   canonical PostgreSQL locks.
 - PostgreSQL revalidates the complete ADR-159 through ADR-164 lineage, pending outbox, current route
-  and credential-assignment heads, destination fence, custody finality and all deadlines before and
-  after precommit audit.
+  and credential-assignment heads, destination fence, custody finality and all deadlines twice
+  before atomic append. Canonical audit evidence is committed with the claim; external audit and
+  SIEM export occur only after commit.
 - One transaction appends a unique consumption claim and started attempt. Their commit is the
   irreversible point of no return and occurs before any trusted opener call.
 - The trusted opener may unseal only the exact handed-off capsule inside the exact consumer
@@ -55,6 +56,32 @@
   destination; there is no process-memory, permissive or unguarded synthetic fallback.
 - Real PostgreSQL CI verifies IMP-213 handoff and IMP-215 opening concurrency, lineage,
   append-only, crash-state and guarded-downgrade behavior.
+
+### ATLAS-IMP-215 Local Verification
+
+- Backend Ruff formatting and lint passed across `1455` files. Strict MyPy passed across `1316`
+  source and test files. The full backend suite passed `2455` tests with `33`
+  environment-dependent skips before the final live-PostgreSQL-only negative test was added; the
+  current focused domain, application, API and PostgreSQL set passed `58` tests with `4` local
+  PostgreSQL skips.
+- Alembic reports the single `20260816_0138` head. ORM and migration coverage verifies immutable
+  claim/attempt/result evidence, exact composite lineage, all authority declarations false,
+  strict completion deadlines, signed resident-context timestamps and the persisted source-
+  lifetime ceiling.
+- The PostgreSQL CI input now exercises actual repository claim concurrency and replay, second-
+  database-time drift rollback, and result-write rejection when signed resident-context
+  `usable_until` exceeds the persisted source ceiling by one microsecond. The rejection must return
+  `CONFLICT` and insert no result row.
+- Independent review findings were addressed by persisting signed resident-context creation and
+  expiry evidence, moving external audit/SIEM I/O after commit, enforcing strict deadline
+  comparisons, restoring upstream-first canonical lock order, and exercising real repository
+  transaction paths. No production opener retry, runtime, network, delivery, dispatch, execution
+  or infrastructure-mutation authority was introduced. Final independent closure review found no
+  remaining P0, P1 or P2 issue.
+- Frontend TypeScript, ESLint and the full `95`-file, `805`-test suite passed before the backend-only
+  review repairs. Live desktop and mobile inspection confirmed the read-only target-context
+  capsule-opening presentation has no operational controls, overflow or browser-console errors and
+  fails closed when protected backend state is unavailable.
 
 ### ATLAS-IMP-214 Delivery Evidence
 

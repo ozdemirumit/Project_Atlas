@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, fields
 from datetime import datetime
 from enum import StrEnum
@@ -342,7 +341,6 @@ class WorkflowTargetContextCapsuleOpeningClaimRequest:
     uncertain_outcome_requires_new_authorization_acknowledged: bool
     consumption_authorization_audit_payload: dict[str, object]
     consumption_authorization_audit_digest: str
-    required_precommit_audit: Callable[[], Awaitable[None]]
 
 
 @dataclass(frozen=True, slots=True)

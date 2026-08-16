@@ -135,14 +135,17 @@ Cancellation, publication, quarantine, supersession, ambiguity, expiry, revocati
 destination drift, route drift, credential drift, custody-finality loss, restored source reuse
 authority or integrity failure fails closed.
 
-Code-owned consumption-authorization audit evidence is stored with the claim. After precommit
-audit, Atlas obtains a second database time and repeats database-resident currentness, integrity,
-deadline and replay checks immediately before append. The transaction atomically appends exactly
-one consumption claim and one started attempt. That commit is the irreversible point of no return.
+Code-owned canonical consumption-authorization audit payload and digest are stored with the claim
+inside the same transaction. No audit sink, SIEM adapter or other external I/O runs in that
+transaction. Atlas obtains a second database time and repeats database-resident currentness,
+integrity, deadline and replay checks immediately before append. The transaction atomically
+appends exactly one consumption claim and one started attempt. That commit is the irreversible
+point of no return.
 
 A rollback or validation failure before commit leaves the lease unconsumed and no opener is
 called. After commit, every failure, crash or uncertainty leaves the lease permanently consumed.
-SIEM and external audit export occur after commit and are never the source of truth.
+SIEM and external audit export occur after commit, are best-effort delivery from canonical durable
+evidence and are never the source of truth. Export failure cannot roll back or retry the opener.
 
 ### Trusted Consumer-Boundary Opener
 
@@ -168,6 +171,11 @@ capsule, handoff receipt, protected material, destination custody or code-owned 
 lifetime. Production fails closed without the approved trusted opener and protected destination.
 A deterministic development adapter may emit fixed metadata only when explicitly test-enabled and
 must perform no filesystem, process, provider, network, dispatch, execution or mutation operation.
+
+The started attempt persists the exact immutable resident-context lifetime ceiling derived from
+the opening lease effective window and both fresh attestation deadlines. Result persistence
+revalidates signed `usable_until` against that stored ceiling, independently of application-service
+receipt validation.
 
 ### Outcomes, Replay And Recovery
 
