@@ -455,6 +455,7 @@ class WorkflowProtectedRuntimeContextInjectionConsumptionService:
             lifecycle.handle_retrieval_authorized,
             lifecycle.handle_use_authorized,
             lifecycle.runtime_use_authorized,
+            lifecycle.runtime_context_injection_authorized,
             lifecycle.injection_consumption_outstanding,
             lifecycle.connector_activity_authorized,
             lifecycle.network_activity_authorized,
@@ -502,7 +503,6 @@ class WorkflowProtectedRuntimeContextInjectionConsumptionService:
             or lifecycle.destination_fence_current is not True
             or lifecycle.injector_profile_eligible is not True
             or lifecycle.runtime_slot_profile_eligible is not True
-            or lifecycle.runtime_context_injection_authorized is not True
             or any(unsafe_lifecycle)
             or readiness.exact_runtime_slot_confirmed is not True
             or readiness.runtime_slot_empty is not True

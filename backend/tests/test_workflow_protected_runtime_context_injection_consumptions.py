@@ -32,6 +32,7 @@ from atlas.modules.workflows.application.target_context_capsule_handoff_authoriz
 from atlas.modules.workflows.domain import (
     WorkflowProtectedRuntimeContextTrustedInjectorInvocation,
     WorkflowScope,
+    canonical_digest,
 )
 
 NOW = datetime(2026, 8, 16, 12, 0, tzinfo=UTC)
@@ -205,6 +206,114 @@ def test_public_command_accepts_only_lease_and_governance_metadata() -> None:
     assert "protected_runtime_handle_digest" not in parameters
     assert "runtime_slot_commitment" not in parameters
     assert "runtime_slot_pre_generation" not in parameters
+
+
+def test_fresh_lifecycle_attestation_is_metadata_only_and_grants_no_injection_authority() -> None:
+    order: list[str] = []
+    service = _service(_Repository(order), _Injector(order), order)
+    valid_until = NOW + timedelta(seconds=1)
+    lease = SimpleNamespace(
+        valid_until=valid_until,
+        protected_runtime_handle_usable_until=valid_until,
+        protected_runtime_handle_digest="a" * 64,
+    )
+    lifecycle_payload = {"evidence": "lifecycle"}
+    readiness_payload = {"evidence": "readiness"}
+    lifecycle = SimpleNamespace(
+        request_nonce_digest="b" * 64,
+        observed_at=NOW,
+        valid_until=valid_until,
+        protected_runtime_handle_digest=lease.protected_runtime_handle_digest,
+        runtime_handle_present=True,
+        runtime_handle_is_bearer_capability=False,
+        runtime_handle_unexpired=True,
+        runtime_handle_unrevoked=True,
+        runtime_handle_undestroyed=True,
+        runtime_handle_uninjected=True,
+        runtime_handle_unused=True,
+        destination_generation_current=True,
+        destination_fence_current=True,
+        injector_profile_eligible=True,
+        runtime_slot_profile_eligible=True,
+        raw_context_included=False,
+        runtime_handle_material_included=False,
+        runtime_payload_included=False,
+        runtime_handle_locator_included=False,
+        endpoint_included=False,
+        credential_included=False,
+        secret_included=False,
+        bearer_token_included=False,
+        provider_payload_included=False,
+        handle_lookup_authorized=False,
+        handle_retrieval_authorized=False,
+        handle_use_authorized=False,
+        runtime_use_authorized=False,
+        runtime_context_injection_authorized=False,
+        injection_consumption_outstanding=False,
+        connector_activity_authorized=False,
+        network_activity_authorized=False,
+        readiness_probe_authorized=False,
+        publication_authorized=False,
+        delivery_authorized=False,
+        dispatch_authorized=False,
+        execution_authorized=False,
+        infrastructure_mutation_authorized=False,
+        canonical_digest=canonical_digest(lifecycle_payload),
+        digest_payload=lambda: lifecycle_payload,
+    )
+    readiness = SimpleNamespace(
+        request_nonce_digest=lifecycle.request_nonce_digest,
+        observed_at=NOW,
+        valid_until=valid_until,
+        protected_runtime_handle_digest=lease.protected_runtime_handle_digest,
+        exact_runtime_slot_confirmed=True,
+        runtime_slot_empty=True,
+        runtime_slot_inert=True,
+        runtime_slot_eligible=True,
+        atomic_compare_and_swap_supported=True,
+        destination_generation_current=True,
+        destination_fence_current=True,
+        injector_profile_eligible=True,
+        runtime_autostart_disabled=True,
+        runtime_slot_pre_generation=0,
+        runtime_slot_commitment="c" * 64,
+        raw_context_included=False,
+        runtime_handle_material_included=False,
+        runtime_payload_included=False,
+        runtime_slot_locator_included=False,
+        endpoint_included=False,
+        credential_included=False,
+        bearer_token_included=False,
+        connector_activity_authorized=False,
+        network_activity_authorized=False,
+        readiness_probe_authorized=False,
+        execution_authorized=False,
+        infrastructure_mutation_authorized=False,
+        canonical_digest=canonical_digest(readiness_payload),
+        digest_payload=lambda: readiness_payload,
+    )
+    verifier = cast(Any, service)._lifecycle_signature_verifier
+    verifier.verify_runtime_handle_lifecycle_attestation = lambda value: True
+    slot_verifier = cast(Any, service)._slot_readiness_signature_verifier
+    slot_verifier.verify_runtime_slot_readiness_attestation = lambda value: True
+
+    cast(Any, service)._validate_fresh_evidence(
+        source=SimpleNamespace(authorization_lease=lease),
+        lifecycle=lifecycle,
+        readiness=readiness,
+        nonce_digest=lifecycle.request_nonce_digest,
+        requested_at=NOW,
+    )
+
+    lifecycle.runtime_context_injection_authorized = True
+    with pytest.raises(WorkflowProtectedRuntimeContextInjectionConsumptionError):
+        cast(Any, service)._validate_fresh_evidence(
+            source=SimpleNamespace(authorization_lease=lease),
+            lifecycle=lifecycle,
+            readiness=readiness,
+            nonce_digest=lifecycle.request_nonce_digest,
+            requested_at=NOW,
+        )
 
 
 @pytest.mark.asyncio
