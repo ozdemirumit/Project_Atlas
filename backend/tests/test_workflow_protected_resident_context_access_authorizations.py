@@ -111,9 +111,11 @@ class _Repository:
         *,
         status: WorkflowProtectedResidentContextAccessAuthorizationPreflightStatus,
         lease: _Lease | None = None,
+        evaluated_at: datetime = NOW + timedelta(milliseconds=100),
     ) -> None:
         self.status = status
         self.lease = lease
+        self.evaluated_at = evaluated_at
         self.preflights: list[
             WorkflowProtectedResidentContextAccessAuthorizationPreflightRequest
         ] = []
@@ -127,7 +129,7 @@ class _Repository:
         return WorkflowProtectedResidentContextAccessAuthorizationPreflightResult(
             status=self.status,
             lease=cast(Any, self.lease),
-            evaluated_at=NOW + timedelta(milliseconds=100),
+            evaluated_at=self.evaluated_at,
         )
 
     async def get_authoritative_time(self) -> datetime:
@@ -241,6 +243,40 @@ async def test_durable_exact_replay_precedes_attestor_io_and_audit_is_best_effor
     assert attestor.calls == 0
     assert len(audit_sink.records) == 1
     assert audit_sink.records[0].idempotency_key is None
+
+
+@pytest.mark.asyncio
+async def test_durable_exact_replay_returns_expired_historical_lease_without_external_io() -> None:
+    provisional = replace(
+        _lease(),
+        issued_at=NOW - timedelta(seconds=2),
+        valid_until=NOW - timedelta(seconds=1),
+        canonical_digest="",
+    )
+    expired = replace(
+        provisional,
+        canonical_digest=canonical_digest(provisional.digest_payload()),
+    )
+    repository = _Repository(
+        status=WorkflowProtectedResidentContextAccessAuthorizationPreflightStatus.REPLAY,
+        lease=expired,
+        evaluated_at=NOW + timedelta(seconds=1),
+    )
+    attestor = _Attestor()
+
+    lease = await _service(repository, attestor, _FailingAuditSink()).authorize(
+        opening_result_id="workflow-target-context-capsule-opening.imp-216",
+        opening_result_digest="b" * 64,
+        policy_id=_Policy.policy_id,
+        policy_version=_Policy.policy_version,
+        idempotency_key="imp-216-expired-exact-replay",
+        context=_context(),
+    )
+
+    assert lease is cast(Any, expired)
+    assert repository.source_calls == 0
+    assert repository.authorization_calls == 0
+    assert attestor.calls == 0
 
 
 @pytest.mark.asyncio

@@ -161,11 +161,7 @@ class WorkflowProtectedResidentContextAccessAuthorizationService:
                 self._raise(
                     "workflow_protected_resident_context_access_repository_contract_violation"
                 )
-            self._validate_lease(
-                preflight.lease,
-                scope=context.scope,
-                evaluated_at=preflight.evaluated_at,
-            )
+            self._validate_historical_lease(preflight.lease, scope=context.scope)
             await self._postcommit_audit(
                 context,
                 result_code="workflow_protected_resident_context_access_authorization_replayed",

@@ -10762,7 +10762,7 @@ class WorkflowProtectedResidentContextAccessAuthorizationLeaseModel(Base):
             "'policy.workflow-protected-resident-context-access-authorization' "
             "AND policy_version = '1.0' "
             "AND policy_digest = "
-            "'03ea152c983e2e0a5e28acf07a4e22d127fbcbca8772906e6ece1f290bdc133c'",
+            "'51141a6f2a3bbc6e61a3d95f76088325ec5f04e7246a05d334365dc941a83555'",
             name="ck_wf_rc_access_auth_lease_contract",
         ),
         CheckConstraint(
@@ -10988,7 +10988,7 @@ class WorkflowProtectedResidentContextAccessAuthorizationClaimModel(Base):
             "'policy.workflow-protected-resident-context-access-authorization' "
             "AND policy_version = '1.0' "
             "AND policy_digest = "
-            "'03ea152c983e2e0a5e28acf07a4e22d127fbcbca8772906e6ece1f290bdc133c'",
+            "'51141a6f2a3bbc6e61a3d95f76088325ec5f04e7246a05d334365dc941a83555'",
             name="ck_wf_rc_access_auth_claim_contract",
         ),
         CheckConstraint(

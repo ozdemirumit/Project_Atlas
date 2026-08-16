@@ -30,7 +30,7 @@ MIGRATION = (
     / "versions"
     / "20260816_0139_workflow_protected_resident_context_access_authorization.py"
 )
-POLICY_DIGEST = "03ea152c983e2e0a5e28acf07a4e22d127fbcbca8772906e6ece1f290bdc133c"
+POLICY_DIGEST = "51141a6f2a3bbc6e61a3d95f76088325ec5f04e7246a05d334365dc941a83555"
 
 
 def test_migration_is_append_only_guarded_non_colliding_and_exactly_lined() -> None:
@@ -118,12 +118,20 @@ def test_repository_uses_upstream_first_locks_two_db_times_and_no_attestor_io() 
     assert lock.count("clock_timestamp") == 2
     assert "with_for_update" in lock
     authorize = inspect.getsource(
-        PostgreSQLWorkflowPlanRepository.authorize_resident_context_access
+        PostgreSQLWorkflowPlanRepository.authorize_protected_resident_context_access
     )
     assert "attest_resident_context_lifecycle" not in authorize
     assert "session.commit" in authorize
     assert "IntegrityError" in authorize
-    assert "_resident_context_access_replay" in authorize
+    assert "_protected_resident_context_access_replay" in authorize
+    assert '"authorization_lease_id"' in authorize
+    assert '"access_authorization_lease_id"' not in authorize
+    assert '"protected_resident_context_access_authority_granted"' in authorize
+    assert "authorization_audit_digest" in authorize
+    hydrate = inspect.getsource(
+        PostgreSQLWorkflowPlanRepository._resident_context_access_lease_from_row
+    )
+    assert '"valid_until"' in hydrate
 
 
 @pytest.mark.asyncio
@@ -299,4 +307,5 @@ def _live_values(*, seed: str, table: Table) -> dict[str, object]:
 
 
 def lease_table_for(table: Table) -> Table:
-    return WorkflowProtectedResidentContextAccessAuthorizationLeaseModel.__table__
+    del table
+    return cast(Table, WorkflowProtectedResidentContextAccessAuthorizationLeaseModel.__table__)

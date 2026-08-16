@@ -190,7 +190,7 @@ def upgrade() -> None:
             "'policy.workflow-protected-resident-context-access-authorization' "
             "AND policy_version = '1.0' "
             "AND policy_digest = "
-            "'03ea152c983e2e0a5e28acf07a4e22d127fbcbca8772906e6ece1f290bdc133c'",
+            "'51141a6f2a3bbc6e61a3d95f76088325ec5f04e7246a05d334365dc941a83555'",
             name="ck_wf_rc_access_auth_lease_contract",
         ),
         sa.CheckConstraint(
@@ -384,7 +384,7 @@ def upgrade() -> None:
             "'policy.workflow-protected-resident-context-access-authorization' "
             "AND policy_version = '1.0' "
             "AND policy_digest = "
-            "'03ea152c983e2e0a5e28acf07a4e22d127fbcbca8772906e6ece1f290bdc133c'",
+            "'51141a6f2a3bbc6e61a3d95f76088325ec5f04e7246a05d334365dc941a83555'",
             name="ck_wf_rc_access_auth_claim_contract",
         ),
         sa.CheckConstraint(
@@ -458,7 +458,7 @@ def downgrade() -> None:
                 IF EXISTS (SELECT 1 FROM {LEASE_TABLE} LIMIT 1)
                    OR EXISTS (SELECT 1 FROM {CLAIM_TABLE} LIMIT 1) THEN
                     RAISE EXCEPTION
-                        'refusing downgrade: resident-context access evidence exists'
+                        'refusing guarded downgrade: resident-context access evidence exists'
                         USING ERRCODE = '55000';
                 END IF;
             END $$;
