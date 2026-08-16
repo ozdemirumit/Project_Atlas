@@ -1161,6 +1161,57 @@ export type WorkflowPhysicalTransportTargetContextCapsuleConsumerBindingInventor
   durable: boolean;
 };
 
+export type WorkflowPhysicalTransportTargetContextCapsuleHandoffAuthorizationLeasePolicy = {
+  policy_id: "policy.workflow-protected-transport-target-context-capsule-handoff-authorization";
+  policy_version: "1.0";
+};
+
+export type WorkflowPhysicalTransportTargetContextCapsuleHandoffAuthorizationLeaseAuthority = {
+  target_context_capsule_handoff_authorized: true;
+  endpoint_resolution_authorized: false;
+  route_selection_authorized: false;
+  route_binding_authorized: false;
+  credential_selection_authorized: false;
+  credential_assignment_binding_authorized: false;
+  credential_access_authorized: false;
+  credential_brokerage_authorized: false;
+  credential_resolution_authorized: false;
+  protected_artifact_access_authorized: false;
+  credential_delivery_authorized: false;
+  network_access_authorized: false;
+  readiness_probe_authorized: false;
+  publication_authorized: false;
+  delivery_authorized: false;
+  dispatch_authorized: false;
+  execution_authorized: false;
+  infrastructure_mutation_authorized: false;
+};
+
+export type WorkflowPhysicalTransportTargetContextCapsuleHandoffAuthorizationLease = {
+  authorization_lease_id: string;
+  scope: WorkflowRunPlan["scope"];
+  consumer_contract_id: string;
+  consumer_contract_version: string;
+  purpose_id: string;
+  state: "authorized_unconsumed";
+  effective_state: "active" | "expired";
+  issued_at: string;
+  valid_until: string;
+  single_use: true;
+  renewable: false;
+  transferable: false;
+  lease_is_bearer_capability: false;
+  policy: WorkflowPhysicalTransportTargetContextCapsuleHandoffAuthorizationLeasePolicy;
+  authority: WorkflowPhysicalTransportTargetContextCapsuleHandoffAuthorizationLeaseAuthority;
+  integrity_reference: string;
+};
+
+export type WorkflowPhysicalTransportTargetContextCapsuleHandoffAuthorizationLeaseInventory = {
+  physical_transport_target_context_capsule_handoff_authorization_leases: WorkflowPhysicalTransportTargetContextCapsuleHandoffAuthorizationLease[];
+  server_time: string;
+  durable: true;
+};
+
 export type WorkflowPhysicalTransportCredentialAssignmentSnapshotAuthority = {
   endpoint_resolution_authorized: false;
   protected_artifact_access_authorized: false;
@@ -2194,6 +2245,53 @@ const physicalTransportTargetContextCapsuleConsumerBindingFields = [
 ] as const;
 const physicalTransportTargetContextCapsuleConsumerBindingInventoryFields = [
   "physical_transport_target_context_capsule_consumer_bindings",
+  "server_time",
+  "durable",
+] as const;
+const physicalTransportTargetContextCapsuleHandoffAuthorizationLeasePolicyFields = [
+  "policy_id",
+  "policy_version",
+] as const;
+const physicalTransportTargetContextCapsuleHandoffAuthorizationLeaseAuthorityFields = [
+  "target_context_capsule_handoff_authorized",
+  "endpoint_resolution_authorized",
+  "route_selection_authorized",
+  "route_binding_authorized",
+  "credential_selection_authorized",
+  "credential_assignment_binding_authorized",
+  "credential_access_authorized",
+  "credential_brokerage_authorized",
+  "credential_resolution_authorized",
+  "protected_artifact_access_authorized",
+  "credential_delivery_authorized",
+  "network_access_authorized",
+  "readiness_probe_authorized",
+  "publication_authorized",
+  "delivery_authorized",
+  "dispatch_authorized",
+  "execution_authorized",
+  "infrastructure_mutation_authorized",
+] as const;
+const physicalTransportTargetContextCapsuleHandoffAuthorizationLeaseFields = [
+  "authorization_lease_id",
+  "scope",
+  "consumer_contract_id",
+  "consumer_contract_version",
+  "purpose_id",
+  "state",
+  "effective_state",
+  "issued_at",
+  "valid_until",
+  "single_use",
+  "renewable",
+  "transferable",
+  "lease_is_bearer_capability",
+  "policy",
+  "authority",
+  "integrity_reference",
+] as const;
+const physicalTransportTargetContextCapsuleHandoffAuthorizationLeaseInventoryFields = [
+  "physical_transport_target_context_capsule_handoff_authorization_leases",
   "server_time",
   "durable",
 ] as const;
@@ -3935,6 +4033,86 @@ function isPhysicalTransportTargetContextCapsuleConsumerBinding(
   );
 }
 
+function hasTargetContextCapsuleHandoffOnlyAuthority(
+  value: unknown,
+): value is WorkflowPhysicalTransportTargetContextCapsuleHandoffAuthorizationLeaseAuthority {
+  return (
+    isObject(value) &&
+    hasExactKeys(
+      value,
+      physicalTransportTargetContextCapsuleHandoffAuthorizationLeaseAuthorityFields,
+    ) &&
+    physicalTransportTargetContextCapsuleHandoffAuthorizationLeaseAuthorityFields.every(
+      (field) =>
+        field === "target_context_capsule_handoff_authorized"
+          ? value[field] === true
+          : value[field] === false,
+    )
+  );
+}
+
+function isTargetContextCapsuleHandoffAuthorizationPolicy(
+  value: unknown,
+): value is WorkflowPhysicalTransportTargetContextCapsuleHandoffAuthorizationLeasePolicy {
+  return (
+    isObject(value) &&
+    hasExactKeys(
+      value,
+      physicalTransportTargetContextCapsuleHandoffAuthorizationLeasePolicyFields,
+    ) &&
+    value.policy_id ===
+      "policy.workflow-protected-transport-target-context-capsule-handoff-authorization" &&
+    value.policy_version === "1.0"
+  );
+}
+
+function isPhysicalTransportTargetContextCapsuleHandoffAuthorizationLease(
+  value: unknown,
+  scope: WorkflowScope,
+  serverTime: string,
+): value is WorkflowPhysicalTransportTargetContextCapsuleHandoffAuthorizationLease {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(
+      value,
+      physicalTransportTargetContextCapsuleHandoffAuthorizationLeaseFields,
+    ) ||
+    !isExactScope(value.scope) ||
+    containsCredentialMaterial(value) ||
+    !isTimezoneAwareTimestamp(value.issued_at) ||
+    !isTimezoneAwareTimestamp(value.valid_until)
+  ) {
+    return false;
+  }
+  const leaseScope = value.scope;
+  const issuedAt = Date.parse(value.issued_at);
+  const validUntil = Date.parse(value.valid_until);
+  const evaluatedAt = Date.parse(serverTime);
+  const expectedEffectiveState = evaluatedAt >= validUntil ? "expired" : "active";
+  return (
+    isStableIdentifier(value.authorization_lease_id) &&
+    leaseScope.organization_id === scope.organizationId &&
+    leaseScope.environment_id === scope.environmentId &&
+    leaseScope.site_id === scope.siteId &&
+    value.consumer_contract_id ===
+      "contract.workflow-protected-transport-target-context-capsule-consumer" &&
+    value.consumer_contract_version === "1.0" &&
+    value.purpose_id ===
+      "purpose.workflow-protected-transport-target-context-capsule-handoff-evaluation" &&
+    value.state === "authorized_unconsumed" &&
+    value.effective_state === expectedEffectiveState &&
+    validUntil - issuedAt === 1_000 &&
+    issuedAt <= evaluatedAt &&
+    value.single_use === true &&
+    value.renewable === false &&
+    value.transferable === false &&
+    value.lease_is_bearer_capability === false &&
+    isTargetContextCapsuleHandoffAuthorizationPolicy(value.policy) &&
+    hasTargetContextCapsuleHandoffOnlyAuthority(value.authority) &&
+    isStableIdentifier(value.integrity_reference)
+  );
+}
+
 function hasZeroPhysicalTransportCredentialAssignmentSnapshotAuthority(
   value: unknown,
 ): value is WorkflowPhysicalTransportCredentialAssignmentSnapshotAuthority {
@@ -5254,6 +5432,68 @@ export async function listWorkflowPhysicalTransportTargetContextCapsuleConsumerB
     bindingIds.add(binding.binding_id);
   }
   return data as WorkflowPhysicalTransportTargetContextCapsuleConsumerBindingInventory;
+}
+
+export async function listWorkflowPhysicalTransportTargetContextCapsuleHandoffAuthorizationLeases(input: {
+  scope: WorkflowScope;
+}): Promise<WorkflowPhysicalTransportTargetContextCapsuleHandoffAuthorizationLeaseInventory> {
+  const response = await apiFetch(
+    "/api/v1/workflows/physical-transport-target-context-capsule-handoff-authorization-leases",
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(
+    response,
+    "Workflow physical transport target-context capsule handoff authorization lease retrieval failed",
+  );
+  if (
+    !isObject(data) ||
+    !hasExactKeys(
+      data,
+      physicalTransportTargetContextCapsuleHandoffAuthorizationLeaseInventoryFields,
+    ) ||
+    containsCredentialMaterial(data) ||
+    !Array.isArray(
+      data.physical_transport_target_context_capsule_handoff_authorization_leases,
+    ) ||
+    data.physical_transport_target_context_capsule_handoff_authorization_leases.length > 256 ||
+    !isTimezoneAwareTimestamp(data.server_time) ||
+    data.durable !== true
+  ) {
+    throw new ApiRequestError(
+      "Workflow physical transport target-context capsule handoff authorization lease response was unsafe",
+      response.status,
+    );
+  }
+  const serverTime = data.server_time;
+  if (
+    !data.physical_transport_target_context_capsule_handoff_authorization_leases.every((lease) =>
+      isPhysicalTransportTargetContextCapsuleHandoffAuthorizationLease(
+        lease,
+        input.scope,
+        serverTime,
+      ),
+    )
+  ) {
+    throw new ApiRequestError(
+      "Workflow physical transport target-context capsule handoff authorization lease response was unsafe",
+      response.status,
+    );
+  }
+  const leaseIds = new Set<string>();
+  for (const lease of data.physical_transport_target_context_capsule_handoff_authorization_leases) {
+    if (
+      !isObject(lease) ||
+      typeof lease.authorization_lease_id !== "string" ||
+      leaseIds.has(lease.authorization_lease_id)
+    ) {
+      throw new ApiRequestError(
+        "Workflow physical transport target-context capsule handoff authorization lease response was unsafe",
+        response.status,
+      );
+    }
+    leaseIds.add(lease.authorization_lease_id);
+  }
+  return data as WorkflowPhysicalTransportTargetContextCapsuleHandoffAuthorizationLeaseInventory;
 }
 
 export async function listWorkflowPhysicalTransportCredentialAssignmentSnapshots(): Promise<WorkflowPhysicalTransportCredentialAssignmentSnapshotInventory> {

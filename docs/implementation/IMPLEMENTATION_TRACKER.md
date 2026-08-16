@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-212 |
 | Title | Bounded single-use protected target-context capsule handoff authorization lease without retrieval, unsealing, transfer, delivery or runtime authority |
-| Status | Architecture accepted; implementation in progress |
+| Status | Implementation and local verification complete; pull request pending |
 | Branch | `agent/protected-capsule-handoff-authorization-lease` |
 | Pull Request | Not opened |
 | Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-158, ADR-159, ADR-160, ADR-161, ADR-162 |
 | Last Updated | 2026-08-16 |
-| Next Action | Implement the code-owned one-second handoff lease, PostgreSQL evidence, workload API and read-only human presentation |
+| Next Action | Commit the verified implementation, open the pull request and complete exact-head CI |
 
 ### ATLAS-IMP-212 Scope Rationale
 
@@ -58,6 +58,30 @@
   binding identity, sensitive lifecycle evidence or operational controls.
 - Full local suites, real PostgreSQL concurrency/migration CI, live desktop/mobile inspection,
   exact-head PR CI, SHA-locked merge and independent `main` CI must pass.
+
+### ATLAS-IMP-212 Local Verification
+
+- Backend Ruff formatting/lint and strict MyPy passed for `1074` source files. The complete backend
+  suite passed with `2331` tests and `28` environment-dependent skips. Final focused handoff,
+  lifecycle, API and PostgreSQL-contract coverage passed `24` tests with `3` live-PostgreSQL skips.
+- Frontend TypeScript and ESLint passed. All `95` test files and `744` tests passed, and the
+  production Vite bundle built successfully. The capsule handoff workspace adds explicit
+  `durable=false` fail-closed coverage.
+- Alembic reports the single `20260816_0135` head. Migration and ORM coverage verifies exact
+  code-owned identity and policy constraints, the one-second window, append-only triggers,
+  binding/capsule uniqueness, atomic lease/claim/audit evidence and guarded downgrade behavior.
+  Three real PostgreSQL authorization/concurrency cases remain wired to CI through
+  `ATLAS_TEST_POSTGRES_DSN`.
+- Independent review found no remaining P0, P1 or P2 issue after correcting second-DB-time lease
+  retiming, repository evaluation time, external audit placement/semantics, GET timestamp ordering
+  and strict durable-store parsing.
+- Live validation used one normal `atlas-demo` / `local-demo` username/password session. The
+  handoff authorization region was read-only, exposed no button or link, required no MFA, second
+  login or authorized-browser prompt, and failed closed while local PostgreSQL/attestor services
+  were intentionally unavailable.
+- Desktop `1440x900` and mobile `390x844` inspection found no page or section horizontal overflow,
+  incoherent overlap, or browser console warning/error. The UI exposed no capsule, binding,
+  lifecycle-attestation or operational-control material.
 
 ### ATLAS-IMP-211 Scope Rationale
 

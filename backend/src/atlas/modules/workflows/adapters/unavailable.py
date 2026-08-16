@@ -27,6 +27,9 @@ from atlas.modules.workflows.application import (
     WorkflowPlanIdempotencyRecord,
     WorkflowPlanMutationResult,
     WorkflowPlanningError,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseError,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseRequest,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseResult,
     WorkflowRunMaterializationError,
     WorkflowRunMaterializationIdempotencyRecord,
     WorkflowRunMaterializationRequest,
@@ -189,6 +192,7 @@ from atlas.modules.workflows.domain import (
     WorkflowOrchestrationLease,
     WorkflowOutboxPublicationLease,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBinding,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLease,
     WorkflowRunPlan,
     WorkflowScope,
 )
@@ -879,6 +883,30 @@ class UnavailableWorkflowPlanRepository:
     ) -> tuple[WorkflowProtectedTransportTargetContextCapsuleConsumerBinding, ...]:
         self._raise_target_context_capsule_consumer_binding()
 
+    async def authorize_target_context_capsule_handoff(
+        self,
+        request: WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseRequest,
+    ) -> WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseResult:
+        del request
+        self._raise_target_context_capsule_handoff_authorization()
+
+    async def list_target_context_capsule_handoff_authorization_leases(
+        self,
+        *,
+        scope: WorkflowScope,
+        limit: int = 256,
+    ) -> tuple[WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLease, ...]:
+        del scope, limit
+        self._raise_target_context_capsule_handoff_authorization()
+
+    async def get_target_context_capsule_handoff_authorization_lease_by_id(
+        self,
+        *,
+        handoff_authorization_lease_id: str,
+    ) -> WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLease | None:
+        del handoff_authorization_lease_id
+        self._raise_target_context_capsule_handoff_authorization()
+
     async def acquire_publication_lease(
         self, request: WorkflowOutboxPublicationLeaseAcquireRequest
     ) -> WorkflowOutboxPublicationLeaseAcquireResult:
@@ -1101,4 +1129,11 @@ class UnavailableWorkflowPlanRepository:
         raise WorkflowProtectedTransportTargetContextCapsuleConsumerBindingError(
             "workflow_target_context_capsule_consumer_binding_repository_unavailable",
             "Durable target-context capsule consumer binding storage is not configured.",
+        )
+
+    @staticmethod
+    def _raise_target_context_capsule_handoff_authorization() -> NoReturn:
+        raise WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseError(
+            "workflow_target_context_capsule_handoff_repository_unavailable",
+            "Durable target-context capsule handoff authorization storage is not configured.",
         )

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime, timedelta
 from enum import Enum
-from typing import Any, cast
+from typing import Any, NoReturn, cast
 
 from atlas.modules.workflows.application import (
     WorkflowAttemptMaterializationIdempotencyRecord,
@@ -36,6 +36,9 @@ from atlas.modules.workflows.application import (
     WorkflowPlanIdempotencyRecord,
     WorkflowPlanMutationResult,
     WorkflowPlanMutationStatus,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseError,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseRequest,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseResult,
     WorkflowRunMaterializationIdempotencyRecord,
     WorkflowRunMaterializationRequest,
     WorkflowRunMaterializationResult,
@@ -236,6 +239,7 @@ from atlas.modules.workflows.domain import (
     WorkflowOutboxPublicationLeaseEffectiveState,
     WorkflowPlanState,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBinding,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLease,
     WorkflowRunPlan,
     WorkflowScope,
     canonical_digest,
@@ -3097,6 +3101,37 @@ class InMemoryWorkflowPlanRepository:
         raise WorkflowProtectedTransportTargetContextCapsuleConsumerBindingError(
             "workflow_target_context_capsule_consumer_binding_requires_postgresql",
             "Target-context capsule consumer bindings require durable PostgreSQL storage.",
+        )
+
+    async def authorize_target_context_capsule_handoff(
+        self,
+        request: WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseRequest,
+    ) -> WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseResult:
+        del request
+        self._raise_target_context_capsule_handoff_authorization()
+
+    async def list_target_context_capsule_handoff_authorization_leases(
+        self,
+        *,
+        scope: WorkflowScope,
+        limit: int = 256,
+    ) -> tuple[WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLease, ...]:
+        del scope, limit
+        self._raise_target_context_capsule_handoff_authorization()
+
+    async def get_target_context_capsule_handoff_authorization_lease_by_id(
+        self,
+        *,
+        handoff_authorization_lease_id: str,
+    ) -> WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLease | None:
+        del handoff_authorization_lease_id
+        self._raise_target_context_capsule_handoff_authorization()
+
+    @staticmethod
+    def _raise_target_context_capsule_handoff_authorization() -> NoReturn:
+        raise WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseError(
+            "workflow_target_context_capsule_handoff_requires_postgresql",
+            "Target-context capsule handoff authorization requires durable PostgreSQL storage.",
         )
 
     async def lookup_target_context_artifact_opening_replay(

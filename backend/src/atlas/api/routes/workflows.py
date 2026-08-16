@@ -26,6 +26,7 @@ from atlas.api.security import (
     authorize_workflow_plan_cancel,
     authorize_workflow_plan_create,
     authorize_workflow_plan_read,
+    authorize_workflow_target_context_capsule_handoff_authorization_lease_read,
     authorize_workflow_transport_compatibility_admission_read,
     authorize_workflow_transport_credential_assignment_snapshot_read,
     authorize_workflow_transport_profile_read,
@@ -40,6 +41,7 @@ from atlas.api.security import (
     workflow_physical_transport_target_context_accessor_subject,
     workflow_physical_transport_target_context_binder_subject,
     workflow_physical_transport_target_context_capsule_binder_subject,
+    workflow_protected_transport_target_context_capsule_consumer_subject,
     workflow_transport_compatibility_admitter_subject,
     workflow_transport_credential_assignment_registry_subject,
     workflow_transport_profile_registry_subject,
@@ -69,6 +71,7 @@ from atlas.api.workflow_schemas import (
     CreateWorkflowEventTransportCompatibilityAdmissionInput,
     CreateWorkflowPlanInput,
     CreateWorkflowProtectedTransportTargetContextCapsuleConsumerBindingInput,
+    CreateWorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseInput,
     EventPhysicalTransportCredentialAssignmentSnapshotData,
     EventPhysicalTransportCredentialAssignmentSnapshotInventoryData,
     EventPhysicalTransportCredentialAssignmentSnapshotInventoryResponse,
@@ -188,6 +191,10 @@ from atlas.api.workflow_schemas import (
     WorkflowProtectedTransportTargetContextCapsuleConsumerBindingInventoryItemData,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBindingInventoryResponse,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBindingResponse,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseData,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseInventoryData,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseInventoryResponse,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseResponse,
     WorkflowRunPlanData,
     WorkflowRunPlanResponse,
 )
@@ -208,6 +215,7 @@ from atlas.modules.workflows.application import (
     WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMITTER_AUDIENCE,
     WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_ACCESSOR_AUDIENCE,
     WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_BINDER_AUDIENCE,
+    WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_AUDIENCE,
     WORKFLOW_TRANSPORT_COMPATIBILITY_ADMITTER_AUDIENCE,
     WORKFLOW_TRANSPORT_CREDENTIAL_ASSIGNMENT_REGISTRY_AUDIENCE,
     WORKFLOW_TRANSPORT_PROFILE_REGISTRY_AUDIENCE,
@@ -259,6 +267,9 @@ from atlas.modules.workflows.application import (
     WorkflowPhysicalTransportTargetContextBinderContext,
     WorkflowPlanningError,
     WorkflowPlanningService,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationContext,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseError,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseService,
     WorkflowRunMaterializationError,
     WorkflowRunMaterializationRepository,
     WorkflowRunMaterializationService,
@@ -358,6 +369,7 @@ from atlas.modules.workflows.domain import (
     WorkflowOrchestrationLeaseEffectiveState,
     WorkflowOutboxPublicationLease,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBinding,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLease,
     WorkflowRunPlan,
     WorkflowScope,
     canonical_digest,
@@ -998,6 +1010,30 @@ def _raise_physical_transport_target_context_capsule_consumer_binding(
             else "Workflow target-context capsule consumer binding unavailable"
         ),
         detail=("The target-context capsule consumer binding request cannot be completed."),
+        retryable=unavailable,
+    ) from error
+
+
+def _raise_physical_transport_target_context_capsule_handoff_authorization_lease(
+    error: WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseError,
+) -> NoReturn:
+    unavailable = any(
+        marker in error.code
+        for marker in ("repository", "durable", "attestor", "signature", "unavailable")
+    )
+    raise AtlasError(
+        status=503 if unavailable else 409,
+        code=(
+            "workflow_target_context_capsule_handoff_authorization_service_unavailable"
+            if unavailable
+            else "workflow_target_context_capsule_handoff_authorization_unavailable"
+        ),
+        title=(
+            "Workflow target-context capsule handoff authorization service unavailable"
+            if unavailable
+            else "Workflow target-context capsule handoff authorization unavailable"
+        ),
+        detail="The target-context capsule handoff authorization request cannot be completed.",
         retryable=unavailable,
     ) from error
 
@@ -1800,6 +1836,25 @@ def _physical_transport_target_context_capsule_consumer_binding_response(
     _no_store(response)
     return WorkflowProtectedTransportTargetContextCapsuleConsumerBindingResponse(
         data=WorkflowProtectedTransportTargetContextCapsuleConsumerBindingData.from_domain(binding),
+        meta=_meta(request),
+    )
+
+
+def _physical_transport_target_context_capsule_handoff_authorization_lease_response(
+    lease: WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLease,
+    request: Request,
+    response: Response,
+    *,
+    evaluated_at: datetime,
+) -> WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseResponse:
+    _no_store(response)
+    return WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseResponse(
+        data=(
+            WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseData.from_domain(
+                lease,
+                evaluated_at=evaluated_at,
+            )
+        ),
         meta=_meta(request),
     )
 
@@ -5692,6 +5747,145 @@ async def create_workflow_physical_transport_target_context_capsule_consumer_bin
         binding,
         request,
         response,
+    )
+
+
+@router.get(
+    "/physical-transport-target-context-capsule-handoff-authorization-leases",
+    response_model=(
+        WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseInventoryResponse
+    ),
+)
+async def list_workflow_physical_transport_target_context_capsule_handoff_authorization_leases(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_workflow_target_context_capsule_handoff_authorization_lease_read),
+    ],
+) -> WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseInventoryResponse:
+    del decision
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    service = cast(
+        WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseService,
+        request.app.state.workflow_target_context_capsule_handoff_authorization_lease_service,
+    )
+    try:
+        leases = await service.list_leases(scope=scope, limit=256)
+        # Evaluate after the list snapshot so no returned lease can have an
+        # issuance timestamp later than the response's authoritative time.
+        server_time = await service.repository.get_authoritative_time()
+        lease_ids = {lease.authorization_lease_id for lease in leases}
+        if (
+            server_time.tzinfo is None
+            or len(lease_ids) != len(leases)
+            or any(lease.scope != scope for lease in leases)
+        ):
+            raise WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseError(
+                "workflow_target_context_capsule_handoff_repository_scope_violation",
+                "Stored target-context capsule handoff authorization metadata is invalid.",
+            )
+    except WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseError as error:
+        _raise_physical_transport_target_context_capsule_handoff_authorization_lease(error)
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_target_context_capsule_handoff_authorization_service_unavailable",
+            title="Workflow target-context capsule handoff authorization service unavailable",
+            detail=(
+                "Target-context capsule handoff authorization metadata is temporarily unavailable."
+            ),
+            retryable=True,
+        ) from error
+    _no_store(response)
+    return WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseInventoryResponse(
+        data=(
+            WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseInventoryData(
+                physical_transport_target_context_capsule_handoff_authorization_leases=[
+                    WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseData.from_domain(
+                        lease,
+                        evaluated_at=server_time,
+                    )
+                    for lease in sorted(
+                        leases,
+                        key=lambda value: value.authorization_lease_id,
+                    )
+                ],
+                server_time=server_time,
+                durable=service.durable,
+            )
+        ),
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    "/physical-transport-target-context-capsule-handoff-authorization-leases",
+    response_model=WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseResponse,
+    status_code=201,
+)
+async def create_workflow_physical_transport_target_context_capsule_handoff_authorization_lease(
+    payload: CreateWorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[
+        AuthenticatedSubject,
+        Depends(workflow_protected_transport_target_context_capsule_consumer_subject),
+    ],
+) -> WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseResponse:
+    service = cast(
+        WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseService,
+        request.app.state.workflow_target_context_capsule_handoff_authorization_lease_service,
+    )
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    try:
+        lease = await service.authorize(
+            consumer_binding_id=payload.consumer_binding_id,
+            consumer_binding_digest=payload.consumer_binding_digest,
+            policy_id=payload.policy_id,
+            policy_version=payload.policy_version,
+            idempotency_key=payload.idempotency_key,
+            context=WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationContext(
+                subject_id=subject.subject_id,
+                actor_type=subject.kind.value,
+                authentication_method=subject.authentication_method.value,
+                credential_audience=(WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_AUDIENCE),
+                scope=scope,
+                correlation_id=str(request.state.correlation_id),
+                decision_id=(
+                    "decision.workflow-protected-transport-target-context-capsule-consumer-"
+                    "authenticated"
+                ),
+                requested_at=datetime.now(UTC),
+            ),
+        )
+        evaluated_at = await service.repository.get_authoritative_time()
+        if evaluated_at.tzinfo is None:
+            raise ValueError("repository time must be timezone-aware")
+    except WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseError as error:
+        _raise_physical_transport_target_context_capsule_handoff_authorization_lease(error)
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_target_context_capsule_handoff_authorization_service_unavailable",
+            title="Workflow target-context capsule handoff authorization service unavailable",
+            detail="The target-context capsule handoff authorization request cannot be completed.",
+            retryable=True,
+        ) from error
+    return _physical_transport_target_context_capsule_handoff_authorization_lease_response(
+        lease,
+        request,
+        response,
+        evaluated_at=evaluated_at,
     )
 
 

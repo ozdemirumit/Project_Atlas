@@ -42,6 +42,7 @@ from atlas.modules.workflows.domain import (
     WorkflowOrchestrationLease,
     WorkflowOutboxPublicationLease,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBinding,
+    WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLease,
     WorkflowRunPlan,
 )
 
@@ -2568,6 +2569,137 @@ class WorkflowProtectedTransportTargetContextCapsuleConsumerBindingResponse(Base
 
 class WorkflowProtectedTransportTargetContextCapsuleConsumerBindingInventoryResponse(BaseModel):
     data: WorkflowProtectedTransportTargetContextCapsuleConsumerBindingInventoryData
+    meta: ResponseMeta
+
+
+class CreateWorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    consumer_binding_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    consumer_binding_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    policy_id: Literal[
+        "policy.workflow-protected-transport-target-context-capsule-handoff-authorization"
+    ]
+    policy_version: Literal["1.0"]
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeasePolicyData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    policy_id: Literal[
+        "policy.workflow-protected-transport-target-context-capsule-handoff-authorization"
+    ]
+    policy_version: Literal["1.0"]
+
+
+class WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseAuthorityData(
+    BaseModel
+):
+    model_config = ConfigDict(extra="forbid")
+
+    target_context_capsule_handoff_authorized: Literal[True]
+    endpoint_resolution_authorized: Literal[False]
+    route_selection_authorized: Literal[False]
+    route_binding_authorized: Literal[False]
+    credential_selection_authorized: Literal[False]
+    credential_assignment_binding_authorized: Literal[False]
+    credential_access_authorized: Literal[False]
+    credential_brokerage_authorized: Literal[False]
+    credential_resolution_authorized: Literal[False]
+    protected_artifact_access_authorized: Literal[False]
+    credential_delivery_authorized: Literal[False]
+    network_access_authorized: Literal[False]
+    readiness_probe_authorized: Literal[False]
+    publication_authorized: Literal[False]
+    delivery_authorized: Literal[False]
+    dispatch_authorized: Literal[False]
+    execution_authorized: Literal[False]
+    infrastructure_mutation_authorized: Literal[False]
+
+
+class WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseData(BaseModel):
+    """Human-safe lease evidence without capsule, binding or attestation internals."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    authorization_lease_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    scope: WorkflowScopeData
+    consumer_contract_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    consumer_contract_version: str = Field(min_length=1, max_length=64)
+    purpose_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    state: Literal["authorized_unconsumed"]
+    effective_state: Literal["active", "expired"]
+    issued_at: datetime
+    valid_until: datetime
+    single_use: Literal[True]
+    renewable: Literal[False]
+    transferable: Literal[False]
+    lease_is_bearer_capability: Literal[False]
+    policy: WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeasePolicyData
+    authority: WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseAuthorityData
+    integrity_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+
+    @classmethod
+    def from_domain(
+        cls,
+        lease: WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLease,
+        *,
+        evaluated_at: datetime,
+    ) -> WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseData:
+        return cls(
+            authorization_lease_id=lease.authorization_lease_id,
+            scope=WorkflowScopeData.model_validate(lease.scope.canonical_value()),
+            consumer_contract_id=lease.consumer_contract_id,
+            consumer_contract_version=lease.consumer_contract_version,
+            purpose_id=lease.purpose_id,
+            state=lease.state.value,
+            effective_state=lease.effective_state(evaluated_at=evaluated_at).value,
+            issued_at=lease.issued_at,
+            valid_until=lease.valid_until,
+            single_use=True,
+            renewable=False,
+            transferable=False,
+            lease_is_bearer_capability=lease.lease_is_bearer_capability,
+            policy=(
+                WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeasePolicyData(
+                    policy_id=lease.policy_id,
+                    policy_version=lease.policy_version,
+                )
+            ),
+            authority=(
+                WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseAuthorityData.model_validate(
+                    lease.authority.canonical_value()
+                )
+            ),
+            integrity_reference=(
+                "integrity.workflow-target-context-capsule-handoff-authorization-lease."
+                f"{sha256(lease.authorization_lease_id.encode('utf-8')).hexdigest()[:24]}"
+            ),
+        )
+
+
+class WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseInventoryData(
+    BaseModel
+):
+    model_config = ConfigDict(extra="forbid")
+
+    physical_transport_target_context_capsule_handoff_authorization_leases: list[
+        WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseData
+    ] = Field(max_length=256)
+    server_time: datetime
+    durable: Literal[True]
+
+
+class WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseResponse(BaseModel):
+    data: WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseData
+    meta: ResponseMeta
+
+
+class WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseInventoryResponse(
+    BaseModel
+):
+    data: WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseInventoryData
     meta: ResponseMeta
 
 
