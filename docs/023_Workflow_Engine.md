@@ -737,6 +737,22 @@ MVP workflows do not execute C3 through C5 capabilities.
   require a signed minimized receipt; crash, timeout, partial mutation, late/invalid receipt or
   persistence ambiguity remains uncertain and is never retried. Success does not start or use a
   runtime, and all operational authority fields remain false.
+- ADR-170 establishes one append-only, single-use, non-renewable, non-transferable and non-bearer
+  runtime-context use-authorization lease from one canonical ADR-169
+  `injected_into_protected_runtime_slot` result. Only the exact protected consumer workload may
+  request its own lease. Fresh signed, server-nonce-bound metadata-only evidence must prove the
+  injected context remains present, inert, unexpired, unrevoked, uncleared, unsuperseded and unused;
+  the destination generation and fence and exact slot post-generation remain current; and the
+  code-owned runtime-context use profile remains eligible. PostgreSQL applies canonical lineage,
+  destination and exact-slot locks, complete revalidation and two database-time observations before
+  appending an idempotency claim and an at-most-one-second lease. Only
+  `protected_runtime_context_use_authority_granted` is effectively true while the lease is active
+  and unconsumed; every pre-existing authority field remains false. Actual context or runtime use,
+  start, resume, network, connectors, readiness, publication, delivery, dispatch, execution and
+  infrastructure mutation remain separately authorized future boundaries. AI remains advisory-
+  only, AD remains authentication-only, and normal username/password session read-only GET requires
+  no MFA or second browser session. Production fails closed without durable PostgreSQL and the
+  trusted protected-slot lifecycle/use-eligibility attestor.
 
 ## 39. Assumptions
 
@@ -782,3 +798,4 @@ This document is ready to enter Review when:
 | 1.8.0 | 2026-08-16 | Workflow Architecture | Added atomic protected resident-context access consumption and non-bearer runtime-handle lineage |
 | 1.9.0 | 2026-08-16 | Workflow Architecture | Added bounded protected runtime-context injection-authorization lease |
 | 2.0.0 | 2026-08-16 | Workflow Architecture | Added atomic injection-lease consumption and inert protected-slot injection |
+| 2.1.0 | 2026-08-16 | Workflow Architecture | Added bounded protected runtime-context use-authorization lease |

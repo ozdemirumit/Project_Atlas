@@ -46,6 +46,7 @@ import {
   listWorkflowProtectedResidentContextAccessConsumptions,
   listWorkflowProtectedRuntimeContextInjectionAuthorizations,
   listWorkflowProtectedRuntimeContextInjectionConsumptions,
+  listWorkflowProtectedRuntimeContextUseAuthorizations,
   listWorkflowPhysicalTransportTargetContextBindings,
   listWorkflowPhysicalTransportCredentialAssignmentSnapshots,
   listWorkflowPhysicalTransportCredentialAssignmentFreshnessAdmissions,
@@ -344,6 +345,16 @@ export default function WorkflowPlanningWorkspace({
       siteId,
     ],
     queryFn: listWorkflowProtectedRuntimeContextInjectionConsumptions,
+    retry: false,
+  });
+  const protectedRuntimeContextUseAuthorizationQuery = useQuery({
+    queryKey: [
+      "workflow-protected-runtime-context-use-authorizations",
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: listWorkflowProtectedRuntimeContextUseAuthorizations,
     retry: false,
   });
   const targetQuery = useQuery({
@@ -849,6 +860,10 @@ export default function WorkflowPlanningWorkspace({
   const protectedRuntimeContextInjectionConsumptionErrorStatus =
     protectedRuntimeContextInjectionConsumptionQuery.error instanceof ApiRequestError
       ? protectedRuntimeContextInjectionConsumptionQuery.error.status
+      : undefined;
+  const protectedRuntimeContextUseAuthorizationErrorStatus =
+    protectedRuntimeContextUseAuthorizationQuery.error instanceof ApiRequestError
+      ? protectedRuntimeContextUseAuthorizationQuery.error.status
       : undefined;
   const eventEnvelopes = eventEnvelopesForAdmission;
   const transportAdmissions = transportAdmissionsForArtifacts;
@@ -4221,6 +4236,167 @@ export default function WorkflowPlanningWorkspace({
             receipts remain inside the trusted boundary. Recorded injection does not grant runtime
             use, network, connector, readiness, dispatch, execution or infrastructure-mutation
             authority.
+          </span>
+        </div>
+      </section>
+
+      <section
+        className="workflow-physical-route-binding-band workflow-target-context-opening-band"
+        aria-labelledby="workflow-protected-runtime-context-use-authorization-title"
+      >
+        <div className="workflow-section-heading">
+          <div>
+            <p className="eyebrow">FUTURE USE-REQUEST AUTHORITY</p>
+            <h2 id="workflow-protected-runtime-context-use-authorization-title">
+              Protected runtime-context use authorizations
+            </h2>
+          </div>
+          <span>Read only</span>
+        </div>
+        {protectedRuntimeContextUseAuthorizationQuery.isLoading && (
+          <div className="workflow-empty-state" role="status">
+            <RefreshCw className="spin" size={18} />
+            <span>Loading protected runtime-context use authorization evidence...</span>
+          </div>
+        )}
+        {protectedRuntimeContextUseAuthorizationQuery.isError && (
+          <div className="workflow-inline-error" role="alert">
+            <AlertTriangle aria-hidden="true" size={18} />
+            <div>
+              <strong>
+                {protectedRuntimeContextUseAuthorizationErrorStatus === 401
+                  ? "Your session has expired"
+                  : protectedRuntimeContextUseAuthorizationErrorStatus === 403
+                    ? "Runtime-context use authorization permission is missing"
+                    : "Runtime-context use authorizations are unavailable"}
+              </strong>
+              <span>
+                {protectedRuntimeContextUseAuthorizationErrorStatus === 401
+                  ? "Sign in again to continue."
+                  : protectedRuntimeContextUseAuthorizationErrorStatus === 403
+                    ? "Your current role or scope cannot inspect runtime-context use authorization evidence."
+                    : "No context-use request authority or runtime state is inferred from this failed read."}
+              </span>
+            </div>
+          </div>
+        )}
+        {protectedRuntimeContextUseAuthorizationQuery.isSuccess &&
+          protectedRuntimeContextUseAuthorizationQuery.data.authorizations.length === 0 && (
+            <div className="workflow-empty-state" role="status">
+              <LockKeyhole size={19} />
+              <span>
+                No protected runtime-context use authorizations are recorded in this scope.
+              </span>
+            </div>
+          )}
+        {protectedRuntimeContextUseAuthorizationQuery.isSuccess &&
+          protectedRuntimeContextUseAuthorizationQuery.data.authorizations.length > 0 && (
+            <ol
+              className="workflow-step-preview workflow-physical-route-binding-list workflow-target-context-opening-list"
+              aria-label="Protected runtime-context use authorizations"
+            >
+              {protectedRuntimeContextUseAuthorizationQuery.data.authorizations.map(
+                (authorization) => (
+                  <li key={authorization.authorization_lease_id}>
+                    {authorization.effective_state === "active" ? (
+                      <ShieldCheck size={18} />
+                    ) : (
+                      <FileClock size={18} />
+                    )}
+                    <div>
+                      <strong>
+                        <code title={authorization.authorization_lease_id}>
+                          {safeHolderIdentifier(authorization.authorization_lease_id)}
+                        </code>
+                        <span
+                          className={`state-badge ${
+                            authorization.effective_state === "active" ? "neutral" : "warning"
+                          }`}
+                        >
+                          {authorization.effective_state === "active" ? "Active" : "Expired"}
+                        </span>
+                      </strong>
+                      <div className="workflow-physical-route-binding-grid">
+                        <span>
+                          Authorization state {readableKind(authorization.state)} | effective state{" "}
+                          {authorization.effective_state}
+                        </span>
+                        <span>
+                          Issued {formatTimestamp(authorization.issued_at)} | valid until{" "}
+                          {formatTimestamp(authorization.valid_until)} | effective until{" "}
+                          {formatTimestamp(authorization.effective_until)}
+                        </span>
+                        <span>
+                          Consumer contract{" "}
+                          <code title={authorization.consumer_contract_id}>
+                            {safeHolderIdentifier(authorization.consumer_contract_id)}
+                          </code>{" "}
+                          v{authorization.consumer_contract_version} | purpose{" "}
+                          <code title={authorization.purpose_id}>
+                            {safeHolderIdentifier(authorization.purpose_id)}
+                          </code>
+                        </span>
+                        <span>
+                          Runtime-context use profile{" "}
+                          <code title={authorization.use_profile_reference}>
+                            {safeHolderIdentifier(authorization.use_profile_reference)}
+                          </code>
+                        </span>
+                        <span>
+                          Runtime-slot profile{" "}
+                          <code title={authorization.runtime_slot_profile_reference}>
+                            {safeHolderIdentifier(authorization.runtime_slot_profile_reference)}
+                          </code>
+                        </span>
+                        <span>
+                          Destination profile{" "}
+                          <code title={authorization.destination_profile_reference}>
+                            {safeHolderIdentifier(authorization.destination_profile_reference)}
+                          </code>
+                        </span>
+                        <span>
+                          Policy{" "}
+                          <code title={authorization.policy_id}>
+                            {safeHolderIdentifier(authorization.policy_id)}
+                          </code>{" "}
+                          v{authorization.policy_version}
+                        </span>
+                        <span>
+                          Integrity reference{" "}
+                          <code title={authorization.integrity_reference}>
+                            {safeHolderIdentifier(authorization.integrity_reference)}
+                          </code>
+                        </span>
+                        <span className="workflow-physical-route-binding-authority">
+                          Authority protected runtime-context use{" "}
+                          {String(
+                            authorization.authority
+                              .protected_runtime_context_use_authority_granted,
+                          )}{" "}
+                          | runtime use false | runtime start false | runtime resume false | connector
+                          activity false | protected runtime-context injection false | protected
+                          resident-context access false | target-context capsule opening false |
+                          target-context capsule handoff false | endpoint resolution false | route
+                          selection false | route binding false | credential selection false |
+                          credential assignment binding false | credential access false | credential
+                          brokerage false | credential resolution false | protected artifact access
+                          false | credential delivery false | network access false | readiness probe
+                          false | publication false | delivery false | dispatch false | execution false |
+                          infrastructure mutation false
+                        </span>
+                      </div>
+                    </div>
+                  </li>
+                ),
+              )}
+            </ol>
+          )}
+        <div className="workflow-safety-boundary" role="note">
+          <LockKeyhole size={18} />
+          <span>
+            Future-request-only authorization evidence. It does not retrieve, reveal, copy,
+            download or use protected context; start or resume a runtime; connect or probe; publish,
+            deliver or dispatch work; execute a step; or mutate infrastructure.
           </span>
         </div>
       </section>

@@ -556,6 +556,30 @@ never retried. Every operational authority declaration remains false. Injection 
 starts nor uses a runtime and grants no network, connector, readiness, publication, delivery,
 dispatch, execution or infrastructure-mutation authority.
 
+Protected runtime-context use authorization is the next independent append-only lease boundary.
+Only the exact protected consumer workload bound through one canonical ADR-169
+`injected_into_protected_runtime_slot` result may submit that result ID and digest, code-owned
+policy identity and idempotency metadata. A fresh signed, server-nonce-bound and metadata-only
+protected-slot lifecycle/use-eligibility attestation must prove the exact injected context remains
+present, inert, unexpired, unrevoked, uncleared, unsuperseded and unused; the destination generation
+and fence and exact slot post-generation remain current; and the code-owned runtime-context use
+profile remains eligible. It reveals no context identity, commitment, slot locator, material or
+bearer capability to ordinary Atlas paths.
+
+PostgreSQL performs canonical oldest-to-newest lineage locking, locks the current destination and
+exact slot heads, completes revalidation and obtains two authoritative database-time observations
+before atomically appending one idempotency claim and one positive, at-most-one-second lease. Exact
+replay resolves before attestor I/O and returns the minimized current effective state. Only
+`protected_runtime_context_use_authority_granted` is effectively true, and only while the immutable
+lease is active and unconsumed; every pre-existing authority declaration remains false.
+
+IMP-220 performs no actual context or runtime use, start, resume, network or connector activity,
+readiness probing, publication, delivery, dispatch, execution or infrastructure mutation. AI
+remains advisory-only, Active Directory remains authentication-only, and normal username/password
+session read-only GET requires no MFA or second browser session. Actual use-lease consumption is a
+separate later boundary; production fails closed without PostgreSQL and the trusted protected-slot
+lifecycle/use-eligibility attestor.
+
 ### 10.2 Publication State
 
 Outbox records track:
@@ -958,3 +982,4 @@ This document is ready to enter Review when:
 | 1.8.0 | 2026-08-16 | Workflow Architecture | Added atomic resident-context access consumption and protected non-bearer runtime-handle boundary |
 | 1.9.0 | 2026-08-16 | Workflow Architecture | Added bounded protected runtime-context injection-authorization lease boundary |
 | 2.0.0 | 2026-08-16 | Workflow Architecture | Added atomic injection-lease consumption and inert protected-slot injection boundary |
+| 2.1.0 | 2026-08-16 | Workflow Architecture | Added bounded protected runtime-context use-authorization lease boundary |

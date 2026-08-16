@@ -11736,6 +11736,11 @@ class WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseModel(Base):
         UniqueConstraint("canonical_digest", name="uq_wf_rtctx_inj_auth_lease_digest"),
         UniqueConstraint(
             "authorization_lease_id",
+            "canonical_digest",
+            name="uq_wf_rtctx_inj_auth_lease_id_digest",
+        ),
+        UniqueConstraint(
+            "authorization_lease_id",
             "access_result_id",
             "protected_runtime_handle_id",
             name="uq_wf_rtctx_inj_auth_lease_claim_lineage",
@@ -12601,6 +12606,11 @@ class WorkflowProtectedRuntimeContextInjectionConsumptionClaimModel(
         UniqueConstraint(
             "claim_id",
             "canonical_digest",
+            name="uq_wf_rtctx_inj_consume_claim_id_digest",
+        ),
+        UniqueConstraint(
+            "claim_id",
+            "canonical_digest",
             "injection_id",
             "attempt_id",
             "authorization_lease_id",
@@ -12752,6 +12762,11 @@ class WorkflowProtectedRuntimeContextInjectionAttemptModel(
         UniqueConstraint("injection_id", name="uq_wf_rtctx_inj_attempt_operation"),
         UniqueConstraint("instruction_digest", name="uq_wf_rtctx_inj_attempt_instruction"),
         UniqueConstraint("canonical_digest", name="uq_wf_rtctx_inj_attempt_digest"),
+        UniqueConstraint(
+            "attempt_id",
+            "canonical_digest",
+            name="uq_wf_rtctx_inj_attempt_id_digest",
+        ),
         UniqueConstraint(
             "attempt_id",
             "canonical_digest",
@@ -12958,6 +12973,11 @@ class WorkflowProtectedRuntimeContextInjectionResultModel(
             name="uq_wf_rtctx_inj_result_slot_generation",
         ),
         UniqueConstraint("canonical_digest", name="uq_wf_rtctx_inj_result_digest"),
+        UniqueConstraint(
+            "result_id",
+            "canonical_digest",
+            name="uq_wf_rtctx_inj_result_id_digest",
+        ),
         CheckConstraint(_WF_RTCTX_INJ_CONSUME_CONTRACT, name="ck_wf_rtctx_inj_result_contract"),
         CheckConstraint(
             "claimed_at <= started_at "
@@ -13088,3 +13108,376 @@ class WorkflowProtectedRuntimeContextInjectionResultModel(
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     injector_receipt_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+
+
+_WF_RTCTX_USE_AUTH_CONTRACT = (
+    "consumer_subject_id = "
+    "'service.workflow-protected-transport-target-context-capsule-consumer' "
+    "AND consumer_audience = "
+    "'audience.workflow-protected-transport-target-context-capsule-consumer' "
+    "AND consumer_contract_id = "
+    "'contract.workflow-protected-transport-target-context-capsule-consumer' "
+    "AND consumer_contract_version = '1.0' "
+    "AND purpose_id = 'purpose.workflow-protected-runtime-context-use-evaluation' "
+    "AND policy_id = 'policy.workflow-protected-runtime-context-use-authorization' "
+    "AND policy_version = '1.0' "
+    "AND policy_digest = "
+    "'4287e205f26c138d7bab29faf92bd1a1d1c222378633fb7c28ddefadc8a9e5bd'"
+)
+
+_WF_RTCTX_USE_AUTH_SOURCE = (
+    "injection_result_state = 'injected_into_protected_runtime_slot' "
+    "AND injection_outcome_known "
+    "AND protected_runtime_handle_consumed "
+    "AND inert_context_injected "
+    "AND runtime_slot_mutation_performed "
+    "AND injection_completed_at < injection_deadline "
+    "AND injection_completed_at <= injection_result_recorded_at "
+    "AND injection_completed_at < injected_context_usable_until "
+    "AND runtime_slot_post_generation >= 1 "
+    "AND length(runtime_slot_commitment) = 64 "
+    "AND length(destination_fencing_token_digest) = 64 "
+    "AND runtime_slot_profile_id = 'profile.workflow-protected-runtime-context-slot' "
+    "AND runtime_slot_profile_version = '1.0' "
+    "AND runtime_slot_profile_digest = "
+    "'7c429ec36bd39f5d02add24b7622e55e32eb0cfca9345ebf272fd231385e3e6b'"
+)
+
+_WF_RTCTX_USE_ZERO_PRIOR_AUTHORITY = (
+    "NOT endpoint_resolution_authorized "
+    "AND NOT route_selection_authorized "
+    "AND NOT route_binding_authorized "
+    "AND NOT credential_selection_authorized "
+    "AND NOT credential_assignment_binding_authorized "
+    "AND NOT credential_access_authorized "
+    "AND NOT credential_brokerage_authorized "
+    "AND NOT credential_resolution_authorized "
+    "AND NOT protected_artifact_access_authorized "
+    "AND NOT credential_delivery_authorized "
+    "AND NOT network_access_authorized "
+    "AND NOT readiness_probe_authorized "
+    "AND NOT publication_authorized "
+    "AND NOT delivery_authorized "
+    "AND NOT dispatch_authorized "
+    "AND NOT execution_authorized "
+    "AND NOT infrastructure_mutation_authorized "
+    "AND NOT target_context_capsule_handoff_authorized "
+    "AND NOT target_context_capsule_opening_authorized "
+    "AND NOT protected_resident_context_access_authority_granted "
+    "AND NOT protected_runtime_context_injection_authority_granted "
+    "AND NOT runtime_use_authorized "
+    "AND NOT runtime_start_authorized "
+    "AND NOT runtime_resume_authorized "
+    "AND NOT connector_activity_authorized"
+)
+
+
+class _WorkflowProtectedRuntimeContextUseAuthorizationAuthorityColumns:
+    endpoint_resolution_authorized: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    route_selection_authorized: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    route_binding_authorized: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_selection_authorized: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_assignment_binding_authorized: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_access_authorized: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_brokerage_authorized: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_resolution_authorized: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    protected_artifact_access_authorized: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    credential_delivery_authorized: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    network_access_authorized: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    readiness_probe_authorized: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    publication_authorized: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    delivery_authorized: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    dispatch_authorized: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    execution_authorized: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    infrastructure_mutation_authorized: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    target_context_capsule_handoff_authorized: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    target_context_capsule_opening_authorized: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    protected_resident_context_access_authority_granted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False
+    )
+    protected_runtime_context_injection_authority_granted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False
+    )
+    runtime_use_authorized: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    runtime_start_authorized: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    runtime_resume_authorized: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    connector_activity_authorized: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    protected_runtime_context_use_authority_granted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False
+    )
+
+
+class _WorkflowProtectedRuntimeContextUseAuthorizationSourceColumns:
+    injection_result_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    injection_result_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    injection_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    injection_attempt_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    injection_attempt_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    injection_consumption_claim_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    injection_consumption_claim_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    injection_authorization_lease_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    injection_authorization_lease_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    injector_receipt_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    injection_result_state: Mapped[str] = mapped_column(String(64), nullable=False)
+    injection_completed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    injection_result_recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    injection_deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    injection_outcome_known: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    protected_runtime_handle_consumed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    inert_context_injected: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    runtime_slot_mutation_performed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    destination_boundary_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    destination_deployment_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    destination_generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    destination_fencing_token_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    runtime_slot_profile_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    runtime_slot_profile_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    runtime_slot_profile_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    runtime_slot_commitment: Mapped[str] = mapped_column(String(64), nullable=False)
+    runtime_slot_post_generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    injected_context_usable_until: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    consumer_subject_id: Mapped[str] = mapped_column(String(240), nullable=False)
+    consumer_audience: Mapped[str] = mapped_column(String(240), nullable=False)
+    consumer_contract_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    consumer_contract_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    purpose_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    policy_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+def _workflow_protected_runtime_context_use_upstream_constraints(
+    *, prefix: str
+) -> tuple[ForeignKeyConstraint, ...]:
+    return (
+        ForeignKeyConstraint(
+            ["injection_result_id", "injection_result_digest"],
+            [
+                "workflow_event_runtime_context_injection_results.result_id",
+                "workflow_event_runtime_context_injection_results.canonical_digest",
+            ],
+            name=f"fk_wf_rtctx_use_{prefix}_result",
+        ),
+        ForeignKeyConstraint(
+            ["injection_attempt_id", "injection_attempt_digest"],
+            [
+                "workflow_event_runtime_context_injection_attempts.attempt_id",
+                "workflow_event_runtime_context_injection_attempts.canonical_digest",
+            ],
+            name=f"fk_wf_rtctx_use_{prefix}_attempt",
+        ),
+        ForeignKeyConstraint(
+            ["injection_consumption_claim_id", "injection_consumption_claim_digest"],
+            [
+                "workflow_event_runtime_context_injection_consumption_claims.claim_id",
+                "workflow_event_runtime_context_injection_consumption_claims.canonical_digest",
+            ],
+            name=f"fk_wf_rtctx_use_{prefix}_consume_claim",
+        ),
+        ForeignKeyConstraint(
+            ["injection_authorization_lease_id", "injection_authorization_lease_digest"],
+            [
+                "workflow_event_runtime_context_injection_auth_leases.authorization_lease_id",
+                "workflow_event_runtime_context_injection_auth_leases.canonical_digest",
+            ],
+            name=f"fk_wf_rtctx_use_{prefix}_inj_auth_lease",
+        ),
+    )
+
+
+class WorkflowProtectedRuntimeContextUseAuthorizationLeaseModel(
+    _WorkflowProtectedRuntimeContextUseAuthorizationSourceColumns,
+    _WorkflowProtectedRuntimeContextUseAuthorizationAuthorityColumns,
+    Base,
+):
+    __tablename__ = "workflow_event_runtime_context_use_auth_leases"
+    __table_args__ = (
+        *_workflow_protected_runtime_context_use_upstream_constraints(prefix="lease"),
+        ForeignKeyConstraint(
+            ["claim_id", "claim_digest", "authorization_lease_id"],
+            [
+                "workflow_event_runtime_context_use_auth_claims.claim_id",
+                "workflow_event_runtime_context_use_auth_claims.canonical_digest",
+                "workflow_event_runtime_context_use_auth_claims.authorization_lease_id",
+            ],
+            name="fk_wf_rtctx_use_auth_lease_claim",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
+        UniqueConstraint("claim_id", name="uq_wf_rtctx_use_auth_lease_claim"),
+        UniqueConstraint("injection_result_id", name="uq_wf_rtctx_use_auth_lease_result"),
+        UniqueConstraint(
+            "destination_deployment_id",
+            "runtime_slot_commitment",
+            "runtime_slot_post_generation",
+            name="uq_wf_rtctx_use_auth_lease_slot_generation",
+        ),
+        UniqueConstraint("canonical_digest", name="uq_wf_rtctx_use_auth_lease_digest"),
+        UniqueConstraint(
+            "authorization_lease_id",
+            "injection_result_id",
+            "runtime_slot_commitment",
+            "runtime_slot_post_generation",
+            name="uq_wf_rtctx_use_auth_lease_lineage",
+        ),
+        CheckConstraint(_WF_RTCTX_USE_AUTH_CONTRACT, name="ck_wf_rtctx_use_auth_lease_contract"),
+        CheckConstraint(_WF_RTCTX_USE_AUTH_SOURCE, name="ck_wf_rtctx_use_auth_lease_source"),
+        CheckConstraint(
+            "injection_result_recorded_at <= lifecycle_attestation_observed_at "
+            "AND lifecycle_attestation_observed_at <= issued_at "
+            "AND issued_at < valid_until "
+            "AND valid_until <= effective_until "
+            "AND effective_until <= lifecycle_attestation_valid_until "
+            "AND effective_until <= injected_context_usable_until "
+            "AND valid_until <= issued_at + INTERVAL '1 second'",
+            name="ck_wf_rtctx_use_auth_lease_window",
+        ),
+        CheckConstraint(
+            "single_use AND NOT renewable AND NOT transferable "
+            "AND NOT lease_is_bearer_capability AND state = 'authorized_unconsumed'",
+            name="ck_wf_rtctx_use_auth_lease_semantics",
+        ),
+        CheckConstraint(
+            "use_profile_id = 'profile.workflow-protected-runtime-context-use' "
+            "AND use_profile_version = '1.0' "
+            "AND use_profile_digest = "
+            "'833b75839dd35cb6d4f84e64b1d414aef380a081f4a066e391485a047edddd84'",
+            name="ck_wf_rtctx_use_auth_lease_profile",
+        ),
+        CheckConstraint(
+            _WF_RTCTX_USE_ZERO_PRIOR_AUTHORITY
+            + " AND protected_runtime_context_use_authority_granted",
+            name="ck_wf_rtctx_use_auth_lease_authority",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(payload) = 'object' "
+            "AND jsonb_typeof(lifecycle_attestation_payload) = 'object' "
+            "AND lifecycle_attestation_payload <> '{}'::jsonb",
+            name="ck_wf_rtctx_use_auth_lease_evidence",
+        ),
+        Index(
+            "ix_wf_rtctx_use_auth_lease_scope",
+            "organization_id",
+            "environment_id",
+            "site_id",
+            "issued_at",
+        ),
+    )
+
+    authorization_lease_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    claim_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    claim_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    lifecycle_attestation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    lifecycle_attestation_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    lifecycle_attestation_observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    lifecycle_attestation_valid_until: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    use_profile_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    use_profile_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    use_profile_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    effective_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    single_use: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    renewable: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    transferable: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    lease_is_bearer_capability: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    state: Mapped[str] = mapped_column(String(64), nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    lifecycle_attestation_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class WorkflowProtectedRuntimeContextUseAuthorizationClaimModel(
+    _WorkflowProtectedRuntimeContextUseAuthorizationSourceColumns,
+    _WorkflowProtectedRuntimeContextUseAuthorizationAuthorityColumns,
+    Base,
+):
+    __tablename__ = "workflow_event_runtime_context_use_auth_claims"
+    __table_args__ = (
+        *_workflow_protected_runtime_context_use_upstream_constraints(prefix="claim"),
+        ForeignKeyConstraint(
+            [
+                "authorization_lease_id",
+                "injection_result_id",
+                "runtime_slot_commitment",
+                "runtime_slot_post_generation",
+            ],
+            [
+                "workflow_event_runtime_context_use_auth_leases.authorization_lease_id",
+                "workflow_event_runtime_context_use_auth_leases.injection_result_id",
+                "workflow_event_runtime_context_use_auth_leases.runtime_slot_commitment",
+                "workflow_event_runtime_context_use_auth_leases.runtime_slot_post_generation",
+            ],
+            name="fk_wf_rtctx_use_auth_claim_lease",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
+        UniqueConstraint("authorization_lease_id", name="uq_wf_rtctx_use_auth_claim_lease"),
+        UniqueConstraint("injection_result_id", name="uq_wf_rtctx_use_auth_claim_result"),
+        UniqueConstraint(
+            "destination_deployment_id",
+            "runtime_slot_commitment",
+            "runtime_slot_post_generation",
+            name="uq_wf_rtctx_use_auth_claim_slot_generation",
+        ),
+        UniqueConstraint(
+            "idempotency_scope_id", "idempotency_key", name="uq_wf_rtctx_use_auth_scope_idem"
+        ),
+        UniqueConstraint("canonical_digest", name="uq_wf_rtctx_use_auth_claim_digest"),
+        UniqueConstraint(
+            "claim_id",
+            "canonical_digest",
+            "authorization_lease_id",
+            name="uq_wf_rtctx_use_auth_claim_lease_lineage",
+        ),
+        CheckConstraint(_WF_RTCTX_USE_AUTH_CONTRACT, name="ck_wf_rtctx_use_auth_claim_contract"),
+        CheckConstraint(_WF_RTCTX_USE_AUTH_SOURCE, name="ck_wf_rtctx_use_auth_claim_source"),
+        CheckConstraint(
+            "injection_result_recorded_at <= claimed_at "
+            "AND claimed_at < injected_context_usable_until",
+            name="ck_wf_rtctx_use_auth_claim_window",
+        ),
+        CheckConstraint(
+            _WF_RTCTX_USE_ZERO_PRIOR_AUTHORITY
+            + " AND NOT protected_runtime_context_use_authority_granted",
+            name="ck_wf_rtctx_use_auth_claim_authority",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(payload) = 'object' "
+            "AND jsonb_typeof(authorization_audit_payload) = 'object' "
+            "AND authorization_audit_payload <> '{}'::jsonb",
+            name="ck_wf_rtctx_use_auth_claim_audit",
+        ),
+        Index(
+            "ix_wf_rtctx_use_auth_claim_scope",
+            "organization_id",
+            "environment_id",
+            "site_id",
+            "claimed_at",
+        ),
+    )
+
+    claim_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    authorization_lease_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_scope_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    idempotency_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    authorization_audit_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    claimed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    authorization_audit_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

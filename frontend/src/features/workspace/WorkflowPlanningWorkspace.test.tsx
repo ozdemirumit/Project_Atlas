@@ -34,6 +34,7 @@ import {
   type WorkflowProtectedResidentContextAccessConsumption,
   type WorkflowProtectedRuntimeContextInjectionAuthorization,
   type WorkflowProtectedRuntimeContextInjectionConsumption,
+  type WorkflowProtectedRuntimeContextUseAuthorization,
   type WorkflowPhysicalTransportTargetContextBinding,
   type WorkflowPhysicalTransportCredentialAssignmentSnapshot,
   type WorkflowPhysicalTransportCredentialAssignmentBinding,
@@ -1348,6 +1349,58 @@ const protectedRuntimeContextInjectionAuthorization: WorkflowProtectedRuntimeCon
     "integrity.workflow-protected-runtime-context-injection-authorization.1234567890abcdef",
 };
 
+const protectedRuntimeContextUseAuthorization: WorkflowProtectedRuntimeContextUseAuthorization = {
+  authorization_lease_id:
+    "workflow-protected-runtime-context-use-lease.1234567890abcdef12345678",
+  state: "authorized_unconsumed",
+  effective_state: "active",
+  issued_at: "2026-08-14T10:08:28Z",
+  valid_until: "2026-08-14T10:08:29Z",
+  effective_until: "2026-08-14T10:08:29.500Z",
+  consumer_contract_id:
+    "contract.workflow-protected-transport-target-context-capsule-consumer",
+  consumer_contract_version: "1.0",
+  purpose_id: "purpose.workflow-protected-runtime-context-use-evaluation",
+  policy_id: "policy.workflow-protected-runtime-context-use-authorization",
+  policy_version: "1.0",
+  use_profile_reference:
+    "integrity.workflow-protected-runtime-context-use-profile.1234567890abcdef",
+  runtime_slot_profile_reference:
+    "integrity.workflow-protected-runtime-slot-profile.1234567890abcdef",
+  destination_profile_reference:
+    "integrity.workflow-protected-destination-profile.1234567890abcdef",
+  authority: {
+    protected_runtime_context_use_authority_granted: true,
+    runtime_use_authorized: false,
+    runtime_start_authorized: false,
+    runtime_resume_authorized: false,
+    connector_activity_authorized: false,
+    protected_runtime_context_injection_authority_granted: false,
+    protected_resident_context_access_authority_granted: false,
+    target_context_capsule_opening_authorized: false,
+    target_context_capsule_handoff_authorized: false,
+    endpoint_resolution_authorized: false,
+    route_selection_authorized: false,
+    route_binding_authorized: false,
+    credential_selection_authorized: false,
+    credential_assignment_binding_authorized: false,
+    credential_access_authorized: false,
+    credential_brokerage_authorized: false,
+    credential_resolution_authorized: false,
+    protected_artifact_access_authorized: false,
+    credential_delivery_authorized: false,
+    network_access_authorized: false,
+    readiness_probe_authorized: false,
+    publication_authorized: false,
+    delivery_authorized: false,
+    dispatch_authorized: false,
+    execution_authorized: false,
+    infrastructure_mutation_authorized: false,
+  },
+  integrity_reference:
+    "integrity.workflow-protected-runtime-context-use-authorization.1234567890abcdef",
+};
+
 const protectedRuntimeContextInjectionConsumption: WorkflowProtectedRuntimeContextInjectionConsumption = {
   injection_id:
     "workflow-protected-runtime-context-injection-consumption.1234567890abcdef12345678",
@@ -2092,6 +2145,27 @@ function protectedRuntimeContextInjectionAuthorizationResponse(
   );
 }
 
+function protectedRuntimeContextUseAuthorizationResponse(
+  authorizations: unknown[],
+  status = 200,
+  serverTime = "2026-08-14T10:08:28.500Z",
+  durable = true,
+): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: { authorizations, server_time: serverTime, durable },
+          meta: {
+            correlation_id:
+              "correlation.workflow.protected-runtime-context-use-authorization",
+            generated_at: serverTime,
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function protectedRuntimeContextInjectionConsumptionResponse(
   consumptions: unknown[],
   status = 200,
@@ -2213,6 +2287,9 @@ function mockReadResponses(input: {
   protectedRuntimeContextInjectionConsumptions?: unknown[];
   protectedRuntimeContextInjectionConsumptionServerTime?: string;
   protectedRuntimeContextInjectionConsumptionDurable?: boolean;
+  protectedRuntimeContextUseAuthorizations?: unknown[];
+  protectedRuntimeContextUseAuthorizationServerTime?: string;
+  protectedRuntimeContextUseAuthorizationDurable?: boolean;
   credentialAssignmentSnapshots?: unknown[];
   transportCompatibilityAdmissions?: unknown[];
   pendingTransportAdmissionResponse?: Promise<Response>;
@@ -2240,6 +2317,7 @@ function mockReadResponses(input: {
   pendingProtectedResidentContextAccessConsumptionResponse?: Promise<Response>;
   pendingProtectedRuntimeContextInjectionAuthorizationResponse?: Promise<Response>;
   pendingProtectedRuntimeContextInjectionConsumptionResponse?: Promise<Response>;
+  pendingProtectedRuntimeContextUseAuthorizationResponse?: Promise<Response>;
   pendingCredentialAssignmentSnapshotResponse?: Promise<Response>;
   pendingTransportCompatibilityAdmissionResponse?: Promise<Response>;
   leaseStatus?: number;
@@ -2299,6 +2377,8 @@ function mockReadResponses(input: {
   protectedRuntimeContextInjectionAuthorizationStatuses?: number[];
   protectedRuntimeContextInjectionConsumptionStatus?: number;
   protectedRuntimeContextInjectionConsumptionStatuses?: number[];
+  protectedRuntimeContextUseAuthorizationStatus?: number;
+  protectedRuntimeContextUseAuthorizationStatuses?: number[];
   credentialAssignmentSnapshotStatus?: number;
   credentialAssignmentSnapshotStatuses?: number[];
   transportCompatibilityAdmissionStatus?: number;
@@ -2329,10 +2409,31 @@ function mockReadResponses(input: {
   let protectedResidentContextAccessConsumptionReadCount = 0;
   let protectedRuntimeContextInjectionAuthorizationReadCount = 0;
   let protectedRuntimeContextInjectionConsumptionReadCount = 0;
+  let protectedRuntimeContextUseAuthorizationReadCount = 0;
   let credentialAssignmentSnapshotReadCount = 0;
   let transportCompatibilityAdmissionReadCount = 0;
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (url.endsWith("/api/v1/workflows/protected-runtime-context-use-authorizations")) {
+      if (input.pendingProtectedRuntimeContextUseAuthorizationResponse) {
+        return input.pendingProtectedRuntimeContextUseAuthorizationResponse;
+      }
+      const status =
+        input.protectedRuntimeContextUseAuthorizationStatuses?.[
+          Math.min(
+            protectedRuntimeContextUseAuthorizationReadCount++,
+            input.protectedRuntimeContextUseAuthorizationStatuses.length - 1,
+          )
+        ] ?? input.protectedRuntimeContextUseAuthorizationStatus ?? 200;
+      return Promise.resolve(
+        protectedRuntimeContextUseAuthorizationResponse(
+          input.protectedRuntimeContextUseAuthorizations ?? [],
+          status,
+          input.protectedRuntimeContextUseAuthorizationServerTime,
+          input.protectedRuntimeContextUseAuthorizationDurable,
+        ),
+      );
+    }
     if (url.endsWith("/api/v1/workflows/protected-runtime-context-injection-consumptions")) {
       if (input.pendingProtectedRuntimeContextInjectionConsumptionResponse) {
         return input.pendingProtectedRuntimeContextInjectionConsumptionResponse;
@@ -7611,6 +7712,211 @@ describe("WorkflowPlanningWorkspace", () => {
     ).toBeVisible();
     expect(within(section).queryByRole("list")).toBeNull();
     expect(section).not.toHaveTextContent("runtime-handle.hidden");
+  });
+
+  it("renders protected runtime-context use authorizations as minimized read-only evidence", async () => {
+    expect(Object.keys(protectedRuntimeContextUseAuthorization).sort()).toEqual(
+      [
+        "authorization_lease_id",
+        "state",
+        "effective_state",
+        "issued_at",
+        "valid_until",
+        "effective_until",
+        "consumer_contract_id",
+        "consumer_contract_version",
+        "purpose_id",
+        "policy_id",
+        "policy_version",
+        "use_profile_reference",
+        "runtime_slot_profile_reference",
+        "destination_profile_reference",
+        "authority",
+        "integrity_reference",
+      ].sort(),
+    );
+    expect(Object.keys(protectedRuntimeContextUseAuthorization.authority)).toHaveLength(26);
+    expect(
+      Object.entries(protectedRuntimeContextUseAuthorization.authority).filter(
+        ([, granted]) => granted,
+      ),
+    ).toEqual([["protected_runtime_context_use_authority_granted", true]]);
+    const expiredAuthorization: WorkflowProtectedRuntimeContextUseAuthorization = {
+      ...protectedRuntimeContextUseAuthorization,
+      authorization_lease_id:
+        "workflow-protected-runtime-context-use-lease.abcdef1234567890abcdef12",
+      issued_at: "2026-08-14T10:08:27Z",
+      valid_until: "2026-08-14T10:08:28Z",
+      effective_state: "expired",
+      authority: {
+        ...protectedRuntimeContextUseAuthorization.authority,
+        protected_runtime_context_use_authority_granted: false,
+      },
+    };
+    mockReadResponses({
+      protectedRuntimeContextUseAuthorizations: [
+        protectedRuntimeContextUseAuthorization,
+        expiredAuthorization,
+      ],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Protected runtime-context use authorizations",
+    })).closest("section") as HTMLElement;
+    const records = await within(section).findByRole("list", {
+      name: "Protected runtime-context use authorizations",
+    });
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) =>
+        (request instanceof Request ? request.url : request.toString()).endsWith(
+          "/api/v1/workflows/protected-runtime-context-use-authorizations",
+        ),
+      ),
+    ).toBe(true);
+    expect(records).toHaveTextContent("Active");
+    expect(records).toHaveTextContent("Expired");
+    expect(
+      within(section).getAllByTitle(
+        protectedRuntimeContextUseAuthorization.use_profile_reference,
+      )[0],
+    ).toBeVisible();
+    expect(
+      within(section).getAllByTitle(
+        protectedRuntimeContextUseAuthorization.runtime_slot_profile_reference,
+      )[0],
+    ).toBeVisible();
+    expect(
+      within(section).getAllByTitle(
+        protectedRuntimeContextUseAuthorization.destination_profile_reference,
+      )[0],
+    ).toBeVisible();
+    expect(
+      within(section).getAllByTitle(protectedRuntimeContextUseAuthorization.policy_id)[0],
+    ).toBeVisible();
+    expect(
+      within(section).getAllByTitle(protectedRuntimeContextUseAuthorization.integrity_reference)[0],
+    ).toBeVisible();
+    expect(records).toHaveTextContent(
+      /protected runtime-context use true.*runtime use false.*runtime start false.*runtime resume false.*connector activity false.*protected runtime-context injection false.*protected resident-context access false.*target-context capsule opening false.*target-context capsule handoff false.*endpoint resolution false.*route selection false.*route binding false.*credential selection false.*credential assignment binding false.*credential access false.*credential brokerage false.*credential resolution false.*protected artifact access false.*credential delivery false.*network access false.*readiness probe false.*publication false.*delivery false.*dispatch false.*execution false.*infrastructure mutation false/i,
+    );
+    expect(section).toHaveTextContent(/Future-request-only authorization evidence/i);
+    expect(section).not.toHaveTextContent(/authorized browser session|MFA/i);
+    expect(section).not.toHaveTextContent(
+      /source-result\.hidden|slot\.hidden|generation\.hidden|fence\.hidden|receipt\.hidden|attestation\.hidden|nonce\.hidden|idempotency\.hidden|endpoint\.hidden|credential\.hidden/i,
+    );
+    expect(within(section).queryByRole("button")).toBeNull();
+    expect(within(section).queryByRole("link")).toBeNull();
+    expect(within(section).queryByRole("textbox")).toBeNull();
+    expect(within(section).queryByRole("combobox")).toBeNull();
+    expect(within(section).queryByRole("checkbox")).toBeNull();
+    expect(records).toHaveClass(
+      "workflow-step-preview",
+      "workflow-physical-route-binding-list",
+      "workflow-target-context-opening-list",
+    );
+    expect(records.querySelectorAll(".workflow-physical-route-binding-grid")).toHaveLength(2);
+    expect(records).not.toHaveTextContent(
+      protectedRuntimeContextUseAuthorization.authorization_lease_id,
+    );
+  });
+
+  it("shows loading, empty and fail-closed runtime-context use authorization states", async () => {
+    mockReadResponses({
+      pendingProtectedRuntimeContextUseAuthorizationResponse: new Promise<Response>(() => {}),
+    });
+    const loadingView = renderWorkspace();
+    let section = (await screen.findByRole("heading", {
+      name: "Protected runtime-context use authorizations",
+    })).closest("section") as HTMLElement;
+    expect(
+      within(section).getByText("Loading protected runtime-context use authorization evidence..."),
+    ).toBeVisible();
+    expect(within(section).queryByRole("button")).toBeNull();
+
+    loadingView.unmount();
+    mockReadResponses({ protectedRuntimeContextUseAuthorizations: [] });
+    const emptyView = renderWorkspace();
+    section = (await screen.findByRole("heading", {
+      name: "Protected runtime-context use authorizations",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText(
+        "No protected runtime-context use authorizations are recorded in this scope.",
+      ),
+    ).toBeVisible();
+
+    emptyView.unmount();
+    mockReadResponses({ protectedRuntimeContextUseAuthorizationStatus: 503 });
+    renderWorkspace();
+    section = (await screen.findByRole("heading", {
+      name: "Protected runtime-context use authorizations",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Runtime-context use authorizations are unavailable"),
+    ).toBeVisible();
+    expect(within(section).queryByRole("list")).toBeNull();
+    expect(within(section).queryByRole("button")).toBeNull();
+  });
+
+  it.each([
+    [
+      "a source result field",
+      {
+        ...protectedRuntimeContextUseAuthorization,
+        source_injection_result_id: "source-result.hidden",
+      },
+    ],
+    [
+      "an active lease without dedicated authority",
+      {
+        ...protectedRuntimeContextUseAuthorization,
+        authority: {
+          ...protectedRuntimeContextUseAuthorization.authority,
+          protected_runtime_context_use_authority_granted: false,
+        },
+      },
+    ],
+    [
+      "an expired lease with dedicated authority",
+      {
+        ...protectedRuntimeContextUseAuthorization,
+        issued_at: "2026-08-14T10:08:27Z",
+        valid_until: "2026-08-14T10:08:28Z",
+        effective_state: "expired",
+      },
+    ],
+    [
+      "a slot generation field",
+      {
+        ...protectedRuntimeContextUseAuthorization,
+        slot_generation: "generation.hidden",
+      },
+    ],
+  ])("fails closed for protected runtime-context use authorization with %s", async (_case, unsafe) => {
+    mockReadResponses({ protectedRuntimeContextUseAuthorizations: [unsafe] });
+    renderWorkspace();
+    const section = (await screen.findByRole("heading", {
+      name: "Protected runtime-context use authorizations",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Runtime-context use authorizations are unavailable"),
+    ).toBeVisible();
+    expect(within(section).queryByRole("list")).toBeNull();
+    expect(section).not.toHaveTextContent(/source-result\.hidden|generation\.hidden/i);
+  });
+
+  it("uses the existing username/password session for runtime-context use authorization reads", async () => {
+    mockReadResponses({ protectedRuntimeContextUseAuthorizationStatus: 401 });
+    renderWorkspace();
+    const section = (await screen.findByRole("heading", {
+      name: "Protected runtime-context use authorizations",
+    })).closest("section") as HTMLElement;
+    expect(await within(section).findByText("Your session has expired")).toBeVisible();
+    expect(within(section).getByText("Sign in again to continue.")).toBeVisible();
+    expect(section).not.toHaveTextContent(/authorized browser session|MFA/i);
+    expect(within(section).queryByRole("button")).toBeNull();
+    expect(within(section).queryByRole("link")).toBeNull();
   });
 
   it("renders protected runtime-context injection consumptions as minimized read-only evidence", async () => {
