@@ -40,6 +40,7 @@ import {
   listWorkflowPhysicalTransportTargetContextCapsuleConsumerBindings,
   listWorkflowPhysicalTransportTargetContextCapsuleHandoffAuthorizationLeases,
   listWorkflowPhysicalTransportTargetContextCapsuleHandoffs,
+  listWorkflowPhysicalTransportTargetContextCapsuleOpeningAuthorizationLeases,
   listWorkflowPhysicalTransportTargetContextBindings,
   listWorkflowPhysicalTransportCredentialAssignmentSnapshots,
   listWorkflowPhysicalTransportCredentialAssignmentFreshnessAdmissions,
@@ -277,6 +278,17 @@ export default function WorkflowPlanningWorkspace({
       siteId,
     ],
     queryFn: () => listWorkflowPhysicalTransportTargetContextCapsuleHandoffs({ scope }),
+    retry: false,
+  });
+  const targetContextCapsuleOpeningAuthorizationLeaseQuery = useQuery({
+    queryKey: [
+      "workflow-physical-transport-target-context-capsule-opening-authorization-leases",
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: () =>
+      listWorkflowPhysicalTransportTargetContextCapsuleOpeningAuthorizationLeases({ scope }),
     retry: false,
   });
   const targetQuery = useQuery({
@@ -758,6 +770,10 @@ export default function WorkflowPlanningWorkspace({
   const targetContextCapsuleHandoffErrorStatus =
     targetContextCapsuleHandoffQuery.error instanceof ApiRequestError
       ? targetContextCapsuleHandoffQuery.error.status
+      : undefined;
+  const targetContextCapsuleOpeningAuthorizationLeaseErrorStatus =
+    targetContextCapsuleOpeningAuthorizationLeaseQuery.error instanceof ApiRequestError
+      ? targetContextCapsuleOpeningAuthorizationLeaseQuery.error.status
       : undefined;
   const eventEnvelopes = eventEnvelopesForAdmission;
   const transportAdmissions = transportAdmissionsForArtifacts;
@@ -3209,6 +3225,153 @@ export default function WorkflowPlanningWorkspace({
             This is historical sealed-handoff evidence only. It grants no authority to retrieve,
             reveal, unseal, decrypt, copy, deliver, connect, probe, publish, dispatch, execute, or
             mutate infrastructure.
+          </span>
+        </div>
+      </section>
+
+      <section
+        className="workflow-physical-route-binding-band workflow-target-context-opening-band"
+        aria-labelledby="workflow-target-context-capsule-opening-authorization-lease-title"
+      >
+        <div className="workflow-section-heading">
+          <div>
+            <p className="eyebrow">BOUNDED OPENING EVIDENCE</p>
+            <h2 id="workflow-target-context-capsule-opening-authorization-lease-title">
+              Target-context capsule opening authorization leases
+            </h2>
+          </div>
+          <span>Read only</span>
+        </div>
+        {targetContextCapsuleOpeningAuthorizationLeaseQuery.isLoading && (
+          <div className="workflow-empty-state" role="status">
+            <RefreshCw className="spin" size={18} />
+            <span>Loading capsule opening authorization lease evidence...</span>
+          </div>
+        )}
+        {targetContextCapsuleOpeningAuthorizationLeaseQuery.isError && (
+          <div className="workflow-inline-error" role="alert">
+            <AlertTriangle aria-hidden="true" size={18} />
+            <div>
+              <strong>
+                {targetContextCapsuleOpeningAuthorizationLeaseErrorStatus === 401
+                  ? "Your session has expired"
+                  : targetContextCapsuleOpeningAuthorizationLeaseErrorStatus === 403
+                    ? "Capsule opening authorization lease permission is missing"
+                    : "Capsule opening authorization leases are unavailable"}
+              </strong>
+              <span>
+                {targetContextCapsuleOpeningAuthorizationLeaseErrorStatus === 401
+                  ? "Sign in again to continue."
+                  : targetContextCapsuleOpeningAuthorizationLeaseErrorStatus === 403
+                    ? "Your current role or scope cannot inspect capsule opening authorization lease evidence."
+                    : "No opening authority, capsule state, or operational state is inferred from this failed read."}
+              </span>
+            </div>
+          </div>
+        )}
+        {targetContextCapsuleOpeningAuthorizationLeaseQuery.isSuccess &&
+          targetContextCapsuleOpeningAuthorizationLeaseQuery.data
+            .physical_transport_target_context_capsule_opening_authorization_leases.length ===
+            0 && (
+            <div className="workflow-empty-state" role="status">
+              <LockKeyhole size={19} />
+              <span>No capsule opening authorization leases are recorded in this scope.</span>
+            </div>
+          )}
+        {targetContextCapsuleOpeningAuthorizationLeaseQuery.isSuccess &&
+          targetContextCapsuleOpeningAuthorizationLeaseQuery.data
+            .physical_transport_target_context_capsule_opening_authorization_leases.length > 0 && (
+            <ol
+              className="workflow-step-preview workflow-physical-route-binding-list workflow-target-context-opening-list"
+              aria-label="Target-context capsule opening authorization leases"
+            >
+              {targetContextCapsuleOpeningAuthorizationLeaseQuery.data.physical_transport_target_context_capsule_opening_authorization_leases.map(
+                (lease) => (
+                  <li key={lease.authorization_lease_id}>
+                    {lease.effective_state === "active" ? (
+                      <ShieldCheck size={18} />
+                    ) : (
+                      <FileClock size={18} />
+                    )}
+                    <div>
+                      <strong>
+                        <code title={lease.authorization_lease_id}>
+                          {safeHolderIdentifier(lease.authorization_lease_id)}
+                        </code>
+                        <span
+                          className={`state-badge ${
+                            lease.effective_state === "active" ? "neutral" : "warning"
+                          }`}
+                        >
+                          {lease.effective_state === "active" ? "Active" : "Expired"}
+                        </span>
+                      </strong>
+                      <div className="workflow-physical-route-binding-grid">
+                        <span>
+                          Organization {lease.scope.organization_id} | environment{" "}
+                          {lease.scope.environment_id} | site {lease.scope.site_id}
+                        </span>
+                        <span>
+                          Consumer contract{" "}
+                          <code title={lease.consumer_contract_id}>
+                            {safeHolderIdentifier(lease.consumer_contract_id)}
+                          </code>{" "}
+                          v{lease.consumer_contract_version}
+                        </span>
+                        <span>
+                          Purpose{" "}
+                          <code title={lease.purpose_id}>
+                            {safeHolderIdentifier(lease.purpose_id)}
+                          </code>
+                        </span>
+                        <span>
+                          Issued {formatTimestamp(lease.issued_at)} | valid until{" "}
+                          {formatTimestamp(lease.valid_until)}
+                        </span>
+                        <span>
+                          Immutable state {readableKind(lease.state)} | effective state{" "}
+                          {lease.effective_state}
+                        </span>
+                        <span>
+                          Single use true | renewable false | transferable false | bearer capability
+                          {lease.lease_is_bearer_capability ? " true" : " false"}
+                        </span>
+                        <span>
+                          Policy{" "}
+                          <code title={lease.policy.policy_id}>
+                            {safeHolderIdentifier(lease.policy.policy_id)}
+                          </code>{" "}
+                          v{lease.policy.policy_version}
+                        </span>
+                        <span>
+                          Integrity reference{" "}
+                          <code title={lease.integrity_reference}>
+                            {safeHolderIdentifier(lease.integrity_reference)}
+                          </code>
+                        </span>
+                        <span className="workflow-physical-route-binding-authority">
+                          Authority target-context capsule opening true | target-context capsule
+                          handoff false | endpoint resolution false | route selection false | route
+                          binding false | credential selection false | credential assignment binding
+                          false | credential access false | credential brokerage false | credential
+                          resolution false | protected artifact access false | credential delivery
+                          false | network access false | readiness probe false | publication false |
+                          delivery false | dispatch false | execution false | infrastructure mutation
+                          false
+                        </span>
+                      </div>
+                    </div>
+                  </li>
+                ),
+              )}
+            </ol>
+          )}
+        <div className="workflow-safety-boundary" role="note">
+          <LockKeyhole size={18} />
+          <span>
+            This evidence authorizes only a later request to a separate capsule-opening
+            consumption boundary. It cannot retrieve, reveal, copy, unseal, connect, create
+            runtime context, dispatch, execute, or mutate infrastructure.
           </span>
         </div>
       </section>
