@@ -1267,11 +1267,6 @@ export type WorkflowPhysicalTransportTargetContextCapsuleHandoffInventory = {
   durable: true;
 };
 
-export type WorkflowPhysicalTransportTargetContextCapsuleOpeningAuthorizationLeasePolicy = {
-  policy_id: "policy.workflow-protected-transport-target-context-capsule-opening-authorization";
-  policy_version: "1.0";
-};
-
 export type WorkflowPhysicalTransportTargetContextCapsuleOpeningAuthorizationLeaseAuthority = {
   target_context_capsule_opening_authorized: true;
   target_context_capsule_handoff_authorized: false;
@@ -1297,9 +1292,6 @@ export type WorkflowPhysicalTransportTargetContextCapsuleOpeningAuthorizationLea
 export type WorkflowPhysicalTransportTargetContextCapsuleOpeningAuthorizationLease = {
   authorization_lease_id: string;
   scope: WorkflowRunPlan["scope"];
-  consumer_contract_id: string;
-  consumer_contract_version: string;
-  purpose_id: string;
   state: "authorized_unconsumed";
   effective_state: "active" | "expired";
   issued_at: string;
@@ -1308,7 +1300,8 @@ export type WorkflowPhysicalTransportTargetContextCapsuleOpeningAuthorizationLea
   renewable: false;
   transferable: false;
   lease_is_bearer_capability: false;
-  policy: WorkflowPhysicalTransportTargetContextCapsuleOpeningAuthorizationLeasePolicy;
+  policy_id: "policy.workflow-protected-transport-target-context-capsule-opening-authorization";
+  policy_version: "1.0";
   authority: WorkflowPhysicalTransportTargetContextCapsuleOpeningAuthorizationLeaseAuthority;
   integrity_reference: string;
 };
@@ -2449,10 +2442,6 @@ const physicalTransportTargetContextCapsuleHandoffInventoryFields = [
   "server_time",
   "durable",
 ] as const;
-const physicalTransportTargetContextCapsuleOpeningAuthorizationLeasePolicyFields = [
-  "policy_id",
-  "policy_version",
-] as const;
 const physicalTransportTargetContextCapsuleOpeningAuthorizationLeaseAuthorityFields = [
   "target_context_capsule_opening_authorized",
   "target_context_capsule_handoff_authorized",
@@ -2477,9 +2466,6 @@ const physicalTransportTargetContextCapsuleOpeningAuthorizationLeaseAuthorityFie
 const physicalTransportTargetContextCapsuleOpeningAuthorizationLeaseFields = [
   "authorization_lease_id",
   "scope",
-  "consumer_contract_id",
-  "consumer_contract_version",
-  "purpose_id",
   "state",
   "effective_state",
   "issued_at",
@@ -2488,7 +2474,8 @@ const physicalTransportTargetContextCapsuleOpeningAuthorizationLeaseFields = [
   "renewable",
   "transferable",
   "lease_is_bearer_capability",
-  "policy",
+  "policy_id",
+  "policy_version",
   "authority",
   "integrity_reference",
 ] as const;
@@ -4419,21 +4406,6 @@ function hasTargetContextCapsuleOpeningOnlyAuthority(
   );
 }
 
-function isTargetContextCapsuleOpeningAuthorizationPolicy(
-  value: unknown,
-): value is WorkflowPhysicalTransportTargetContextCapsuleOpeningAuthorizationLeasePolicy {
-  return (
-    isObject(value) &&
-    hasExactKeys(
-      value,
-      physicalTransportTargetContextCapsuleOpeningAuthorizationLeasePolicyFields,
-    ) &&
-    value.policy_id ===
-      "policy.workflow-protected-transport-target-context-capsule-opening-authorization" &&
-    value.policy_version === "1.0"
-  );
-}
-
 function isPhysicalTransportTargetContextCapsuleOpeningAuthorizationLease(
   value: unknown,
   scope: WorkflowScope,
@@ -4462,11 +4434,6 @@ function isPhysicalTransportTargetContextCapsuleOpeningAuthorizationLease(
     leaseScope.organization_id === scope.organizationId &&
     leaseScope.environment_id === scope.environmentId &&
     leaseScope.site_id === scope.siteId &&
-    value.consumer_contract_id ===
-      "contract.workflow-protected-transport-target-context-capsule-consumer" &&
-    value.consumer_contract_version === "1.0" &&
-    value.purpose_id ===
-      "purpose.workflow-protected-transport-target-context-capsule-opening-evaluation" &&
     value.state === "authorized_unconsumed" &&
     value.effective_state === expectedEffectiveState &&
     validUntil - issuedAt === 1_000 &&
@@ -4475,7 +4442,9 @@ function isPhysicalTransportTargetContextCapsuleOpeningAuthorizationLease(
     value.renewable === false &&
     value.transferable === false &&
     value.lease_is_bearer_capability === false &&
-    isTargetContextCapsuleOpeningAuthorizationPolicy(value.policy) &&
+    value.policy_id ===
+      "policy.workflow-protected-transport-target-context-capsule-opening-authorization" &&
+    value.policy_version === "1.0" &&
     hasTargetContextCapsuleOpeningOnlyAuthority(value.authority) &&
     isStableIdentifier(value.integrity_reference)
   );

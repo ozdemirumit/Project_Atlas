@@ -3312,19 +3312,6 @@ export default function WorkflowPlanningWorkspace({
                           {lease.scope.environment_id} | site {lease.scope.site_id}
                         </span>
                         <span>
-                          Consumer contract{" "}
-                          <code title={lease.consumer_contract_id}>
-                            {safeHolderIdentifier(lease.consumer_contract_id)}
-                          </code>{" "}
-                          v{lease.consumer_contract_version}
-                        </span>
-                        <span>
-                          Purpose{" "}
-                          <code title={lease.purpose_id}>
-                            {safeHolderIdentifier(lease.purpose_id)}
-                          </code>
-                        </span>
-                        <span>
                           Issued {formatTimestamp(lease.issued_at)} | valid until{" "}
                           {formatTimestamp(lease.valid_until)}
                         </span>
@@ -3338,10 +3325,10 @@ export default function WorkflowPlanningWorkspace({
                         </span>
                         <span>
                           Policy{" "}
-                          <code title={lease.policy.policy_id}>
-                            {safeHolderIdentifier(lease.policy.policy_id)}
+                          <code title={lease.policy_id}>
+                            {safeHolderIdentifier(lease.policy_id)}
                           </code>{" "}
-                          v{lease.policy.policy_version}
+                          v{lease.policy_version}
                         </span>
                         <span>
                           Integrity reference{" "}

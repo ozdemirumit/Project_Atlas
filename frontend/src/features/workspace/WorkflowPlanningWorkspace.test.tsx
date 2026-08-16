@@ -1120,9 +1120,6 @@ const targetContextCapsuleOpeningAuthorizationLease: WorkflowPhysicalTransportTa
   authorization_lease_id:
     "workflow-target-context-capsule-opening-authorization-lease.1234567890abcdef",
   scope: { ...plan.scope },
-  consumer_contract_id: "contract.workflow-protected-transport-target-context-capsule-consumer",
-  consumer_contract_version: "1.0",
-  purpose_id: "purpose.workflow-protected-transport-target-context-capsule-opening-evaluation",
   state: "authorized_unconsumed",
   effective_state: "active",
   issued_at: "2026-08-14T10:08:26Z",
@@ -1131,11 +1128,8 @@ const targetContextCapsuleOpeningAuthorizationLease: WorkflowPhysicalTransportTa
   renewable: false,
   transferable: false,
   lease_is_bearer_capability: false,
-  policy: {
-    policy_id:
-      "policy.workflow-protected-transport-target-context-capsule-opening-authorization",
-    policy_version: "1.0",
-  },
+  policy_id: "policy.workflow-protected-transport-target-context-capsule-opening-authorization",
+  policy_version: "1.0",
   authority: {
     target_context_capsule_opening_authorized: true,
     target_context_capsule_handoff_authorized: false,
@@ -6253,7 +6247,25 @@ describe("WorkflowPlanningWorkspace", () => {
     expect(within(section).queryByRole("link")).toBeNull();
   });
 
-  it("renders capsule opening authorization leases as minimized read-only evidence", async () => {
+  it("accepts the canonical backend capsule opening authorization response as minimized read-only evidence", async () => {
+    expect(Object.keys(targetContextCapsuleOpeningAuthorizationLease).sort()).toEqual(
+      [
+        "authorization_lease_id",
+        "scope",
+        "state",
+        "effective_state",
+        "issued_at",
+        "valid_until",
+        "single_use",
+        "renewable",
+        "transferable",
+        "lease_is_bearer_capability",
+        "policy_id",
+        "policy_version",
+        "authority",
+        "integrity_reference",
+      ].sort(),
+    );
     const expiredLease: WorkflowPhysicalTransportTargetContextCapsuleOpeningAuthorizationLease = {
       ...targetContextCapsuleOpeningAuthorizationLease,
       authorization_lease_id:
@@ -6403,14 +6415,50 @@ describe("WorkflowPlanningWorkspace", () => {
       { ...targetContextCapsuleOpeningAuthorizationLease, attestation_id: "attestation.hidden" },
     ],
     [
-      "an extra policy field",
+      "a legacy nested policy",
       {
         ...targetContextCapsuleOpeningAuthorizationLease,
         policy: {
-          ...targetContextCapsuleOpeningAuthorizationLease.policy,
-          policy_digest: "a".repeat(64),
+          policy_id:
+            "policy.workflow-protected-transport-target-context-capsule-opening-authorization",
+          policy_version: "1.0",
         },
       },
+    ],
+    [
+      "a legacy consumer contract",
+      {
+        ...targetContextCapsuleOpeningAuthorizationLease,
+        consumer_contract_id:
+          "contract.workflow-protected-transport-target-context-capsule-consumer",
+        consumer_contract_version: "1.0",
+      },
+    ],
+    [
+      "a legacy purpose",
+      {
+        ...targetContextCapsuleOpeningAuthorizationLease,
+        purpose_id:
+          "purpose.workflow-protected-transport-target-context-capsule-opening-evaluation",
+      },
+    ],
+    [
+      "a custody profile reference",
+      {
+        ...targetContextCapsuleOpeningAuthorizationLease,
+        custody_profile_reference: "custody-profile.hidden",
+      },
+    ],
+    [
+      "an unexpected policy identifier",
+      {
+        ...targetContextCapsuleOpeningAuthorizationLease,
+        policy_id: "policy.workflow-protected-transport-target-context-capsule-opening-other",
+      },
+    ],
+    [
+      "an unexpected policy version",
+      { ...targetContextCapsuleOpeningAuthorizationLease, policy_version: "2.0" },
     ],
     [
       "an extra authority",
@@ -6487,7 +6535,7 @@ describe("WorkflowPlanningWorkspace", () => {
         }),
       ).toBeNull();
       expect(section).not.toHaveTextContent(
-        /handoff\.hidden|capsule\.hidden|receipt\.hidden|attestation\.hidden/i,
+        /handoff\.hidden|capsule\.hidden|receipt\.hidden|attestation\.hidden|custody-profile\.hidden/i,
       );
       expect(within(section).queryByRole("button")).toBeNull();
       expect(within(section).queryByRole("link")).toBeNull();
