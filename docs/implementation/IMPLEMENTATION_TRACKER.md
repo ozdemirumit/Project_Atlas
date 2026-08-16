@@ -6,9 +6,9 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-213 |
 | Title | Atomic single-use protected target-context capsule handoff-authorization lease consumption and sealed protected-boundary capsule handoff without unsealing, runtime, execution or infrastructure mutation authority |
-| Status | Ready for Pull Request |
+| Status | In Review |
 | Branch | `agent/protected-capsule-handoff-consumption` |
-| Pull Request | Not opened |
+| Pull Request | [#226](https://github.com/ozdemirumit/Project_Atlas/pull/226) |
 | Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-158, ADR-159, ADR-160, ADR-161, ADR-162, ADR-163 |
 | Last Updated | 2026-08-16 |
 | Next Action | Open the exact-head pull request, pass CI, merge by SHA and verify independent `main` CI |
