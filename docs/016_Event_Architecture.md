@@ -495,6 +495,19 @@ Both dedicated capsule authority declarations and all 17 operational authority d
 false on the claim, attempt and result. Runtime access, network use, publication, dispatch,
 execution and infrastructure mutation remain separate later boundaries.
 
+Protected resident-context access authorization is the next independent append-only lease
+boundary. Only the exact consumer workload bound through the complete successful opening lineage
+may submit the opening result ID and digest, code-owned policy identity and idempotency metadata.
+A fresh signed, nonce-bound and metadata-only protected-boundary lifecycle attestation must prove
+that the exact non-bearer resident context remains present, unexpired, unrevoked, undestroyed,
+unconsumed and without an outstanding handle. PostgreSQL locks and revalidates the complete lineage,
+destination fence, database time and signed lifetime before atomically appending one claim and one
+at-most-one-second lease. The lease grants only the dedicated future resident-context access-
+consumption request authority; it returns no context identity or handle and grants no protected-
+artifact, route, credential, network, publication, delivery, dispatch, execution or mutation
+authority. Actual lease consumption, handle creation, context access and injection remain a later
+boundary.
+
 ### 10.2 Publication State
 
 Outbox records track:
@@ -893,3 +906,4 @@ This document is ready to enter Review when:
 | 1.4.0 | 2026-08-16 | Workflow Architecture | Added atomic lease-consumption and sealed protected-boundary handoff evidence |
 | 1.5.0 | 2026-08-16 | Workflow Architecture | Added bounded consumer-side target-context capsule opening-authorization lease boundary |
 | 1.6.0 | 2026-08-16 | Workflow Architecture | Added atomic consumer-side capsule opening-consumption and protected resident-context evidence boundary |
+| 1.7.0 | 2026-08-16 | Workflow Architecture | Added bounded protected resident-context access-authorization lease boundary |

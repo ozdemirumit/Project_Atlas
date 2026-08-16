@@ -42,6 +42,7 @@ import {
   listWorkflowPhysicalTransportTargetContextCapsuleHandoffs,
   listWorkflowPhysicalTransportTargetContextCapsuleOpeningAuthorizationLeases,
   listWorkflowPhysicalTransportTargetContextCapsuleOpenings,
+  listWorkflowProtectedResidentContextAccessAuthorizations,
   listWorkflowPhysicalTransportTargetContextBindings,
   listWorkflowPhysicalTransportCredentialAssignmentSnapshots,
   listWorkflowPhysicalTransportCredentialAssignmentFreshnessAdmissions,
@@ -300,6 +301,16 @@ export default function WorkflowPlanningWorkspace({
       siteId,
     ],
     queryFn: () => listWorkflowPhysicalTransportTargetContextCapsuleOpenings({ scope }),
+    retry: false,
+  });
+  const protectedResidentContextAccessAuthorizationQuery = useQuery({
+    queryKey: [
+      "workflow-protected-resident-context-access-authorizations",
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: listWorkflowProtectedResidentContextAccessAuthorizations,
     retry: false,
   });
   const targetQuery = useQuery({
@@ -789,6 +800,10 @@ export default function WorkflowPlanningWorkspace({
   const targetContextCapsuleOpeningErrorStatus =
     targetContextCapsuleOpeningQuery.error instanceof ApiRequestError
       ? targetContextCapsuleOpeningQuery.error.status
+      : undefined;
+  const protectedResidentContextAccessAuthorizationErrorStatus =
+    protectedResidentContextAccessAuthorizationQuery.error instanceof ApiRequestError
+      ? protectedResidentContextAccessAuthorizationQuery.error.status
       : undefined;
   const eventEnvelopes = eventEnvelopesForAdmission;
   const transportAdmissions = transportAdmissionsForArtifacts;
@@ -3559,6 +3574,147 @@ export default function WorkflowPlanningWorkspace({
             receipt, destination, attestation, resident-context identity, runtime handle, or
             operational control and grants no authority to retry, reveal, inject, execute, or
             mutate infrastructure.
+          </span>
+        </div>
+      </section>
+
+      <section
+        className="workflow-physical-route-binding-band workflow-target-context-opening-band"
+        aria-labelledby="workflow-protected-resident-context-access-authorization-title"
+      >
+        <div className="workflow-section-heading">
+          <div>
+            <p className="eyebrow">BOUNDED ACCESS EVIDENCE</p>
+            <h2 id="workflow-protected-resident-context-access-authorization-title">
+              Protected resident-context access authorizations
+            </h2>
+          </div>
+          <span>Read only</span>
+        </div>
+        {protectedResidentContextAccessAuthorizationQuery.isLoading && (
+          <div className="workflow-empty-state" role="status">
+            <RefreshCw className="spin" size={18} />
+            <span>Loading protected resident-context access authorization evidence...</span>
+          </div>
+        )}
+        {protectedResidentContextAccessAuthorizationQuery.isError && (
+          <div className="workflow-inline-error" role="alert">
+            <AlertTriangle aria-hidden="true" size={18} />
+            <div>
+              <strong>
+                {protectedResidentContextAccessAuthorizationErrorStatus === 401
+                  ? "Your session has expired"
+                  : protectedResidentContextAccessAuthorizationErrorStatus === 403
+                    ? "Resident-context access authorization permission is missing"
+                    : "Resident-context access authorizations are unavailable"}
+              </strong>
+              <span>
+                {protectedResidentContextAccessAuthorizationErrorStatus === 401
+                  ? "Sign in again to continue."
+                  : protectedResidentContextAccessAuthorizationErrorStatus === 403
+                    ? "Your current role or scope cannot inspect resident-context access authorization evidence."
+                    : "No resident-context access authority or operational state is inferred from this failed read."}
+              </span>
+            </div>
+          </div>
+        )}
+        {protectedResidentContextAccessAuthorizationQuery.isSuccess &&
+          protectedResidentContextAccessAuthorizationQuery.data
+            .authorizations.length === 0 && (
+            <div className="workflow-empty-state" role="status">
+              <LockKeyhole size={19} />
+              <span>No protected resident-context access authorizations are recorded in this scope.</span>
+            </div>
+          )}
+        {protectedResidentContextAccessAuthorizationQuery.isSuccess &&
+          protectedResidentContextAccessAuthorizationQuery.data
+            .authorizations.length > 0 && (
+            <ol
+              className="workflow-step-preview workflow-physical-route-binding-list workflow-target-context-opening-list"
+              aria-label="Protected resident-context access authorizations"
+            >
+              {protectedResidentContextAccessAuthorizationQuery.data.authorizations.map(
+                (authorization) => (
+                  <li key={authorization.authorization_lease_id}>
+                    {authorization.effective_state === "active" ? (
+                      <ShieldCheck size={18} />
+                    ) : (
+                      <FileClock size={18} />
+                    )}
+                    <div>
+                      <strong>
+                        <code title={authorization.authorization_lease_id}>
+                          {safeHolderIdentifier(authorization.authorization_lease_id)}
+                        </code>
+                        <span
+                          className={`state-badge ${
+                            authorization.effective_state === "active" ? "neutral" : "warning"
+                          }`}
+                        >
+                          {authorization.effective_state === "active" ? "Active" : "Expired"}
+                        </span>
+                      </strong>
+                      <div className="workflow-physical-route-binding-grid">
+                        <span>
+                          Immutable state {readableKind(authorization.state)} | effective state{" "}
+                          {authorization.effective_state}
+                        </span>
+                        <span>
+                          Issued {formatTimestamp(authorization.issued_at)} | valid until{" "}
+                          {formatTimestamp(authorization.valid_until)} | effective until{" "}
+                          {formatTimestamp(authorization.effective_until)}
+                        </span>
+                        <span>
+                          Consumer contract{" "}
+                          <code title={authorization.consumer_contract_id}>
+                            {safeHolderIdentifier(authorization.consumer_contract_id)}
+                          </code>{" "}
+                          v{authorization.consumer_contract_version} | purpose{" "}
+                          <code title={authorization.purpose_id}>
+                            {safeHolderIdentifier(authorization.purpose_id)}
+                          </code>
+                        </span>
+                        <span>
+                          Policy{" "}
+                          <code title={authorization.policy_id}>
+                            {safeHolderIdentifier(authorization.policy_id)}
+                          </code>{" "}
+                          v{authorization.policy_version}
+                        </span>
+                        <span>
+                          Destination profile{" "}
+                          <code title={authorization.destination_profile_reference}>
+                            {safeHolderIdentifier(authorization.destination_profile_reference)}
+                          </code>
+                        </span>
+                        <span>
+                          Integrity reference{" "}
+                          <code title={authorization.integrity_reference}>
+                            {safeHolderIdentifier(authorization.integrity_reference)}
+                          </code>
+                        </span>
+                        <span className="workflow-physical-route-binding-authority">
+                          Authority protected resident-context access true | target-context capsule
+                          opening false | target-context capsule handoff false | endpoint resolution
+                          false | route selection false | route binding false | credential selection
+                          false | credential assignment binding false | credential access false |
+                          credential brokerage false | credential resolution false | protected
+                          artifact access false | credential delivery false | network access false |
+                          readiness probe false | publication false | delivery false | dispatch false |
+                          execution false | infrastructure mutation false
+                        </span>
+                      </div>
+                    </div>
+                  </li>
+                ),
+              )}
+            </ol>
+          )}
+        <div className="workflow-safety-boundary" role="note">
+          <LockKeyhole size={18} />
+          <span>
+            Historical authorization evidence only. No resident context or operational capability
+            is exposed.
           </span>
         </div>
       </section>

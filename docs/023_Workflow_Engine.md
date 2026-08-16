@@ -700,6 +700,15 @@ MVP workflows do not execute C3 through C5 capabilities.
   are never retried; both dedicated capsule authority fields and all 17 operational authority
   fields are false. Runtime access, injection, network, dispatch, execution and infrastructure
   mutation remain separately authorized future boundaries.
+- ADR-166 establishes one append-only, single-use, non-renewable, non-transferable and non-bearer
+  resident-context access-authorization lease from one canonical successful ADR-165 result. Only
+  the exact consumer workload may request its own lease. Fresh signed protected-boundary lifecycle
+  evidence must bind the exact resident-context and opening lineage and prove the context remains
+  present, usable, unrevoked, unconsumed and handle-free. PostgreSQL revalidates complete lineage,
+  destination fencing and all signed deadlines under canonical locks before appending the claim and
+  at-most-one-second lease. The lease grants only a future access-consumption request and creates no
+  handle or runtime access; protected-artifact, route, credential, network, publication, delivery,
+  dispatch, execution and infrastructure-mutation authorities remain false.
 
 ## 39. Assumptions
 
@@ -741,3 +750,4 @@ This document is ready to enter Review when:
 | 1.4.0 | 2026-08-16 | Workflow Architecture | Added atomic lease consumption and sealed protected-boundary capsule handoff |
 | 1.5.0 | 2026-08-16 | Workflow Architecture | Added bounded consumer-side target-context capsule opening-authorization lease |
 | 1.6.0 | 2026-08-16 | Workflow Architecture | Added atomic consumer-side capsule opening consumption and protected resident-context lineage |
+| 1.7.0 | 2026-08-16 | Workflow Architecture | Added bounded protected resident-context access-authorization lease |
