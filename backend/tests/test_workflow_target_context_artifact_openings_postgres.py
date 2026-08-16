@@ -435,8 +435,10 @@ async def test_live_postgres_opening_schema_and_append_only_triggers_are_install
                     await connection.execute(
                         text(
                             "SELECT table_name FROM information_schema.tables "
-                            "WHERE table_name LIKE 'workflow_event_tctx_%opening%' "
-                            "OR table_name = 'workflow_event_tctx_access_consumption_claims'"
+                            "WHERE table_name IN "
+                            "('workflow_event_tctx_access_consumption_claims', "
+                            "'workflow_event_tctx_artifact_opening_attempts', "
+                            "'workflow_event_tctx_artifact_opening_results')"
                         )
                     )
                 ).scalars()
