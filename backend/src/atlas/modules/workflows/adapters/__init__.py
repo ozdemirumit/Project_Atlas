@@ -16,6 +16,10 @@ from atlas.modules.workflows.adapters.target_context_artifact_opener_synthetic i
 from atlas.modules.workflows.adapters.target_context_artifact_opener_unavailable import (
     UnavailableWorkflowPhysicalTransportTargetContextArtifactOpener,
 )
+from atlas.modules.workflows.adapters.target_context_capsule_destination_custody_attestors import (
+    DenyAllWorkflowProtectedTargetContextCapsuleDestinationCustodySignatureVerifier,
+    UnavailableWorkflowProtectedTargetContextCapsuleDestinationCustodyAttestor,
+)
 from atlas.modules.workflows.adapters.target_context_capsule_handoff_adapters import (
     DenyAllWorkflowProtectedTargetContextCapsuleHandoffAttestationSignatureVerifier,
     UnavailableWorkflowProtectedTargetContextCapsuleHandoffLifecycleAttestor,
@@ -30,6 +34,7 @@ from atlas.modules.workflows.adapters.unavailable import UnavailableWorkflowPlan
 
 __all__ = [
     "DenyAllWorkflowProtectedArtifactStatusSignatureVerifier",
+    "DenyAllWorkflowProtectedTargetContextCapsuleDestinationCustodySignatureVerifier",
     "DenyAllWorkflowProtectedTargetContextCapsuleHandoffAttestationSignatureVerifier",
     "DenyAllWorkflowProtectedTargetContextCapsuleLifecycleSignatureVerifier",
     "InMemoryWorkflowPlanRepository",
@@ -40,6 +45,7 @@ __all__ = [
     "UnavailableWorkflowPlanRepository",
     "UnavailableWorkflowProtectedCredentialStatusAttestor",
     "UnavailableWorkflowProtectedEndpointStatusAttestor",
+    "UnavailableWorkflowProtectedTargetContextCapsuleDestinationCustodyAttestor",
     "UnavailableWorkflowProtectedTargetContextCapsuleHandoffLifecycleAttestor",
     "UnavailableWorkflowProtectedTargetContextCapsuleLifecycleStatusAttestor",
     "UnavailableWorkflowProtectedTargetContextCapsuleSealedHandoffAdapter",

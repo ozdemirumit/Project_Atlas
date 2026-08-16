@@ -262,6 +262,7 @@ from atlas.modules.authorization.application.bootstrap import (
     WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_CAPSULE_CONSUMER_BINDING_READ,
     WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_CAPSULE_HANDOFF_AUTHORIZATION_LEASE_READ,
     WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_CAPSULE_HANDOFF_READ,
+    WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_CAPSULE_OPENING_AUTHORIZATION_LEASE_READ,
     WORKFLOW_PLAN_CANCEL,
     WORKFLOW_PLAN_CREATE,
     WORKFLOW_PLAN_READ,
@@ -387,6 +388,7 @@ from atlas.modules.authorization.application.bootstrap import (
     workflow_physical_transport_target_context_capsule_consumer_binding_scope,
     workflow_physical_transport_target_context_capsule_handoff_authorization_lease_scope,
     workflow_physical_transport_target_context_capsule_handoff_scope,
+    workflow_physical_transport_target_context_capsule_opening_authorization_lease_scope,
     workflow_scope,
     workflow_transport_compatibility_admission_scope,
     workflow_transport_credential_assignment_snapshot_scope,
@@ -3672,6 +3674,47 @@ async def authorize_workflow_target_context_capsule_handoff_read(
             scope=workflow_physical_transport_target_context_capsule_handoff_scope(
                 subject.organization_id,
                 settings.environment,
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_workflow_target_context_capsule_opening_authorization_lease_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    if subject.kind is not SubjectKind.HUMAN:
+        raise AtlasError(
+            status=403,
+            code="human_identity_required",
+            title="Human identity required",
+            detail="This read-only inventory is available only to an authenticated human.",
+        )
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=(
+                WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_CAPSULE_OPENING_AUTHORIZATION_LEASE_READ
+            ),
+            resource_type=(
+                "resource.workflow."
+                "physical-transport-target-context-capsule-opening-authorization-lease"
+            ),
+            scope=workflow_physical_transport_target_context_capsule_opening_authorization_lease_scope(
+                subject.organization_id, settings.environment
             ),
             correlation_id=str(request.state.correlation_id),
             requested_at=datetime.now(UTC),

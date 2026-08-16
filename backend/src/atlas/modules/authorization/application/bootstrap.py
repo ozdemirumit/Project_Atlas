@@ -89,6 +89,9 @@ WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_CAPSULE_HANDOFF_AUTHORIZATION_LEASE_R
 WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_CAPSULE_HANDOFF_READ = (
     "workflow.physical-transport-target-context-capsule-handoffs.read"
 )
+WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_CAPSULE_OPENING_AUTHORIZATION_LEASE_READ = (
+    "workflow.physical-transport-target-context-capsule-opening-authorization-leases.read"
+)
 WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMISSION_READ = (
     "workflow.physical-transport-route-freshness-admissions.read"
 )
@@ -1949,6 +1952,23 @@ def workflow_physical_transport_target_context_capsule_handoff_scope(
     )
 
 
+def workflow_physical_transport_target_context_capsule_opening_authorization_lease_scope(
+    organization_id: str,
+    environment: str,
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.workflow",
+        resource_id=(
+            "resource.workflow."
+            "physical-transport-target-context-capsule-opening-authorization-leases"
+        ),
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
 def investigation_scope(organization_id: str, environment: str) -> ResourceScope:
     return ResourceScope(
         organization_id=organization_id,
@@ -2289,6 +2309,14 @@ def build_development_authorization_service(
             description=(
                 "Read minimized immutable workflow protected transport target-context capsule "
                 "handoff outcomes."
+            ),
+        ),
+        PermissionDefinition(
+            permission_id=(
+                WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_CAPSULE_OPENING_AUTHORIZATION_LEASE_READ
+            ),
+            description=(
+                "Read minimized immutable target-context capsule opening authorization leases."
             ),
         ),
         PermissionDefinition(
@@ -3199,6 +3227,7 @@ def build_development_authorization_service(
                 WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_CAPSULE_CONSUMER_BINDING_READ,
                 WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_CAPSULE_HANDOFF_AUTHORIZATION_LEASE_READ,
                 WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_CAPSULE_HANDOFF_READ,
+                WORKFLOW_PHYSICAL_TRANSPORT_TARGET_CONTEXT_CAPSULE_OPENING_AUTHORIZATION_LEASE_READ,
                 WORKFLOW_PHYSICAL_TRANSPORT_ROUTE_FRESHNESS_ADMISSION_READ,
                 WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_RESOLUTION_AUTHORIZATION_LEASE_READ,
                 WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_MATERIALIZATION_READ,
@@ -5359,6 +5388,23 @@ def build_development_authorization_service(
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=(
                     workflow_physical_transport_target_context_capsule_handoff_authorization_lease_scope(
+                        settings.development_organization_id,
+                        settings.environment,
+                    )
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id=(
+                    "assignment.development."
+                    "workflow-physical-transport-target-context-capsule-opening-"
+                    "authorization-leases"
+                ),
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=(
+                    workflow_physical_transport_target_context_capsule_opening_authorization_lease_scope(
                         settings.development_organization_id,
                         settings.environment,
                     )
