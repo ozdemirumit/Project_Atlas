@@ -8,7 +8,7 @@
 | Title | Bounded single-use protected runtime-context injection authorization without injection, handle use, network, execution or infrastructure mutation authority |
 | Status | In Progress |
 | Branch | `agent/protected-runtime-context-injection-authorization` |
-| Pull Request | Pending |
+| Pull Request | [PR #231](https://github.com/ozdemirumit/Project_Atlas/pull/231) |
 | Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160, ADR-161, ADR-162, ADR-163, ADR-164, ADR-165, ADR-166, ADR-167, ADR-168 |
 | Last Updated | 2026-08-16 |
 | Next Action | Complete final live UI validation, exact-head PR CI, SHA-locked merge and independent main CI verification |
