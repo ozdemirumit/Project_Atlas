@@ -1167,7 +1167,7 @@ const targetContextCapsuleOpening: WorkflowPhysicalTransportTargetContextCapsule
   opening_id: "workflow-target-context-capsule-opening.1234567890abcdef",
   scope: { ...plan.scope },
   attempt_state: "completed",
-  result_state: "opened_in_protected_boundary",
+  result_state: "opened_in_protected_consumer_boundary",
   started_at: "2026-08-14T10:08:27.250Z",
   completed_at: "2026-08-14T10:08:27.500Z",
   consumer_contract_id:

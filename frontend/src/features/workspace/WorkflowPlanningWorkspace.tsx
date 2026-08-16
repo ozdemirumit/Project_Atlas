@@ -3452,7 +3452,7 @@ export default function WorkflowPlanningWorkspace({
               {targetContextCapsuleOpeningQuery.data.physical_transport_target_context_capsule_openings.map(
                 (opening) => (
                   <li key={opening.opening_id}>
-                    {opening.result_state === "opened_in_protected_boundary" ? (
+                    {opening.result_state === "opened_in_protected_consumer_boundary" ? (
                       <ShieldCheck size={18} />
                     ) : opening.result_state === "opening_failed" ? (
                       <Ban size={18} />
@@ -3466,7 +3466,7 @@ export default function WorkflowPlanningWorkspace({
                         </code>
                         <span
                           className={`state-badge ${
-                            opening.result_state === "opened_in_protected_boundary"
+                            opening.result_state === "opened_in_protected_consumer_boundary"
                               ? "passed"
                               : opening.result_state === "opening_failed"
                                 ? "failed"

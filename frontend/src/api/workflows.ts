@@ -1344,7 +1344,7 @@ export type WorkflowPhysicalTransportTargetContextCapsuleOpening = {
   attempt_state: "started" | "completed";
   result_state:
     | "pending"
-    | "opened_in_protected_boundary"
+    | "opened_in_protected_consumer_boundary"
     | "opening_failed"
     | "opening_outcome_uncertain";
   started_at: string;
@@ -4611,7 +4611,7 @@ function isPhysicalTransportTargetContextCapsuleOpening(
       value.capsule_opened_in_protected_boundary === false &&
       value.target_context_pair_verified === false) ||
     (value.attempt_state === "completed" &&
-      value.result_state === "opened_in_protected_boundary" &&
+      value.result_state === "opened_in_protected_consumer_boundary" &&
       completedAt !== null &&
       value.capsule_opened_in_protected_boundary === true &&
       value.target_context_pair_verified === true) ||

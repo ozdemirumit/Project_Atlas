@@ -173,7 +173,7 @@ must perform no filesystem, process, provider, network, dispatch, execution or m
 
 A valid signed receipt completed strictly before `opening_deadline` may append:
 
-- `opened_in_protected_boundary` only when the exact pair was verified and the protected resident
+- `opened_in_protected_consumer_boundary` only when the exact pair was verified and the protected resident
   context was established; or
 - `opening_failed` only when the trusted receipt proves no resident context remains and temporary
   material was zeroized.
