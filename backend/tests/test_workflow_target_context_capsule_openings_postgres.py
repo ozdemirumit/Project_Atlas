@@ -67,8 +67,8 @@ def test_migration_is_linear_append_only_guarded_and_has_composite_lineage() -> 
     assert "trg_wf_tctx_open_result_append_only" in source
     assert "refusing guarded downgrade: capsule opening evidence exists" in source
     assert "fk_wf_tctx_open_consume_lease_lineage" in source
-    assert "fk_wf_tctx_open_attempt_claim_lineage" in source
-    assert "fk_wf_tctx_open_result_attempt_lineage" in source
+    assert "fk_wf_tctx_caps_open_attempt_claim_lineage" in source
+    assert "fk_wf_tctx_caps_open_result_attempt_lineage" in source
     assert "uq_wf_tctx_open_auth_consume_lineage" in source
     assert "uq_wf_tctx_open_consume_lease" in source
     assert "uq_wf_tctx_open_consume_handoff" in source
@@ -103,10 +103,10 @@ def test_orm_contract_has_exact_identity_acknowledgements_and_zero_authority() -
     assert "fk_wf_tctx_open_consume_lease_lineage" in {
         constraint.name for constraint in claim_table.foreign_key_constraints
     }
-    assert "fk_wf_tctx_open_attempt_claim_lineage" in {
+    assert "fk_wf_tctx_caps_open_attempt_claim_lineage" in {
         constraint.name for constraint in attempt_table.foreign_key_constraints
     }
-    assert "fk_wf_tctx_open_result_attempt_lineage" in {
+    assert "fk_wf_tctx_caps_open_result_attempt_lineage" in {
         constraint.name for constraint in result_table.foreign_key_constraints
     }
     assert "protected_resident_context_created_at" in result_table.c
@@ -629,8 +629,8 @@ async def _assert_installed_contract(engine: AsyncEngine) -> None:
                         "'ck_wf_tctx_open_consume_ack', "
                         "'ck_wf_tctx_open_consume_authority', "
                         "'uq_wf_tctx_open_consume_lease', "
-                        "'fk_wf_tctx_open_attempt_claim_lineage', "
-                        "'fk_wf_tctx_open_result_attempt_lineage')"
+                        "'fk_wf_tctx_caps_open_attempt_claim_lineage', "
+                        "'fk_wf_tctx_caps_open_result_attempt_lineage')"
                     )
                 )
             ).scalars()
@@ -640,8 +640,8 @@ async def _assert_installed_contract(engine: AsyncEngine) -> None:
             "ck_wf_tctx_open_consume_ack",
             "ck_wf_tctx_open_consume_authority",
             "uq_wf_tctx_open_consume_lease",
-            "fk_wf_tctx_open_attempt_claim_lineage",
-            "fk_wf_tctx_open_result_attempt_lineage",
+            "fk_wf_tctx_caps_open_attempt_claim_lineage",
+            "fk_wf_tctx_caps_open_result_attempt_lineage",
         }
         triggers = set(
             (

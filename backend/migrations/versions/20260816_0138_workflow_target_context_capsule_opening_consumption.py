@@ -293,15 +293,17 @@ def upgrade() -> None:
         sa.Column("payload", postgresql.JSONB(), nullable=False),
         sa.Column("custody_attestation_payload", postgresql.JSONB(), nullable=False),
         sa.Column("openability_attestation_payload", postgresql.JSONB(), nullable=False),
-        sa.CheckConstraint(_code_owned_contract_check(), name="ck_wf_tctx_open_attempt_contract"),
-        sa.CheckConstraint("state = 'started'", name="ck_wf_tctx_open_attempt_state"),
+        sa.CheckConstraint(
+            _code_owned_contract_check(), name="ck_wf_tctx_caps_open_attempt_contract"
+        ),
+        sa.CheckConstraint("state = 'started'", name="ck_wf_tctx_caps_open_attempt_state"),
         sa.CheckConstraint(
             "started_at < opening_deadline "
             "AND opening_deadline <= lease_valid_until "
             "AND opening_deadline <= custody_attestation_valid_until "
             "AND opening_deadline <= openability_attestation_valid_until "
             "AND opening_deadline <= resident_context_usable_until_limit",
-            name="ck_wf_tctx_open_attempt_window",
+            name="ck_wf_tctx_caps_open_attempt_window",
         ),
         sa.CheckConstraint(
             f"required_opener_contract_id = '{OPENER_CONTRACT_ID}' "
@@ -316,13 +318,13 @@ def upgrade() -> None:
             "AND custody_contract_version = '1.0' "
             f"AND verification_signing_key_id = '{SIGNING_KEY_ID}' "
             f"AND trusted_opener_profile_digest = '{OPENER_PROFILE_DIGEST}'",
-            name="ck_wf_tctx_open_attempt_profile",
+            name="ck_wf_tctx_caps_open_attempt_profile",
         ),
         sa.CheckConstraint(
             "NOT sealed_capsule_is_bearer_capability AND NOT consumer_receipt_is_bearer_capability",
-            name="ck_wf_tctx_open_attempt_non_bearer",
+            name="ck_wf_tctx_caps_open_attempt_non_bearer",
         ),
-        sa.CheckConstraint(_zero_authority_check(), name="ck_wf_tctx_open_attempt_authority"),
+        sa.CheckConstraint(_zero_authority_check(), name="ck_wf_tctx_caps_open_attempt_authority"),
         sa.ForeignKeyConstraint(
             [
                 "consumption_claim_id",
@@ -352,12 +354,12 @@ def upgrade() -> None:
                 f"{CLAIM_TABLE}.consumer_receipt_id",
                 f"{CLAIM_TABLE}.consumer_receipt_digest",
             ],
-            name="fk_wf_tctx_open_attempt_claim_lineage",
+            name="fk_wf_tctx_caps_open_attempt_claim_lineage",
         ),
-        sa.UniqueConstraint("consumption_claim_id", name="uq_wf_tctx_open_attempt_claim"),
-        sa.UniqueConstraint("authorization_lease_id", name="uq_wf_tctx_open_attempt_lease"),
-        sa.UniqueConstraint("opening_id", name="uq_wf_tctx_open_attempt_opening"),
-        sa.UniqueConstraint("canonical_digest", name="uq_wf_tctx_open_attempt_digest"),
+        sa.UniqueConstraint("consumption_claim_id", name="uq_wf_tctx_caps_open_attempt_claim"),
+        sa.UniqueConstraint("authorization_lease_id", name="uq_wf_tctx_caps_open_attempt_lease"),
+        sa.UniqueConstraint("opening_id", name="uq_wf_tctx_caps_open_attempt_opening"),
+        sa.UniqueConstraint("canonical_digest", name="uq_wf_tctx_caps_open_attempt_digest"),
         sa.UniqueConstraint(
             "attempt_id",
             "canonical_digest",
@@ -372,7 +374,7 @@ def upgrade() -> None:
             "sealed_capsule_digest",
             "consumer_receipt_id",
             "consumer_receipt_digest",
-            name="uq_wf_tctx_open_attempt_result_lineage",
+            name="uq_wf_tctx_caps_open_attempt_result_lineage",
         ),
     )
     op.create_index(
@@ -431,11 +433,13 @@ def upgrade() -> None:
         sa.Column("canonical_digest", sa.String(64), nullable=False),
         sa.Column("payload", postgresql.JSONB(), nullable=False),
         sa.Column("opening_receipt_payload", postgresql.JSONB(), nullable=True),
-        sa.CheckConstraint(_code_owned_contract_check(), name="ck_wf_tctx_open_result_contract"),
+        sa.CheckConstraint(
+            _code_owned_contract_check(), name="ck_wf_tctx_caps_open_result_contract"
+        ),
         sa.CheckConstraint(
             f"opener_id = '{OPENER_ID}' AND opener_version = '1.0' "
             "AND NOT protected_resident_context_is_bearer_capability",
-            name="ck_wf_tctx_open_result_profile",
+            name="ck_wf_tctx_caps_open_result_profile",
         ),
         sa.CheckConstraint(
             "(state = 'opened_in_protected_consumer_boundary' "
@@ -474,9 +478,9 @@ def upgrade() -> None:
             "AND NOT capsule_opened_in_protected_boundary AND NOT target_context_pair_verified "
             "AND NOT outcome_known AND NOT protected_source_closed AND NOT source_capsule_zeroized "
             "AND completed_at IS NULL AND recorded_at >= opening_deadline)",
-            name="ck_wf_tctx_open_result_state",
+            name="ck_wf_tctx_caps_open_result_state",
         ),
-        sa.CheckConstraint(_zero_authority_check(), name="ck_wf_tctx_open_result_authority"),
+        sa.CheckConstraint(_zero_authority_check(), name="ck_wf_tctx_caps_open_result_authority"),
         sa.ForeignKeyConstraint(
             [
                 "attempt_id",
@@ -508,12 +512,12 @@ def upgrade() -> None:
                 f"{ATTEMPT_TABLE}.consumer_receipt_id",
                 f"{ATTEMPT_TABLE}.consumer_receipt_digest",
             ],
-            name="fk_wf_tctx_open_result_attempt_lineage",
+            name="fk_wf_tctx_caps_open_result_attempt_lineage",
         ),
-        sa.UniqueConstraint("attempt_id", name="uq_wf_tctx_open_result_attempt"),
-        sa.UniqueConstraint("consumption_claim_id", name="uq_wf_tctx_open_result_claim"),
-        sa.UniqueConstraint("authorization_lease_id", name="uq_wf_tctx_open_result_lease"),
-        sa.UniqueConstraint("canonical_digest", name="uq_wf_tctx_open_result_digest"),
+        sa.UniqueConstraint("attempt_id", name="uq_wf_tctx_caps_open_result_attempt"),
+        sa.UniqueConstraint("consumption_claim_id", name="uq_wf_tctx_caps_open_result_claim"),
+        sa.UniqueConstraint("authorization_lease_id", name="uq_wf_tctx_caps_open_result_lease"),
+        sa.UniqueConstraint("canonical_digest", name="uq_wf_tctx_caps_open_result_digest"),
     )
     op.create_index(
         "ix_wf_tctx_open_result_scope",

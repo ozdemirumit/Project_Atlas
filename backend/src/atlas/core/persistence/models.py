@@ -10207,10 +10207,10 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningConsumptionClaimModel
 class WorkflowProtectedTransportTargetContextCapsuleOpeningAttemptModel(Base):
     __tablename__ = "workflow_event_tctx_capsule_opening_attempts"
     __table_args__ = (
-        UniqueConstraint("consumption_claim_id", name="uq_wf_tctx_open_attempt_claim"),
-        UniqueConstraint("authorization_lease_id", name="uq_wf_tctx_open_attempt_lease"),
-        UniqueConstraint("opening_id", name="uq_wf_tctx_open_attempt_opening"),
-        UniqueConstraint("canonical_digest", name="uq_wf_tctx_open_attempt_digest"),
+        UniqueConstraint("consumption_claim_id", name="uq_wf_tctx_caps_open_attempt_claim"),
+        UniqueConstraint("authorization_lease_id", name="uq_wf_tctx_caps_open_attempt_lease"),
+        UniqueConstraint("opening_id", name="uq_wf_tctx_caps_open_attempt_opening"),
+        UniqueConstraint("canonical_digest", name="uq_wf_tctx_caps_open_attempt_digest"),
         UniqueConstraint(
             "attempt_id",
             "canonical_digest",
@@ -10225,7 +10225,7 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningAttemptModel(Base):
             "sealed_capsule_digest",
             "consumer_receipt_id",
             "consumer_receipt_digest",
-            name="uq_wf_tctx_open_attempt_result_lineage",
+            name="uq_wf_tctx_caps_open_attempt_result_lineage",
         ),
         ForeignKeyConstraint(
             [
@@ -10256,16 +10256,16 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningAttemptModel(Base):
                 "workflow_event_tctx_capsule_opening_consumption_claims.consumer_receipt_id",
                 "workflow_event_tctx_capsule_opening_consumption_claims.consumer_receipt_digest",
             ],
-            name="fk_wf_tctx_open_attempt_claim_lineage",
+            name="fk_wf_tctx_caps_open_attempt_claim_lineage",
         ),
-        CheckConstraint("state = 'started'", name="ck_wf_tctx_open_attempt_state"),
+        CheckConstraint("state = 'started'", name="ck_wf_tctx_caps_open_attempt_state"),
         CheckConstraint(
             "started_at < opening_deadline "
             "AND opening_deadline <= lease_valid_until "
             "AND opening_deadline <= custody_attestation_valid_until "
             "AND opening_deadline <= openability_attestation_valid_until "
             "AND opening_deadline <= resident_context_usable_until_limit",
-            name="ck_wf_tctx_open_attempt_window",
+            name="ck_wf_tctx_caps_open_attempt_window",
         ),
         CheckConstraint(
             "consumer_subject_id = "
@@ -10282,7 +10282,7 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningAttemptModel(Base):
             "AND policy_version = '1.0' "
             "AND policy_digest = "
             "'8f430062de218e4dbcba9f505d27082a1b6ffb700111bea67882113f4551bce2'",
-            name="ck_wf_tctx_open_attempt_contract",
+            name="ck_wf_tctx_caps_open_attempt_contract",
         ),
         CheckConstraint(
             "required_opener_contract_id = "
@@ -10305,11 +10305,11 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningAttemptModel(Base):
             "'key.workflow-protected-target-context-capsule-opening-receipt.v1' "
             "AND trusted_opener_profile_digest = "
             "'1e7a8403d5ebe4e4b1816bd10afe64998f31846095ebe648327ee719913df987'",
-            name="ck_wf_tctx_open_attempt_profile",
+            name="ck_wf_tctx_caps_open_attempt_profile",
         ),
         CheckConstraint(
             "NOT sealed_capsule_is_bearer_capability AND NOT consumer_receipt_is_bearer_capability",
-            name="ck_wf_tctx_open_attempt_non_bearer",
+            name="ck_wf_tctx_caps_open_attempt_non_bearer",
         ),
         CheckConstraint(
             "NOT endpoint_resolution_authority_granted "
@@ -10331,7 +10331,7 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningAttemptModel(Base):
             "AND NOT infrastructure_mutation_authority_granted "
             "AND NOT target_context_capsule_handoff_authority_granted "
             "AND NOT target_context_capsule_opening_authority_granted",
-            name="ck_wf_tctx_open_attempt_authority",
+            name="ck_wf_tctx_caps_open_attempt_authority",
         ),
         Index(
             "ix_wf_tctx_open_attempt_scope",
@@ -10433,10 +10433,10 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningAttemptModel(Base):
 class WorkflowProtectedTransportTargetContextCapsuleOpeningResultModel(Base):
     __tablename__ = "workflow_event_tctx_capsule_opening_results"
     __table_args__ = (
-        UniqueConstraint("attempt_id", name="uq_wf_tctx_open_result_attempt"),
-        UniqueConstraint("consumption_claim_id", name="uq_wf_tctx_open_result_claim"),
-        UniqueConstraint("authorization_lease_id", name="uq_wf_tctx_open_result_lease"),
-        UniqueConstraint("canonical_digest", name="uq_wf_tctx_open_result_digest"),
+        UniqueConstraint("attempt_id", name="uq_wf_tctx_caps_open_result_attempt"),
+        UniqueConstraint("consumption_claim_id", name="uq_wf_tctx_caps_open_result_claim"),
+        UniqueConstraint("authorization_lease_id", name="uq_wf_tctx_caps_open_result_lease"),
+        UniqueConstraint("canonical_digest", name="uq_wf_tctx_caps_open_result_digest"),
         ForeignKeyConstraint(
             [
                 "attempt_id",
@@ -10468,7 +10468,7 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningResultModel(Base):
                 "workflow_event_tctx_capsule_opening_attempts.consumer_receipt_id",
                 "workflow_event_tctx_capsule_opening_attempts.consumer_receipt_digest",
             ],
-            name="fk_wf_tctx_open_result_attempt_lineage",
+            name="fk_wf_tctx_caps_open_result_attempt_lineage",
         ),
         CheckConstraint(
             "consumer_subject_id = "
@@ -10485,14 +10485,14 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningResultModel(Base):
             "AND policy_version = '1.0' "
             "AND policy_digest = "
             "'8f430062de218e4dbcba9f505d27082a1b6ffb700111bea67882113f4551bce2'",
-            name="ck_wf_tctx_open_result_contract",
+            name="ck_wf_tctx_caps_open_result_contract",
         ),
         CheckConstraint(
             "opener_id = "
             "'opener.workflow-protected-target-context-capsule-consumer-boundary' "
             "AND opener_version = '1.0' "
             "AND NOT protected_resident_context_is_bearer_capability",
-            name="ck_wf_tctx_open_result_profile",
+            name="ck_wf_tctx_caps_open_result_profile",
         ),
         CheckConstraint(
             "(state = 'opened_in_protected_consumer_boundary' "
@@ -10531,7 +10531,7 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningResultModel(Base):
             "AND NOT capsule_opened_in_protected_boundary AND NOT target_context_pair_verified "
             "AND NOT outcome_known AND NOT protected_source_closed AND NOT source_capsule_zeroized "
             "AND completed_at IS NULL AND recorded_at >= opening_deadline)",
-            name="ck_wf_tctx_open_result_state",
+            name="ck_wf_tctx_caps_open_result_state",
         ),
         CheckConstraint(
             "NOT endpoint_resolution_authority_granted "
@@ -10553,7 +10553,7 @@ class WorkflowProtectedTransportTargetContextCapsuleOpeningResultModel(Base):
             "AND NOT infrastructure_mutation_authority_granted "
             "AND NOT target_context_capsule_handoff_authority_granted "
             "AND NOT target_context_capsule_opening_authority_granted",
-            name="ck_wf_tctx_open_result_authority",
+            name="ck_wf_tctx_caps_open_result_authority",
         ),
         Index(
             "ix_wf_tctx_open_result_scope",
