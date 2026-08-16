@@ -753,6 +753,19 @@ MVP workflows do not execute C3 through C5 capabilities.
   only, AD remains authentication-only, and normal username/password session read-only GET requires
   no MFA or second browser session. Production fails closed without durable PostgreSQL and the
   trusted protected-slot lifecycle/use-eligibility attestor.
+- ADR-171 atomically and irreversibly consumes that exact ADR-170 lease without using the protected
+  context. Only the exact protected consumer workload may submit the lease ID, code-owned policy
+  identity, scoped idempotency metadata and irreversible-consumption acknowledgement. PostgreSQL
+  applies canonical lineage and current-head locks, complete revalidation and authoritative
+  exclusive-upper-bound database time before one append-only consumption claim and one terminal
+  `authorization_consumed_without_runtime_use` result are committed in the same transaction. Exact
+  replay returns the same minimized result without external I/O; changed replay, expiry and race
+  losers fail closed. The lease cannot be renewed, transferred, replaced, retried or reissued.
+  Consumption clears the sole use-authorization authority and leaves every authority field false;
+  it performs no context access or use, runtime activation, start or resume, network, connector,
+  publication, delivery, dispatch, execution or infrastructure mutation. AI remains advisory-only,
+  AD remains authentication-only, and normal username/password session read-only GET requires no
+  MFA or second browser session. Production fails closed without durable PostgreSQL.
 
 ## 39. Assumptions
 
@@ -799,3 +812,4 @@ This document is ready to enter Review when:
 | 1.9.0 | 2026-08-16 | Workflow Architecture | Added bounded protected runtime-context injection-authorization lease |
 | 2.0.0 | 2026-08-16 | Workflow Architecture | Added atomic injection-lease consumption and inert protected-slot injection |
 | 2.1.0 | 2026-08-16 | Workflow Architecture | Added bounded protected runtime-context use-authorization lease |
+| 2.2.0 | 2026-08-17 | Workflow Architecture | Added atomic protected runtime-context use-authorization lease consumption without runtime-context use |

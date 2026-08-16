@@ -13324,6 +13324,58 @@ class WorkflowProtectedRuntimeContextUseAuthorizationLeaseModel(
         UniqueConstraint("canonical_digest", name="uq_wf_rtctx_use_auth_lease_digest"),
         UniqueConstraint(
             "authorization_lease_id",
+            "canonical_digest",
+            name="uq_wf_rtctx_use_auth_lease_id_digest",
+        ),
+        UniqueConstraint(
+            "authorization_lease_id",
+            "claim_id",
+            "claim_digest",
+            name="uq_wf_rtctx_use_auth_lease_claim_line",
+        ),
+        UniqueConstraint(
+            "authorization_lease_id",
+            "injection_result_id",
+            "injection_result_digest",
+            name="uq_wf_rtctx_use_auth_lease_result_line",
+        ),
+        UniqueConstraint(
+            "authorization_lease_id",
+            "destination_deployment_id",
+            "destination_generation",
+            "destination_fencing_token_digest",
+            "runtime_slot_commitment",
+            "runtime_slot_post_generation",
+            name="uq_wf_rtctx_use_auth_lease_slot_line",
+        ),
+        UniqueConstraint(
+            "authorization_lease_id",
+            "injected_context_usable_until",
+            "use_profile_id",
+            "use_profile_version",
+            "use_profile_digest",
+            "state",
+            "issued_at",
+            "valid_until",
+            "effective_until",
+            name="uq_wf_rtctx_use_auth_lease_window_line",
+        ),
+        UniqueConstraint(
+            "authorization_lease_id",
+            "organization_id",
+            "environment_id",
+            "site_id",
+            "consumer_subject_id",
+            "consumer_audience",
+            "consumer_contract_id",
+            "consumer_contract_version",
+            "policy_id",
+            "policy_version",
+            "policy_digest",
+            name="uq_wf_rtctx_use_auth_lease_scope_policy",
+        ),
+        UniqueConstraint(
+            "authorization_lease_id",
             "injection_result_id",
             "runtime_slot_commitment",
             "runtime_slot_post_generation",
@@ -13481,3 +13533,408 @@ class WorkflowProtectedRuntimeContextUseAuthorizationClaimModel(
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     authorization_audit_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+_WF_RTCTX_USE_CONSUME_CONTRACT = (
+    "consumer_subject_id = "
+    "'service.workflow-protected-transport-target-context-capsule-consumer' "
+    "AND consumer_audience = "
+    "'audience.workflow-protected-transport-target-context-capsule-consumer' "
+    "AND consumer_contract_id = "
+    "'contract.workflow-protected-transport-target-context-capsule-consumer' "
+    "AND consumer_contract_version = '1.0' "
+    "AND purpose_id = "
+    "'purpose.workflow-protected-runtime-context-use-authorization-consumption' "
+    "AND policy_id = "
+    "'policy.workflow-protected-runtime-context-use-authorization-consumption' "
+    "AND policy_version = '1.0' "
+    "AND policy_digest = "
+    "'7dd60d9cae7725c6c41175945c391cedf17d6fbadf2e1735119c037bdd3063fd' "
+    "AND source_policy_id = 'policy.workflow-protected-runtime-context-use-authorization' "
+    "AND source_policy_version = '1.0' "
+    "AND source_policy_digest = "
+    "'4287e205f26c138d7bab29faf92bd1a1d1c222378633fb7c28ddefadc8a9e5bd'"
+)
+
+_WF_RTCTX_USE_CONSUME_ZERO_AUTHORITY = (
+    _WF_RTCTX_USE_ZERO_PRIOR_AUTHORITY + " AND NOT protected_runtime_context_use_authority_granted"
+)
+
+
+class _WorkflowProtectedRuntimeContextUseAuthorizationConsumptionIdentityColumns:
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    consumer_subject_id: Mapped[str] = mapped_column(String(240), nullable=False)
+    consumer_audience: Mapped[str] = mapped_column(String(240), nullable=False)
+    consumer_contract_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    consumer_contract_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    purpose_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    policy_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_policy_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_policy_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class WorkflowProtectedRuntimeContextUseAuthorizationConsumptionClaimModel(
+    _WorkflowProtectedRuntimeContextUseAuthorizationConsumptionIdentityColumns,
+    _WorkflowProtectedRuntimeContextUseAuthorizationAuthorityColumns,
+    Base,
+):
+    __tablename__ = "workflow_event_runtime_context_use_auth_consumption_claims"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["authorization_lease_id", "authorization_lease_digest"],
+            [
+                "workflow_event_runtime_context_use_auth_leases.authorization_lease_id",
+                "workflow_event_runtime_context_use_auth_leases.canonical_digest",
+            ],
+            name="fk_wf_rtctx_use_consume_claim_lease_digest",
+        ),
+        ForeignKeyConstraint(
+            ["authorization_lease_id", "authorization_claim_id", "authorization_claim_digest"],
+            [
+                "workflow_event_runtime_context_use_auth_leases.authorization_lease_id",
+                "workflow_event_runtime_context_use_auth_leases.claim_id",
+                "workflow_event_runtime_context_use_auth_leases.claim_digest",
+            ],
+            name="fk_wf_rtctx_use_consume_claim_lease_claim",
+        ),
+        ForeignKeyConstraint(
+            ["authorization_claim_id", "authorization_claim_digest", "authorization_lease_id"],
+            [
+                "workflow_event_runtime_context_use_auth_claims.claim_id",
+                "workflow_event_runtime_context_use_auth_claims.canonical_digest",
+                "workflow_event_runtime_context_use_auth_claims.authorization_lease_id",
+            ],
+            name="fk_wf_rtctx_use_consume_claim_auth_claim",
+        ),
+        ForeignKeyConstraint(
+            ["authorization_lease_id", "injection_result_id", "injection_result_digest"],
+            [
+                "workflow_event_runtime_context_use_auth_leases.authorization_lease_id",
+                "workflow_event_runtime_context_use_auth_leases.injection_result_id",
+                "workflow_event_runtime_context_use_auth_leases.injection_result_digest",
+            ],
+            name="fk_wf_rtctx_use_consume_claim_result",
+        ),
+        ForeignKeyConstraint(
+            [
+                "authorization_lease_id",
+                "destination_deployment_id",
+                "destination_generation",
+                "destination_fencing_token_digest",
+                "runtime_slot_commitment",
+                "runtime_slot_post_generation",
+            ],
+            [
+                "workflow_event_runtime_context_use_auth_leases.authorization_lease_id",
+                "workflow_event_runtime_context_use_auth_leases.destination_deployment_id",
+                "workflow_event_runtime_context_use_auth_leases.destination_generation",
+                "workflow_event_runtime_context_use_auth_leases.destination_fencing_token_digest",
+                "workflow_event_runtime_context_use_auth_leases.runtime_slot_commitment",
+                "workflow_event_runtime_context_use_auth_leases.runtime_slot_post_generation",
+            ],
+            name="fk_wf_rtctx_use_consume_claim_slot",
+        ),
+        ForeignKeyConstraint(
+            [
+                "authorization_lease_id",
+                "injected_context_usable_until",
+                "use_profile_id",
+                "use_profile_version",
+                "use_profile_digest",
+                "source_lease_state",
+                "source_lease_issued_at",
+                "source_lease_valid_until",
+                "source_lease_effective_until",
+            ],
+            [
+                "workflow_event_runtime_context_use_auth_leases.authorization_lease_id",
+                "workflow_event_runtime_context_use_auth_leases.injected_context_usable_until",
+                "workflow_event_runtime_context_use_auth_leases.use_profile_id",
+                "workflow_event_runtime_context_use_auth_leases.use_profile_version",
+                "workflow_event_runtime_context_use_auth_leases.use_profile_digest",
+                "workflow_event_runtime_context_use_auth_leases.state",
+                "workflow_event_runtime_context_use_auth_leases.issued_at",
+                "workflow_event_runtime_context_use_auth_leases.valid_until",
+                "workflow_event_runtime_context_use_auth_leases.effective_until",
+            ],
+            name="fk_wf_rtctx_use_consume_claim_window",
+        ),
+        ForeignKeyConstraint(
+            [
+                "authorization_lease_id",
+                "organization_id",
+                "environment_id",
+                "site_id",
+                "consumer_subject_id",
+                "consumer_audience",
+                "consumer_contract_id",
+                "consumer_contract_version",
+                "source_policy_id",
+                "source_policy_version",
+                "source_policy_digest",
+            ],
+            [
+                "workflow_event_runtime_context_use_auth_leases.authorization_lease_id",
+                "workflow_event_runtime_context_use_auth_leases.organization_id",
+                "workflow_event_runtime_context_use_auth_leases.environment_id",
+                "workflow_event_runtime_context_use_auth_leases.site_id",
+                "workflow_event_runtime_context_use_auth_leases.consumer_subject_id",
+                "workflow_event_runtime_context_use_auth_leases.consumer_audience",
+                "workflow_event_runtime_context_use_auth_leases.consumer_contract_id",
+                "workflow_event_runtime_context_use_auth_leases.consumer_contract_version",
+                "workflow_event_runtime_context_use_auth_leases.policy_id",
+                "workflow_event_runtime_context_use_auth_leases.policy_version",
+                "workflow_event_runtime_context_use_auth_leases.policy_digest",
+            ],
+            name="fk_wf_rtctx_use_consume_claim_scope_policy",
+        ),
+        UniqueConstraint("authorization_lease_id", name="uq_wf_rtctx_use_consume_claim_lease"),
+        UniqueConstraint("consumption_id", name="uq_wf_rtctx_use_consume_claim_use"),
+        UniqueConstraint("idempotency_digest", name="uq_wf_rtctx_use_consume_claim_idem"),
+        UniqueConstraint("canonical_digest", name="uq_wf_rtctx_use_consume_claim_digest"),
+        UniqueConstraint(
+            "consumption_claim_id",
+            "canonical_digest",
+            "consumption_id",
+            "authorization_lease_id",
+            "authorization_lease_digest",
+            "claimed_at",
+            name="uq_wf_rtctx_use_consume_claim_result_line",
+        ),
+        UniqueConstraint(
+            "consumption_claim_id",
+            "organization_id",
+            "environment_id",
+            "site_id",
+            "consumer_subject_id",
+            "consumer_audience",
+            "consumer_contract_id",
+            "consumer_contract_version",
+            name="uq_wf_rtctx_use_consume_claim_identity",
+        ),
+        UniqueConstraint(
+            "consumption_claim_id",
+            "purpose_id",
+            "policy_id",
+            "policy_version",
+            "policy_digest",
+            "source_policy_id",
+            "source_policy_version",
+            "source_policy_digest",
+            name="uq_wf_rtctx_use_consume_claim_policy",
+        ),
+        CheckConstraint(
+            _WF_RTCTX_USE_CONSUME_CONTRACT,
+            name="ck_wf_rtctx_use_consume_claim_contract",
+        ),
+        CheckConstraint(
+            "source_lease_state = 'authorized_unconsumed' "
+            "AND source_lease_issued_at < source_lease_valid_until "
+            "AND source_lease_valid_until <= source_lease_effective_until "
+            "AND source_lease_effective_until <= injected_context_usable_until "
+            "AND source_lease_issued_at <= claimed_at "
+            "AND claimed_at < source_lease_valid_until "
+            "AND claimed_at < source_lease_effective_until "
+            "AND claimed_at < injected_context_usable_until",
+            name="ck_wf_rtctx_use_consume_claim_window",
+        ),
+        CheckConstraint(
+            "irreversible_consumption_acknowledged AND " + _WF_RTCTX_USE_CONSUME_ZERO_AUTHORITY,
+            name="ck_wf_rtctx_use_consume_claim_semantics",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(payload) = 'object' "
+            "AND jsonb_typeof(consumption_audit_payload) = 'object' "
+            "AND consumption_audit_payload <> '{}'::jsonb",
+            name="ck_wf_rtctx_use_consume_claim_evidence",
+        ),
+        Index(
+            "ix_wf_rtctx_use_consume_claim_scope",
+            "organization_id",
+            "environment_id",
+            "site_id",
+            "claimed_at",
+        ),
+    )
+
+    consumption_claim_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    consumption_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    authorization_lease_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    authorization_lease_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    authorization_claim_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    authorization_claim_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    injection_result_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    injection_result_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    destination_deployment_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    destination_generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    destination_fencing_token_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    runtime_slot_commitment: Mapped[str] = mapped_column(String(64), nullable=False)
+    runtime_slot_post_generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    injected_context_usable_until: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    use_profile_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    use_profile_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    use_profile_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_lease_state: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_lease_issued_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    source_lease_valid_until: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    source_lease_effective_until: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    idempotency_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    irreversible_consumption_acknowledged: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    consumption_audit_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    claimed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    consumption_audit_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class WorkflowProtectedRuntimeContextUseAuthorizationConsumptionResultModel(
+    _WorkflowProtectedRuntimeContextUseAuthorizationConsumptionIdentityColumns,
+    _WorkflowProtectedRuntimeContextUseAuthorizationAuthorityColumns,
+    Base,
+):
+    __tablename__ = "workflow_event_runtime_context_use_auth_consumption_results"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            [
+                "consumption_claim_id",
+                "consumption_claim_digest",
+                "consumption_id",
+                "authorization_lease_id",
+                "authorization_lease_digest",
+                "consumed_at",
+            ],
+            [
+                "workflow_event_runtime_context_use_auth_consumption_claims.consumption_claim_id",
+                "workflow_event_runtime_context_use_auth_consumption_claims.canonical_digest",
+                "workflow_event_runtime_context_use_auth_consumption_claims.consumption_id",
+                "workflow_event_runtime_context_use_auth_consumption_claims.authorization_lease_id",
+                "workflow_event_runtime_context_use_auth_consumption_claims.authorization_lease_digest",
+                "workflow_event_runtime_context_use_auth_consumption_claims.claimed_at",
+            ],
+            name="fk_wf_rtctx_use_consume_result_claim",
+        ),
+        ForeignKeyConstraint(
+            [
+                "consumption_claim_id",
+                "organization_id",
+                "environment_id",
+                "site_id",
+                "consumer_subject_id",
+                "consumer_audience",
+                "consumer_contract_id",
+                "consumer_contract_version",
+            ],
+            [
+                "workflow_event_runtime_context_use_auth_consumption_claims.consumption_claim_id",
+                "workflow_event_runtime_context_use_auth_consumption_claims.organization_id",
+                "workflow_event_runtime_context_use_auth_consumption_claims.environment_id",
+                "workflow_event_runtime_context_use_auth_consumption_claims.site_id",
+                "workflow_event_runtime_context_use_auth_consumption_claims.consumer_subject_id",
+                "workflow_event_runtime_context_use_auth_consumption_claims.consumer_audience",
+                "workflow_event_runtime_context_use_auth_consumption_claims.consumer_contract_id",
+                "workflow_event_runtime_context_use_auth_consumption_claims.consumer_contract_version",
+            ],
+            name="fk_wf_rtctx_use_consume_result_identity",
+        ),
+        ForeignKeyConstraint(
+            [
+                "consumption_claim_id",
+                "purpose_id",
+                "policy_id",
+                "policy_version",
+                "policy_digest",
+                "source_policy_id",
+                "source_policy_version",
+                "source_policy_digest",
+            ],
+            [
+                "workflow_event_runtime_context_use_auth_consumption_claims.consumption_claim_id",
+                "workflow_event_runtime_context_use_auth_consumption_claims.purpose_id",
+                "workflow_event_runtime_context_use_auth_consumption_claims.policy_id",
+                "workflow_event_runtime_context_use_auth_consumption_claims.policy_version",
+                "workflow_event_runtime_context_use_auth_consumption_claims.policy_digest",
+                "workflow_event_runtime_context_use_auth_consumption_claims.source_policy_id",
+                "workflow_event_runtime_context_use_auth_consumption_claims.source_policy_version",
+                "workflow_event_runtime_context_use_auth_consumption_claims.source_policy_digest",
+            ],
+            name="fk_wf_rtctx_use_consume_result_policy",
+        ),
+        UniqueConstraint("consumption_claim_id", name="uq_wf_rtctx_use_consume_result_claim"),
+        UniqueConstraint("consumption_id", name="uq_wf_rtctx_use_consume_result_use"),
+        UniqueConstraint("authorization_lease_id", name="uq_wf_rtctx_use_consume_result_lease"),
+        UniqueConstraint("canonical_digest", name="uq_wf_rtctx_use_consume_result_digest"),
+        CheckConstraint(
+            _WF_RTCTX_USE_CONSUME_CONTRACT,
+            name="ck_wf_rtctx_use_consume_result_contract",
+        ),
+        CheckConstraint(
+            "state = 'authorization_consumed_without_runtime_use' "
+            "AND consumed_at <= recorded_at "
+            "AND authorization_lease_consumed AND historical_result_only "
+            "AND NOT context_accessed AND NOT context_used "
+            "AND NOT runtime_started AND NOT runtime_resumed "
+            "AND NOT network_activity_performed AND NOT connector_activity_performed "
+            "AND NOT readiness_probe_performed AND NOT publication_performed "
+            "AND NOT delivery_performed AND NOT dispatch_performed "
+            "AND NOT execution_performed AND NOT infrastructure_mutation_performed "
+            "AND NOT renewal_created AND NOT transfer_created "
+            "AND NOT replacement_created AND NOT retry_created AND "
+            + _WF_RTCTX_USE_CONSUME_ZERO_AUTHORITY,
+            name="ck_wf_rtctx_use_consume_result_semantics",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(payload) = 'object'",
+            name="ck_wf_rtctx_use_consume_result_payload",
+        ),
+        Index(
+            "ix_wf_rtctx_use_consume_result_scope",
+            "organization_id",
+            "environment_id",
+            "site_id",
+            "recorded_at",
+        ),
+    )
+
+    result_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    consumption_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    consumption_claim_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    consumption_claim_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    authorization_lease_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    authorization_lease_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    state: Mapped[str] = mapped_column(String(64), nullable=False)
+    consumed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    authorization_lease_consumed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    historical_result_only: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    context_accessed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    context_used: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    runtime_started: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    runtime_resumed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    network_activity_performed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    connector_activity_performed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    readiness_probe_performed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    publication_performed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    delivery_performed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    dispatch_performed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    execution_performed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    infrastructure_mutation_performed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    renewal_created: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    transfer_created: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    replacement_created: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    retry_created: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

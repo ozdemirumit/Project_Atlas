@@ -232,6 +232,15 @@ from atlas.modules.workflows.domain.protected_runtime_context_injection_consumpt
     code_owned_workflow_protected_runtime_context_injection_consumption_policy,
     code_owned_workflow_protected_runtime_context_injection_consumption_policy_values,
 )
+from atlas.modules.workflows.domain.protected_runtime_context_use_authorization_consumption_domain import (  # noqa: E501
+    WorkflowProtectedRuntimeContextUseAuthorizationConsumptionAuthority,
+    WorkflowProtectedRuntimeContextUseAuthorizationConsumptionClaim,
+    WorkflowProtectedRuntimeContextUseAuthorizationConsumptionPolicy,
+    WorkflowProtectedRuntimeContextUseAuthorizationConsumptionResult,
+    WorkflowProtectedRuntimeContextUseAuthorizationConsumptionState,
+    code_owned_workflow_protected_runtime_context_use_authorization_consumption_policy,
+    code_owned_workflow_protected_runtime_context_use_authorization_consumption_policy_values,
+)
 from atlas.modules.workflows.domain.protected_runtime_context_use_authorization_domain import (
     WorkflowProtectedRuntimeContextUseAuthorizationAuthority,
     WorkflowProtectedRuntimeContextUseAuthorizationClaim,
@@ -401,6 +410,11 @@ __all__ = [
     "WorkflowProtectedRuntimeContextTrustedInjectorReceipt",
     "WorkflowProtectedRuntimeContextUseAuthorizationAuthority",
     "WorkflowProtectedRuntimeContextUseAuthorizationClaim",
+    "WorkflowProtectedRuntimeContextUseAuthorizationConsumptionAuthority",
+    "WorkflowProtectedRuntimeContextUseAuthorizationConsumptionClaim",
+    "WorkflowProtectedRuntimeContextUseAuthorizationConsumptionPolicy",
+    "WorkflowProtectedRuntimeContextUseAuthorizationConsumptionResult",
+    "WorkflowProtectedRuntimeContextUseAuthorizationConsumptionState",
     "WorkflowProtectedRuntimeContextUseAuthorizationLease",
     "WorkflowProtectedRuntimeContextUseAuthorizationLeaseState",
     "WorkflowProtectedRuntimeContextUseAuthorizationPolicy",
@@ -471,6 +485,8 @@ __all__ = [
     "code_owned_workflow_protected_runtime_context_injection_authorization_policy_values",
     "code_owned_workflow_protected_runtime_context_injection_consumption_policy",
     "code_owned_workflow_protected_runtime_context_injection_consumption_policy_values",
+    "code_owned_workflow_protected_runtime_context_use_authorization_consumption_policy",
+    "code_owned_workflow_protected_runtime_context_use_authorization_consumption_policy_values",
     "code_owned_workflow_protected_runtime_context_use_authorization_policy",
     "code_owned_workflow_protected_runtime_context_use_authorization_policy_values",
     "code_owned_workflow_protected_transport_target_context_capsule_consumer_binding_policy",

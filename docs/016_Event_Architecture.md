@@ -580,6 +580,23 @@ session read-only GET requires no MFA or second browser session. Actual use-leas
 separate later boundary; production fails closed without PostgreSQL and the trusted protected-slot
 lifecycle/use-eligibility attestor.
 
+ADR-171 defines that separate atomic consumption boundary. Only the exact protected consumer
+workload may submit the ADR-170 lease ID, code-owned policy identity, scoped idempotency metadata
+and irreversible-consumption acknowledgement. Under canonical PostgreSQL locks, complete lineage
+and exclusive-upper-bound database-time revalidation, one append-only consumption claim and one
+terminal `authorization_consumed_without_runtime_use` result are committed in the same transaction;
+the lease cannot be renewed, transferred, replaced, retried or reissued. Exact replay returns the
+same minimized terminal evidence without external I/O, while changed replay and concurrent losers
+fail closed.
+
+The ADR-171 claim and result are immutable audit events, not bearer authority. Consumption sets
+`protected_runtime_context_use_authority_granted` and every other authority declaration to false
+and proves that no context access or use, runtime activation, start or resume, network, connector,
+publication, delivery, dispatch, execution or infrastructure mutation occurred. AI remains
+advisory-only, Active Directory remains authentication-only, and normal username/password session
+read-only GET requires no MFA or second browser session. Production has no process-memory or
+permissive fallback when durable PostgreSQL is unavailable.
+
 ### 10.2 Publication State
 
 Outbox records track:
@@ -983,3 +1000,4 @@ This document is ready to enter Review when:
 | 1.9.0 | 2026-08-16 | Workflow Architecture | Added bounded protected runtime-context injection-authorization lease boundary |
 | 2.0.0 | 2026-08-16 | Workflow Architecture | Added atomic injection-lease consumption and inert protected-slot injection boundary |
 | 2.1.0 | 2026-08-16 | Workflow Architecture | Added bounded protected runtime-context use-authorization lease boundary |
+| 2.2.0 | 2026-08-17 | Workflow Architecture | Added atomic protected runtime-context use-authorization lease consumption without runtime-context use |

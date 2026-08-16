@@ -1648,6 +1648,8 @@ from atlas.modules.workflows.application import (
     WorkflowProtectedRuntimeContextInjectionConsumptionService,
     WorkflowProtectedRuntimeContextTrustedInjector,
     WorkflowProtectedRuntimeContextTrustedInjectorReceiptSignatureVerifier,
+    WorkflowProtectedRuntimeContextUseAuthorizationConsumptionRepository,
+    WorkflowProtectedRuntimeContextUseAuthorizationConsumptionService,
     WorkflowProtectedRuntimeContextUseAuthorizationRepository,
     WorkflowProtectedRuntimeContextUseAuthorizationService,
     WorkflowProtectedRuntimeHandleLifecycleAttestation,
@@ -1730,6 +1732,7 @@ class _WorkflowCredentialAccessAuthorizationNoStoreMiddleware(BaseHTTPMiddleware
             "/api/v1/workflows/protected-runtime-context-injection-authorizations",
             "/api/v1/workflows/protected-runtime-context-injection-consumptions",
             "/api/v1/workflows/protected-runtime-context-use-authorizations",
+            ("/api/v1/workflows/protected-runtime-context-use-authorization-consumptions"),
         }
     )
 
@@ -2010,6 +2013,32 @@ class _UnavailableWorkflowProtectedRuntimeContextUseAuthorizationRepository:
         self, *_: object, **__: object
     ) -> None:
         raise RuntimeError("runtime-context use authorization is unavailable")
+
+
+class _UnavailableWorkflowProtectedRuntimeContextUseAuthorizationConsumptionRepository:
+    """Fail-closed ADR-171 composition placeholder with no memory fallback."""
+
+    @property
+    def durable(self) -> bool:
+        return False
+
+    async def get_authoritative_time(self) -> datetime:
+        raise RuntimeError("runtime-context use-authorization consumption is unavailable")
+
+    async def lookup_protected_runtime_context_use_authorization_consumption_replay(
+        self, *_: object, **__: object
+    ) -> None:
+        raise RuntimeError("runtime-context use-authorization consumption is unavailable")
+
+    async def consume_protected_runtime_context_use_authorization(
+        self, *_: object, **__: object
+    ) -> None:
+        raise RuntimeError("runtime-context use-authorization consumption is unavailable")
+
+    async def list_protected_runtime_context_use_authorization_consumption_presentations(
+        self, *_: object, **__: object
+    ) -> None:
+        raise RuntimeError("runtime-context use-authorization consumption is unavailable")
 
 
 class _WorkflowProtectedResidentContextOpeningReceiptSignatureVerifierAdapter:
@@ -2531,6 +2560,9 @@ def create_app(
     ) = None,
     workflow_protected_runtime_context_use_authorization_service: (
         WorkflowProtectedRuntimeContextUseAuthorizationService | None
+    ) = None,
+    workflow_protected_runtime_context_use_authorization_consumption_service: (
+        WorkflowProtectedRuntimeContextUseAuthorizationConsumptionService | None
     ) = None,
     workflow_protected_runtime_handle_lifecycle_attestor: (
         WorkflowProtectedRuntimeHandleLifecycleAttestor | None
@@ -7941,6 +7973,35 @@ def create_app(
         resolved_protected_runtime_context_use_authorization_service = (
             workflow_protected_runtime_context_use_authorization_service
         )
+    if workflow_protected_runtime_context_use_authorization_consumption_service is None:
+        runtime_context_use_authorization_consumption_repository_methods = (
+            "get_authoritative_time",
+            "lookup_protected_runtime_context_use_authorization_consumption_replay",
+            "consume_protected_runtime_context_use_authorization",
+            "list_protected_runtime_context_use_authorization_consumption_presentations",
+        )
+        if isinstance(workflow_repository, PostgreSQLWorkflowPlanRepository) and all(
+            callable(getattr(workflow_repository, method_name, None))
+            for method_name in (runtime_context_use_authorization_consumption_repository_methods)
+        ):
+            runtime_context_use_authorization_consumption_repository = cast(
+                WorkflowProtectedRuntimeContextUseAuthorizationConsumptionRepository,
+                workflow_repository,
+            )
+        else:
+            runtime_context_use_authorization_consumption_repository = cast(
+                WorkflowProtectedRuntimeContextUseAuthorizationConsumptionRepository,
+                _UnavailableWorkflowProtectedRuntimeContextUseAuthorizationConsumptionRepository(),
+            )
+        resolved_protected_runtime_context_use_authorization_consumption_service = (
+            WorkflowProtectedRuntimeContextUseAuthorizationConsumptionService(
+                repository=runtime_context_use_authorization_consumption_repository
+            )
+        )
+    else:
+        resolved_protected_runtime_context_use_authorization_consumption_service = (
+            workflow_protected_runtime_context_use_authorization_consumption_service
+        )
     configured_transport_route_selection_heads = (
         _deployment_event_transport_route_selection_heads(
             resolved_settings,
@@ -8418,6 +8479,12 @@ def create_app(
         )
         app.state.workflow_protected_runtime_context_use_authorization_repository = (
             resolved_protected_runtime_context_use_authorization_service.repository
+        )
+        app.state.workflow_protected_runtime_context_use_authorization_consumption_service = (
+            resolved_protected_runtime_context_use_authorization_consumption_service
+        )
+        app.state.workflow_protected_runtime_context_use_authorization_consumption_repository = (
+            resolved_protected_runtime_context_use_authorization_consumption_service.repository
         )
         app.state.workflow_transport_route_selection_heads = (
             configured_transport_route_selection_heads

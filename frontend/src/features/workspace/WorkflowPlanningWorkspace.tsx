@@ -47,6 +47,7 @@ import {
   listWorkflowProtectedRuntimeContextInjectionAuthorizations,
   listWorkflowProtectedRuntimeContextInjectionConsumptions,
   listWorkflowProtectedRuntimeContextUseAuthorizations,
+  listWorkflowProtectedRuntimeContextUseAuthorizationConsumptions,
   listWorkflowPhysicalTransportTargetContextBindings,
   listWorkflowPhysicalTransportCredentialAssignmentSnapshots,
   listWorkflowPhysicalTransportCredentialAssignmentFreshnessAdmissions,
@@ -355,6 +356,16 @@ export default function WorkflowPlanningWorkspace({
       siteId,
     ],
     queryFn: listWorkflowProtectedRuntimeContextUseAuthorizations,
+    retry: false,
+  });
+  const protectedRuntimeContextUseAuthorizationConsumptionQuery = useQuery({
+    queryKey: [
+      "workflow-protected-runtime-context-use-authorization-consumptions",
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: listWorkflowProtectedRuntimeContextUseAuthorizationConsumptions,
     retry: false,
   });
   const targetQuery = useQuery({
@@ -864,6 +875,10 @@ export default function WorkflowPlanningWorkspace({
   const protectedRuntimeContextUseAuthorizationErrorStatus =
     protectedRuntimeContextUseAuthorizationQuery.error instanceof ApiRequestError
       ? protectedRuntimeContextUseAuthorizationQuery.error.status
+      : undefined;
+  const protectedRuntimeContextUseAuthorizationConsumptionErrorStatus =
+    protectedRuntimeContextUseAuthorizationConsumptionQuery.error instanceof ApiRequestError
+      ? protectedRuntimeContextUseAuthorizationConsumptionQuery.error.status
       : undefined;
   const eventEnvelopes = eventEnvelopesForAdmission;
   const transportAdmissions = transportAdmissionsForArtifacts;
@@ -4397,6 +4412,139 @@ export default function WorkflowPlanningWorkspace({
             Future-request-only authorization evidence. It does not retrieve, reveal, copy,
             download or use protected context; start or resume a runtime; connect or probe; publish,
             deliver or dispatch work; execute a step; or mutate infrastructure.
+          </span>
+        </div>
+      </section>
+
+      <section
+        className="workflow-physical-route-binding-band workflow-target-context-opening-band"
+        aria-labelledby="workflow-protected-runtime-context-use-authorization-consumption-title"
+      >
+        <div className="workflow-section-heading">
+          <div>
+            <p className="eyebrow">TERMINAL LEASE CONSUMPTION EVIDENCE</p>
+            <h2 id="workflow-protected-runtime-context-use-authorization-consumption-title">
+              Protected runtime-context use-authorization consumptions
+            </h2>
+          </div>
+          <span>Read only</span>
+        </div>
+        {protectedRuntimeContextUseAuthorizationConsumptionQuery.isLoading && (
+          <div className="workflow-empty-state" role="status">
+            <RefreshCw className="spin" size={18} />
+            <span>
+              Loading protected runtime-context use-authorization consumption evidence...
+            </span>
+          </div>
+        )}
+        {protectedRuntimeContextUseAuthorizationConsumptionQuery.isError && (
+          <div className="workflow-inline-error" role="alert">
+            <AlertTriangle aria-hidden="true" size={18} />
+            <div>
+              <strong>
+                {protectedRuntimeContextUseAuthorizationConsumptionErrorStatus === 401
+                  ? "Your session has expired"
+                  : protectedRuntimeContextUseAuthorizationConsumptionErrorStatus === 403
+                    ? "Runtime-context use-authorization consumption permission is missing"
+                    : "Runtime-context use-authorization consumptions are unavailable"}
+              </strong>
+              <span>
+                {protectedRuntimeContextUseAuthorizationConsumptionErrorStatus === 401
+                  ? "Sign in again to continue."
+                  : protectedRuntimeContextUseAuthorizationConsumptionErrorStatus === 403
+                    ? "Your current role or scope cannot inspect runtime-context use-authorization consumption evidence."
+                    : "No lease consumption, context use or runtime state is inferred from this failed read."}
+              </span>
+            </div>
+          </div>
+        )}
+        {protectedRuntimeContextUseAuthorizationConsumptionQuery.isSuccess &&
+          protectedRuntimeContextUseAuthorizationConsumptionQuery.data.consumptions.length ===
+            0 && (
+            <div className="workflow-empty-state" role="status">
+              <LockKeyhole size={19} />
+              <span>
+                No protected runtime-context use-authorization consumptions are recorded in this
+                scope.
+              </span>
+            </div>
+          )}
+        {protectedRuntimeContextUseAuthorizationConsumptionQuery.isSuccess &&
+          protectedRuntimeContextUseAuthorizationConsumptionQuery.data.consumptions.length > 0 && (
+            <ol
+              className="workflow-step-preview workflow-physical-route-binding-list workflow-target-context-opening-list"
+              aria-label="Protected runtime-context use-authorization consumptions"
+            >
+              {protectedRuntimeContextUseAuthorizationConsumptionQuery.data.consumptions.map(
+                (consumption) => (
+                  <li key={consumption.consumption_id}>
+                    <CheckCircle2 size={18} />
+                    <div>
+                      <strong>
+                        <code title={consumption.consumption_id}>
+                          {safeHolderIdentifier(consumption.consumption_id)}
+                        </code>
+                        <span className="state-badge neutral">Consumed without runtime use</span>
+                      </strong>
+                      <div className="workflow-physical-route-binding-grid">
+                        <span>
+                          Terminal state {readableKind(consumption.state)} | consumed{" "}
+                          {formatTimestamp(consumption.consumed_at)}
+                        </span>
+                        <span>
+                          Consumer contract{" "}
+                          <code title={consumption.consumer_contract_id}>
+                            {safeHolderIdentifier(consumption.consumer_contract_id)}
+                          </code>{" "}
+                          v{consumption.consumer_contract_version} | purpose{" "}
+                          <code title={consumption.purpose_id}>
+                            {safeHolderIdentifier(consumption.purpose_id)}
+                          </code>
+                        </span>
+                        <span>
+                          Policy{" "}
+                          <code title={consumption.policy_id}>
+                            {safeHolderIdentifier(consumption.policy_id)}
+                          </code>{" "}
+                          v{consumption.policy_version}
+                        </span>
+                        <span>
+                          Integrity reference{" "}
+                          <code title={consumption.integrity_reference}>
+                            {safeHolderIdentifier(consumption.integrity_reference)}
+                          </code>
+                        </span>
+                        <span>
+                          Lease consumed {String(consumption.lease_consumed)} | protected
+                          runtime-context use authority granted{" "}
+                          {String(consumption.protected_runtime_context_use_authority_granted)}
+                        </span>
+                        <span className="workflow-physical-route-binding-authority">
+                          Authority protected runtime-context use false | runtime use false | runtime
+                          start false | runtime resume false | connector activity false | protected
+                          runtime-context injection false | protected resident-context access false |
+                          target-context capsule opening false | target-context capsule handoff false |
+                          endpoint resolution false | route selection false | route binding false |
+                          credential selection false | credential assignment binding false |
+                          credential access false | credential brokerage false | credential resolution
+                          false | protected artifact access false | credential delivery false | network
+                          access false | readiness probe false | publication false | delivery false |
+                          dispatch false | execution false | infrastructure mutation false
+                        </span>
+                      </div>
+                    </div>
+                  </li>
+                ),
+              )}
+            </ol>
+          )}
+        <div className="workflow-safety-boundary" role="note">
+          <LockKeyhole size={18} />
+          <span>
+            Historical terminal evidence only. Lease consumption grants no authority and performs
+            no protected-context retrieval, reveal, copy, download, activation or use; runtime
+            start or resume; network or connector activity; dispatch; execution; or infrastructure
+            mutation.
           </span>
         </div>
       </section>

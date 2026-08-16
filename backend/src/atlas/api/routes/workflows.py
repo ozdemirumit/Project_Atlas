@@ -30,6 +30,7 @@ from atlas.api.security import (
     authorize_workflow_protected_resident_context_access_consumption_read,
     authorize_workflow_protected_runtime_context_injection_authorization_read,
     authorize_workflow_protected_runtime_context_injection_consumption_read,
+    authorize_workflow_protected_runtime_context_use_authorization_consumption_read,
     authorize_workflow_protected_runtime_context_use_authorization_read,
     authorize_workflow_target_context_capsule_handoff_authorization_lease_read,
     authorize_workflow_target_context_capsule_handoff_read,
@@ -82,6 +83,7 @@ from atlas.api.workflow_schemas import (
     CreateWorkflowProtectedResidentContextAccessConsumptionInput,
     CreateWorkflowProtectedRuntimeContextInjectionAuthorizationInput,
     CreateWorkflowProtectedRuntimeContextInjectionConsumptionInput,
+    CreateWorkflowProtectedRuntimeContextUseAuthorizationConsumptionInput,
     CreateWorkflowProtectedRuntimeContextUseAuthorizationInput,
     CreateWorkflowProtectedTransportTargetContextCapsuleConsumerBindingInput,
     CreateWorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseInput,
@@ -218,6 +220,10 @@ from atlas.api.workflow_schemas import (
     WorkflowProtectedRuntimeContextInjectionConsumptionInventoryData,
     WorkflowProtectedRuntimeContextInjectionConsumptionInventoryResponse,
     WorkflowProtectedRuntimeContextInjectionConsumptionResponse,
+    WorkflowProtectedRuntimeContextUseAuthorizationConsumptionData,
+    WorkflowProtectedRuntimeContextUseAuthorizationConsumptionInventoryData,
+    WorkflowProtectedRuntimeContextUseAuthorizationConsumptionInventoryResponse,
+    WorkflowProtectedRuntimeContextUseAuthorizationConsumptionResponse,
     WorkflowProtectedRuntimeContextUseAuthorizationData,
     WorkflowProtectedRuntimeContextUseAuthorizationInventoryData,
     WorkflowProtectedRuntimeContextUseAuthorizationInventoryResponse,
@@ -323,6 +329,8 @@ from atlas.modules.workflows.application import (
     WorkflowProtectedRuntimeContextInjectionAuthorizationService,
     WorkflowProtectedRuntimeContextInjectionConsumptionError,
     WorkflowProtectedRuntimeContextInjectionConsumptionService,
+    WorkflowProtectedRuntimeContextUseAuthorizationConsumptionError,
+    WorkflowProtectedRuntimeContextUseAuthorizationConsumptionService,
     WorkflowProtectedRuntimeContextUseAuthorizationError,
     WorkflowProtectedRuntimeContextUseAuthorizationService,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationContext,
@@ -6965,6 +6973,172 @@ async def create_workflow_protected_runtime_context_use_authorization(
             retryable=True,
         ) from error
     return WorkflowProtectedRuntimeContextUseAuthorizationResponse(
+        data=data,
+        meta=_meta(request),
+    )
+
+
+@router.get(
+    "/protected-runtime-context-use-authorization-consumptions",
+    response_model=WorkflowProtectedRuntimeContextUseAuthorizationConsumptionInventoryResponse,
+)
+async def list_workflow_protected_runtime_context_use_authorization_consumptions(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_workflow_protected_runtime_context_use_authorization_consumption_read),
+    ],
+) -> WorkflowProtectedRuntimeContextUseAuthorizationConsumptionInventoryResponse:
+    del decision
+    _no_store(response)
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    service = cast(
+        WorkflowProtectedRuntimeContextUseAuthorizationConsumptionService,
+        request.app.state.workflow_protected_runtime_context_use_authorization_consumption_service,
+    )
+    try:
+        presentations = await service.list_presentations(scope=scope, limit=256)
+        get_authoritative_time = getattr(service.repository, "get_authoritative_time", None)
+        if not callable(get_authoritative_time):
+            raise RuntimeError("authoritative repository time is unavailable")
+        server_time = await get_authoritative_time()
+        if not isinstance(server_time, datetime) or server_time.tzinfo is None:
+            raise RuntimeError("authoritative repository time is invalid")
+        consumption_ids = tuple(
+            presentation.result.consumption_id for presentation in presentations
+        )
+        if len(consumption_ids) != len(set(consumption_ids)) or any(
+            presentation.claim.scope != scope or presentation.result.scope != scope
+            for presentation in presentations
+        ):
+            raise RuntimeError(
+                "protected runtime-context use-authorization consumption scope mismatch"
+            )
+        items = [
+            WorkflowProtectedRuntimeContextUseAuthorizationConsumptionData.from_domain(presentation)
+            for presentation in presentations
+        ]
+        if any(item.consumed_at > server_time for item in items):
+            raise RuntimeError(
+                "protected runtime-context use-authorization consumption time mismatch"
+            )
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code=(
+                "workflow_protected_runtime_context_use_authorization_consumption_"
+                "service_unavailable"
+            ),
+            title="Protected runtime-context use-authorization consumption unavailable",
+            detail=(
+                "Runtime-context use-authorization consumption metadata is temporarily unavailable."
+            ),
+            retryable=True,
+        ) from error
+    return WorkflowProtectedRuntimeContextUseAuthorizationConsumptionInventoryResponse(
+        data=WorkflowProtectedRuntimeContextUseAuthorizationConsumptionInventoryData(
+            consumptions=items,
+            server_time=server_time,
+            durable=True,
+        ),
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    "/protected-runtime-context-use-authorization-consumptions",
+    response_model=WorkflowProtectedRuntimeContextUseAuthorizationConsumptionResponse,
+    status_code=201,
+)
+async def create_workflow_protected_runtime_context_use_authorization_consumption(
+    payload: CreateWorkflowProtectedRuntimeContextUseAuthorizationConsumptionInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[
+        AuthenticatedSubject,
+        Depends(workflow_protected_transport_target_context_capsule_consumer_subject),
+    ],
+) -> WorkflowProtectedRuntimeContextUseAuthorizationConsumptionResponse:
+    _no_store(response)
+    service = cast(
+        WorkflowProtectedRuntimeContextUseAuthorizationConsumptionService,
+        request.app.state.workflow_protected_runtime_context_use_authorization_consumption_service,
+    )
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    try:
+        presentation = await service.consume(
+            authorization_lease_id=payload.authorization_lease_id,
+            policy_id=payload.policy_id,
+            policy_version=payload.policy_version,
+            irreversible_consumption_acknowledged=(payload.irreversible_consumption_acknowledged),
+            idempotency_key=payload.idempotency_key,
+            context=WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationContext(
+                subject_id=subject.subject_id,
+                actor_type=subject.kind.value,
+                authentication_method=subject.authentication_method.value,
+                credential_audience=WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_AUDIENCE,
+                scope=scope,
+                correlation_id=str(request.state.correlation_id),
+                decision_id=(
+                    "decision.workflow-protected-runtime-context-use-authorization-"
+                    "consumer-authenticated"
+                ),
+                requested_at=datetime.now(UTC),
+            ),
+        )
+        if presentation.claim.scope != scope or presentation.result.scope != scope:
+            raise RuntimeError(
+                "protected runtime-context use-authorization consumption scope mismatch"
+            )
+        data = WorkflowProtectedRuntimeContextUseAuthorizationConsumptionData.from_domain(
+            presentation
+        )
+    except WorkflowProtectedRuntimeContextUseAuthorizationConsumptionError as error:
+        unavailable = "unavailable" in error.code or error.code.endswith(
+            "durable_repository_required"
+        )
+        raise AtlasError(
+            status=503 if unavailable else 409,
+            code=(
+                "workflow_protected_runtime_context_use_authorization_consumption_"
+                "service_unavailable"
+                if unavailable
+                else "authorization_denied"
+            ),
+            title=(
+                "Protected runtime-context use-authorization consumption unavailable"
+                if unavailable
+                else "Request denied"
+            ),
+            detail=(
+                "The protected authorization-consumption request cannot be completed."
+                if unavailable
+                else "The current identity or evidence is not authorized for this operation."
+            ),
+            retryable=unavailable,
+        ) from error
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code=(
+                "workflow_protected_runtime_context_use_authorization_consumption_"
+                "service_unavailable"
+            ),
+            title="Protected runtime-context use-authorization consumption unavailable",
+            detail="The protected authorization-consumption request cannot be completed.",
+            retryable=True,
+        ) from error
+    return WorkflowProtectedRuntimeContextUseAuthorizationConsumptionResponse(
         data=data,
         meta=_meta(request),
     )
