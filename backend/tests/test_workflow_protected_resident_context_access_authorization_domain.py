@@ -358,9 +358,9 @@ def test_lease_effective_state_is_derived_without_mutation() -> None:
     with pytest.raises(ValueError, match="evaluation time must be aware"):
         lease.effective_state(evaluated_at=datetime(2026, 8, 16, 12, 0))
     with pytest.raises(FrozenInstanceError):
-        lease.state = (
+        lease.state = (  # type: ignore[misc]
             WorkflowProtectedResidentContextAccessAuthorizationLeaseState.AUTHORIZED_UNCONSUMED
-        )  # type: ignore[misc]
+        )
 
 
 def test_lease_rejects_invalid_identity_digest_and_canonical_digest() -> None:

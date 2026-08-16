@@ -55,7 +55,7 @@
 
 - Focused backend domain, application, attestor, persistence and API tests: `48 passed`, with the
   live PostgreSQL case deferred to CI because no local `ATLAS_TEST_POSTGRES_DSN` was configured.
-- Strict MyPy: no issues in the 15 affected backend, persistence, RBAC, API and test files.
+- Strict MyPy: no issues in the complete 1,324-file backend source and test set.
 - Ruff: formatting and checks passed for all affected backend and migration files.
 - Frontend ESLint and TypeScript checks passed; focused Vitest: `3 passed`, `516 skipped`.
 - Alembic reports the single head `20260816_0139`.
