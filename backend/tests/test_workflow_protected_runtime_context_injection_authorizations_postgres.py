@@ -667,7 +667,12 @@ def _authorization_evidence(
         },
     }
     authorization_request = WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseRequest(
-        source=cast(Any, None),
+        source=cast(
+            Any,
+            SimpleNamespace(
+                protected_runtime_handle_usable_until=handle_usable_until,
+            ),
+        ),
         lifecycle_attestation=attestation,
         expected_request_nonce_digest=attestation.request_nonce_digest,
         offline_signature_verifier=_OfflineVerifier(),
