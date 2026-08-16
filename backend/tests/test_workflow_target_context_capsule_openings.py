@@ -465,7 +465,8 @@ async def test_exact_terminal_replay_performs_no_attestor_or_opener_io() -> None
 
     assert replay == original
     assert repository.source_calls == repository.claim_calls == 0
-    assert attestors.custody_calls == attestors.openability_calls == []
+    assert not attestors.custody_calls
+    assert not attestors.openability_calls
     assert opener.calls == []
 
 
@@ -482,7 +483,8 @@ async def test_claim_only_replay_performs_no_external_io() -> None:
 
     assert replay.attempt == original.attempt
     assert replay.result is None
-    assert attestors.custody_calls == attestors.openability_calls == []
+    assert not attestors.custody_calls
+    assert not attestors.openability_calls
     assert opener.calls == []
 
 
@@ -498,7 +500,8 @@ async def test_idempotency_conflict_fails_before_external_io() -> None:
         await _open(service)
 
     assert repository.source_calls == repository.claim_calls == 0
-    assert attestors.custody_calls == attestors.openability_calls == []
+    assert not attestors.custody_calls
+    assert not attestors.openability_calls
     assert opener.calls == []
 
 
