@@ -519,9 +519,25 @@ def _opening_result_values(*, seed: str) -> dict[str, object]:
             values[name] = getattr(SCOPE, name)
         elif name.endswith("_digest") or name == "target_context_commitment":
             values[name] = "a" * 64
+        elif name.endswith("_version"):
+            values[name] = "1.0"
         else:
             values[name] = f"{name}.repository-live.{seed}"
     return values
+
+
+def test_opening_result_fixture_respects_database_string_limits() -> None:
+    table = cast(
+        Table,
+        WorkflowEventPhysicalTransportTargetContextArtifactOpeningResultModel.__table__,
+    )
+    values = _opening_result_values(seed="a" * 32)
+
+    for column in table.columns:
+        value = values[column.name]
+        length = getattr(column.type, "length", None)
+        if isinstance(value, str) and isinstance(length, int):
+            assert len(value) <= length, column.name
 
 
 def _binding_request(
