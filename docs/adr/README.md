@@ -47,3 +47,4 @@ ADR numbers are permanent and never reused. Material changes require a new ADR r
 | [ADR-164](ADR-164_Bounded_Single_Use_Target_Context_Capsule_Opening_Authorization_Lease.md) | Bounded single-use consumer-side target-context capsule opening authorization lease | Accepted |
 | [ADR-165](ADR-165_Atomic_Target_Context_Capsule_Opening_Lease_Consumption.md) | Atomic single-use consumer-side target-context capsule opening lease consumption | Accepted |
 | [ADR-166](ADR-166_Bounded_Single_Use_Protected_Resident_Context_Access_Authorization_Lease.md) | Bounded single-use protected resident-context access authorization lease | Accepted |
+| [ADR-167](ADR-167_Atomic_Protected_Resident_Context_Access_Lease_Consumption.md) | Atomic protected resident-context access lease consumption and non-bearer runtime-handle materialization | Accepted |

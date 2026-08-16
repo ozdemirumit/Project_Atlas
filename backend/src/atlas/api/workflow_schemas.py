@@ -4,7 +4,7 @@ from datetime import datetime
 from hashlib import sha256
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from atlas.api.schemas import ResponseMeta
 from atlas.modules.workflows.domain import (
@@ -42,6 +42,8 @@ from atlas.modules.workflows.domain import (
     WorkflowOrchestrationLease,
     WorkflowOutboxPublicationLease,
     WorkflowProtectedResidentContextAccessAuthorizationLease,
+    WorkflowProtectedResidentContextAccessConsumptionAttempt,
+    WorkflowProtectedResidentContextAccessConsumptionResult,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBinding,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAttempt,
     WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLease,
@@ -2861,7 +2863,7 @@ class CreateWorkflowProtectedResidentContextAccessAuthorizationInput(BaseModel):
 class WorkflowProtectedResidentContextAccessAuthorizationAuthorityData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    protected_access_authority_granted: Literal[True]
+    protected_access_authority_granted: bool
     endpoint_resolution_authorized: Literal[False]
     route_selection_authorized: Literal[False]
     route_binding_authorized: Literal[False]
@@ -2893,8 +2895,8 @@ class WorkflowProtectedResidentContextAccessAuthorizationData(BaseModel):
         max_length=73,
         pattern=r"^workflow-protected-resident-context-access-lease\.[0-9a-f]{24}$",
     )
-    state: Literal["authorized_unconsumed"]
-    effective_state: Literal["active", "expired"]
+    state: Literal["authorized_unconsumed", "consumed"]
+    effective_state: Literal["active", "expired", "consumed"]
     issued_at: datetime
     valid_until: datetime
     effective_until: datetime
@@ -2907,12 +2909,24 @@ class WorkflowProtectedResidentContextAccessAuthorizationData(BaseModel):
     authority: WorkflowProtectedResidentContextAccessAuthorizationAuthorityData
     integrity_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
 
+    @model_validator(mode="after")
+    def validate_consumption_projection(
+        self,
+    ) -> WorkflowProtectedResidentContextAccessAuthorizationData:
+        consumed = self.state == "consumed"
+        if (
+            self.effective_state == "consumed"
+        ) != consumed or self.authority.protected_access_authority_granted != (not consumed):
+            raise ValueError("protected resident-context access projection is inconsistent")
+        return self
+
     @classmethod
     def from_domain(
         cls,
         lease: WorkflowProtectedResidentContextAccessAuthorizationLease,
         *,
         evaluated_at: datetime,
+        consumed: bool = False,
     ) -> WorkflowProtectedResidentContextAccessAuthorizationData:
         policy = code_owned_workflow_protected_resident_context_access_authorization_policy()
         profile_input = "|".join(
@@ -2925,8 +2939,10 @@ class WorkflowProtectedResidentContextAccessAuthorizationData(BaseModel):
         )
         return cls(
             authorization_lease_id=lease.authorization_lease_id,
-            state=lease.state.value,
-            effective_state=lease.effective_state(evaluated_at=evaluated_at).value,
+            state="consumed" if consumed else lease.state.value,
+            effective_state=(
+                "consumed" if consumed else lease.effective_state(evaluated_at=evaluated_at).value
+            ),
             issued_at=lease.issued_at,
             valid_until=lease.valid_until,
             effective_until=lease.effective_until,
@@ -2941,7 +2957,7 @@ class WorkflowProtectedResidentContextAccessAuthorizationData(BaseModel):
             ),
             authority=WorkflowProtectedResidentContextAccessAuthorizationAuthorityData(
                 protected_access_authority_granted=(
-                    lease.protected_resident_context_access_authority_granted
+                    False if consumed else lease.protected_resident_context_access_authority_granted
                 ),
                 endpoint_resolution_authorized=lease.endpoint_resolution_authorized,
                 route_selection_authorized=lease.route_selection_authorized,
@@ -2989,6 +3005,144 @@ class WorkflowProtectedResidentContextAccessAuthorizationResponse(BaseModel):
 
 class WorkflowProtectedResidentContextAccessAuthorizationInventoryResponse(BaseModel):
     data: WorkflowProtectedResidentContextAccessAuthorizationInventoryData
+    meta: ResponseMeta
+
+
+class CreateWorkflowProtectedResidentContextAccessConsumptionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    authorization_lease_id: str = Field(
+        min_length=73,
+        max_length=73,
+        pattern=r"^workflow-protected-resident-context-access-lease\.[0-9a-f]{24}$",
+    )
+    policy_id: Literal["policy.workflow-protected-resident-context-access-consumption"]
+    policy_version: Literal["1.0"]
+    irreversible_consumption_acknowledged: Literal[True]
+    uncertain_outcome_requires_new_authorization_acknowledged: Literal[True]
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class WorkflowProtectedResidentContextAccessConsumptionAuthorityData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    protected_resident_context_access_authority_granted: Literal[False]
+    target_context_capsule_opening_authorized: Literal[False]
+    target_context_capsule_handoff_authorized: Literal[False]
+    endpoint_resolution_authorized: Literal[False]
+    route_selection_authorized: Literal[False]
+    route_binding_authorized: Literal[False]
+    credential_selection_authorized: Literal[False]
+    credential_assignment_binding_authorized: Literal[False]
+    credential_access_authorized: Literal[False]
+    credential_brokerage_authorized: Literal[False]
+    credential_resolution_authorized: Literal[False]
+    protected_artifact_access_authorized: Literal[False]
+    credential_delivery_authorized: Literal[False]
+    network_access_authorized: Literal[False]
+    readiness_probe_authorized: Literal[False]
+    publication_authorized: Literal[False]
+    delivery_authorized: Literal[False]
+    dispatch_authorized: Literal[False]
+    execution_authorized: Literal[False]
+    infrastructure_mutation_authorized: Literal[False]
+
+
+class WorkflowProtectedResidentContextAccessConsumptionData(BaseModel):
+    """Minimized access outcome with no resident-context or handle identity."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    access_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    attempt_state: Literal["started", "completed"]
+    result_state: Literal[
+        "access_pending",
+        "handle_established_in_protected_boundary",
+        "resident_context_access_failed",
+        "access_outcome_uncertain",
+    ]
+    started_at: datetime
+    completed_at: datetime | None
+    consumer_contract_id: Literal[
+        "contract.workflow-protected-transport-target-context-capsule-consumer"
+    ]
+    consumer_contract_version: Literal["1.0"]
+    purpose_id: Literal["purpose.workflow-protected-resident-context-access-consumption"]
+    accessor_contract_id: Literal["contract.workflow-protected-resident-context-accessor"]
+    accessor_contract_version: Literal["1.0"]
+    accessor_profile_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    runtime_profile_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    policy_id: Literal["policy.workflow-protected-resident-context-access-consumption"]
+    policy_version: Literal["1.0"]
+    authority: WorkflowProtectedResidentContextAccessConsumptionAuthorityData
+    integrity_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+
+    @classmethod
+    def from_domain(
+        cls,
+        attempt: WorkflowProtectedResidentContextAccessConsumptionAttempt,
+        result: WorkflowProtectedResidentContextAccessConsumptionResult | None,
+        *,
+        evaluated_at: datetime,
+    ) -> WorkflowProtectedResidentContextAccessConsumptionData:
+        if evaluated_at.tzinfo is None:
+            raise ValueError("resident context access presentation time must be timezone-aware")
+        result_state = (
+            result.state.value
+            if result is not None
+            else "access_pending"
+            if evaluated_at < attempt.access_deadline
+            else "access_outcome_uncertain"
+        )
+        terminal = result is not None and result.completed_at is not None
+        return cls(
+            access_id=attempt.access_id,
+            attempt_state="completed" if terminal else "started",
+            result_state=result_state,
+            started_at=attempt.started_at,
+            completed_at=None if result is None else result.completed_at,
+            consumer_contract_id=attempt.consumer_contract_id,
+            consumer_contract_version=attempt.consumer_contract_version,
+            purpose_id=attempt.purpose_id,
+            accessor_contract_id=attempt.required_accessor_contract_id,
+            accessor_contract_version=attempt.required_accessor_contract_version,
+            accessor_profile_reference=(
+                "integrity.workflow-protected-resident-context-accessor-profile."
+                f"{sha256(f'{attempt.approved_accessor_id}|{attempt.approved_accessor_version}'.encode()).hexdigest()[:24]}"
+            ),
+            runtime_profile_reference=(
+                "integrity.workflow-protected-runtime-context-profile."
+                f"{sha256(attempt.runtime_handle_profile_digest.encode('utf-8')).hexdigest()[:24]}"
+            ),
+            policy_id=attempt.policy_id,
+            policy_version=attempt.policy_version,
+            authority=WorkflowProtectedResidentContextAccessConsumptionAuthorityData.model_validate(
+                attempt.authority.canonical_value()
+            ),
+            integrity_reference=(
+                "integrity.workflow-protected-resident-context-access-consumption."
+                f"{sha256(attempt.access_id.encode('utf-8')).hexdigest()[:24]}"
+            ),
+        )
+
+
+class WorkflowProtectedResidentContextAccessConsumptionInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    consumptions: list[WorkflowProtectedResidentContextAccessConsumptionData] = Field(
+        max_length=256
+    )
+    server_time: datetime
+    durable: Literal[True]
+
+
+class WorkflowProtectedResidentContextAccessConsumptionResponse(BaseModel):
+    data: WorkflowProtectedResidentContextAccessConsumptionData
+    meta: ResponseMeta
+
+
+class WorkflowProtectedResidentContextAccessConsumptionInventoryResponse(BaseModel):
+    data: WorkflowProtectedResidentContextAccessConsumptionInventoryData
     meta: ResponseMeta
 
 

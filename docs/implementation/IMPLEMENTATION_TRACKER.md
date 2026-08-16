@@ -4,14 +4,97 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-216 |
-| Title | Bounded single-use protected resident-context access authorization without handle creation, injection, network, execution or infrastructure mutation authority |
-| Status | Implementation complete; delivery verification in progress |
-| Branch | `agent/protected-resident-context-access-authorization` |
-| Pull Request | Not opened |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160, ADR-161, ADR-162, ADR-163, ADR-164, ADR-165, ADR-166 |
+| Task ID | ATLAS-IMP-217 |
+| Title | Atomic single-use protected resident-context access lease consumption and non-bearer protected runtime-handle materialization without injection, network, execution or infrastructure mutation authority |
+| Status | In Review |
+| Branch | `agent/protected-resident-context-access-consumption` |
+| Pull Request | [#230](https://github.com/ozdemirumit/Project_Atlas/pull/230) (draft) |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160, ADR-161, ADR-162, ADR-163, ADR-164, ADR-165, ADR-166, ADR-167 |
 | Last Updated | 2026-08-16 |
-| Next Action | Run exact-head PR CI, merge by verified SHA and confirm main CI |
+| Next Action | Complete independent review and exact-head CI, then mark PR #230 ready and merge by reviewed SHA |
+
+### ATLAS-IMP-217 Scope Rationale
+
+- IMP-216 grants only one request to consume a one-second resident-context access lease and creates
+  no handle or runtime access.
+- The next smallest functional boundary commits irreversible single-use consumption before a
+  trusted protected-boundary accessor may touch resident state.
+- Success may create one short-lived non-bearer runtime-context handle only inside the exact
+  protected boundary. Handle use, injection, network and connector activity remain separately
+  authorized future operations.
+
+### ATLAS-IMP-217 Acceptance Criteria
+
+- Only the exact bound consumer workload and audience may consume its own ADR-166 lease. Human
+  sessions, personal tokens, AI agents and every other workload fail closed.
+- Caller input is limited to lease ID, code-owned policy identity, two irreversible
+  acknowledgements and idempotency metadata. Context, handle, destination, lifetime, accessor and
+  authority fields, including the canonical lease digest, are server-derived; visible identifiers
+  or integrity references are never authority.
+- Durable exact replay is classified before any attestor or accessor I/O. Matching claim-only state
+  is pending before its deadline and uncertain afterward; changed or competing replay fails closed.
+- Fresh signed resident-lifecycle and accessor-readiness evidence binds the complete ADR-160 through
+  ADR-166 lineage, exact consumer and current destination fence and contains no raw or bearer data.
+- PostgreSQL revalidates the complete lineage, active single-use lease, two database-time reads,
+  signed deadlines and attestation evidence under canonical locks before atomically appending one
+  claim and started attempt.
+- Claim and attempt commit is the irreversible point of no return and occurs before the trusted
+  accessor call. No external I/O occurs while the transaction is open.
+- The trusted accessor may atomically consume only the exact resident context and create at most one
+  short-lived non-bearer runtime-context handle inside the protected boundary. Atlas receives only
+  a signed metadata receipt and never a handle, locator, endpoint, credential or raw context.
+- Claim commit and accessor completion occur strictly before an access deadline bounded by the
+  one-second lease, resident-context lifetime and fresh attestation deadlines. The protected
+  boundary performs its own exact-state atomic compare-and-set.
+- Success, known failure and uncertainty are append-only. Crash, timeout, late or invalid receipt,
+  partial transition or persistence ambiguity never retries the accessor or restores the lease.
+- Claim, attempt and result set the resident-context access declaration, both capsule declarations
+  and all 17 operational authority fields exactly false.
+- Production requires PostgreSQL, trusted signed evidence and the approved accessor. There is no
+  process-memory, permissive, caller-asserted or unguarded synthetic fallback.
+- Workload POST and normal username/password session GET are minimized, non-oracle and `no-store`.
+  The human UI is read-only and requires no MFA or second authorized-browser-session prompt.
+- Runtime-handle lookup, retrieval, injection or use; network and connector calls; publication,
+  dispatch, execution and infrastructure mutation remain outside this slice.
+
+### ATLAS-IMP-217 Verification Evidence
+
+- Local Ruff format/check passed across `1473` backend source, test and migration files.
+- Full MyPy passed across `1332` source and test files with no issues.
+- ADR-166/ADR-167 and API-health regression suite passed `122` tests; two live PostgreSQL tests
+  were skipped locally because `ATLAS_TEST_POSTGRES_DSN` is not configured and remain covered by
+  CI.
+- Post-review-fix IMP-217 suite passed `63` tests; one live PostgreSQL test was skipped locally.
+- Frontend ESLint and TypeScript checks passed, and the workspace UI suite passed all `521` tests.
+- Alembic reports the single head `20260816_0140`.
+- Independent security review findings were addressed: no autonomous cleanup, uncertain protected
+  consumption is represented as unknown, and signed receipts deny every forbidden return/effect.
+- Independent integration review findings were addressed: future-dated attestations fail closed,
+  result chronology is enforced, readiness and receipt signatures use distinct code-owned keys,
+  and consumed authorization leases project no remaining access authority in the API or UI.
+- Final security re-review findings were addressed: GET and replayed POST authorization state use
+  one database snapshot, signed receipts bind every forbidden return and side effect, and the
+  durable result-write boundary independently verifies receipt signatures before append.
+- Known success or failure cannot be persisted without a verified receipt; every signed outcome,
+  handle, consumption, deadline, accessor, destination and profile field must exactly match the
+  append-only result. Receipt-free persistence is limited to explicit uncertain outcomes.
+- The durable boundary reconstructs the canonical accessor instruction from the locked attempt,
+  verifies the signed instruction digest, and rejects completion before attempt start.
+- PostgreSQL constraints independently require a durable receipt payload and a null-safe matching
+  canonical digest for known outcomes, forbid receipt payloads for uncertainty, and reject
+  completion after result recording time.
+- Both IMP-217 live PostgreSQL authorization and consumption tests are explicitly enrolled in the
+  DSN-enabled CI integration job rather than relying on the DSN-free full-suite invocation.
+
+### ATLAS-IMP-216 Delivery Evidence
+
+- Merged through [PR #229](https://github.com/ozdemirumit/Project_Atlas/pull/229) from exact reviewed
+  head `3caf127079337200994652236f1268e9d3d0a449` to `main` merge
+  `a85e9da6c23489f4e5734a6440ff0504edbb4924`.
+- Exact-head [PR CI run 31947968836](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31947968836)
+  passed both backend and frontend jobs before the SHA-locked squash merge.
+- Independent [main CI run 31948664457](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31948664457)
+  passed backend in 11m08s and frontend in 8m20s for the exact merge commit.
 
 ### ATLAS-IMP-216 Scope Rationale
 

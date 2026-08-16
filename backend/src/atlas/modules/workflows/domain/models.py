@@ -11826,3 +11826,883 @@ class WorkflowProtectedResidentContextAccessAuthorizationLease:
         if self.issued_at <= evaluated_at < self.valid_until:
             return WorkflowProtectedResidentContextAccessAuthorizationLeaseEffectiveState.ACTIVE
         return WorkflowProtectedResidentContextAccessAuthorizationLeaseEffectiveState.EXPIRED
+
+
+class WorkflowProtectedResidentContextAccessConsumptionAttemptState(StrEnum):
+    STARTED = "started"
+
+
+class WorkflowProtectedResidentContextAccessConsumptionResultState(StrEnum):
+    HANDLE_ESTABLISHED_IN_PROTECTED_BOUNDARY = "handle_established_in_protected_boundary"
+    RESIDENT_CONTEXT_ACCESS_FAILED = "resident_context_access_failed"
+    ACCESS_OUTCOME_UNCERTAIN = "access_outcome_uncertain"
+
+
+class WorkflowProtectedResidentContextAccessConsumptionFailureClass(StrEnum):
+    RESIDENT_CONTEXT_LIFECYCLE_INVALID = "resident_context_lifecycle_invalid"
+    ACCESSOR_READINESS_INVALID = "accessor_readiness_invalid"
+    TRUSTED_ACCESSOR_REJECTED = "trusted_accessor_rejected"
+    DEADLINE_EXPIRED = "deadline_expired"
+    ACCESS_OUTCOME_UNCERTAIN = "access_outcome_uncertain"
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedResidentContextAccessConsumptionAuthority:
+    """Explicit zero-authority evidence after access-lease consumption."""
+
+    endpoint_resolution_authorized: bool = False
+    route_selection_authorized: bool = False
+    route_binding_authorized: bool = False
+    credential_selection_authorized: bool = False
+    credential_assignment_binding_authorized: bool = False
+    credential_access_authorized: bool = False
+    credential_brokerage_authorized: bool = False
+    credential_resolution_authorized: bool = False
+    protected_artifact_access_authorized: bool = False
+    credential_delivery_authorized: bool = False
+    network_access_authorized: bool = False
+    readiness_probe_authorized: bool = False
+    publication_authorized: bool = False
+    delivery_authorized: bool = False
+    dispatch_authorized: bool = False
+    execution_authorized: bool = False
+    infrastructure_mutation_authorized: bool = False
+    target_context_capsule_handoff_authorized: bool = False
+    target_context_capsule_opening_authorized: bool = False
+    protected_resident_context_access_authority_granted: bool = False
+
+    def __post_init__(self) -> None:
+        if any(self.canonical_value().values()):
+            raise ValueError("resident context access consumption grants no authority")
+
+    def canonical_value(self) -> dict[str, bool]:
+        return {
+            "credential_access_authorized": self.credential_access_authorized,
+            "credential_assignment_binding_authorized": (
+                self.credential_assignment_binding_authorized
+            ),
+            "credential_brokerage_authorized": self.credential_brokerage_authorized,
+            "credential_delivery_authorized": self.credential_delivery_authorized,
+            "credential_resolution_authorized": self.credential_resolution_authorized,
+            "credential_selection_authorized": self.credential_selection_authorized,
+            "delivery_authorized": self.delivery_authorized,
+            "dispatch_authorized": self.dispatch_authorized,
+            "endpoint_resolution_authorized": self.endpoint_resolution_authorized,
+            "execution_authorized": self.execution_authorized,
+            "infrastructure_mutation_authorized": self.infrastructure_mutation_authorized,
+            "network_access_authorized": self.network_access_authorized,
+            "protected_artifact_access_authorized": self.protected_artifact_access_authorized,
+            "protected_resident_context_access_authority_granted": (
+                self.protected_resident_context_access_authority_granted
+            ),
+            "publication_authorized": self.publication_authorized,
+            "readiness_probe_authorized": self.readiness_probe_authorized,
+            "route_binding_authorized": self.route_binding_authorized,
+            "route_selection_authorized": self.route_selection_authorized,
+            "target_context_capsule_handoff_authorized": (
+                self.target_context_capsule_handoff_authorized
+            ),
+            "target_context_capsule_opening_authorized": (
+                self.target_context_capsule_opening_authorized
+            ),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedResidentContextAccessConsumptionPolicy:
+    policy_id: str
+    policy_version: str
+    consumer_subject_id: str
+    consumer_audience: str
+    consumer_contract_id: str
+    consumer_contract_version: str
+    purpose_id: str
+    required_lifecycle_attestor_id: str
+    required_lifecycle_attestor_version: str
+    required_readiness_attestor_id: str
+    required_readiness_attestor_version: str
+    required_accessor_contract_id: str
+    required_accessor_contract_version: str
+    approved_accessor_id: str
+    approved_accessor_version: str
+    destination_boundary_id: str
+    destination_deployment_id: str
+    destination_generation: int
+    destination_fencing_token_digest: str
+    runtime_handle_profile_id: str
+    runtime_handle_profile_version: str
+    runtime_handle_profile_digest: str
+    readiness_verification_signing_key_id: str
+    verification_signing_key_id: str
+    minimum_remaining_budget_milliseconds: int
+    irreversible_consumption_acknowledgement_required: bool
+    uncertain_outcome_requires_new_authorization_acknowledgement_required: bool
+    automatic_retry_allowed: bool
+    raw_context_return_forbidden: bool
+    runtime_handle_locator_return_forbidden: bool
+    network_activity_forbidden: bool
+    delivery_forbidden: bool
+    execution_forbidden: bool
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        expected = code_owned_workflow_protected_resident_context_access_consumption_policy_values()
+        if any(getattr(self, name) != value for name, value in expected.items()):
+            raise ValueError("resident context access consumption policy is not code-owned")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("resident context access consumption policy digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return _target_context_capsule_handoff_consumption_payload(self)
+
+
+def code_owned_workflow_protected_resident_context_access_consumption_policy_values() -> dict[
+    str, object
+]:
+    authorization = code_owned_workflow_protected_resident_context_access_authorization_policy()
+    runtime_handle_profile = {
+        "approved_accessor_id": "accessor.workflow-protected-resident-context",
+        "approved_accessor_version": "1.0",
+        "destination_boundary_id": authorization.destination_boundary_id,
+        "destination_deployment_id": authorization.destination_deployment_id,
+        "destination_fencing_token_digest": (authorization.destination_fencing_token_digest),
+        "destination_generation": authorization.destination_generation,
+        "required_accessor_contract_id": ("contract.workflow-protected-resident-context-accessor"),
+        "required_accessor_contract_version": "1.0",
+        "runtime_handle_profile_id": ("profile.workflow-protected-resident-context-runtime-handle"),
+        "runtime_handle_profile_version": "1.0",
+    }
+    return {
+        "policy_id": "policy.workflow-protected-resident-context-access-consumption",
+        "policy_version": "1.0",
+        "consumer_subject_id": authorization.consumer_subject_id,
+        "consumer_audience": authorization.consumer_audience,
+        "consumer_contract_id": authorization.consumer_contract_id,
+        "consumer_contract_version": authorization.consumer_contract_version,
+        "purpose_id": "purpose.workflow-protected-resident-context-access-consumption",
+        "required_lifecycle_attestor_id": authorization.required_attestor_id,
+        "required_lifecycle_attestor_version": authorization.required_attestor_version,
+        "required_readiness_attestor_id": (
+            "attestor.workflow-protected-resident-context-accessor-readiness"
+        ),
+        "required_readiness_attestor_version": "1.0",
+        **runtime_handle_profile,
+        "runtime_handle_profile_digest": canonical_digest(runtime_handle_profile),
+        "readiness_verification_signing_key_id": (
+            "key.workflow-protected-resident-context-accessor-readiness.v1"
+        ),
+        "verification_signing_key_id": (
+            "key.workflow-protected-resident-context-access-receipt.v1"
+        ),
+        "minimum_remaining_budget_milliseconds": 100,
+        "irreversible_consumption_acknowledgement_required": True,
+        "uncertain_outcome_requires_new_authorization_acknowledgement_required": True,
+        "automatic_retry_allowed": False,
+        "raw_context_return_forbidden": True,
+        "runtime_handle_locator_return_forbidden": True,
+        "network_activity_forbidden": True,
+        "delivery_forbidden": True,
+        "execution_forbidden": True,
+    }
+
+
+def code_owned_workflow_protected_resident_context_access_consumption_policy() -> (
+    WorkflowProtectedResidentContextAccessConsumptionPolicy
+):
+    values = code_owned_workflow_protected_resident_context_access_consumption_policy_values()
+    return WorkflowProtectedResidentContextAccessConsumptionPolicy(
+        **cast(Any, values), canonical_digest=canonical_digest(values)
+    )
+
+
+def _require_resident_context_access_consumption_authority(
+    authority: WorkflowProtectedResidentContextAccessConsumptionAuthority,
+) -> None:
+    if len(authority.canonical_value()) != 20 or any(authority.canonical_value().values()):
+        raise ValueError("resident context access consumption must have 20 false authorities")
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedResidentContextAccessConsumptionClaim:
+    claim_id: str
+    access_id: str
+    attempt_id: str
+    authorization_lease_id: str
+    authorization_lease_digest: str
+    authorization_claim_id: str
+    authorization_claim_digest: str
+    opening_id: str
+    opening_result_digest: str
+    protected_resident_context_id: str
+    protected_resident_context_digest: str
+    scope: WorkflowScope
+    consumer_subject_id: str
+    consumer_audience: str
+    consumer_contract_id: str
+    consumer_contract_version: str
+    purpose_id: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    irreversible_consumption_acknowledged: bool
+    uncertain_outcome_requires_new_authorization_acknowledged: bool
+    request_fingerprint: str
+    idempotency_digest: str
+    consumption_authorization_audit_digest: str
+    claimed_at: datetime
+    authority: WorkflowProtectedResidentContextAccessConsumptionAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.claim_id,
+            self.access_id,
+            self.attempt_id,
+            self.authorization_lease_id,
+            self.authorization_claim_id,
+            self.opening_id,
+            self.protected_resident_context_id,
+            self.consumer_subject_id,
+            self.consumer_audience,
+            self.consumer_contract_id,
+            self.consumer_contract_version,
+            self.purpose_id,
+            self.policy_id,
+            self.policy_version,
+        ):
+            _require_identifier(value, name="resident context access consumption claim identifier")
+        for value in (
+            self.authorization_lease_digest,
+            self.authorization_claim_digest,
+            self.opening_result_digest,
+            self.protected_resident_context_digest,
+            self.policy_digest,
+            self.request_fingerprint,
+            self.idempotency_digest,
+            self.consumption_authorization_audit_digest,
+            self.canonical_digest,
+        ):
+            _require_digest(value, name="resident context access consumption claim digest")
+        policy = code_owned_workflow_protected_resident_context_access_consumption_policy()
+        if (
+            self.claimed_at.tzinfo is None
+            or self.consumer_subject_id != policy.consumer_subject_id
+            or self.consumer_audience != policy.consumer_audience
+            or self.consumer_contract_id != policy.consumer_contract_id
+            or self.consumer_contract_version != policy.consumer_contract_version
+            or self.purpose_id != policy.purpose_id
+            or self.policy_id != policy.policy_id
+            or self.policy_version != policy.policy_version
+            or self.policy_digest != policy.canonical_digest
+            or self.irreversible_consumption_acknowledged is not True
+            or self.uncertain_outcome_requires_new_authorization_acknowledged is not True
+        ):
+            raise ValueError("resident context access consumption claim is invalid")
+        _require_resident_context_access_consumption_authority(self.authority)
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("resident context access consumption claim digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return _target_context_capsule_handoff_consumption_payload(self)
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedResidentContextAccessConsumptionAttempt:
+    attempt_id: str
+    access_id: str
+    consumption_claim_id: str
+    consumption_claim_digest: str
+    authorization_lease_id: str
+    authorization_lease_digest: str
+    protected_resident_context_id: str
+    protected_resident_context_digest: str
+    scope: WorkflowScope
+    consumer_subject_id: str
+    consumer_audience: str
+    consumer_contract_id: str
+    consumer_contract_version: str
+    purpose_id: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    required_accessor_contract_id: str
+    required_accessor_contract_version: str
+    approved_accessor_id: str
+    approved_accessor_version: str
+    destination_boundary_id: str
+    destination_deployment_id: str
+    destination_generation: int
+    destination_fencing_token_digest: str
+    runtime_handle_profile_id: str
+    runtime_handle_profile_version: str
+    runtime_handle_profile_digest: str
+    verification_signing_key_id: str
+    lifecycle_attestation_id: str
+    lifecycle_attestation_digest: str
+    readiness_attestation_id: str
+    readiness_attestation_digest: str
+    request_nonce_digest: str
+    started_at: datetime
+    access_deadline: datetime
+    authorization_lease_valid_until: datetime
+    protected_resident_context_usable_until: datetime
+    lifecycle_attestation_valid_until: datetime
+    readiness_attestation_valid_until: datetime
+    state: WorkflowProtectedResidentContextAccessConsumptionAttemptState
+    authority: WorkflowProtectedResidentContextAccessConsumptionAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.attempt_id,
+            self.access_id,
+            self.consumption_claim_id,
+            self.authorization_lease_id,
+            self.protected_resident_context_id,
+            self.consumer_subject_id,
+            self.consumer_audience,
+            self.consumer_contract_id,
+            self.consumer_contract_version,
+            self.purpose_id,
+            self.policy_id,
+            self.policy_version,
+            self.required_accessor_contract_id,
+            self.required_accessor_contract_version,
+            self.approved_accessor_id,
+            self.approved_accessor_version,
+            self.destination_boundary_id,
+            self.destination_deployment_id,
+            self.runtime_handle_profile_id,
+            self.runtime_handle_profile_version,
+            self.verification_signing_key_id,
+            self.lifecycle_attestation_id,
+            self.readiness_attestation_id,
+        ):
+            _require_identifier(value, name="resident context access attempt identifier")
+        for value in (
+            self.consumption_claim_digest,
+            self.authorization_lease_digest,
+            self.protected_resident_context_digest,
+            self.policy_digest,
+            self.destination_fencing_token_digest,
+            self.runtime_handle_profile_digest,
+            self.lifecycle_attestation_digest,
+            self.readiness_attestation_digest,
+            self.request_nonce_digest,
+            self.canonical_digest,
+        ):
+            _require_digest(value, name="resident context access attempt digest")
+        policy = code_owned_workflow_protected_resident_context_access_consumption_policy()
+        deadlines = (
+            self.authorization_lease_valid_until,
+            self.protected_resident_context_usable_until,
+            self.lifecycle_attestation_valid_until,
+            self.readiness_attestation_valid_until,
+        )
+        if (
+            self.started_at.tzinfo is None
+            or self.access_deadline.tzinfo is None
+            or any(value.tzinfo is None for value in deadlines)
+            or not self.started_at < self.access_deadline
+            or self.access_deadline > min(deadlines)
+            or self.state
+            is not WorkflowProtectedResidentContextAccessConsumptionAttemptState.STARTED
+            or self.consumer_subject_id != policy.consumer_subject_id
+            or self.consumer_audience != policy.consumer_audience
+            or self.consumer_contract_id != policy.consumer_contract_id
+            or self.consumer_contract_version != policy.consumer_contract_version
+            or self.purpose_id != policy.purpose_id
+            or self.policy_id != policy.policy_id
+            or self.policy_version != policy.policy_version
+            or self.policy_digest != policy.canonical_digest
+            or self.required_accessor_contract_id != policy.required_accessor_contract_id
+            or self.required_accessor_contract_version != policy.required_accessor_contract_version
+            or self.approved_accessor_id != policy.approved_accessor_id
+            or self.approved_accessor_version != policy.approved_accessor_version
+            or self.destination_boundary_id != policy.destination_boundary_id
+            or self.destination_deployment_id != policy.destination_deployment_id
+            or self.destination_generation != policy.destination_generation
+            or self.destination_fencing_token_digest != policy.destination_fencing_token_digest
+            or self.runtime_handle_profile_id != policy.runtime_handle_profile_id
+            or self.runtime_handle_profile_version != policy.runtime_handle_profile_version
+            or self.runtime_handle_profile_digest != policy.runtime_handle_profile_digest
+            or self.verification_signing_key_id != policy.verification_signing_key_id
+        ):
+            raise ValueError("resident context access attempt is invalid")
+        _require_resident_context_access_consumption_authority(self.authority)
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("resident context access attempt digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return _target_context_capsule_handoff_consumption_payload(self)
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedResidentContextTrustedAccessorInstruction:
+    access_id: str
+    attempt_id: str
+    consumption_claim_id: str
+    authorization_lease_id: str
+    authorization_lease_digest: str
+    protected_resident_context_id: str
+    protected_resident_context_digest: str
+    consumer_subject_id: str
+    consumer_audience: str
+    consumer_contract_id: str
+    consumer_contract_version: str
+    purpose_id: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    accessor_contract_id: str
+    accessor_contract_version: str
+    accessor_id: str
+    accessor_version: str
+    destination_boundary_id: str
+    destination_deployment_id: str
+    destination_generation: int
+    destination_fencing_token_digest: str
+    runtime_handle_profile_id: str
+    runtime_handle_profile_version: str
+    runtime_handle_profile_digest: str
+    lifecycle_attestation_digest: str
+    readiness_attestation_digest: str
+    request_nonce_digest: str
+    started_at: datetime
+    access_deadline: datetime
+    protected_resident_context_usable_until: datetime
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.access_id,
+            self.attempt_id,
+            self.consumption_claim_id,
+            self.authorization_lease_id,
+            self.protected_resident_context_id,
+            self.consumer_subject_id,
+            self.consumer_audience,
+            self.consumer_contract_id,
+            self.consumer_contract_version,
+            self.purpose_id,
+            self.policy_id,
+            self.policy_version,
+            self.accessor_contract_id,
+            self.accessor_contract_version,
+            self.accessor_id,
+            self.accessor_version,
+            self.destination_boundary_id,
+            self.destination_deployment_id,
+            self.runtime_handle_profile_id,
+            self.runtime_handle_profile_version,
+        ):
+            _require_identifier(
+                value, name="trusted resident context accessor instruction identifier"
+            )
+        for value in (
+            self.authorization_lease_digest,
+            self.protected_resident_context_digest,
+            self.policy_digest,
+            self.destination_fencing_token_digest,
+            self.runtime_handle_profile_digest,
+            self.lifecycle_attestation_digest,
+            self.readiness_attestation_digest,
+            self.request_nonce_digest,
+            self.canonical_digest,
+        ):
+            _require_digest(value, name="trusted resident context accessor instruction digest")
+        policy = code_owned_workflow_protected_resident_context_access_consumption_policy()
+        if (
+            self.started_at.tzinfo is None
+            or self.access_deadline.tzinfo is None
+            or self.protected_resident_context_usable_until.tzinfo is None
+            or not self.started_at < self.access_deadline
+            or self.access_deadline > self.protected_resident_context_usable_until
+            or self.consumer_subject_id != policy.consumer_subject_id
+            or self.consumer_audience != policy.consumer_audience
+            or self.consumer_contract_id != policy.consumer_contract_id
+            or self.consumer_contract_version != policy.consumer_contract_version
+            or self.purpose_id != policy.purpose_id
+            or self.policy_id != policy.policy_id
+            or self.policy_version != policy.policy_version
+            or self.policy_digest != policy.canonical_digest
+            or self.accessor_contract_id != policy.required_accessor_contract_id
+            or self.accessor_contract_version != policy.required_accessor_contract_version
+            or self.accessor_id != policy.approved_accessor_id
+            or self.accessor_version != policy.approved_accessor_version
+            or self.destination_boundary_id != policy.destination_boundary_id
+            or self.destination_deployment_id != policy.destination_deployment_id
+            or self.destination_generation != policy.destination_generation
+            or self.destination_fencing_token_digest != policy.destination_fencing_token_digest
+            or self.runtime_handle_profile_id != policy.runtime_handle_profile_id
+            or self.runtime_handle_profile_version != policy.runtime_handle_profile_version
+            or self.runtime_handle_profile_digest != policy.runtime_handle_profile_digest
+            or self.canonical_digest != canonical_digest(self.digest_payload())
+        ):
+            raise ValueError("trusted resident context accessor instruction is invalid")
+
+    def digest_payload(self) -> dict[str, object]:
+        return _target_context_capsule_handoff_consumption_payload(self)
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedResidentContextTrustedAccessorReceipt:
+    access_id: str
+    attempt_id: str
+    consumption_claim_id: str
+    instruction_digest: str
+    authorization_lease_id: str
+    authorization_lease_digest: str
+    protected_resident_context_id: str
+    protected_resident_context_digest: str
+    accessor_contract_id: str
+    accessor_contract_version: str
+    accessor_id: str
+    accessor_version: str
+    destination_boundary_id: str
+    destination_deployment_id: str
+    destination_generation: int
+    destination_fencing_token_digest: str
+    runtime_handle_profile_id: str
+    runtime_handle_profile_version: str
+    runtime_handle_profile_digest: str
+    state: WorkflowProtectedResidentContextAccessConsumptionResultState
+    failure_class: WorkflowProtectedResidentContextAccessConsumptionFailureClass | None
+    protected_runtime_handle_id: str | None
+    protected_runtime_handle_digest: str | None
+    protected_runtime_handle_created_at: datetime | None
+    protected_runtime_handle_usable_until: datetime | None
+    protected_runtime_handle_is_bearer_capability: bool
+    protected_resident_context_consumed: bool
+    runtime_handle_established_in_protected_boundary: bool
+    runtime_handle_absence_confirmed: bool
+    raw_context_returned: bool
+    runtime_handle_locator_returned: bool
+    endpoint_returned: bool
+    credential_returned: bool
+    secret_returned: bool
+    bearer_token_returned: bool
+    provider_payload_returned: bool
+    filesystem_activity_performed: bool
+    provider_activity_performed: bool
+    connector_activity_performed: bool
+    network_activity_performed: bool
+    readiness_probe_performed: bool
+    publication_performed: bool
+    delivery_performed: bool
+    dispatch_performed: bool
+    execution_performed: bool
+    infrastructure_mutation_performed: bool
+    completed_at: datetime
+    access_deadline: datetime
+    protected_resident_context_usable_until: datetime
+    attested_by: str
+    signing_key_id: str
+    signature_algorithm: str
+    integrity_signature: str
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.access_id,
+            self.attempt_id,
+            self.consumption_claim_id,
+            self.authorization_lease_id,
+            self.protected_resident_context_id,
+            self.accessor_contract_id,
+            self.accessor_contract_version,
+            self.accessor_id,
+            self.accessor_version,
+            self.destination_boundary_id,
+            self.destination_deployment_id,
+            self.runtime_handle_profile_id,
+            self.runtime_handle_profile_version,
+            self.attested_by,
+            self.signing_key_id,
+            self.signature_algorithm,
+        ):
+            _require_identifier(value, name="trusted resident context accessor receipt identifier")
+        for value in (
+            self.instruction_digest,
+            self.authorization_lease_digest,
+            self.protected_resident_context_digest,
+            self.destination_fencing_token_digest,
+            self.runtime_handle_profile_digest,
+            self.canonical_digest,
+        ):
+            _require_digest(value, name="trusted resident context accessor receipt digest")
+        policy = code_owned_workflow_protected_resident_context_access_consumption_policy()
+        states = WorkflowProtectedResidentContextAccessConsumptionResultState
+        uncertain = (
+            WorkflowProtectedResidentContextAccessConsumptionFailureClass.ACCESS_OUTCOME_UNCERTAIN
+        )
+        if (
+            self.completed_at.tzinfo is None
+            or self.access_deadline.tzinfo is None
+            or self.protected_resident_context_usable_until.tzinfo is None
+            or self.completed_at >= self.access_deadline
+            or self.access_deadline > self.protected_resident_context_usable_until
+            or self.accessor_contract_id != policy.required_accessor_contract_id
+            or self.accessor_contract_version != policy.required_accessor_contract_version
+            or self.accessor_id != policy.approved_accessor_id
+            or self.accessor_version != policy.approved_accessor_version
+            or self.destination_boundary_id != policy.destination_boundary_id
+            or self.destination_deployment_id != policy.destination_deployment_id
+            or self.destination_generation != policy.destination_generation
+            or self.destination_fencing_token_digest != policy.destination_fencing_token_digest
+            or self.runtime_handle_profile_id != policy.runtime_handle_profile_id
+            or self.runtime_handle_profile_version != policy.runtime_handle_profile_version
+            or self.runtime_handle_profile_digest != policy.runtime_handle_profile_digest
+            or self.signing_key_id != policy.verification_signing_key_id
+            or self.protected_runtime_handle_is_bearer_capability is not False
+            or self.raw_context_returned is not False
+            or self.runtime_handle_locator_returned is not False
+            or self.endpoint_returned is not False
+            or self.credential_returned is not False
+            or self.secret_returned is not False
+            or self.bearer_token_returned is not False
+            or self.provider_payload_returned is not False
+            or self.filesystem_activity_performed is not False
+            or self.provider_activity_performed is not False
+            or self.connector_activity_performed is not False
+            or self.network_activity_performed is not False
+            or self.readiness_probe_performed is not False
+            or self.publication_performed is not False
+            or self.delivery_performed is not False
+            or self.dispatch_performed is not False
+            or self.execution_performed is not False
+            or self.infrastructure_mutation_performed is not False
+            or not self.integrity_signature
+            or any(character.isspace() for character in self.integrity_signature)
+        ):
+            raise ValueError("trusted resident context accessor receipt is unsafe")
+        if self.state is states.HANDLE_ESTABLISHED_IN_PROTECTED_BOUNDARY:
+            if (
+                self.failure_class is not None
+                or self.protected_runtime_handle_id is None
+                or self.protected_runtime_handle_digest is None
+                or self.protected_runtime_handle_created_at != self.completed_at
+                or self.protected_runtime_handle_usable_until is None
+                or not self.completed_at < self.protected_runtime_handle_usable_until
+                or self.protected_runtime_handle_usable_until
+                > self.protected_resident_context_usable_until
+                or self.protected_resident_context_consumed is not True
+                or self.runtime_handle_established_in_protected_boundary is not True
+                or self.runtime_handle_absence_confirmed is not False
+            ):
+                raise ValueError("successful resident context accessor receipt is invalid")
+            _require_identifier(
+                self.protected_runtime_handle_id, name="protected runtime handle id"
+            )
+            _require_digest(
+                self.protected_runtime_handle_digest,
+                name="protected runtime handle digest",
+            )
+        elif (
+            self.state is not states.RESIDENT_CONTEXT_ACCESS_FAILED
+            or self.failure_class is None
+            or self.failure_class is uncertain
+            or self.protected_runtime_handle_id is not None
+            or self.protected_runtime_handle_digest is not None
+            or self.protected_runtime_handle_created_at is not None
+            or self.protected_runtime_handle_usable_until is not None
+            or self.protected_resident_context_consumed is not True
+            or self.runtime_handle_established_in_protected_boundary is not False
+            or self.runtime_handle_absence_confirmed is not True
+        ):
+            raise ValueError("failed resident context accessor receipt is invalid")
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("trusted resident context accessor receipt digest mismatch")
+
+    def signature_payload(self) -> dict[str, object]:
+        return {
+            name: value
+            for name, value in self.digest_payload().items()
+            if name != "integrity_signature"
+        }
+
+    def digest_payload(self) -> dict[str, object]:
+        return _target_context_capsule_handoff_consumption_payload(self)
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedResidentContextAccessConsumptionResult:
+    access_id: str
+    attempt_id: str
+    attempt_digest: str
+    consumption_claim_id: str
+    consumption_claim_digest: str
+    authorization_lease_id: str
+    authorization_lease_digest: str
+    protected_resident_context_id: str
+    protected_resident_context_digest: str
+    scope: WorkflowScope
+    consumer_subject_id: str
+    consumer_audience: str
+    consumer_contract_id: str
+    consumer_contract_version: str
+    purpose_id: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    accessor_id: str
+    accessor_version: str
+    runtime_handle_profile_id: str
+    runtime_handle_profile_version: str
+    runtime_handle_profile_digest: str
+    accessor_receipt_digest: str | None
+    state: WorkflowProtectedResidentContextAccessConsumptionResultState
+    failure_class: WorkflowProtectedResidentContextAccessConsumptionFailureClass | None
+    protected_runtime_handle_id: str | None
+    protected_runtime_handle_digest: str | None
+    protected_runtime_handle_created_at: datetime | None
+    protected_runtime_handle_usable_until: datetime | None
+    protected_runtime_handle_is_bearer_capability: bool
+    protected_resident_context_consumed: bool | None
+    runtime_handle_established_in_protected_boundary: bool
+    runtime_handle_absence_confirmed: bool
+    outcome_known: bool
+    completed_at: datetime | None
+    recorded_at: datetime
+    access_deadline: datetime
+    protected_resident_context_usable_until: datetime
+    authority: WorkflowProtectedResidentContextAccessConsumptionAuthority
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.access_id,
+            self.attempt_id,
+            self.consumption_claim_id,
+            self.authorization_lease_id,
+            self.protected_resident_context_id,
+            self.consumer_subject_id,
+            self.consumer_audience,
+            self.consumer_contract_id,
+            self.consumer_contract_version,
+            self.purpose_id,
+            self.policy_id,
+            self.policy_version,
+            self.accessor_id,
+            self.accessor_version,
+            self.runtime_handle_profile_id,
+            self.runtime_handle_profile_version,
+        ):
+            _require_identifier(value, name="resident context access result identifier")
+        for value in (
+            self.attempt_digest,
+            self.consumption_claim_digest,
+            self.authorization_lease_digest,
+            self.protected_resident_context_digest,
+            self.policy_digest,
+            self.runtime_handle_profile_digest,
+            self.canonical_digest,
+        ):
+            _require_digest(value, name="resident context access result digest")
+        if self.accessor_receipt_digest is not None:
+            _require_digest(
+                self.accessor_receipt_digest,
+                name="resident context accessor receipt digest",
+            )
+        policy = code_owned_workflow_protected_resident_context_access_consumption_policy()
+        states = WorkflowProtectedResidentContextAccessConsumptionResultState
+        uncertain_failure = (
+            WorkflowProtectedResidentContextAccessConsumptionFailureClass.ACCESS_OUTCOME_UNCERTAIN
+        )
+        if (
+            self.recorded_at.tzinfo is None
+            or self.access_deadline.tzinfo is None
+            or self.protected_resident_context_usable_until.tzinfo is None
+            or (self.completed_at is not None and self.completed_at.tzinfo is None)
+            or (self.completed_at is not None and self.completed_at > self.recorded_at)
+            or self.access_deadline > self.protected_resident_context_usable_until
+            or self.consumer_subject_id != policy.consumer_subject_id
+            or self.consumer_audience != policy.consumer_audience
+            or self.consumer_contract_id != policy.consumer_contract_id
+            or self.consumer_contract_version != policy.consumer_contract_version
+            or self.purpose_id != policy.purpose_id
+            or self.policy_id != policy.policy_id
+            or self.policy_version != policy.policy_version
+            or self.policy_digest != policy.canonical_digest
+            or self.accessor_id != policy.approved_accessor_id
+            or self.accessor_version != policy.approved_accessor_version
+            or self.runtime_handle_profile_id != policy.runtime_handle_profile_id
+            or self.runtime_handle_profile_version != policy.runtime_handle_profile_version
+            or self.runtime_handle_profile_digest != policy.runtime_handle_profile_digest
+            or self.protected_runtime_handle_is_bearer_capability is not False
+        ):
+            raise ValueError("resident context access result is unsafe")
+        if self.state is states.HANDLE_ESTABLISHED_IN_PROTECTED_BOUNDARY:
+            if (
+                self.failure_class is not None
+                or self.accessor_receipt_digest is None
+                or self.protected_runtime_handle_id is None
+                or self.protected_runtime_handle_digest is None
+                or self.protected_runtime_handle_created_at != self.completed_at
+                or self.protected_runtime_handle_usable_until is None
+                or self.completed_at is None
+                or not self.completed_at < self.access_deadline
+                or not self.completed_at < self.protected_runtime_handle_usable_until
+                or self.protected_runtime_handle_usable_until
+                > self.protected_resident_context_usable_until
+                or self.protected_resident_context_consumed is not True
+                or self.runtime_handle_established_in_protected_boundary is not True
+                or self.runtime_handle_absence_confirmed is not False
+                or self.outcome_known is not True
+            ):
+                raise ValueError("successful resident context access result is invalid")
+            _require_identifier(
+                self.protected_runtime_handle_id, name="protected runtime handle id"
+            )
+            _require_digest(
+                self.protected_runtime_handle_digest,
+                name="protected runtime handle digest",
+            )
+        elif self.state is states.RESIDENT_CONTEXT_ACCESS_FAILED:
+            if (
+                self.failure_class is None
+                or self.failure_class is uncertain_failure
+                or self.accessor_receipt_digest is None
+                or self.protected_runtime_handle_id is not None
+                or self.protected_runtime_handle_digest is not None
+                or self.protected_runtime_handle_created_at is not None
+                or self.protected_runtime_handle_usable_until is not None
+                or self.completed_at is None
+                or not self.completed_at < self.access_deadline
+                or self.protected_resident_context_consumed is not True
+                or self.runtime_handle_established_in_protected_boundary is not False
+                or self.runtime_handle_absence_confirmed is not True
+                or self.outcome_known is not True
+            ):
+                raise ValueError("failed resident context access result is invalid")
+        elif (
+            self.state is not states.ACCESS_OUTCOME_UNCERTAIN
+            or self.failure_class is not uncertain_failure
+            or self.accessor_receipt_digest is not None
+            or self.protected_runtime_handle_id is not None
+            or self.protected_runtime_handle_digest is not None
+            or self.protected_runtime_handle_created_at is not None
+            or self.protected_runtime_handle_usable_until is not None
+            or self.completed_at is not None
+            or self.recorded_at < self.access_deadline
+            or self.protected_resident_context_consumed is not None
+            or self.runtime_handle_established_in_protected_boundary is not False
+            or self.runtime_handle_absence_confirmed is not False
+            or self.outcome_known is not False
+        ):
+            raise ValueError("uncertain resident context access result is invalid")
+        _require_resident_context_access_consumption_authority(self.authority)
+        if self.canonical_digest != canonical_digest(self.digest_payload()):
+            raise ValueError("resident context access result digest mismatch")
+
+    def digest_payload(self) -> dict[str, object]:
+        return _target_context_capsule_handoff_consumption_payload(self)
+
+    def canonical_value(self) -> dict[str, object]:
+        return {**self.digest_payload(), "canonical_digest": self.canonical_digest}

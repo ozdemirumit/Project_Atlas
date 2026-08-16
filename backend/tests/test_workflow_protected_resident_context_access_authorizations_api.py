@@ -20,6 +20,9 @@ from atlas.modules.workflows.application import (
     WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_AUDIENCE,
     WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_SUBJECT,
 )
+from atlas.modules.workflows.application.protected_resident_context_access_authorization_ports import (  # noqa: E501
+    WorkflowProtectedResidentContextAccessAuthorizationPresentation,
+)
 from atlas.modules.workflows.domain import (
     WorkflowProtectedResidentContextAccessAuthorizationLease,
     WorkflowProtectedResidentContextAccessAuthorizationLeaseState,
@@ -138,6 +141,7 @@ class _Service:
     def __init__(self) -> None:
         self.repository = self
         self.lease: WorkflowProtectedResidentContextAccessAuthorizationLease | None = None
+        self.consumed_lease_ids: set[str] = set()
         self.calls: list[dict[str, Any]] = []
 
     async def get_authoritative_time(self) -> datetime:
@@ -150,11 +154,32 @@ class _Service:
         self.lease = _lease()
         return self.lease
 
-    async def list_leases(
+    def _presentation(
+        self, lease: WorkflowProtectedResidentContextAccessAuthorizationLease
+    ) -> WorkflowProtectedResidentContextAccessAuthorizationPresentation:
+        return WorkflowProtectedResidentContextAccessAuthorizationPresentation(
+            lease=lease,
+            consumed=lease.authorization_lease_id in self.consumed_lease_ids,
+            evaluated_at=NOW + timedelta(milliseconds=500),
+        )
+
+    async def list_presentations(
         self, *, scope: WorkflowScope, limit: int = 256
-    ) -> tuple[WorkflowProtectedResidentContextAccessAuthorizationLease, ...]:
+    ) -> tuple[WorkflowProtectedResidentContextAccessAuthorizationPresentation, ...]:
         del limit
-        return () if self.lease is None or self.lease.scope != scope else (self.lease,)
+        return (
+            ()
+            if self.lease is None or self.lease.scope != scope
+            else (self._presentation(self.lease),)
+        )
+
+    async def get_presentation(
+        self, *, scope: WorkflowScope, authorization_lease_id: str
+    ) -> WorkflowProtectedResidentContextAccessAuthorizationPresentation:
+        assert self.lease is not None
+        assert self.lease.scope == scope
+        assert self.lease.authorization_lease_id == authorization_lease_id
+        return self._presentation(self.lease)
 
 
 class _FailingService(_Service):
@@ -167,10 +192,16 @@ class _FailingService(_Service):
         del kwargs
         raise RuntimeError("database unavailable")
 
-    async def list_leases(
+    async def list_presentations(
         self, *, scope: WorkflowScope, limit: int = 256
-    ) -> tuple[WorkflowProtectedResidentContextAccessAuthorizationLease, ...]:
+    ) -> tuple[WorkflowProtectedResidentContextAccessAuthorizationPresentation, ...]:
         del scope, limit
+        raise RuntimeError("database unavailable")
+
+    async def get_presentation(
+        self, *, scope: WorkflowScope, authorization_lease_id: str
+    ) -> WorkflowProtectedResidentContextAccessAuthorizationPresentation:
+        del scope, authorization_lease_id
         raise RuntimeError("database unavailable")
 
 
@@ -214,6 +245,15 @@ def test_workload_only_post_and_password_session_get_are_minimized() -> None:
                 token, WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_AUDIENCE
             ),
         )
+        assert service.lease is not None
+        service.consumed_lease_ids.add(service.lease.authorization_lease_id)
+        replayed = client.post(
+            ENDPOINT,
+            json=_payload(),
+            headers=_workload_headers(
+                token, WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_AUDIENCE
+            ),
+        )
         inventory = client.get(ENDPOINT)
         client.cookies.clear()
         personal_inventory = client.get(
@@ -229,6 +269,7 @@ def test_workload_only_post_and_password_session_get_are_minimized() -> None:
     assert anonymous.status_code == 403
     assert human_post.status_code == 401
     assert created.status_code == 201
+    assert replayed.status_code == 201
     assert inventory.status_code == 200
     assert personal_inventory.status_code == 403
     assert workload_inventory.status_code == 401
@@ -268,11 +309,20 @@ def test_workload_only_post_and_password_session_get_are_minimized() -> None:
         "fence",
     }
     assert not any(fragment in key for key in item for fragment in forbidden_top_level_fragments)
-    assert inventory.json()["data"]["authorizations"] == [item]
+    consumed_item = inventory.json()["data"]["authorizations"][0]
+    assert consumed_item["state"] == "consumed"
+    assert consumed_item["effective_state"] == "consumed"
+    assert consumed_item["authority"]["protected_access_authority_granted"] is False
+    assert set(consumed_item["authority"].values()) == {False}
+    replayed_item = replayed.json()["data"]
+    assert replayed_item["state"] == "consumed"
+    assert replayed_item["effective_state"] == "consumed"
+    assert set(replayed_item["authority"].values()) == {False}
     for response in (
         anonymous,
         human_post,
         created,
+        replayed,
         inventory,
         personal_inventory,
         workload_inventory,
