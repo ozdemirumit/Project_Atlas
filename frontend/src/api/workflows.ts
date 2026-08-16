@@ -1316,6 +1316,60 @@ export type WorkflowPhysicalTransportTargetContextCapsuleOpeningAuthorizationLea
   durable: true;
 };
 
+export type WorkflowPhysicalTransportTargetContextCapsuleOpeningAuthority = {
+  target_context_capsule_opening_authorized: false;
+  target_context_capsule_handoff_authorized: false;
+  endpoint_resolution_authorized: false;
+  route_selection_authorized: false;
+  route_binding_authorized: false;
+  credential_selection_authorized: false;
+  credential_assignment_binding_authorized: false;
+  credential_access_authorized: false;
+  credential_brokerage_authorized: false;
+  credential_resolution_authorized: false;
+  protected_artifact_access_authorized: false;
+  credential_delivery_authorized: false;
+  network_access_authorized: false;
+  readiness_probe_authorized: false;
+  publication_authorized: false;
+  delivery_authorized: false;
+  dispatch_authorized: false;
+  execution_authorized: false;
+  infrastructure_mutation_authorized: false;
+};
+
+export type WorkflowPhysicalTransportTargetContextCapsuleOpening = {
+  opening_id: string;
+  scope: WorkflowRunPlan["scope"];
+  attempt_state: "started" | "completed";
+  result_state:
+    | "pending"
+    | "opened_in_protected_boundary"
+    | "opening_failed"
+    | "opening_outcome_uncertain";
+  started_at: string;
+  completed_at: string | null;
+  consumer_contract_id: "contract.workflow-protected-transport-target-context-capsule-consumer";
+  consumer_contract_version: "1.0";
+  purpose_id: "purpose.workflow-protected-transport-target-context-capsule-opening-evaluation";
+  opener_contract_id: "contract.workflow-protected-target-context-capsule-consumer-boundary-opener";
+  opener_contract_version: "1.0";
+  resident_context_profile_reference: string;
+  capsule_opened_in_protected_boundary: boolean;
+  target_context_pair_verified: boolean;
+  resident_context_is_bearer_capability: false;
+  policy_id: "policy.workflow-protected-transport-target-context-capsule-opening-consumption";
+  policy_version: "1.0";
+  authority: WorkflowPhysicalTransportTargetContextCapsuleOpeningAuthority;
+  integrity_reference: string;
+};
+
+export type WorkflowPhysicalTransportTargetContextCapsuleOpeningInventory = {
+  physical_transport_target_context_capsule_openings: WorkflowPhysicalTransportTargetContextCapsuleOpening[];
+  server_time: string;
+  durable: true;
+};
+
 export type WorkflowPhysicalTransportCredentialAssignmentSnapshotAuthority = {
   endpoint_resolution_authorized: false;
   protected_artifact_access_authorized: false;
@@ -2489,6 +2543,53 @@ const physicalTransportTargetContextCapsuleOpeningAuthorizationLeaseFields = [
 ] as const;
 const physicalTransportTargetContextCapsuleOpeningAuthorizationLeaseInventoryFields = [
   "physical_transport_target_context_capsule_opening_authorization_leases",
+  "server_time",
+  "durable",
+] as const;
+const physicalTransportTargetContextCapsuleOpeningAuthorityFields = [
+  "target_context_capsule_opening_authorized",
+  "target_context_capsule_handoff_authorized",
+  "endpoint_resolution_authorized",
+  "route_selection_authorized",
+  "route_binding_authorized",
+  "credential_selection_authorized",
+  "credential_assignment_binding_authorized",
+  "credential_access_authorized",
+  "credential_brokerage_authorized",
+  "credential_resolution_authorized",
+  "protected_artifact_access_authorized",
+  "credential_delivery_authorized",
+  "network_access_authorized",
+  "readiness_probe_authorized",
+  "publication_authorized",
+  "delivery_authorized",
+  "dispatch_authorized",
+  "execution_authorized",
+  "infrastructure_mutation_authorized",
+] as const;
+const physicalTransportTargetContextCapsuleOpeningFields = [
+  "opening_id",
+  "scope",
+  "attempt_state",
+  "result_state",
+  "started_at",
+  "completed_at",
+  "consumer_contract_id",
+  "consumer_contract_version",
+  "purpose_id",
+  "opener_contract_id",
+  "opener_contract_version",
+  "resident_context_profile_reference",
+  "capsule_opened_in_protected_boundary",
+  "target_context_pair_verified",
+  "resident_context_is_bearer_capability",
+  "policy_id",
+  "policy_version",
+  "authority",
+  "integrity_reference",
+] as const;
+const physicalTransportTargetContextCapsuleOpeningInventoryFields = [
+  "physical_transport_target_context_capsule_openings",
   "server_time",
   "durable",
 ] as const;
@@ -4467,6 +4568,92 @@ function isPhysicalTransportTargetContextCapsuleOpeningAuthorizationLease(
   );
 }
 
+function hasZeroPhysicalTransportTargetContextCapsuleOpeningAuthority(
+  value: unknown,
+): value is WorkflowPhysicalTransportTargetContextCapsuleOpeningAuthority {
+  return (
+    isObject(value) &&
+    hasExactKeys(value, physicalTransportTargetContextCapsuleOpeningAuthorityFields) &&
+    physicalTransportTargetContextCapsuleOpeningAuthorityFields.every(
+      (field) => value[field] === false,
+    )
+  );
+}
+
+function isPhysicalTransportTargetContextCapsuleOpening(
+  value: unknown,
+  scope: WorkflowScope,
+  serverTime: string,
+): value is WorkflowPhysicalTransportTargetContextCapsuleOpening {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, physicalTransportTargetContextCapsuleOpeningFields) ||
+    !isExactScope(value.scope) ||
+    containsCredentialMaterial(value) ||
+    !isTimezoneAwareTimestamp(value.started_at) ||
+    (value.completed_at !== null && !isTimezoneAwareTimestamp(value.completed_at))
+  ) {
+    return false;
+  }
+  const openingScope = value.scope;
+  const startedAt = Date.parse(value.started_at);
+  const completedAt = value.completed_at === null ? null : Date.parse(value.completed_at);
+  const evaluatedAt = Date.parse(serverTime);
+  const stateIsConsistent =
+    (value.attempt_state === "started" &&
+      value.result_state === "pending" &&
+      completedAt === null &&
+      value.capsule_opened_in_protected_boundary === false &&
+      value.target_context_pair_verified === false) ||
+    (value.attempt_state === "started" &&
+      value.result_state === "opening_outcome_uncertain" &&
+      completedAt === null &&
+      value.capsule_opened_in_protected_boundary === false &&
+      value.target_context_pair_verified === false) ||
+    (value.attempt_state === "completed" &&
+      value.result_state === "opened_in_protected_boundary" &&
+      completedAt !== null &&
+      value.capsule_opened_in_protected_boundary === true &&
+      value.target_context_pair_verified === true) ||
+    (value.attempt_state === "completed" &&
+      (value.result_state === "opening_failed" ||
+        value.result_state === "opening_outcome_uncertain") &&
+      completedAt !== null &&
+      value.capsule_opened_in_protected_boundary === false &&
+      value.target_context_pair_verified === false);
+  return (
+    isStableIdentifier(value.opening_id) &&
+    value.opening_id.startsWith("workflow-target-context-capsule-opening.") &&
+    openingScope.organization_id === scope.organizationId &&
+    openingScope.environment_id === scope.environmentId &&
+    openingScope.site_id === scope.siteId &&
+    startedAt <= evaluatedAt &&
+    (completedAt === null || (completedAt >= startedAt && completedAt <= evaluatedAt)) &&
+    stateIsConsistent &&
+    value.consumer_contract_id ===
+      "contract.workflow-protected-transport-target-context-capsule-consumer" &&
+    value.consumer_contract_version === "1.0" &&
+    value.purpose_id ===
+      "purpose.workflow-protected-transport-target-context-capsule-opening-evaluation" &&
+    value.opener_contract_id ===
+      "contract.workflow-protected-target-context-capsule-consumer-boundary-opener" &&
+    value.opener_contract_version === "1.0" &&
+    isStableIdentifier(value.resident_context_profile_reference) &&
+    value.resident_context_profile_reference.startsWith(
+      "integrity.workflow-target-context-capsule-resident-context-profile.",
+    ) &&
+    value.resident_context_is_bearer_capability === false &&
+    value.policy_id ===
+      "policy.workflow-protected-transport-target-context-capsule-opening-consumption" &&
+    value.policy_version === "1.0" &&
+    hasZeroPhysicalTransportTargetContextCapsuleOpeningAuthority(value.authority) &&
+    isStableIdentifier(value.integrity_reference) &&
+    value.integrity_reference.startsWith(
+      "integrity.workflow-target-context-capsule-opening.",
+    )
+  );
+}
+
 function hasZeroPhysicalTransportCredentialAssignmentSnapshotAuthority(
   value: unknown,
 ): value is WorkflowPhysicalTransportCredentialAssignmentSnapshotAuthority {
@@ -5961,6 +6148,59 @@ export async function listWorkflowPhysicalTransportTargetContextCapsuleOpeningAu
     leaseIds.add(lease.authorization_lease_id);
   }
   return data as WorkflowPhysicalTransportTargetContextCapsuleOpeningAuthorizationLeaseInventory;
+}
+
+export async function listWorkflowPhysicalTransportTargetContextCapsuleOpenings(input: {
+  scope: WorkflowScope;
+}): Promise<WorkflowPhysicalTransportTargetContextCapsuleOpeningInventory> {
+  const response = await apiFetch(
+    "/api/v1/workflows/physical-transport-target-context-capsule-openings",
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(
+    response,
+    "Workflow physical transport target-context capsule opening retrieval failed",
+  );
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, physicalTransportTargetContextCapsuleOpeningInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    !Array.isArray(data.physical_transport_target_context_capsule_openings) ||
+    data.physical_transport_target_context_capsule_openings.length > 256 ||
+    !isTimezoneAwareTimestamp(data.server_time) ||
+    data.durable !== true
+  ) {
+    throw new ApiRequestError(
+      "Workflow physical transport target-context capsule opening response was unsafe",
+      response.status,
+    );
+  }
+  const serverTime = data.server_time;
+  if (
+    !data.physical_transport_target_context_capsule_openings.every((opening) =>
+      isPhysicalTransportTargetContextCapsuleOpening(opening, input.scope, serverTime),
+    )
+  ) {
+    throw new ApiRequestError(
+      "Workflow physical transport target-context capsule opening response was unsafe",
+      response.status,
+    );
+  }
+  const openingIds = new Set<string>();
+  for (const opening of data.physical_transport_target_context_capsule_openings) {
+    if (
+      !isObject(opening) ||
+      typeof opening.opening_id !== "string" ||
+      openingIds.has(opening.opening_id)
+    ) {
+      throw new ApiRequestError(
+        "Workflow physical transport target-context capsule opening response was unsafe",
+        response.status,
+      );
+    }
+    openingIds.add(opening.opening_id);
+  }
+  return data as WorkflowPhysicalTransportTargetContextCapsuleOpeningInventory;
 }
 
 export async function listWorkflowPhysicalTransportCredentialAssignmentSnapshots(): Promise<WorkflowPhysicalTransportCredentialAssignmentSnapshotInventory> {
