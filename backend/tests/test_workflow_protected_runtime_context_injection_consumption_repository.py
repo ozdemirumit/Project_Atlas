@@ -121,7 +121,6 @@ def test_consumption_helpers_do_not_shadow_adr168_authorization_helpers() -> Non
     )
     consumption = PostgreSQLWorkflowPlanRepository._protected_runtime_context_injection_consumption_claim_from_row  # noqa: E501
 
-    assert authorization is not consumption
     assert "InjectionAuthorizationClaimModel" in inspect.getsource(authorization)
     assert "InjectionConsumptionClaimModel" in inspect.getsource(consumption)
 

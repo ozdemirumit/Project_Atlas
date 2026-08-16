@@ -833,7 +833,11 @@ class PostgreSQLWorkflowPlanRepository:
         self,
         verifier: WorkflowProtectedRuntimeContextTrustedInjectorReceiptSignatureVerifier,
     ) -> None:
-        current = self._protected_runtime_context_injection_receipt_signature_verifier
+        current = getattr(
+            self,
+            "_protected_runtime_context_injection_receipt_signature_verifier",
+            None,
+        )
         if current is not None and current is not verifier:
             raise ValueError(
                 "protected runtime-context injection receipt verifier is already bound"
