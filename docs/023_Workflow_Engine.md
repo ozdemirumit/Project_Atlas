@@ -664,6 +664,15 @@ MVP workflows do not execute C3 through C5 capabilities.
   and side-effect free; changed or competing binding fails closed. The boundary makes no protected-
   store, opener, broker or network call, all 17 authority fields remain false, and capsule handoff
   authorization, unsealing, delivery, runtime, dispatch, execution and mutation are deferred.
+- ADR-162 establishes one append-only, single-use, non-renewable and non-transferable one-second
+  handoff-authorization lease for the exact consumer workload bound by ADR-161. A fresh signed,
+  nonce-bound metadata-only capsule lifecycle attestation is captured before the transaction.
+  PostgreSQL revalidates the complete target-context, opening, binding, event, route and
+  credential-assignment lineage, current heads and fences and the full lease window before
+  atomically appending the lease, idempotency claim and audit evidence. Only the dedicated
+  `target_context_capsule_handoff_authorized` declaration is true; all existing 17 operational
+  authority declarations remain false. Capsule retrieval, handoff consumption, unsealing,
+  delivery, network, runtime, dispatch, execution and mutation remain separate later boundaries.
 
 ## 39. Assumptions
 
@@ -701,3 +710,4 @@ This document is ready to enter Review when:
 | 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |
 | 1.1.0 | 2026-08-15 | Workflow Architecture | Added atomic single-use target-context artifact opening and sealed zero-authority capsule lineage |
 | 1.2.0 | 2026-08-16 | Workflow Architecture | Added immutable zero-authority target-context capsule consumer binding |
+| 1.3.0 | 2026-08-16 | Workflow Architecture | Added bounded single-use target-context capsule handoff-authorization lease |
