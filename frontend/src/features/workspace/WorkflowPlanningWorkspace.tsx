@@ -49,6 +49,7 @@ import {
   listWorkflowProtectedRuntimeContextUseAuthorizations,
   listWorkflowProtectedRuntimeContextUseAuthorizationConsumptions,
   listWorkflowProtectedRuntimeContextUses,
+  listWorkflowProtectedRuntimeStartAuthorizations,
   listWorkflowPhysicalTransportTargetContextBindings,
   listWorkflowPhysicalTransportCredentialAssignmentSnapshots,
   listWorkflowPhysicalTransportCredentialAssignmentFreshnessAdmissions,
@@ -377,6 +378,16 @@ export default function WorkflowPlanningWorkspace({
       siteId,
     ],
     queryFn: listWorkflowProtectedRuntimeContextUses,
+    retry: false,
+  });
+  const protectedRuntimeStartAuthorizationQuery = useQuery({
+    queryKey: [
+      "workflow-protected-runtime-start-authorizations",
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: listWorkflowProtectedRuntimeStartAuthorizations,
     retry: false,
   });
   const targetQuery = useQuery({
@@ -894,6 +905,10 @@ export default function WorkflowPlanningWorkspace({
   const protectedRuntimeContextUseErrorStatus =
     protectedRuntimeContextUseQuery.error instanceof ApiRequestError
       ? protectedRuntimeContextUseQuery.error.status
+      : undefined;
+  const protectedRuntimeStartAuthorizationErrorStatus =
+    protectedRuntimeStartAuthorizationQuery.error instanceof ApiRequestError
+      ? protectedRuntimeStartAuthorizationQuery.error.status
       : undefined;
   const eventEnvelopes = eventEnvelopesForAdmission;
   const transportAdmissions = transportAdmissionsForArtifacts;
@@ -4698,6 +4713,160 @@ export default function WorkflowPlanningWorkspace({
             context, handle, locator, receipt or credential. This view cannot use or retry context;
             start or resume a runtime; connect, probe or invoke MCP; publish, deliver or dispatch;
             execute work; or mutate infrastructure.
+          </span>
+        </div>
+      </section>
+
+      <section
+        className="workflow-physical-route-binding-band workflow-target-context-opening-band"
+        aria-labelledby="workflow-protected-runtime-start-authorization-title"
+      >
+        <div className="workflow-section-heading">
+          <div>
+            <p className="eyebrow">FUTURE START-REQUEST LEASE EVIDENCE</p>
+            <h2 id="workflow-protected-runtime-start-authorization-title">
+              Protected runtime-start authorizations
+            </h2>
+          </div>
+          <span>Read only</span>
+        </div>
+        {protectedRuntimeStartAuthorizationQuery.isLoading && (
+          <div className="workflow-empty-state" role="status">
+            <RefreshCw className="spin" size={18} />
+            <span>Loading protected runtime-start authorizations...</span>
+          </div>
+        )}
+        {protectedRuntimeStartAuthorizationQuery.isError && (
+          <div className="workflow-inline-error" role="alert">
+            <AlertTriangle aria-hidden="true" size={18} />
+            <div>
+              <strong>
+                {protectedRuntimeStartAuthorizationErrorStatus === 401
+                  ? "Your session has expired"
+                  : protectedRuntimeStartAuthorizationErrorStatus === 403
+                    ? "Runtime-start authorization permission is missing"
+                    : "Runtime-start authorizations are unavailable"}
+              </strong>
+              <span>
+                {protectedRuntimeStartAuthorizationErrorStatus === 401
+                  ? "Sign in again to continue."
+                  : protectedRuntimeStartAuthorizationErrorStatus === 403
+                    ? "Your current role or scope cannot inspect protected runtime-start authorization evidence."
+                    : "The protected authorization repository is unavailable or failed closed; no start-request authority is inferred."}
+              </span>
+            </div>
+          </div>
+        )}
+        {protectedRuntimeStartAuthorizationQuery.isSuccess &&
+          protectedRuntimeStartAuthorizationQuery.data.authorizations.length === 0 && (
+            <div className="workflow-empty-state" role="status">
+              <LockKeyhole size={19} />
+              <span>No protected runtime-start authorizations are recorded in this scope.</span>
+            </div>
+          )}
+        {protectedRuntimeStartAuthorizationQuery.isSuccess &&
+          protectedRuntimeStartAuthorizationQuery.data.authorizations.length > 0 && (
+            <ol
+              className="workflow-step-preview workflow-physical-route-binding-list workflow-target-context-opening-list"
+              aria-label="Protected runtime-start authorizations"
+            >
+              {protectedRuntimeStartAuthorizationQuery.data.authorizations.map(
+                (authorization) => (
+                  <li key={authorization.authorization_lease_id}>
+                    {authorization.effective_state === "active" ? (
+                      <ShieldCheck size={18} />
+                    ) : (
+                      <FileClock size={18} />
+                    )}
+                    <div>
+                      <strong>
+                        <code title={authorization.authorization_lease_id}>
+                          {safeHolderIdentifier(authorization.authorization_lease_id)}
+                        </code>
+                        <span
+                          className={`state-badge ${
+                            authorization.effective_state === "active" ? "success" : "neutral"
+                          }`}
+                        >
+                          {authorization.effective_state === "active" ? "Active" : "Expired"}
+                        </span>
+                      </strong>
+                      <div className="workflow-physical-route-binding-grid">
+                        <span>
+                          State {readableKind(authorization.state)} | effective{" "}
+                          {readableKind(authorization.effective_state)}
+                        </span>
+                        <span>
+                          Issued {formatTimestamp(authorization.issued_at)} | valid until{" "}
+                          {formatTimestamp(authorization.valid_until)} | effective until{" "}
+                          {formatTimestamp(authorization.effective_until)}
+                        </span>
+                        <span>
+                          Policy{" "}
+                          <code title={authorization.policy_id}>
+                            {safeHolderIdentifier(authorization.policy_id)}
+                          </code>{" "}
+                          v{authorization.policy_version} | purpose{" "}
+                          <code title={authorization.purpose_id}>
+                            {safeHolderIdentifier(authorization.purpose_id)}
+                          </code>
+                        </span>
+                        <span>
+                          Consumer contract{" "}
+                          <code title={authorization.consumer_contract_id}>
+                            {safeHolderIdentifier(authorization.consumer_contract_id)}
+                          </code>{" "}
+                          v{authorization.consumer_contract_version}
+                        </span>
+                        <span>
+                          Runtime-start profile{" "}
+                          <code title={authorization.runtime_start_profile_reference}>
+                            {shortDigest(authorization.runtime_start_profile_reference)}
+                          </code>
+                        </span>
+                        <span>
+                          Destination profile{" "}
+                          <code title={authorization.destination_profile_reference}>
+                            {shortDigest(authorization.destination_profile_reference)}
+                          </code>
+                        </span>
+                        <span>
+                          Integrity reference{" "}
+                          <code title={authorization.integrity_reference}>
+                            {shortDigest(authorization.integrity_reference)}
+                          </code>
+                        </span>
+                        <span className="workflow-physical-route-binding-authority">
+                          Dedicated future start-request lease{" "}
+                          {authorization.authority.protected_runtime_start_authority_granted
+                            ? "active for one request"
+                            : "inactive"}
+                          . Existing authority protected runtime-context use false | runtime use
+                          false | runtime start false | runtime resume false | connector activity
+                          false | protected runtime-context injection false | protected
+                          resident-context access false | target-context capsule opening false |
+                          target-context capsule handoff false | endpoint resolution false | route
+                          selection false | route binding false | credential selection false |
+                          credential assignment binding false | credential access false |
+                          credential brokerage false | credential resolution false | protected
+                          artifact access false | credential delivery false | network access false |
+                          readiness probe false | publication false | delivery false | dispatch false
+                          | execution false | infrastructure mutation false
+                        </span>
+                      </div>
+                    </div>
+                  </li>
+                ),
+              )}
+            </ol>
+          )}
+        <div className="workflow-safety-boundary" role="note">
+          <LockKeyhole size={18} />
+          <span>
+            Read-only evidence. The dedicated declaration is only one future protected
+            runtime-start request lease. It is not runtime-start, resume, process, scheduling,
+            inference, network, connector, MCP, dispatch, execution or infrastructure-mutation
+            authority, and this view cannot consume or retry it.
           </span>
         </div>
       </section>

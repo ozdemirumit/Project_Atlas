@@ -33,6 +33,10 @@ from atlas.modules.workflows.adapters.protected_runtime_slot_lifecycle_attestors
     DeterministicDevelopmentWorkflowProtectedRuntimeSlotLifecycleAttestor,
     UnavailableWorkflowProtectedRuntimeSlotLifecycleAttestor,
 )
+from atlas.modules.workflows.adapters.protected_runtime_start_lifecycle_attestors import (
+    DeterministicDevelopmentWorkflowProtectedRuntimeStartLifecycleAttestor,
+    UnavailableWorkflowProtectedRuntimeStartLifecycleAttestor,
+)
 from atlas.modules.workflows.adapters.target_context_access_status_attestors import (
     DenyAllWorkflowProtectedArtifactStatusSignatureVerifier,
     UnavailableWorkflowProtectedCredentialStatusAttestor,
@@ -85,6 +89,7 @@ __all__ = [
     "DeterministicDevelopmentWorkflowProtectedRuntimeHandleLifecycleAttestor",
     "DeterministicDevelopmentWorkflowProtectedRuntimeSlotLifecycleAttestor",
     "DeterministicDevelopmentWorkflowProtectedRuntimeSlotReadinessAttestor",
+    "DeterministicDevelopmentWorkflowProtectedRuntimeStartLifecycleAttestor",
     "InMemoryWorkflowPlanRepository",
     "SyntheticWorkflowPhysicalTransportEndpointMaterializer",
     "SyntheticWorkflowPhysicalTransportTargetContextArtifactOpener",
@@ -102,6 +107,7 @@ __all__ = [
     "UnavailableWorkflowProtectedRuntimeHandleLifecycleAttestor",
     "UnavailableWorkflowProtectedRuntimeSlotLifecycleAttestor",
     "UnavailableWorkflowProtectedRuntimeSlotReadinessAttestor",
+    "UnavailableWorkflowProtectedRuntimeStartLifecycleAttestor",
     "UnavailableWorkflowProtectedTargetContextCapsuleDestinationCustodyAttestor",
     "UnavailableWorkflowProtectedTargetContextCapsuleHandoffLifecycleAttestor",
     "UnavailableWorkflowProtectedTargetContextCapsuleLifecycleStatusAttestor",

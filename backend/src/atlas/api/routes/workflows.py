@@ -33,6 +33,7 @@ from atlas.api.security import (
     authorize_workflow_protected_runtime_context_use_authorization_consumption_read,
     authorize_workflow_protected_runtime_context_use_authorization_read,
     authorize_workflow_protected_runtime_context_use_read,
+    authorize_workflow_protected_runtime_start_authorization_read,
     authorize_workflow_target_context_capsule_handoff_authorization_lease_read,
     authorize_workflow_target_context_capsule_handoff_read,
     authorize_workflow_target_context_capsule_opening_authorization_lease_read,
@@ -87,6 +88,7 @@ from atlas.api.workflow_schemas import (
     CreateWorkflowProtectedRuntimeContextUseAuthorizationConsumptionInput,
     CreateWorkflowProtectedRuntimeContextUseAuthorizationInput,
     CreateWorkflowProtectedRuntimeContextUseInput,
+    CreateWorkflowProtectedRuntimeStartAuthorizationInput,
     CreateWorkflowProtectedTransportTargetContextCapsuleConsumerBindingInput,
     CreateWorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationLeaseInput,
     CreateWorkflowProtectedTransportTargetContextCapsuleHandoffInput,
@@ -234,6 +236,10 @@ from atlas.api.workflow_schemas import (
     WorkflowProtectedRuntimeContextUseInventoryData,
     WorkflowProtectedRuntimeContextUseInventoryResponse,
     WorkflowProtectedRuntimeContextUseResponse,
+    WorkflowProtectedRuntimeStartAuthorizationData,
+    WorkflowProtectedRuntimeStartAuthorizationInventoryData,
+    WorkflowProtectedRuntimeStartAuthorizationInventoryResponse,
+    WorkflowProtectedRuntimeStartAuthorizationResponse,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBindingData,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBindingInventoryData,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBindingInventoryItemData,
@@ -384,6 +390,12 @@ from atlas.modules.workflows.application.event_envelopes import (
 )
 from atlas.modules.workflows.application.physical_route_binding_ports import (
     WorkflowEventPhysicalTransportRouteBindingError,
+)
+from atlas.modules.workflows.application.protected_runtime_start_authorization_ports import (
+    WorkflowProtectedRuntimeStartAuthorizationError,
+)
+from atlas.modules.workflows.application.protected_runtime_start_authorizations import (
+    WorkflowProtectedRuntimeStartAuthorizationService,
 )
 from atlas.modules.workflows.application.target_context_access_authorization_lease_ports import (
     WorkflowTargetContextAccessAuthorizationLeaseError,
@@ -6991,6 +7003,153 @@ async def create_workflow_protected_runtime_context_use_authorization(
             retryable=True,
         ) from error
     return WorkflowProtectedRuntimeContextUseAuthorizationResponse(
+        data=data,
+        meta=_meta(request),
+    )
+
+
+@router.get(
+    "/protected-runtime-start-authorizations",
+    response_model=WorkflowProtectedRuntimeStartAuthorizationInventoryResponse,
+)
+async def list_workflow_protected_runtime_start_authorizations(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_workflow_protected_runtime_start_authorization_read),
+    ],
+) -> WorkflowProtectedRuntimeStartAuthorizationInventoryResponse:
+    del decision
+    _no_store(response)
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    service = cast(
+        WorkflowProtectedRuntimeStartAuthorizationService,
+        request.app.state.workflow_protected_runtime_start_authorization_service,
+    )
+    try:
+        presentations = await service.list_presentations(scope=scope, limit=256)
+        server_time = await service.repository.get_authoritative_time()
+        if any(presentation.lease.scope != scope for presentation in presentations):
+            raise RuntimeError("protected runtime-start authorization scope mismatch")
+        inventory_data = WorkflowProtectedRuntimeStartAuthorizationInventoryData(
+            authorizations=[
+                WorkflowProtectedRuntimeStartAuthorizationData.from_domain(presentation)
+                for presentation in presentations
+            ],
+            server_time=server_time,
+            durable=service.durable,
+        )
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_protected_runtime_start_authorization_service_unavailable",
+            title="Protected runtime-start authorization unavailable",
+            detail="Runtime-start authorization metadata is temporarily unavailable.",
+            retryable=True,
+        ) from error
+    return WorkflowProtectedRuntimeStartAuthorizationInventoryResponse(
+        data=inventory_data,
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    "/protected-runtime-start-authorizations",
+    response_model=WorkflowProtectedRuntimeStartAuthorizationResponse,
+    status_code=201,
+)
+async def create_workflow_protected_runtime_start_authorization(
+    payload: CreateWorkflowProtectedRuntimeStartAuthorizationInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[
+        AuthenticatedSubject,
+        Depends(workflow_protected_transport_target_context_capsule_consumer_subject),
+    ],
+) -> WorkflowProtectedRuntimeStartAuthorizationResponse:
+    _no_store(response)
+    service = cast(
+        WorkflowProtectedRuntimeStartAuthorizationService,
+        request.app.state.workflow_protected_runtime_start_authorization_service,
+    )
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    try:
+        lease = await service.authorize(
+            use_result_id=payload.use_result_id,
+            use_result_digest=payload.use_result_digest,
+            policy_id=payload.policy_id,
+            policy_version=payload.policy_version,
+            idempotency_key=payload.idempotency_key,
+            context=WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationContext(
+                subject_id=subject.subject_id,
+                actor_type=subject.kind.value,
+                authentication_method=subject.authentication_method.value,
+                credential_audience=WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_AUDIENCE,
+                scope=scope,
+                correlation_id=str(request.state.correlation_id),
+                decision_id="decision.workflow-protected-runtime-start-consumer-authenticated",
+                requested_at=datetime.now(UTC),
+            ),
+        )
+        presentations = await (
+            service.repository.list_protected_runtime_start_authorization_presentations(
+                scope=scope,
+                authorization_lease_ids=(lease.authorization_lease_id,),
+                limit=1,
+            )
+        )
+        if len(presentations) != 1:
+            raise RuntimeError("runtime-start authorization projection unavailable")
+        presentation = presentations[0]
+        if presentation.lease.canonical_digest != lease.canonical_digest:
+            raise RuntimeError("runtime-start authorization projection mismatch")
+        data = WorkflowProtectedRuntimeStartAuthorizationData.from_domain(presentation)
+    except WorkflowProtectedRuntimeStartAuthorizationError as error:
+        conflict = any(
+            marker in error.code
+            for marker in (
+                "already_authorized",
+                "evidence_conflict",
+                "idempotency_conflict",
+                "policy_conflict",
+            )
+        )
+        raise AtlasError(
+            status=409 if conflict else 503,
+            code=(
+                "authorization_denied"
+                if conflict
+                else "workflow_protected_runtime_start_authorization_service_unavailable"
+            ),
+            title="Request denied"
+            if conflict
+            else "Protected runtime-start authorization unavailable",
+            detail=(
+                "The current identity or evidence is not authorized for this operation."
+                if conflict
+                else "Runtime-start authorization metadata is temporarily unavailable."
+            ),
+            retryable=not conflict,
+        ) from error
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_protected_runtime_start_authorization_service_unavailable",
+            title="Protected runtime-start authorization unavailable",
+            detail="Runtime-start authorization metadata is temporarily unavailable.",
+            retryable=True,
+        ) from error
+    return WorkflowProtectedRuntimeStartAuthorizationResponse(
         data=data,
         meta=_meta(request),
     )

@@ -619,6 +619,25 @@ prompt, model input/output or reusable capability and grants no runtime start/re
 network, connector/MCP, publication, delivery, dispatch, execution or infrastructure-mutation
 authority. AI remains advisory-only and Active Directory remains authentication-only.
 
+ADR-173 defines the next independent append-only authorization boundary. Only the exact protected
+consumer workload may request one lease from one canonical ADR-172
+`context_used_once_in_protected_boundary` result. Fresh signed, server-nonce-bound metadata-only
+evidence must prove that the adopted context remains terminal and bound to the same inactive
+runtime envelope, no start/resume/process/scheduling attempt exists, destination generation/fence
+and exact slot post-generation remain current, and the code-owned runtime-start profile remains
+eligible. PostgreSQL locks and revalidates the complete ADR-160 through ADR-172 lineage before
+atomically appending one claim and one positive lease valid for no more than one second.
+
+All existing 26 authority declarations remain false. Only the lease may set
+`protected_runtime_start_authority_granted=true`, meaning solely that the exact workload may submit
+one future IMP-224 consumption/start request. It is not `runtime_start_authorized` and cannot start
+a runtime, create or schedule a process, invoke inference, use network, connectors or MCP, publish,
+deliver, dispatch, execute or mutate infrastructure. IMP-223 calls no executor. IMP-224 must
+atomically consume the lease and initiate one protected start attempt, without an additional
+consumption-only layer. Human inventory GET remains read-only under the normal username/password
+session with no MFA or second-browser prompt; AI remains advisory-only and Active Directory remains
+authentication-only.
+
 ### 10.2 Publication State
 
 Outbox records track:
@@ -1024,3 +1043,4 @@ This document is ready to enter Review when:
 | 2.1.0 | 2026-08-16 | Workflow Architecture | Added bounded protected runtime-context use-authorization lease boundary |
 | 2.2.0 | 2026-08-17 | Workflow Architecture | Added atomic protected runtime-context use-authorization lease consumption without runtime-context use |
 | 2.3.0 | 2026-08-17 | Workflow Architecture | Added single-use protected runtime-context adoption boundary |
+| 2.4.0 | 2026-08-17 | Workflow Architecture | Added bounded single-use protected runtime-start authorization lease boundary |

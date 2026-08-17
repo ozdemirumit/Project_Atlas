@@ -265,6 +265,15 @@ from atlas.modules.workflows.domain.protected_runtime_context_use_domain import 
     code_owned_workflow_protected_runtime_context_use_policy,
     code_owned_workflow_protected_runtime_context_use_policy_values,
 )
+from atlas.modules.workflows.domain.protected_runtime_start_authorization_domain import (
+    WorkflowProtectedRuntimeStartAuthorizationAuthority,
+    WorkflowProtectedRuntimeStartAuthorizationClaim,
+    WorkflowProtectedRuntimeStartAuthorizationLease,
+    WorkflowProtectedRuntimeStartAuthorizationLeaseState,
+    WorkflowProtectedRuntimeStartAuthorizationPolicy,
+    code_owned_workflow_protected_runtime_start_authorization_policy,
+    code_owned_workflow_protected_runtime_start_authorization_policy_values,
+)
 
 __all__ = [
     "NO_EXECUTION_SAFETY_NOTICE",
@@ -444,6 +453,11 @@ __all__ = [
     "WorkflowProtectedRuntimeContextUseReceipt",
     "WorkflowProtectedRuntimeContextUseResult",
     "WorkflowProtectedRuntimeContextUseResultState",
+    "WorkflowProtectedRuntimeStartAuthorizationAuthority",
+    "WorkflowProtectedRuntimeStartAuthorizationClaim",
+    "WorkflowProtectedRuntimeStartAuthorizationLease",
+    "WorkflowProtectedRuntimeStartAuthorizationLeaseState",
+    "WorkflowProtectedRuntimeStartAuthorizationPolicy",
     "WorkflowProtectedTargetContextCapsuleDestinationCustodyAttestation",
     "WorkflowProtectedTargetContextCapsuleHandoffLifecycleAttestation",
     "WorkflowProtectedTargetContextCapsuleLifecycleAttestation",
@@ -517,6 +531,8 @@ __all__ = [
     "code_owned_workflow_protected_runtime_context_use_authorization_policy_values",
     "code_owned_workflow_protected_runtime_context_use_policy",
     "code_owned_workflow_protected_runtime_context_use_policy_values",
+    "code_owned_workflow_protected_runtime_start_authorization_policy",
+    "code_owned_workflow_protected_runtime_start_authorization_policy_values",
     "code_owned_workflow_protected_transport_target_context_capsule_consumer_binding_policy",
     "code_owned_workflow_protected_transport_target_context_capsule_handoff_authorization_policy",
     "code_owned_workflow_protected_transport_target_context_capsule_handoff_consumption_policy",
