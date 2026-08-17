@@ -2,16 +2,18 @@ from __future__ import annotations
 
 import inspect
 import os
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any, cast
 
 import pytest
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy import MetaData, Table, delete, func, insert, select, text, update
+from sqlalchemy.exc import DBAPIError
+from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 from test_workflow_protected_runtime_context_uses import (
     NOW,
     SCOPE,
     _Attestor,
+    _canonical_mapping,
     _SignatureVerifier,
     _source,
 )
@@ -24,9 +26,15 @@ from atlas.modules.workflows.application.protected_runtime_context_use_ports imp
     WorkflowProtectedRuntimeContextUseClaimRequest,
     WorkflowProtectedRuntimeContextUseEligibilityAttestationRequest,
     WorkflowProtectedRuntimeContextUseError,
+    WorkflowProtectedRuntimeContextUseResultRequest,
 )
 from atlas.modules.workflows.domain import WorkflowScope, canonical_digest
 from atlas.modules.workflows.domain.protected_runtime_context_use_domain import (
+    WorkflowProtectedRuntimeContextUseAttempt,
+    WorkflowProtectedRuntimeContextUseAuthority,
+    WorkflowProtectedRuntimeContextUseFailureClass,
+    WorkflowProtectedRuntimeContextUseResult,
+    WorkflowProtectedRuntimeContextUseResultState,
     code_owned_workflow_protected_runtime_context_use_policy,
 )
 
@@ -46,6 +54,82 @@ class _CapturingSession:
 
 def _repository() -> PostgreSQLWorkflowPlanRepository:
     return PostgreSQLWorkflowPlanRepository(engine=cast(Any, object()))
+
+
+def _model_values(model: object) -> dict[str, object]:
+    table = cast(Any, type(model)).__table__
+    return {column.name: getattr(model, column.name) for column in table.columns}
+
+
+async def _temporary_evidence_table(
+    connection: AsyncConnection,
+    *,
+    name: str,
+    source: str,
+    append_only: bool = False,
+) -> Table:
+    await connection.execute(
+        text(f"CREATE TEMP TABLE {name} (LIKE {source} INCLUDING ALL) ON COMMIT DROP")
+    )
+    if append_only:
+        await connection.execute(
+            text(
+                f"CREATE TRIGGER {name}_append_only BEFORE UPDATE OR DELETE ON {name} "
+                "FOR EACH ROW EXECUTE FUNCTION reject_wf_rtctx_use_mutation()"
+            )
+        )
+    return await connection.run_sync(
+        lambda sync_connection: Table(name, MetaData(), autoload_with=sync_connection)
+    )
+
+
+def _uncertain_result(
+    *, claim_digest: str, attempt: WorkflowProtectedRuntimeContextUseAttempt, recorded_at: datetime
+) -> WorkflowProtectedRuntimeContextUseResult:
+    values: dict[str, object] = {
+        "result_id": "workflow-protected-runtime-context-use-result.imp-222",
+        "use_id": attempt.use_id,
+        "attempt_id": attempt.attempt_id,
+        "attempt_digest": attempt.canonical_digest,
+        "claim_id": attempt.claim_id,
+        "claim_digest": claim_digest,
+        "authorization_consumption_result_id": attempt.authorization_consumption_result_id,
+        "authorization_consumption_result_digest": (
+            attempt.authorization_consumption_result_digest
+        ),
+        "destination_deployment_id": attempt.destination_deployment_id,
+        "destination_generation": attempt.destination_generation,
+        "destination_fencing_token_digest": attempt.destination_fencing_token_digest,
+        "runtime_slot_commitment": attempt.runtime_slot_commitment,
+        "runtime_slot_pre_generation": attempt.runtime_slot_pre_generation,
+        "runtime_slot_post_generation": None,
+        "use_count_pre": attempt.expected_use_count_pre,
+        "use_count_post": None,
+        "use_profile_id": attempt.use_profile_id,
+        "use_profile_version": attempt.use_profile_version,
+        "use_profile_digest": attempt.use_profile_digest,
+        "executor_contract_id": attempt.required_executor_contract_id,
+        "executor_contract_version": attempt.required_executor_contract_version,
+        "executor_id": attempt.approved_executor_id,
+        "executor_version": attempt.approved_executor_version,
+        "executor_receipt_digest": None,
+        "state": WorkflowProtectedRuntimeContextUseResultState.CONTEXT_USE_OUTCOME_UNCERTAIN,
+        "failure_class": (
+            WorkflowProtectedRuntimeContextUseFailureClass.CONTEXT_USE_OUTCOME_UNCERTAIN
+        ),
+        "outcome_known": False,
+        "context_adopted": False,
+        "protected_runtime_context_use_performed": False,
+        "context_terminal_non_reusable": False,
+        "transient_material_zeroized": False,
+        "completed_at": None,
+        "recorded_at": recorded_at,
+        "use_deadline": attempt.use_deadline,
+        "authority": WorkflowProtectedRuntimeContextUseAuthority(),
+    }
+    return WorkflowProtectedRuntimeContextUseResult(
+        **cast(Any, values), canonical_digest=canonical_digest(_canonical_mapping(values))
+    )
 
 
 async def _claim_request() -> WorkflowProtectedRuntimeContextUseClaimRequest:
@@ -326,7 +410,7 @@ async def test_live_postgres_append_only_tables_and_triggers_when_configured() -
         pytest.skip("ATLAS_TEST_POSTGRES_DSN is not configured")
     engine = create_async_engine(database_url)
     try:
-        async with engine.connect() as connection:
+        async with engine.connect() as connection, connection.begin():
             tables = set(
                 (
                     await connection.execute(
@@ -361,5 +445,129 @@ async def test_live_postgres_append_only_tables_and_triggers_when_configured() -
                 "trg_wf_rtctx_use_attempt_append_only",
                 "trg_wf_rtctx_use_result_append_only",
             }
+
+            constraint_names = set(
+                (
+                    await connection.execute(
+                        text(
+                            "SELECT conname FROM pg_constraint "
+                            "WHERE conrelid IN ("
+                            "'workflow_protected_runtime_context_use_claims'::regclass, "
+                            "'workflow_protected_runtime_context_use_attempts'::regclass, "
+                            "'workflow_protected_runtime_context_use_results'::regclass)"
+                        )
+                    )
+                ).scalars()
+            )
+            assert {
+                "ck_wf_rtctx_use_claim_semantics",
+                "ck_wf_rtctx_use_attempt_window",
+                "ck_wf_rtctx_use_result_chronology",
+                "ck_wf_rtctx_use_result_outcome",
+                "ck_wf_rtctx_use_result_effects",
+            } <= constraint_names
+
+            repository = _repository()
+            request = await _claim_request()
+            claim = repository._protected_runtime_context_use_claim(request, claimed_at=NOW)
+            attempt = repository._protected_runtime_context_use_attempt(
+                request,
+                claim=claim,
+                started_at=NOW + timedelta(milliseconds=10),
+                use_deadline=NOW + timedelta(milliseconds=500),
+            )
+            result = _uncertain_result(
+                claim_digest=claim.canonical_digest,
+                attempt=attempt,
+                recorded_at=attempt.started_at + timedelta(milliseconds=20),
+            )
+            claim_model = repository._protected_runtime_context_adoption_claim_model(request, claim)
+            attempt_model = repository._protected_runtime_context_use_attempt_model(
+                request, claim, attempt
+            )
+            result_model = repository._protected_runtime_context_use_result_model(
+                WorkflowProtectedRuntimeContextUseResultRequest(
+                    result=result,
+                    receipt=None,
+                    expected_claim_digest=claim.canonical_digest,
+                    expected_attempt_digest=attempt.canonical_digest,
+                ),
+                claim_row=claim_model,
+                attempt_row=attempt_model,
+            )
+
+            claim_table = await _temporary_evidence_table(
+                connection,
+                name="tmp_imp222_use_claims",
+                source="workflow_protected_runtime_context_use_claims",
+                append_only=True,
+            )
+            attempt_table = await _temporary_evidence_table(
+                connection,
+                name="tmp_imp222_use_attempts",
+                source="workflow_protected_runtime_context_use_attempts",
+                append_only=True,
+            )
+            result_table = await _temporary_evidence_table(
+                connection,
+                name="tmp_imp222_use_results",
+                source="workflow_protected_runtime_context_use_results",
+                append_only=True,
+            )
+
+            savepoint = await connection.begin_nested()
+            await connection.execute(insert(claim_table), _model_values(claim_model))
+            await connection.execute(insert(attempt_table), _model_values(attempt_model))
+            assert await connection.scalar(select(func.count()).select_from(claim_table)) == 1
+            assert await connection.scalar(select(func.count()).select_from(attempt_table)) == 1
+            await savepoint.rollback()
+            assert await connection.scalar(select(func.count()).select_from(claim_table)) == 0
+            assert await connection.scalar(select(func.count()).select_from(attempt_table)) == 0
+
+            await connection.execute(insert(claim_table), _model_values(claim_model))
+            await connection.execute(insert(attempt_table), _model_values(attempt_model))
+            await connection.execute(insert(result_table), _model_values(result_model))
+
+            assert result.recorded_at < result.use_deadline
+            assert await connection.scalar(select(result_table.c.state)) == (
+                "context_use_outcome_uncertain"
+            )
+
+            for table in (claim_table, attempt_table, result_table):
+                update_savepoint = await connection.begin_nested()
+                with pytest.raises(DBAPIError, match="append-only"):
+                    await connection.execute(update(table).values(canonical_digest="0" * 64))
+                await update_savepoint.rollback()
+
+                delete_savepoint = await connection.begin_nested()
+                with pytest.raises(DBAPIError, match="append-only"):
+                    await connection.execute(delete(table))
+                await delete_savepoint.rollback()
+
+                assert await connection.scalar(select(func.count()).select_from(table)) == 1
+
+            invalid_claim_table = await _temporary_evidence_table(
+                connection,
+                name="tmp_imp222_invalid_claim",
+                source="workflow_protected_runtime_context_use_claims",
+            )
+            invalid_claim = _model_values(claim_model)
+            invalid_claim["endpoint_resolution_authorized"] = True
+            invalid_savepoint = await connection.begin_nested()
+            with pytest.raises(DBAPIError, match="ck_wf_rtctx_use_claim_semantics"):
+                await connection.execute(insert(invalid_claim_table), invalid_claim)
+            await invalid_savepoint.rollback()
+
+            invalid_attempt_table = await _temporary_evidence_table(
+                connection,
+                name="tmp_imp222_invalid_attempt",
+                source="workflow_protected_runtime_context_use_attempts",
+            )
+            invalid_attempt = _model_values(attempt_model)
+            invalid_attempt["started_at"] = invalid_attempt["use_deadline"]
+            invalid_savepoint = await connection.begin_nested()
+            with pytest.raises(DBAPIError, match="ck_wf_rtctx_use_attempt_window"):
+                await connection.execute(insert(invalid_attempt_table), invalid_attempt)
+            await invalid_savepoint.rollback()
     finally:
         await engine.dispose()
