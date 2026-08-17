@@ -102,6 +102,9 @@ def _coordination_guard_body(source: str, *, replace: bool) -> str:
 def _authorization_source_at(base: datetime, *, suffix: str | None = None) -> Any:
     source = _authorization_source()
     claim = source.authorization_claim
+    destination_deployment_id = (
+        DESTINATION_DEPLOYMENT_ID if suffix is None else f"{DESTINATION_DEPLOYMENT_ID}.{suffix}"
+    )
     source_ids = (
         {}
         if suffix is None
@@ -126,7 +129,7 @@ def _authorization_source_at(base: datetime, *, suffix: str | None = None) -> An
     claim_payload.update(
         **cast(Any, source_ids),
         **cast(Any, claim_ids),
-        destination_deployment_id=DESTINATION_DEPLOYMENT_ID,
+        destination_deployment_id=destination_deployment_id,
         authorization_audit_digest=audit_digest,
         use_completed_at=(base - timedelta(seconds=3)).isoformat(),
         use_result_recorded_at=(base - timedelta(seconds=2)).isoformat(),
@@ -136,7 +139,7 @@ def _authorization_source_at(base: datetime, *, suffix: str | None = None) -> An
         claim,
         **cast(Any, source_ids),
         **cast(Any, claim_ids),
-        destination_deployment_id=DESTINATION_DEPLOYMENT_ID,
+        destination_deployment_id=destination_deployment_id,
         authorization_audit_digest=audit_digest,
         use_completed_at=base - timedelta(seconds=3),
         use_result_recorded_at=base - timedelta(seconds=2),
@@ -161,7 +164,7 @@ def _authorization_source_at(base: datetime, *, suffix: str | None = None) -> An
     lease_payload.update(
         **cast(Any, source_ids),
         **cast(Any, lease_ids),
-        destination_deployment_id=DESTINATION_DEPLOYMENT_ID,
+        destination_deployment_id=destination_deployment_id,
         claim_id=claim.claim_id,
         claim_digest=claim.canonical_digest,
         use_completed_at=(base - timedelta(seconds=3)).isoformat(),
@@ -176,7 +179,7 @@ def _authorization_source_at(base: datetime, *, suffix: str | None = None) -> An
         lease,
         **cast(Any, source_ids),
         **cast(Any, lease_ids),
-        destination_deployment_id=DESTINATION_DEPLOYMENT_ID,
+        destination_deployment_id=destination_deployment_id,
         claim_id=claim.claim_id,
         claim_digest=claim.canonical_digest,
         use_completed_at=base - timedelta(seconds=3),
@@ -677,6 +680,22 @@ def test_repository_models_round_trip_signed_attempt_evidence() -> None:
     )
 
 
+def test_suffixed_live_source_isolates_destination_lineage() -> None:
+    first = _claim_request(base=NOW, suffix="live-a")
+    second = _claim_request(base=NOW, suffix="live-b")
+
+    assert first.source.authorization_lease.destination_deployment_id.endswith(".live-a")
+    assert second.source.authorization_lease.destination_deployment_id.endswith(".live-b")
+    assert (
+        first.source.authorization_lease.destination_deployment_id
+        != second.source.authorization_lease.destination_deployment_id
+    )
+    assert (
+        first.source.authorization_claim.destination_deployment_id
+        == first.source.authorization_lease.destination_deployment_id
+    )
+
+
 def test_persisted_starter_receipt_requires_available_exact_signature_verifier() -> None:
     request = _claim_request()
     instruction = build_workflow_protected_runtime_start_instruction(request.candidate_attempt)
@@ -1042,7 +1061,10 @@ async def test_live_postgres_schema_guards_append_only_and_one_claim_winner_when
                     datetime,
                     await actual_connection.scalar(select(func.clock_timestamp())),
                 )
-                request = _claim_request(base=database_now)
+                request = _claim_request(
+                    base=database_now,
+                    suffix=f"imp224-schema-{uuid4().hex[:16]}",
+                )
                 seed_repository = PostgreSQLWorkflowPlanRepository(engine=engine)
                 result_request = await _seed_actual_repository_path(
                     actual_connection,
