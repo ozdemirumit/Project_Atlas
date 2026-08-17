@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
 from dataclasses import fields
 from datetime import UTC, datetime, timedelta
@@ -224,6 +225,7 @@ class _Assessor:
         *,
         state: WorkflowProtectedRuntimeReadinessConsumptionResultState,
         fail: bool = False,
+        cancel: bool = False,
         late: bool = False,
         missing: bool = False,
     ) -> None:
@@ -239,6 +241,7 @@ class _Assessor:
         self._events = events
         self._state = state
         self._fail = fail
+        self._cancel = cancel
         self._late = late
         self._missing = missing
         self.calls = 0
@@ -249,6 +252,8 @@ class _Assessor:
         assert self._repository.committed is True
         self._events.append("assessor")
         self.calls += 1
+        if self._cancel:
+            raise asyncio.CancelledError
         if self._fail:
             raise TimeoutError("protected readiness assessor unavailable")
         if self._missing:
@@ -430,6 +435,7 @@ def _service(
         WorkflowProtectedRuntimeReadinessConsumptionResultState
     ).RUNTIME_READY_IN_PROTECTED_BOUNDARY,
     fail_assessor: bool = False,
+    cancel_assessor: bool = False,
     late_receipt: bool = False,
     missing_receipt: bool = False,
     valid_instruction: bool = True,
@@ -445,6 +451,7 @@ def _service(
         events,
         state=state,
         fail=fail_assessor,
+        cancel=cancel_assessor,
         late=late_receipt,
         missing=missing_receipt,
     )
@@ -740,6 +747,7 @@ async def test_semantic_audit_distinguishes_attempt_invocation_and_terminal_resu
     assert metadata["assessment_authority"] == "false"
     assert metadata["execution_authority"] == "false"
     assert metadata["infrastructure_mutation_authority"] == "false"
+    assert all(event.occurred_at > _context().requested_at for event in audit_sink.events)
 
 
 @pytest.mark.asyncio
@@ -764,6 +772,30 @@ async def test_assessor_failure_audit_records_intent_failure_and_uncertainty() -
         "protected_runtime_readiness_outcome_uncertain",
     ]
     assert audit_sink.events[2].occurred_at >= _context().requested_at
+
+
+@pytest.mark.asyncio
+async def test_assessor_cancellation_records_failure_and_uncertainty_before_propagating() -> None:
+    audit_sink = _AuditSink()
+    service, repository, assessor = _service(cancel_assessor=True, audit_sink=audit_sink)
+
+    with pytest.raises(asyncio.CancelledError):
+        await _consume(service)
+
+    assert assessor.calls == 1
+    assert repository.result is not None
+    assert (
+        repository.result.state
+        is (
+            WorkflowProtectedRuntimeReadinessConsumptionResultState
+        ).RUNTIME_READINESS_OUTCOME_UNCERTAIN
+    )
+    assert [event.result_code for event in audit_sink.events] == [
+        "protected_runtime_readiness_lease_consumed_attempt_committed",
+        "protected_runtime_readiness_assessor_invocation_intent_recorded",
+        "protected_runtime_readiness_assessor_invocation_failed",
+        "protected_runtime_readiness_outcome_uncertain",
+    ]
 
 
 @pytest.mark.asyncio

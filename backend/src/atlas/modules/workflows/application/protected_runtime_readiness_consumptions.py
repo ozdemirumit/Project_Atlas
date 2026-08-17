@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, fields
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -273,6 +274,15 @@ class WorkflowProtectedRuntimeReadinessConsumptionService:
             receipt = await self._assessor.assess_runtime_readiness(
                 build_workflow_protected_runtime_readiness_invocation(envelope)
             )
+        except asyncio.CancelledError:
+            await self._postcommit_audit(
+                context,
+                result_code="protected_runtime_readiness_assessor_invocation_failed",
+                attempt=attempt,
+                occurred_at=datetime.now(UTC),
+            )
+            await self._record_uncertainty(claim=claim, attempt=attempt, context=context)
+            raise
         except Exception:
             await self._postcommit_audit(
                 context,
@@ -627,7 +637,7 @@ class WorkflowProtectedRuntimeReadinessConsumptionService:
                     schema_version="1.0",
                     producer=WORKFLOW_PROTECTED_RUNTIME_READINESS_CONSUMPTION_PRODUCER,
                     producer_version=__version__,
-                    occurred_at=occurred_at or context.requested_at,
+                    occurred_at=occurred_at or datetime.now(UTC),
                     correlation_id=context.correlation_id,
                     subject_id=context.subject_id,
                     actor_type=context.actor_type,
