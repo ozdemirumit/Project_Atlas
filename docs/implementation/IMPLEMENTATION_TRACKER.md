@@ -8,7 +8,7 @@
 | Title | Atomic protected runtime-readiness consumption and single assessment attempt |
 | Status | Validation complete; delivery in progress |
 | Branch | `agent/protected-runtime-readiness-consumption` |
-| Pull Request | Not opened |
+| Pull Request | [#239](https://github.com/ozdemirumit/Project_Atlas/pull/239) |
 | Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-176 |
 | Last Updated | 2026-08-17 |
 | Next Action | Open the IMP-226 pull request, complete exact-head CI, merge, and verify main CI |
