@@ -7166,6 +7166,9 @@ class PostgreSQLWorkflowPlanRepository:
             or result.claim_id != claim.claim_id
             or result.claim_digest != claim.canonical_digest
             or result.executor_receipt_digest != receipt.canonical_digest
+            or locked.use_result.organization_id != attempt.scope.organization_id
+            or locked.use_result.environment_id != attempt.scope.environment_id
+            or locked.use_result.site_id != attempt.scope.site_id
         ):
             return None
         return WorkflowProtectedRuntimeStartAuthorizationSource(
@@ -12311,7 +12314,8 @@ class PostgreSQLWorkflowPlanRepository:
         cls, raw: dict[str, Any], stored_digest: str, kind: str
     ) -> object:
         payload = dict(raw)
-        payload["scope"] = WorkflowScope(**cast(dict[str, str], payload["scope"]))
+        if "scope" in payload:
+            payload["scope"] = WorkflowScope(**cast(dict[str, str], payload["scope"]))
         for name, value in tuple(payload.items()):
             if (
                 value is not None
@@ -12351,12 +12355,18 @@ class PostgreSQLWorkflowPlanRepository:
             and hasattr(row, name)
         )
         failure_class = getattr(value, "failure_class", None)
+        scope = getattr(value, "scope", None)
         policy = code_owned_workflow_protected_runtime_context_use_policy()
         if (
             any(getattr(row, name) != getattr(value, name) for name in shared)
-            or row.organization_id != value.scope.organization_id
-            or row.environment_id != value.scope.environment_id
-            or row.site_id != value.scope.site_id
+            or (
+                scope is not None
+                and (
+                    row.organization_id != scope.organization_id
+                    or row.environment_id != scope.environment_id
+                    or row.site_id != scope.site_id
+                )
+            )
             or (hasattr(row, "state") and row.state != value.state.value)
             or (
                 hasattr(row, "failure_class")

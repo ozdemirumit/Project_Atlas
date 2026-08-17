@@ -22,6 +22,7 @@ from test_workflow_protected_runtime_start_consumption_postgres import (
 from test_workflow_protected_runtime_start_consumption_postgres import (
     _model_values,
     _seed_actual_repository_path,
+    _valid_runtime_start_authorization_evidence,
 )
 from test_workflow_protected_runtime_start_consumptions import _service as _runtime_start_service
 
@@ -261,12 +262,26 @@ async def _seed_successful_runtime_start(
     suffix: str,
 ) -> tuple[Any, WorkflowProtectedRuntimeStartReceipt]:
     database_now = cast(datetime, await connection.scalar(select(func.clock_timestamp())))
-    request = _runtime_start_claim_request(base=database_now, suffix=suffix)
+    (
+        source,
+        runtime_context_models,
+        authorization_attestation,
+    ) = await _valid_runtime_start_authorization_evidence(
+        repository,
+        base=database_now,
+    )
+    request = _runtime_start_claim_request(
+        base=database_now,
+        suffix=suffix,
+        source=source,
+    )
     await _seed_actual_repository_path(
         connection,
         repository,
         request,
         seed_consumption=True,
+        runtime_context_models=runtime_context_models,
+        authorization_attestation=authorization_attestation,
     )
     attempt = request.candidate_attempt
     instruction = request.signed_instruction_envelope.instruction
@@ -534,6 +549,8 @@ async def _cleanup_runtime_start_sources(engine: Any, requests: tuple[Any, ...])
                 "authorization_lease_id": lease.authorization_lease_id,
                 "runtime_envelope_id": lease.runtime_envelope_id,
                 "use_result_id": lease.use_result_id,
+                "use_attempt_id": lease.use_attempt_id,
+                "use_claim_id": lease.use_claim_id,
                 "deployment_id": lease.destination_deployment_id,
                 "slot_commitment": lease.runtime_slot_commitment,
             }
@@ -556,6 +573,10 @@ async def _cleanup_runtime_start_sources(engine: Any, requests: tuple[Any, ...])
                 "WHERE runtime_envelope_id = :runtime_envelope_id",
                 "DELETE FROM workflow_protected_runtime_context_use_results "
                 "WHERE result_id = :use_result_id",
+                "DELETE FROM workflow_protected_runtime_context_use_attempts "
+                "WHERE attempt_id = :use_attempt_id",
+                "DELETE FROM workflow_protected_runtime_context_use_claims "
+                "WHERE claim_id = :use_claim_id",
                 "DELETE FROM workflow_protected_runtime_context_injection_slot_heads "
                 "WHERE destination_deployment_id = :deployment_id "
                 "AND runtime_slot_commitment = :slot_commitment",
@@ -738,6 +759,9 @@ async def test_live_postgres_readiness_repository_race_replay_scope_guards_and_e
             is WorkflowProtectedRuntimeReadinessAuthorizationPresentationState.EXPIRED
         )
         assert projection[0].protected_runtime_readiness_authority_granted is False
+
+        await _cleanup_runtime_start_sources(engine, (first_seed,))
+        seeded_requests.clear()
 
         async with engine.begin() as connection:
             second_seed, second_receipt = await _seed_successful_runtime_start(
