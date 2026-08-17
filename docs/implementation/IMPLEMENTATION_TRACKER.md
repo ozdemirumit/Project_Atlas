@@ -4,14 +4,51 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-224 |
-| Title | Atomic protected runtime-start lease consumption and single start attempt |
-| Status | Review |
-| Branch | `agent/protected-runtime-start-consumption` |
-| Pull Request | [PR #237](https://github.com/ozdemirumit/Project_Atlas/pull/237) |
-| Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-174 |
+| Task ID | ATLAS-IMP-225 |
+| Title | Bounded single-use protected runtime-readiness authorization lease |
+| Status | In Progress |
+| Branch | `agent/protected-runtime-readiness-authorization` |
+| Pull Request | Not opened |
+| Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-175 |
 | Last Updated | 2026-08-17 |
-| Next Action | Monitor exact-head PR CI, resolve any failure, then merge and verify independent `main` CI |
+| Next Action | Define ADR-175, then implement the fail-closed readiness-authorization vertical slice |
+
+### ATLAS-IMP-225 Scope Rationale
+
+- IMP-224 can prove that one exact pre-existing protected runtime envelope started, but its terminal
+  result is historical outcome evidence and grants no readiness, network, connector or execution
+  authority.
+- A started runtime must not be treated as ready. Readiness eligibility requires fresh protected-
+  boundary evidence rooted in the exact successful start result and complete ADR-160 through
+  ADR-174 lineage.
+- IMP-225 issues only a short-lived request lease for one future readiness-attempt boundary. It
+  performs no readiness probe, process operation, network establishment, connector/MCP call,
+  publication, dispatch, execution or infrastructure mutation.
+
+### ATLAS-IMP-225 Acceptance Criteria
+
+- Only the exact protected consumer workload and audience bound through the canonical ADR-160
+  through ADR-174 lineage may POST. Human sessions, personal tokens, AI agents, MCP tools,
+  connectors and generic workers fail closed before protected-state I/O.
+- Caller input is limited to the successful ADR-174 start-result identity, code-owned policy
+  identity and tenant-scoped idempotency metadata. Runtime envelope, destination, slot,
+  attestation, timing, authority and lease fields are server-derived.
+- Fresh signed, server-nonce-bound, metadata-only evidence proves that the exact runtime remains
+  started, unresumed, unscheduled and bound to the same destination generation/fence and protected
+  slot generation without exposing a process or runtime locator.
+- PostgreSQL classifies durable exact replay first, then locks and revalidates the complete lineage,
+  successful start result, guarded coordination head and authoritative database time before
+  atomically appending one claim and one lease.
+- The lease is at most one second, single-use, non-renewable, non-transferable and non-bearer.
+  Changed replay, uncertain or failed start results, competing lineage, drift and expiry fail closed.
+- All existing reusable authority declarations remain false. Only the lease may set the new
+  dedicated `protected_runtime_readiness_authority_granted=true`, which permits submission of one
+  future readiness-attempt request and is not direct probe, network or connector authority.
+- IMP-225 invokes no readiness prober, process controller, scheduler, model, endpoint, credential,
+  DNS/TLS/socket, connector/MCP, publisher, dispatcher, executor or infrastructure operation.
+- Production fails closed without PostgreSQL and the trusted runtime-lifecycle attestor. Workload
+  POST and normal username/password-session GET are minimized and `no-store`; the read-only UI
+  requires no MFA or second browser prompt and exposes no readiness or operation control.
 
 ### ATLAS-IMP-224 Scope Rationale
 
@@ -79,6 +116,17 @@
   `local-demo` username/password session. The new read-only region required no MFA or second browser
   session, exposed zero interactive controls, had no horizontal overflow at `390x844`, and produced
   no browser console errors or warnings.
+
+### ATLAS-IMP-224 Delivery Evidence
+
+- Merged through [PR #237](https://github.com/ozdemirumit/Project_Atlas/pull/237) from exact reviewed
+  head `96875c1fa72e8045a503a3214516f5ff0725c409` to `main` merge
+  `8e6565a9c6c7fcbd0ad156043b13fcb1b0c61067`.
+- Exact-head [PR CI run 32015970924](https://github.com/ozdemirumit/Project_Atlas/actions/runs/32015970924)
+  passed backend and frontend, including `3054` backend tests, `42` intentional skips, PostgreSQL 17
+  integration, migration round-trip, frontend tests and production build.
+- Independent [main CI run 32018550777](https://github.com/ozdemirumit/Project_Atlas/actions/runs/32018550777)
+  passed every backend and frontend step for the exact merge commit.
 
 ### ATLAS-IMP-223 Scope Rationale
 
