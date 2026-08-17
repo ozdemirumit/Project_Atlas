@@ -797,6 +797,16 @@ MVP workflows do not execute C3 through C5 capabilities.
   protected start attempt without an extra consumption-only layer. AI remains advisory-only, AD
   remains authentication-only, and normal password-session read-only GET requires no MFA or second
   browser prompt.
+- ADR-174 atomically appends the exact ADR-173 lease-consumption claim and one started attempt while
+  advancing the guarded coordination head to `start_attempt_pending`, then calls one approved
+  protected starter only after commit. A started attempt is never resumed, transferred or retried;
+  event/outbox/workflow/DLQ/recovery paths cannot invoke the starter. The signed instruction binds
+  the attempt, nonce, envelope commitment/generation, destination fence, slot generation, starter
+  profile and deadline. Protected-side deduplication and compare-and-swap limit the operation to the
+  exact pre-existing inactive envelope. Timely signed receipts distinguish start success and known
+  no-effect failure; every other post-commit outcome is permanently uncertain. The result is
+  non-bearer historical evidence, `runtime_started=true` grants no follow-on authority, AI remains
+  advisory-only and AD remains authentication-only.
 
 ## 39. Assumptions
 
