@@ -102,7 +102,8 @@ The attestation canonically commits to:
 The signed payload contains no runtime locator, process identifier, context, handle, endpoint,
 credential, secret, network coordinate or command. It is evidence only and cannot be replayed as
 authority. Signature verification, nonce equality, exact contract matching, chronology and a
-short freshness window are mandatory before database writes.
+code-owned freshness window of no more than one second are mandatory before database writes. The
+service, PostgreSQL transaction and database constraints all enforce this maximum independently.
 
 ### Durable Exact-Replay Preflight
 

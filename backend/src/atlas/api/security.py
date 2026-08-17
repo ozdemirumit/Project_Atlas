@@ -274,6 +274,7 @@ from atlas.modules.authorization.application.bootstrap import (
     WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_AUTHORIZATION_CONSUMPTION_READ,
     WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_AUTHORIZATION_READ,
     WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_READ,
+    WORKFLOW_PROTECTED_RUNTIME_READINESS_AUTHORIZATION_READ,
     WORKFLOW_PROTECTED_RUNTIME_START_AUTHORIZATION_READ,
     WORKFLOW_PROTECTED_RUNTIME_START_CONSUMPTION_READ,
     WORKFLOW_TRANSPORT_COMPATIBILITY_ADMISSION_READ,
@@ -405,6 +406,7 @@ from atlas.modules.authorization.application.bootstrap import (
     workflow_protected_runtime_context_use_authorization_consumption_scope,
     workflow_protected_runtime_context_use_authorization_scope,
     workflow_protected_runtime_context_use_scope,
+    workflow_protected_runtime_readiness_authorization_scope,
     workflow_protected_runtime_start_authorization_scope,
     workflow_protected_runtime_start_consumption_scope,
     workflow_scope,
@@ -4093,9 +4095,9 @@ async def authorize_workflow_protected_runtime_readiness_authorization_read(
     decision = await service.evaluate(
         AuthorizationRequest(
             subject=subject,
-            permission_id=WORKFLOW_PROTECTED_RUNTIME_START_AUTHORIZATION_READ,
+            permission_id=WORKFLOW_PROTECTED_RUNTIME_READINESS_AUTHORIZATION_READ,
             resource_type="resource.workflow.protected-runtime-readiness-authorization",
-            scope=workflow_protected_runtime_start_authorization_scope(
+            scope=workflow_protected_runtime_readiness_authorization_scope(
                 subject.organization_id, settings.environment
             ),
             correlation_id=str(request.state.correlation_id),

@@ -35,7 +35,8 @@
   attestation, timing, authority and lease fields are server-derived.
 - Fresh signed, server-nonce-bound, metadata-only evidence proves that the exact runtime remains
   started, unresumed, unscheduled and bound to the same destination generation/fence and protected
-  slot generation without exposing a process or runtime locator.
+  slot generation without exposing a process or runtime locator. Its code-owned freshness window
+  is no more than one second and is enforced by the service, PostgreSQL transaction and constraints.
 - PostgreSQL classifies durable exact replay first, then locks and revalidates the complete lineage,
   successful start result, guarded coordination head and authoritative database time before
   atomically appending one claim and one lease.
