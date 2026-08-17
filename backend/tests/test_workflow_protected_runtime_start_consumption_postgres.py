@@ -49,6 +49,9 @@ from atlas.modules.workflows.application.protected_runtime_start_consumption_por
     build_workflow_protected_runtime_start_signed_instruction_envelope,
 )
 from atlas.modules.workflows.domain.models import canonical_digest
+from atlas.modules.workflows.domain.protected_runtime_context_use_authorization_domain import (
+    code_owned_workflow_protected_runtime_context_use_authorization_policy,
+)
 from atlas.modules.workflows.domain.protected_runtime_start_consumption_domain import (
     WorkflowProtectedRuntimeStartConsumptionResultState,
     WorkflowProtectedRuntimeStartReceipt,
@@ -72,6 +75,9 @@ DESTINATION_BOUNDARY_ID = "boundary.workflow-protected-target-context-capsule-co
 DESTINATION_DEPLOYMENT_ID = "deployment.workflow-protected-target-context-capsule-consumer"
 DESTINATION_POLICY_DIGEST = "cf8b08ca5eef652623d69dd4521f8e25a7d537dc80a06de40fa7cc4cdc34fbcb"
 RUNTIME_SLOT_PROFILE_DIGEST = "7c429ec36bd39f5d02add24b7622e55e32eb0cfca9345ebf272fd231385e3e6b"
+USE_PROFILE_DIGEST = (
+    code_owned_workflow_protected_runtime_context_use_authorization_policy().use_profile_digest
+)
 AUTHORIZATION_AUDIT_PAYLOAD: dict[str, object] = {"seed": "imp-224-actual-repository-claim-race"}
 
 
@@ -128,6 +134,7 @@ def _authorization_source_at(base: datetime, *, suffix: str | None = None) -> An
         **cast(Any, source_ids),
         **cast(Any, claim_ids),
         destination_deployment_id=DESTINATION_DEPLOYMENT_ID,
+        use_profile_digest=USE_PROFILE_DIGEST,
         authorization_audit_digest=audit_digest,
         use_completed_at=(base - timedelta(seconds=3)).isoformat(),
         use_result_recorded_at=(base - timedelta(seconds=2)).isoformat(),
@@ -138,6 +145,7 @@ def _authorization_source_at(base: datetime, *, suffix: str | None = None) -> An
         **cast(Any, source_ids),
         **cast(Any, claim_ids),
         destination_deployment_id=DESTINATION_DEPLOYMENT_ID,
+        use_profile_digest=USE_PROFILE_DIGEST,
         authorization_audit_digest=audit_digest,
         use_completed_at=base - timedelta(seconds=3),
         use_result_recorded_at=base - timedelta(seconds=2),
@@ -163,6 +171,7 @@ def _authorization_source_at(base: datetime, *, suffix: str | None = None) -> An
         **cast(Any, source_ids),
         **cast(Any, lease_ids),
         destination_deployment_id=DESTINATION_DEPLOYMENT_ID,
+        use_profile_digest=USE_PROFILE_DIGEST,
         claim_id=claim.claim_id,
         claim_digest=claim.canonical_digest,
         use_completed_at=(base - timedelta(seconds=3)).isoformat(),
@@ -178,6 +187,7 @@ def _authorization_source_at(base: datetime, *, suffix: str | None = None) -> An
         **cast(Any, source_ids),
         **cast(Any, lease_ids),
         destination_deployment_id=DESTINATION_DEPLOYMENT_ID,
+        use_profile_digest=USE_PROFILE_DIGEST,
         claim_id=claim.claim_id,
         claim_digest=claim.canonical_digest,
         use_completed_at=base - timedelta(seconds=3),
@@ -686,6 +696,8 @@ def test_suffixed_live_source_keeps_code_owned_destination() -> None:
 
     assert request.source.authorization_lease.destination_deployment_id == DESTINATION_DEPLOYMENT_ID
     assert request.source.authorization_claim.destination_deployment_id == DESTINATION_DEPLOYMENT_ID
+    assert request.source.authorization_lease.use_profile_digest == USE_PROFILE_DIGEST
+    assert request.source.authorization_claim.use_profile_digest == USE_PROFILE_DIGEST
 
 
 def test_persisted_starter_receipt_requires_available_exact_signature_verifier() -> None:
