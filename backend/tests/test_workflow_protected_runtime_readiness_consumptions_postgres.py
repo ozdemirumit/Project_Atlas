@@ -437,7 +437,7 @@ async def _seed_authorization(
             source,
             idempotency_key=idempotency_key,
             lifecycle_verifier=_ExactLifecycleVerifier(),
-            first_observed_at=locked.observed_at,
+            first_observed_at=locked.first_observed_at,
         )
         working = repository._protected_runtime_readiness_retimed_request(
             authorization_request, issued_at=locked.observed_at
@@ -518,36 +518,14 @@ async def test_live_postgres_readiness_consumption_race_result_and_guards() -> N
             idempotency_key=f"imp-226-consume-{uuid4().hex}",
             source=source,
         )
-        first, second = await asyncio.wait_for(
-            asyncio.gather(
-                repository.claim_protected_runtime_readiness_consumption(request),
-                repository.claim_protected_runtime_readiness_consumption(request),
-            ),
-            timeout=15,
-        )
-        assert {first.status, second.status} == {
-            WorkflowProtectedRuntimeReadinessConsumptionClaimStatus.CLAIMED,
-            WorkflowProtectedRuntimeReadinessConsumptionClaimStatus.REPLAY_PENDING,
-        }
-
-        tampered_start_request, tampered_source = await _seed_authorization(
-            engine, repository, suffix=f"imp226-tampered-{uuid4().hex[:12]}"
-        )
-        seeded.append(tampered_start_request)
-        tampered_request = await _consumption_request(
-            repository,
-            authorization_lease_id=(tampered_source.authorization_lease.authorization_lease_id),
-            idempotency_key=f"imp-226-tampered-{uuid4().hex}",
-            source=tampered_source,
-        )
         async with repository._sessions() as session:
             authorization_lease_row = await session.get(
                 WorkflowProtectedRuntimeReadinessAuthorizationLeaseModel,
-                tampered_source.authorization_lease.authorization_lease_id,
+                source.authorization_lease.authorization_lease_id,
             )
             assert authorization_lease_row is not None
             tampered_model = repository._protected_runtime_readiness_consumption_claim_model(
-                tampered_request, authorization_lease_row=authorization_lease_row
+                request, authorization_lease_row=authorization_lease_row
             )
             tampered_values = {
                 column.name: getattr(tampered_model, column.name)
@@ -568,6 +546,18 @@ async def test_live_postgres_readiness_consumption_race_result_and_guards() -> N
                 )
                 await transaction.commit()
             await transaction.rollback()
+
+        first, second = await asyncio.wait_for(
+            asyncio.gather(
+                repository.claim_protected_runtime_readiness_consumption(request),
+                repository.claim_protected_runtime_readiness_consumption(request),
+            ),
+            timeout=15,
+        )
+        assert {first.status, second.status} == {
+            WorkflowProtectedRuntimeReadinessConsumptionClaimStatus.CLAIMED,
+            WorkflowProtectedRuntimeReadinessConsumptionClaimStatus.REPLAY_PENDING,
+        }
         replay = await repository.lookup_protected_runtime_readiness_consumption_replay(
             repository._protected_runtime_readiness_consumption_replay_request(request)
         )
