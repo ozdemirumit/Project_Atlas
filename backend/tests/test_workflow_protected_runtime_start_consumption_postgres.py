@@ -141,6 +141,9 @@ def _authorization_source_at(base: datetime, *, suffix: str | None = None) -> An
         if suffix is None
         else {
             "use_result_id": f"runtime-use-result.{suffix}",
+            "use_result_digest": canonical_digest(
+                {"use_result_id": f"runtime-use-result.{suffix}"}
+            ),
             "use_id": f"runtime-use.{suffix}",
             "use_attempt_id": f"runtime-use-attempt.{suffix}",
             "use_claim_id": f"runtime-use-claim.{suffix}",
@@ -1330,6 +1333,9 @@ async def test_live_postgres_schema_guards_append_only_and_one_claim_winner_when
 
             head_values = {
                 "runtime_envelope_id": f"runtime-envelope.{uuid4().hex}",
+                "organization_id": SCOPE.organization_id,
+                "environment_id": SCOPE.environment_id,
+                "site_id": SCOPE.site_id,
                 "runtime_envelope_commitment": "1" * 64,
                 "runtime_envelope_generation": 2,
                 "use_result_id": f"use-result.{uuid4().hex}",
