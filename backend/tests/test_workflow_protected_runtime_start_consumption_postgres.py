@@ -152,6 +152,9 @@ def _authorization_source_at(base: datetime, *, suffix: str | None = None) -> An
             "runtime_envelope_commitment": canonical_digest(
                 {"runtime_envelope_id": f"runtime-envelope.{suffix}"}
             ),
+            "runtime_slot_commitment": canonical_digest(
+                {"runtime_slot_id": f"runtime-slot.{suffix}"}
+            ),
         }
     )
     claim_ids = (
