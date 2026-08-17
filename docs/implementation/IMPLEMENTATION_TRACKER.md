@@ -4,14 +4,76 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-220 |
-| Title | Bounded single-use protected runtime-context use authorization lease without runtime use, start, resume, network, connector, execution or infrastructure mutation authority |
+| Task ID | ATLAS-IMP-221 |
+| Title | Atomic single-use protected runtime-context use-authorization lease consumption without context use, runtime activation, network, connector, dispatch, execution or infrastructure mutation authority |
 | Status | In Progress |
-| Branch | `agent/protected-runtime-context-use-authorization` |
-| Pull Request | Pending |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-170 |
+| Branch | `agent/protected-runtime-context-use-consumption` |
+| Pull Request | [#234](https://github.com/ozdemirumit/Project_Atlas/pull/234) |
+| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-171 |
 | Last Updated | 2026-08-17 |
-| Next Action | Deliver the completed ADR-170 slice through PR, exact-head CI, merge and independent `main` CI |
+| Next Action | Deliver the completed ADR-171 boundary through PR, exact-head CI, merge and independent `main` CI |
+
+### ATLAS-IMP-221 Scope Rationale
+
+- IMP-220 grants one exact protected workload an at-most-one-second, single-use future-request lease,
+  but the lease remains unconsumed and the protected runtime context remains inert and unused.
+- ADR-170 explicitly separates authorization-lease consumption from actual protected-context use.
+  IMP-221 therefore burns the exact lease in PostgreSQL and records a terminal historical outcome
+  without invoking any protected adapter or reading, activating or using context.
+- Keeping claim and terminal result in one transaction eliminates pending and uncertain external
+  outcomes while preserving exact replay and a single durable winner under concurrency.
+
+### ATLAS-IMP-221 Acceptance Criteria
+
+- Only the exact protected consumer workload and audience bound through the complete canonical
+  ADR-160 through ADR-170 lineage may POST. Human sessions, personal tokens, AI agents, MCP tools,
+  connectors, runtimes and generic workers fail closed before repository access.
+- Caller input is limited to the ADR-170 lease identity, code-owned policy identity, scoped
+  idempotency metadata and one irreversible-consumption acknowledgement. Lease digest, lineage,
+  context, slot, destination, time and authority fields are server-derived.
+- Durable exact replay is classified before any new transaction. Changed or competing replay fails
+  closed; exact committed replay returns the same minimized terminal result.
+- PostgreSQL locks and revalidates the complete canonical lineage, current destination generation
+  and fence, exact protected-slot post-generation and active unconsumed ADR-170 lease before taking
+  the authoritative consumption time.
+- Consumption requires `issued_at <= consumed_at < valid_until` and remains bounded by the signed
+  injected-context lifetime and every effective upstream deadline. Database time is authoritative.
+- One immutable claim and one terminal `authorization_consumed_without_runtime_use` result are
+  appended atomically. Concurrency, duplicate lease use and cross-lineage substitution have one
+  durable winner and fail closed.
+- Consumption permanently projects the ADR-170 lease as consumed with zero effective authority.
+  Claim and result are non-bearer historical evidence and grant no new authority.
+- All authority declarations are false. IMP-221 performs no protected-context lookup, retrieval,
+  reveal, copy, download, activation or use; runtime start/resume, query/code execution, process,
+  endpoint, credential, DNS, TLS, socket, network, connector, MCP, readiness, publication, delivery,
+  dispatch, workflow transition and infrastructure mutation remain unavailable.
+- Production fails closed without PostgreSQL. There is no process-memory, caller-asserted,
+  protected-adapter, synthetic operation or permissive production fallback.
+- Workload POST and normal username/password-session GET are minimized, non-oracle and `no-store`.
+  The read-only UI requires neither MFA nor a second authorized-browser-session prompt and exposes
+  no consume/use control or protected context, slot, destination or lineage material.
+
+### ATLAS-IMP-221 Verification Evidence
+
+- Ruff format/check passed across `1511` backend source, test and migration files. Full MyPy passed
+  across `1366` source and test files with no issues.
+- The focused ADR-169 through ADR-171 regression suite passed `76` tests; three live PostgreSQL
+  tests were skipped locally only because `ATLAS_TEST_POSTGRES_DSN` is not configured. CI enrolls
+  the ADR-171 repository suite against PostgreSQL 17.
+- Full backend regression passed `2829` tests; `40` environment-dependent tests were skipped only
+  for unavailable Windows symlink support or an unconfigured local `ATLAS_TEST_POSTGRES_DSN`.
+  Alembic reports the single head `20260817_0144`.
+- Frontend ESLint and TypeScript checks passed. All `95` frontend test files passed all `838` tests,
+  and the production Vite build completed successfully.
+- Persistence review found and closed two issues: replay evidence could span two READ COMMITTED
+  snapshots, and the idempotency digest omitted tenant scope. Replay now reads claim and result in
+  one SQL snapshot, and the digest binds the complete canonical scope. Independent re-review found
+  no remaining issues; a separate API and frontend review also found no issues.
+- Live validation at `http://127.0.0.1:5271/#/workspace/workflows` used one normal `atlas-demo` /
+  `local-demo` username/password session. The ADR-171 GET returned the expected fail-closed `503`
+  without a configured durable repository; its read-only UI exposed zero buttons or links and no
+  protected material. Desktop and `390x844` mobile layouts had no horizontal overflow, and the
+  browser console contained no errors or warnings.
 
 ### ATLAS-IMP-220 Scope Rationale
 
@@ -76,6 +138,17 @@
   without a configured durable repository; its read-only UI exposed zero operation controls and no
   protected material. Desktop and `390x844` mobile layouts had no horizontal overflow, and the
   browser console contained no errors or warnings.
+
+### ATLAS-IMP-220 Delivery Evidence
+
+- Merged through [PR #233](https://github.com/ozdemirumit/Project_Atlas/pull/233) from exact reviewed
+  head `8e2e308b144fec918fa323a98b5cc79cf6d2ed05` to `main` merge
+  `6cfe9fd1bc6343c2792595ee1a4f33080912823e`.
+- Exact-head [PR CI run 31975345775](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31975345775)
+  passed frontend in 8m20s and backend in 12m50s, including PostgreSQL 17 integration, migration and
+  migration round-trip validation.
+- Independent [main CI run 31976029544](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31976029544)
+  passed frontend in 9m10s and backend in 13m07s for the exact merge commit.
 
 ### ATLAS-IMP-219 Scope Rationale
 

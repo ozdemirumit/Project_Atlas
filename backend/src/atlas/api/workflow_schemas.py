@@ -13,6 +13,9 @@ from atlas.modules.workflows.application.protected_runtime_context_injection_aut
 from atlas.modules.workflows.application.protected_runtime_context_injection_consumptions import (
     WorkflowProtectedRuntimeContextInjectionConsumptionPresentation,
 )
+from atlas.modules.workflows.application.protected_runtime_context_use_authorization_consumption_ports import (  # noqa: E501
+    WorkflowProtectedRuntimeContextUseAuthorizationConsumptionPresentation,
+)
 from atlas.modules.workflows.application.protected_runtime_context_use_authorization_ports import (
     WorkflowProtectedRuntimeContextUseAuthorizationPresentation,
 )
@@ -3389,6 +3392,118 @@ class WorkflowProtectedRuntimeContextUseAuthorizationResponse(BaseModel):
 
 class WorkflowProtectedRuntimeContextUseAuthorizationInventoryResponse(BaseModel):
     data: WorkflowProtectedRuntimeContextUseAuthorizationInventoryData
+    meta: ResponseMeta
+
+
+class CreateWorkflowProtectedRuntimeContextUseAuthorizationConsumptionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    authorization_lease_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    policy_id: Literal["policy.workflow-protected-runtime-context-use-authorization-consumption"]
+    policy_version: Literal["1.0"]
+    irreversible_consumption_acknowledged: Literal[True]
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class WorkflowProtectedRuntimeContextUseAuthorizationConsumptionAuthorityData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    protected_runtime_context_use_authority_granted: Literal[False]
+    runtime_use_authorized: Literal[False]
+    runtime_start_authorized: Literal[False]
+    runtime_resume_authorized: Literal[False]
+    connector_activity_authorized: Literal[False]
+    protected_runtime_context_injection_authority_granted: Literal[False]
+    protected_resident_context_access_authority_granted: Literal[False]
+    target_context_capsule_opening_authorized: Literal[False]
+    target_context_capsule_handoff_authorized: Literal[False]
+    endpoint_resolution_authorized: Literal[False]
+    route_selection_authorized: Literal[False]
+    route_binding_authorized: Literal[False]
+    credential_selection_authorized: Literal[False]
+    credential_assignment_binding_authorized: Literal[False]
+    credential_access_authorized: Literal[False]
+    credential_brokerage_authorized: Literal[False]
+    credential_resolution_authorized: Literal[False]
+    protected_artifact_access_authorized: Literal[False]
+    credential_delivery_authorized: Literal[False]
+    network_access_authorized: Literal[False]
+    readiness_probe_authorized: Literal[False]
+    publication_authorized: Literal[False]
+    delivery_authorized: Literal[False]
+    dispatch_authorized: Literal[False]
+    execution_authorized: Literal[False]
+    infrastructure_mutation_authorized: Literal[False]
+
+
+class WorkflowProtectedRuntimeContextUseAuthorizationConsumptionData(BaseModel):
+    """Terminal lease-consumption evidence without protected lineage or authority."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    consumption_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    state: Literal["authorization_consumed_without_runtime_use"]
+    consumed_at: datetime
+    consumer_contract_id: Literal[
+        "contract.workflow-protected-transport-target-context-capsule-consumer"
+    ]
+    consumer_contract_version: Literal["1.0"]
+    purpose_id: Literal["purpose.workflow-protected-runtime-context-use-authorization-consumption"]
+    policy_id: Literal["policy.workflow-protected-runtime-context-use-authorization-consumption"]
+    policy_version: Literal["1.0"]
+    lease_consumed: Literal[True]
+    protected_runtime_context_use_authority_granted: Literal[False]
+    authority: WorkflowProtectedRuntimeContextUseAuthorizationConsumptionAuthorityData
+    integrity_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+
+    @classmethod
+    def from_domain(
+        cls,
+        presentation: WorkflowProtectedRuntimeContextUseAuthorizationConsumptionPresentation,
+    ) -> WorkflowProtectedRuntimeContextUseAuthorizationConsumptionData:
+        result = presentation.result
+        return cls(
+            consumption_id=result.consumption_id,
+            state=result.state.value,
+            consumed_at=result.consumed_at,
+            consumer_contract_id=result.consumer_contract_id,
+            consumer_contract_version=result.consumer_contract_version,
+            purpose_id=result.purpose_id,
+            policy_id=result.policy_id,
+            policy_version=result.policy_version,
+            lease_consumed=result.authorization_lease_consumed,
+            protected_runtime_context_use_authority_granted=(
+                result.authority.protected_runtime_context_use_authority_granted
+            ),
+            authority=(
+                WorkflowProtectedRuntimeContextUseAuthorizationConsumptionAuthorityData.model_validate(
+                    result.authority.canonical_value()
+                )
+            ),
+            integrity_reference=(
+                "integrity.workflow-protected-runtime-context-use-authorization-consumption."
+                f"{sha256(result.consumption_id.encode('utf-8')).hexdigest()[:24]}"
+            ),
+        )
+
+
+class WorkflowProtectedRuntimeContextUseAuthorizationConsumptionInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    consumptions: list[WorkflowProtectedRuntimeContextUseAuthorizationConsumptionData] = Field(
+        max_length=256
+    )
+    server_time: datetime
+    durable: Literal[True]
+
+
+class WorkflowProtectedRuntimeContextUseAuthorizationConsumptionResponse(BaseModel):
+    data: WorkflowProtectedRuntimeContextUseAuthorizationConsumptionData
+    meta: ResponseMeta
+
+
+class WorkflowProtectedRuntimeContextUseAuthorizationConsumptionInventoryResponse(BaseModel):
+    data: WorkflowProtectedRuntimeContextUseAuthorizationConsumptionInventoryData
     meta: ResponseMeta
 
 

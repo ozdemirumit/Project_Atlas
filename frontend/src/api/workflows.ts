@@ -1519,6 +1519,56 @@ export type WorkflowProtectedRuntimeContextUseAuthorizationInventory = {
   durable: true;
 };
 
+export type WorkflowProtectedRuntimeContextUseAuthorizationConsumptionAuthority = {
+  protected_runtime_context_use_authority_granted: false;
+  runtime_use_authorized: false;
+  runtime_start_authorized: false;
+  runtime_resume_authorized: false;
+  connector_activity_authorized: false;
+  protected_runtime_context_injection_authority_granted: false;
+  protected_resident_context_access_authority_granted: false;
+  target_context_capsule_opening_authorized: false;
+  target_context_capsule_handoff_authorized: false;
+  endpoint_resolution_authorized: false;
+  route_selection_authorized: false;
+  route_binding_authorized: false;
+  credential_selection_authorized: false;
+  credential_assignment_binding_authorized: false;
+  credential_access_authorized: false;
+  credential_brokerage_authorized: false;
+  credential_resolution_authorized: false;
+  protected_artifact_access_authorized: false;
+  credential_delivery_authorized: false;
+  network_access_authorized: false;
+  readiness_probe_authorized: false;
+  publication_authorized: false;
+  delivery_authorized: false;
+  dispatch_authorized: false;
+  execution_authorized: false;
+  infrastructure_mutation_authorized: false;
+};
+
+export type WorkflowProtectedRuntimeContextUseAuthorizationConsumption = {
+  consumption_id: string;
+  state: "authorization_consumed_without_runtime_use";
+  consumed_at: string;
+  consumer_contract_id: "contract.workflow-protected-transport-target-context-capsule-consumer";
+  consumer_contract_version: "1.0";
+  purpose_id: "purpose.workflow-protected-runtime-context-use-authorization-consumption";
+  policy_id: "policy.workflow-protected-runtime-context-use-authorization-consumption";
+  policy_version: "1.0";
+  lease_consumed: true;
+  protected_runtime_context_use_authority_granted: false;
+  authority: WorkflowProtectedRuntimeContextUseAuthorizationConsumptionAuthority;
+  integrity_reference: string;
+};
+
+export type WorkflowProtectedRuntimeContextUseAuthorizationConsumptionInventory = {
+  consumptions: WorkflowProtectedRuntimeContextUseAuthorizationConsumption[];
+  server_time: string;
+  durable: true;
+};
+
 export type WorkflowProtectedRuntimeContextInjectionConsumption = {
   injection_id: string;
   attempt_state: "started" | "completed";
@@ -2954,6 +3004,53 @@ const protectedRuntimeContextUseAuthorizationFields = [
 ] as const;
 const protectedRuntimeContextUseAuthorizationInventoryFields = [
   "authorizations",
+  "server_time",
+  "durable",
+] as const;
+const protectedRuntimeContextUseAuthorizationConsumptionAuthorityFields = [
+  "protected_runtime_context_use_authority_granted",
+  "runtime_use_authorized",
+  "runtime_start_authorized",
+  "runtime_resume_authorized",
+  "connector_activity_authorized",
+  "protected_runtime_context_injection_authority_granted",
+  "protected_resident_context_access_authority_granted",
+  "target_context_capsule_opening_authorized",
+  "target_context_capsule_handoff_authorized",
+  "endpoint_resolution_authorized",
+  "route_selection_authorized",
+  "route_binding_authorized",
+  "credential_selection_authorized",
+  "credential_assignment_binding_authorized",
+  "credential_access_authorized",
+  "credential_brokerage_authorized",
+  "credential_resolution_authorized",
+  "protected_artifact_access_authorized",
+  "credential_delivery_authorized",
+  "network_access_authorized",
+  "readiness_probe_authorized",
+  "publication_authorized",
+  "delivery_authorized",
+  "dispatch_authorized",
+  "execution_authorized",
+  "infrastructure_mutation_authorized",
+] as const;
+const protectedRuntimeContextUseAuthorizationConsumptionFields = [
+  "consumption_id",
+  "state",
+  "consumed_at",
+  "consumer_contract_id",
+  "consumer_contract_version",
+  "purpose_id",
+  "policy_id",
+  "policy_version",
+  "lease_consumed",
+  "protected_runtime_context_use_authority_granted",
+  "authority",
+  "integrity_reference",
+] as const;
+const protectedRuntimeContextUseAuthorizationConsumptionInventoryFields = [
+  "consumptions",
   "server_time",
   "durable",
 ] as const;
@@ -5294,6 +5391,51 @@ function isProtectedRuntimeContextUseAuthorization(
   );
 }
 
+function hasZeroProtectedRuntimeContextUseAuthorizationConsumptionAuthority(
+  value: unknown,
+): value is WorkflowProtectedRuntimeContextUseAuthorizationConsumptionAuthority {
+  return (
+    isObject(value) &&
+    hasExactKeys(value, protectedRuntimeContextUseAuthorizationConsumptionAuthorityFields) &&
+    protectedRuntimeContextUseAuthorizationConsumptionAuthorityFields.every(
+      (field) => value[field] === false,
+    )
+  );
+}
+
+function isProtectedRuntimeContextUseAuthorizationConsumption(
+  value: unknown,
+  serverTime: string,
+): value is WorkflowProtectedRuntimeContextUseAuthorizationConsumption {
+  return (
+    isObject(value) &&
+    hasExactKeys(value, protectedRuntimeContextUseAuthorizationConsumptionFields) &&
+    !containsCredentialMaterial(value) &&
+    isStableIdentifier(value.consumption_id) &&
+    value.consumption_id.startsWith(
+      "workflow-protected-runtime-context-use-authorization-consumption.",
+    ) &&
+    value.state === "authorization_consumed_without_runtime_use" &&
+    isTimezoneAwareTimestamp(value.consumed_at) &&
+    Date.parse(value.consumed_at) <= Date.parse(serverTime) &&
+    value.consumer_contract_id ===
+      "contract.workflow-protected-transport-target-context-capsule-consumer" &&
+    value.consumer_contract_version === "1.0" &&
+    value.purpose_id ===
+      "purpose.workflow-protected-runtime-context-use-authorization-consumption" &&
+    value.policy_id ===
+      "policy.workflow-protected-runtime-context-use-authorization-consumption" &&
+    value.policy_version === "1.0" &&
+    value.lease_consumed === true &&
+    value.protected_runtime_context_use_authority_granted === false &&
+    hasZeroProtectedRuntimeContextUseAuthorizationConsumptionAuthority(value.authority) &&
+    isStableIdentifier(value.integrity_reference) &&
+    value.integrity_reference.startsWith(
+      "integrity.workflow-protected-runtime-context-use-authorization-consumption.",
+    )
+  );
+}
+
 function isProtectedRuntimeContextInjectionConsumption(
   value: unknown,
   serverTime: string,
@@ -7114,6 +7256,60 @@ export async function listWorkflowProtectedRuntimeContextUseAuthorizations(): Pr
     authorizationIds.add(authorization.authorization_lease_id);
   }
   return data as WorkflowProtectedRuntimeContextUseAuthorizationInventory;
+}
+
+export async function listWorkflowProtectedRuntimeContextUseAuthorizationConsumptions(): Promise<WorkflowProtectedRuntimeContextUseAuthorizationConsumptionInventory> {
+  const response = await apiFetch(
+    "/api/v1/workflows/protected-runtime-context-use-authorization-consumptions",
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(
+    response,
+    "Workflow protected runtime-context use-authorization consumption retrieval failed",
+  );
+  if (
+    !isObject(data) ||
+    !hasExactKeys(
+      data,
+      protectedRuntimeContextUseAuthorizationConsumptionInventoryFields,
+    ) ||
+    containsCredentialMaterial(data) ||
+    !Array.isArray(data.consumptions) ||
+    data.consumptions.length > 256 ||
+    !isTimezoneAwareTimestamp(data.server_time) ||
+    data.durable !== true
+  ) {
+    throw new ApiRequestError(
+      "Workflow protected runtime-context use-authorization consumption response was unsafe",
+      response.status,
+    );
+  }
+  const serverTime = data.server_time;
+  if (
+    !data.consumptions.every((consumption) =>
+      isProtectedRuntimeContextUseAuthorizationConsumption(consumption, serverTime),
+    )
+  ) {
+    throw new ApiRequestError(
+      "Workflow protected runtime-context use-authorization consumption response was unsafe",
+      response.status,
+    );
+  }
+  const consumptionIds = new Set<string>();
+  for (const consumption of data.consumptions) {
+    if (
+      !isObject(consumption) ||
+      typeof consumption.consumption_id !== "string" ||
+      consumptionIds.has(consumption.consumption_id)
+    ) {
+      throw new ApiRequestError(
+        "Workflow protected runtime-context use-authorization consumption response was unsafe",
+        response.status,
+      );
+    }
+    consumptionIds.add(consumption.consumption_id);
+  }
+  return data as WorkflowProtectedRuntimeContextUseAuthorizationConsumptionInventory;
 }
 
 export async function listWorkflowProtectedRuntimeContextInjectionConsumptions(): Promise<WorkflowProtectedRuntimeContextInjectionConsumptionInventory> {

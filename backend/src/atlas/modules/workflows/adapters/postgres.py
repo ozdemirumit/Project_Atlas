@@ -88,6 +88,8 @@ from atlas.core.persistence.models import (
     WorkflowProtectedRuntimeContextInjectionResultModel,
     WorkflowProtectedRuntimeContextInjectionSlotHeadModel,
     WorkflowProtectedRuntimeContextUseAuthorizationClaimModel,
+    WorkflowProtectedRuntimeContextUseAuthorizationConsumptionClaimModel,
+    WorkflowProtectedRuntimeContextUseAuthorizationConsumptionResultModel,
     WorkflowProtectedRuntimeContextUseAuthorizationLeaseModel,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBindingClaimModel,
     WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel,
@@ -287,6 +289,16 @@ from atlas.modules.workflows.application.protected_runtime_context_injection_con
     WorkflowProtectedRuntimeContextTrustedInjectorReceiptSignatureVerifier,
     build_workflow_protected_runtime_context_trusted_injector_instruction,
     validate_workflow_protected_runtime_context_injection_consumption_claim_request,
+)
+from atlas.modules.workflows.application.protected_runtime_context_use_authorization_consumption_ports import (  # noqa: E501
+    WorkflowProtectedRuntimeContextUseAuthorizationConsumptionPresentation,
+    WorkflowProtectedRuntimeContextUseAuthorizationConsumptionReplayLookup,
+    WorkflowProtectedRuntimeContextUseAuthorizationConsumptionReplayLookupRequest,
+    WorkflowProtectedRuntimeContextUseAuthorizationConsumptionReplayStatus,
+    WorkflowProtectedRuntimeContextUseAuthorizationConsumptionRequest,
+    WorkflowProtectedRuntimeContextUseAuthorizationConsumptionWrite,
+    WorkflowProtectedRuntimeContextUseAuthorizationConsumptionWriteStatus,
+    validate_workflow_protected_runtime_context_use_authorization_consumption_request,
 )
 from atlas.modules.workflows.application.protected_runtime_context_use_authorization_ports import (
     WorkflowProtectedRuntimeContextUseAuthorizationLeaseRequest,
@@ -585,6 +597,13 @@ from atlas.modules.workflows.domain.models import (
 from atlas.modules.workflows.domain.models import (
     code_owned_workflow_protected_transport_target_context_capsule_opening_consumption_policy as _opening_consumption_policy,  # noqa: E501
 )
+from atlas.modules.workflows.domain.protected_runtime_context_use_authorization_consumption_domain import (  # noqa: E501
+    WorkflowProtectedRuntimeContextUseAuthorizationConsumptionAuthority,
+    WorkflowProtectedRuntimeContextUseAuthorizationConsumptionClaim,
+    WorkflowProtectedRuntimeContextUseAuthorizationConsumptionResult,
+    WorkflowProtectedRuntimeContextUseAuthorizationConsumptionState,
+    code_owned_workflow_protected_runtime_context_use_authorization_consumption_policy,
+)
 from atlas.modules.workflows.domain.protected_runtime_context_use_authorization_domain import (
     WorkflowProtectedRuntimeContextUseAuthorizationAuthority,
     WorkflowProtectedRuntimeContextUseAuthorizationClaim,
@@ -829,6 +848,30 @@ class _ProtectedRuntimeContextUseAuthorizationLockedSources:
     slot_head: WorkflowProtectedRuntimeContextInjectionSlotHeadModel | None
     existing_leases: tuple[WorkflowProtectedRuntimeContextUseAuthorizationLeaseModel, ...]
     idempotency_claim: WorkflowProtectedRuntimeContextUseAuthorizationClaimModel | None
+    first_observed_at: datetime
+    observed_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class _ProtectedRuntimeContextUseAuthorizationConsumptionLockedSources:
+    injection_authorization_lease: (
+        WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseModel | None
+    )
+    injection_consumption_claim: (
+        WorkflowProtectedRuntimeContextInjectionConsumptionClaimModel | None
+    )
+    injection_attempt: WorkflowProtectedRuntimeContextInjectionAttemptModel | None
+    injection_result: WorkflowProtectedRuntimeContextInjectionResultModel | None
+    destination_head: WorkflowProtectedRuntimeContextInjectionDestinationHeadModel | None
+    slot_head: WorkflowProtectedRuntimeContextInjectionSlotHeadModel | None
+    authorization_lease: WorkflowProtectedRuntimeContextUseAuthorizationLeaseModel | None
+    authorization_claim: WorkflowProtectedRuntimeContextUseAuthorizationClaimModel | None
+    consumption_claims: tuple[
+        WorkflowProtectedRuntimeContextUseAuthorizationConsumptionClaimModel, ...
+    ]
+    consumption_results: tuple[
+        WorkflowProtectedRuntimeContextUseAuthorizationConsumptionResultModel, ...
+    ]
     first_observed_at: datetime
     observed_at: datetime
 
@@ -6703,11 +6746,817 @@ class PostgreSQLWorkflowPlanRepository:
 
     @staticmethod
     def _protected_runtime_context_use_consumed_expression(
-        _lease_model: type[WorkflowProtectedRuntimeContextUseAuthorizationLeaseModel],
+        lease_model: type[WorkflowProtectedRuntimeContextUseAuthorizationLeaseModel],
     ) -> Any:
-        # IMP-220 deliberately grants no use authority. IMP-221 replaces this hook
-        # with an EXISTS projection over its append-only consumption claim.
-        return literal(False)
+        return exists().where(
+            WorkflowProtectedRuntimeContextUseAuthorizationConsumptionClaimModel.authorization_lease_id
+            == lease_model.authorization_lease_id
+        )
+
+    async def lookup_protected_runtime_context_use_authorization_consumption_replay(
+        self,
+        request: WorkflowProtectedRuntimeContextUseAuthorizationConsumptionReplayLookupRequest,
+    ) -> WorkflowProtectedRuntimeContextUseAuthorizationConsumptionReplayLookup:
+        claim_model = WorkflowProtectedRuntimeContextUseAuthorizationConsumptionClaimModel
+        result_model = WorkflowProtectedRuntimeContextUseAuthorizationConsumptionResultModel
+        async with self._sessions() as session:
+            rows = (
+                await session.execute(
+                    select(claim_model, result_model)
+                    .select_from(claim_model)
+                    .join(
+                        result_model,
+                        result_model.consumption_claim_id == claim_model.consumption_claim_id,
+                        full=True,
+                    )
+                    .where(
+                        or_(
+                            claim_model.authorization_lease_id == request.authorization_lease_id,
+                            claim_model.consumption_id == request.consumption_id,
+                            claim_model.consumption_claim_id == request.consumption_claim_id,
+                            claim_model.idempotency_digest == request.idempotency_digest,
+                            result_model.authorization_lease_id == request.authorization_lease_id,
+                            result_model.consumption_id == request.consumption_id,
+                            result_model.result_id == request.result_id,
+                        )
+                    )
+                    .order_by(
+                        claim_model.consumption_claim_id.nulls_last(),
+                        result_model.result_id.nulls_last(),
+                    )
+                )
+            ).all()
+            claims = tuple(
+                {row[0].consumption_claim_id: row[0] for row in rows if row[0] is not None}.values()
+            )
+            results = tuple(
+                {row[1].result_id: row[1] for row in rows if row[1] is not None}.values()
+            )
+        return self._protected_runtime_context_use_authorization_consumption_replay_from_rows(
+            request, claims, results
+        )
+
+    async def consume_protected_runtime_context_use_authorization(
+        self, request: WorkflowProtectedRuntimeContextUseAuthorizationConsumptionRequest
+    ) -> WorkflowProtectedRuntimeContextUseAuthorizationConsumptionWrite:
+        statuses = WorkflowProtectedRuntimeContextUseAuthorizationConsumptionWriteStatus
+        result_type = WorkflowProtectedRuntimeContextUseAuthorizationConsumptionWrite
+        try:
+            validate_workflow_protected_runtime_context_use_authorization_consumption_request(
+                request
+            )
+        except Exception:
+            return result_type(statuses.EVIDENCE_CONFLICT)
+
+        async with self._sessions() as session:
+            locked = await self._lock_protected_runtime_context_use_authorization_consumption_rows(
+                session, request=request
+            )
+            replay = self._protected_runtime_context_use_authorization_consumption_replay_from_rows(
+                self._protected_runtime_context_use_authorization_consumption_replay_request(
+                    request
+                ),
+                locked.consumption_claims,
+                locked.consumption_results,
+            )
+            resolved = (
+                self._protected_runtime_context_use_authorization_consumption_write_from_replay(
+                    replay
+                )
+            )
+            if resolved is not None:
+                await session.rollback()
+                return resolved
+
+            source_status = (
+                self._protected_runtime_context_use_authorization_consumption_source_status(
+                    request, locked
+                )
+            )
+            if source_status is not None:
+                await session.rollback()
+                return result_type(source_status)
+
+            assert locked.authorization_lease is not None
+            assert locked.authorization_claim is not None
+            try:
+                claim = self._protected_runtime_context_use_authorization_consumption_claim(
+                    request,
+                    locked.authorization_lease,
+                    locked.authorization_claim,
+                    consumed_at=locked.observed_at,
+                )
+                result = self._protected_runtime_context_use_authorization_consumption_result(
+                    request, claim, recorded_at=locked.observed_at
+                )
+                session.add(
+                    self._protected_runtime_context_use_authorization_consumption_claim_model(
+                        claim, request.consumption_audit_payload
+                    )
+                )
+                await session.flush()
+                session.add(
+                    self._protected_runtime_context_use_authorization_consumption_result_model(
+                        result
+                    )
+                )
+                await session.commit()
+                return result_type(statuses.CONSUMED, claim, result)
+            except IntegrityError:
+                await session.rollback()
+            except (TypeError, ValueError):
+                await session.rollback()
+                return result_type(statuses.EVIDENCE_CONFLICT)
+
+        replay = await self.lookup_protected_runtime_context_use_authorization_consumption_replay(
+            self._protected_runtime_context_use_authorization_consumption_replay_request(request)
+        )
+        resolved = self._protected_runtime_context_use_authorization_consumption_write_from_replay(
+            replay
+        )
+        return resolved or result_type(statuses.EVIDENCE_CONFLICT)
+
+    async def list_protected_runtime_context_use_authorization_consumption_presentations(
+        self, *, scope: WorkflowScope, limit: int = 256
+    ) -> tuple[WorkflowProtectedRuntimeContextUseAuthorizationConsumptionPresentation, ...]:
+        claim_model = WorkflowProtectedRuntimeContextUseAuthorizationConsumptionClaimModel
+        result_model = WorkflowProtectedRuntimeContextUseAuthorizationConsumptionResultModel
+        statement = (
+            select(claim_model, result_model)
+            .join(
+                result_model,
+                result_model.consumption_claim_id == claim_model.consumption_claim_id,
+            )
+            .where(
+                claim_model.organization_id == scope.organization_id,
+                claim_model.environment_id == scope.environment_id,
+                claim_model.site_id == scope.site_id,
+            )
+            .order_by(claim_model.claimed_at.desc(), claim_model.consumption_claim_id)
+            .limit(max(1, min(limit, 256)))
+        )
+        async with self._sessions() as session:
+            rows = (await session.execute(statement)).all()
+        return tuple(
+            WorkflowProtectedRuntimeContextUseAuthorizationConsumptionPresentation(
+                self._protected_runtime_context_use_authorization_consumption_claim_from_row(
+                    row[0]
+                ),
+                self._protected_runtime_context_use_authorization_consumption_result_from_row(
+                    row[1]
+                ),
+            )
+            for row in rows
+        )
+
+    async def _lock_protected_runtime_context_use_authorization_consumption_rows(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowProtectedRuntimeContextUseAuthorizationConsumptionRequest,
+    ) -> _ProtectedRuntimeContextUseAuthorizationConsumptionLockedSources:
+        first_observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+        seed_lease = await session.get(
+            WorkflowProtectedRuntimeContextUseAuthorizationLeaseModel,
+            request.authorization_lease_id,
+        )
+
+        async def get(model: type[Any], identity: str | None) -> Any:
+            if identity is None:
+                return None
+            return await session.get(
+                model,
+                identity,
+                with_for_update=True,
+                populate_existing=True,
+            )
+
+        injection_authorization_lease = cast(
+            WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseModel | None,
+            await get(
+                WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseModel,
+                None if seed_lease is None else seed_lease.injection_authorization_lease_id,
+            ),
+        )
+        injection_consumption_claim = cast(
+            WorkflowProtectedRuntimeContextInjectionConsumptionClaimModel | None,
+            await get(
+                WorkflowProtectedRuntimeContextInjectionConsumptionClaimModel,
+                None if seed_lease is None else seed_lease.injection_consumption_claim_id,
+            ),
+        )
+        injection_attempt = cast(
+            WorkflowProtectedRuntimeContextInjectionAttemptModel | None,
+            await get(
+                WorkflowProtectedRuntimeContextInjectionAttemptModel,
+                None if seed_lease is None else seed_lease.injection_attempt_id,
+            ),
+        )
+        injection_result = cast(
+            WorkflowProtectedRuntimeContextInjectionResultModel | None,
+            await get(
+                WorkflowProtectedRuntimeContextInjectionResultModel,
+                None if seed_lease is None else seed_lease.injection_result_id,
+            ),
+        )
+        destination_head = cast(
+            WorkflowProtectedRuntimeContextInjectionDestinationHeadModel | None,
+            await get(
+                WorkflowProtectedRuntimeContextInjectionDestinationHeadModel,
+                None if injection_result is None else injection_result.destination_deployment_id,
+            ),
+        )
+        slot_statement = select(WorkflowProtectedRuntimeContextInjectionSlotHeadModel).where(
+            and_(
+                WorkflowProtectedRuntimeContextInjectionSlotHeadModel.destination_deployment_id
+                == injection_result.destination_deployment_id,
+                WorkflowProtectedRuntimeContextInjectionSlotHeadModel.runtime_slot_commitment
+                == injection_result.runtime_slot_commitment,
+            )
+            if injection_result is not None
+            else literal(False)
+        )
+        slot_head = cast(
+            WorkflowProtectedRuntimeContextInjectionSlotHeadModel | None,
+            await session.scalar(slot_statement.with_for_update()),
+        )
+        authorization_lease = cast(
+            WorkflowProtectedRuntimeContextUseAuthorizationLeaseModel | None,
+            await get(
+                WorkflowProtectedRuntimeContextUseAuthorizationLeaseModel,
+                request.authorization_lease_id,
+            ),
+        )
+        authorization_claim = cast(
+            WorkflowProtectedRuntimeContextUseAuthorizationClaimModel | None,
+            await get(
+                WorkflowProtectedRuntimeContextUseAuthorizationClaimModel,
+                None if authorization_lease is None else authorization_lease.claim_id,
+            ),
+        )
+        claim_model = WorkflowProtectedRuntimeContextUseAuthorizationConsumptionClaimModel
+        claims = tuple(
+            (
+                await session.scalars(
+                    select(claim_model)
+                    .where(
+                        or_(
+                            claim_model.authorization_lease_id == request.authorization_lease_id,
+                            claim_model.consumption_id == request.consumption_id,
+                            claim_model.consumption_claim_id == request.consumption_claim_id,
+                            claim_model.idempotency_digest == request.idempotency_digest,
+                        )
+                    )
+                    .order_by(claim_model.consumption_claim_id)
+                    .with_for_update()
+                )
+            ).all()
+        )
+        result_model = WorkflowProtectedRuntimeContextUseAuthorizationConsumptionResultModel
+        results = tuple(
+            (
+                await session.scalars(
+                    select(result_model)
+                    .where(
+                        or_(
+                            result_model.authorization_lease_id == request.authorization_lease_id,
+                            result_model.consumption_id == request.consumption_id,
+                            result_model.result_id == request.result_id,
+                        )
+                    )
+                    .order_by(result_model.result_id)
+                    .with_for_update()
+                )
+            ).all()
+        )
+        observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+        return _ProtectedRuntimeContextUseAuthorizationConsumptionLockedSources(
+            injection_authorization_lease=injection_authorization_lease,
+            injection_consumption_claim=injection_consumption_claim,
+            injection_attempt=injection_attempt,
+            injection_result=injection_result,
+            destination_head=destination_head,
+            slot_head=slot_head,
+            authorization_lease=authorization_lease,
+            authorization_claim=authorization_claim,
+            consumption_claims=claims,
+            consumption_results=results,
+            first_observed_at=first_observed_at,
+            observed_at=observed_at,
+        )
+
+    @staticmethod
+    def _protected_runtime_context_use_authorization_consumption_replay_request(
+        request: WorkflowProtectedRuntimeContextUseAuthorizationConsumptionRequest,
+    ) -> WorkflowProtectedRuntimeContextUseAuthorizationConsumptionReplayLookupRequest:
+        return WorkflowProtectedRuntimeContextUseAuthorizationConsumptionReplayLookupRequest(
+            authorization_lease_id=request.authorization_lease_id,
+            consumption_id=request.consumption_id,
+            consumption_claim_id=request.consumption_claim_id,
+            result_id=request.result_id,
+            scope=request.scope,
+            consumer_subject_id=request.consumer_subject_id,
+            consumer_audience=request.consumer_audience,
+            policy_id=request.policy_id,
+            policy_version=request.policy_version,
+            policy_digest=request.policy_digest,
+            source_policy_id=request.source_policy_id,
+            source_policy_version=request.source_policy_version,
+            source_policy_digest=request.source_policy_digest,
+            idempotency_digest=request.idempotency_digest,
+            request_fingerprint=request.request_fingerprint,
+        )
+
+    @classmethod
+    def _protected_runtime_context_use_authorization_consumption_replay_from_rows(
+        cls,
+        request: WorkflowProtectedRuntimeContextUseAuthorizationConsumptionReplayLookupRequest,
+        claim_rows: tuple[
+            WorkflowProtectedRuntimeContextUseAuthorizationConsumptionClaimModel, ...
+        ],
+        result_rows: tuple[
+            WorkflowProtectedRuntimeContextUseAuthorizationConsumptionResultModel, ...
+        ],
+    ) -> WorkflowProtectedRuntimeContextUseAuthorizationConsumptionReplayLookup:
+        statuses = WorkflowProtectedRuntimeContextUseAuthorizationConsumptionReplayStatus
+        result_type = WorkflowProtectedRuntimeContextUseAuthorizationConsumptionReplayLookup
+        if not claim_rows and not result_rows:
+            return result_type(statuses.NONE)
+        try:
+            claims = tuple(
+                cls._protected_runtime_context_use_authorization_consumption_claim_from_row(row)
+                for row in claim_rows
+            )
+            results = tuple(
+                cls._protected_runtime_context_use_authorization_consumption_result_from_row(row)
+                for row in result_rows
+            )
+        except Exception:
+            return result_type(statuses.EVIDENCE_CONFLICT)
+
+        exact_claims = tuple(
+            claim
+            for claim in claims
+            if claim.authorization_lease_id == request.authorization_lease_id
+            and claim.consumption_id == request.consumption_id
+            and claim.consumption_claim_id == request.consumption_claim_id
+            and claim.scope == request.scope
+            and claim.consumer_subject_id == request.consumer_subject_id
+            and claim.consumer_audience == request.consumer_audience
+            and claim.policy_id == request.policy_id
+            and claim.policy_version == request.policy_version
+            and claim.policy_digest == request.policy_digest
+            and claim.source_policy_id == request.source_policy_id
+            and claim.source_policy_version == request.source_policy_version
+            and claim.source_policy_digest == request.source_policy_digest
+            and claim.idempotency_digest == request.idempotency_digest
+            and claim.request_fingerprint == request.request_fingerprint
+        )
+        if len(exact_claims) == 1:
+            claim = exact_claims[0]
+            exact_results = tuple(
+                result
+                for result in results
+                if result.result_id == request.result_id
+                and result.consumption_id == request.consumption_id
+                and result.consumption_claim_id == claim.consumption_claim_id
+                and result.consumption_claim_digest == claim.canonical_digest
+                and result.authorization_lease_id == request.authorization_lease_id
+                and result.authorization_lease_digest == claim.authorization_lease_digest
+            )
+            if len(claims) == 1 and len(results) == 1 and len(exact_results) == 1:
+                try:
+                    presentation = (
+                        WorkflowProtectedRuntimeContextUseAuthorizationConsumptionPresentation(
+                            claim, exact_results[0]
+                        )
+                    )
+                except ValueError:
+                    return result_type(statuses.EVIDENCE_CONFLICT)
+                return result_type(statuses.TERMINAL, presentation.claim, presentation.result)
+            return result_type(statuses.EVIDENCE_CONFLICT)
+        if len(exact_claims) > 1:
+            return result_type(statuses.EVIDENCE_CONFLICT)
+        if any(claim.authorization_lease_id == request.authorization_lease_id for claim in claims):
+            return result_type(statuses.ALREADY_CONSUMED)
+        if any(
+            claim.consumption_id == request.consumption_id
+            or claim.consumption_claim_id == request.consumption_claim_id
+            or claim.idempotency_digest == request.idempotency_digest
+            for claim in claims
+        ) or any(
+            result.consumption_id == request.consumption_id or result.result_id == request.result_id
+            for result in results
+        ):
+            return result_type(statuses.IDEMPOTENCY_CONFLICT)
+        return result_type(statuses.EVIDENCE_CONFLICT)
+
+    @staticmethod
+    def _protected_runtime_context_use_authorization_consumption_write_from_replay(
+        replay: WorkflowProtectedRuntimeContextUseAuthorizationConsumptionReplayLookup,
+    ) -> WorkflowProtectedRuntimeContextUseAuthorizationConsumptionWrite | None:
+        replay_statuses = WorkflowProtectedRuntimeContextUseAuthorizationConsumptionReplayStatus
+        write_statuses = WorkflowProtectedRuntimeContextUseAuthorizationConsumptionWriteStatus
+        result_type = WorkflowProtectedRuntimeContextUseAuthorizationConsumptionWrite
+        if replay.status is replay_statuses.NONE:
+            return None
+        if replay.status is replay_statuses.TERMINAL:
+            return result_type(write_statuses.REPLAY, replay.claim, replay.result)
+        status_map = {
+            replay_statuses.IDEMPOTENCY_CONFLICT: write_statuses.IDEMPOTENCY_CONFLICT,
+            replay_statuses.EVIDENCE_CONFLICT: write_statuses.EVIDENCE_CONFLICT,
+            replay_statuses.ALREADY_CONSUMED: write_statuses.ALREADY_CONSUMED,
+        }
+        return result_type(status_map[replay.status])
+
+    def _protected_runtime_context_use_authorization_consumption_source_status(
+        self,
+        request: WorkflowProtectedRuntimeContextUseAuthorizationConsumptionRequest,
+        locked: _ProtectedRuntimeContextUseAuthorizationConsumptionLockedSources,
+    ) -> WorkflowProtectedRuntimeContextUseAuthorizationConsumptionWriteStatus | None:
+        statuses = WorkflowProtectedRuntimeContextUseAuthorizationConsumptionWriteStatus
+        lease_row = locked.authorization_lease
+        claim_row = locked.authorization_claim
+        if lease_row is None:
+            return statuses.SOURCE_NOT_FOUND
+        if claim_row is None:
+            return statuses.EVIDENCE_CONFLICT
+        try:
+            lease = self._protected_runtime_context_use_lease_from_row(lease_row)
+            authorization_claim = self._protected_runtime_context_use_claim_from_row(claim_row)
+            source = self._protected_runtime_context_use_source_from_locked(
+                _ProtectedRuntimeContextUseAuthorizationLockedSources(
+                    injection_authorization_lease=locked.injection_authorization_lease,
+                    result=locked.injection_result,
+                    attempt=locked.injection_attempt,
+                    consumption_claim=locked.injection_consumption_claim,
+                    destination_head=locked.destination_head,
+                    slot_head=locked.slot_head,
+                    existing_leases=(lease_row,),
+                    idempotency_claim=claim_row,
+                    first_observed_at=locked.first_observed_at,
+                    observed_at=locked.observed_at,
+                ),
+                receipt_verifier=self._protected_runtime_context_injection_receipt_signature_verifier,
+            )
+        except Exception:
+            return statuses.EVIDENCE_CONFLICT
+        if (
+            locked.observed_at < lease.issued_at
+            or locked.observed_at >= lease.valid_until
+            or locked.observed_at >= lease.effective_until
+            or locked.observed_at >= lease.injected_context_usable_until
+        ):
+            return statuses.LEASE_EXPIRED
+        destination = locked.destination_head
+        slot = locked.slot_head
+        if (
+            source is None
+            or destination is None
+            or slot is None
+            or not lease.issued_at <= locked.first_observed_at <= locked.observed_at
+            or lease.authorization_lease_id != request.authorization_lease_id
+            or lease.state
+            is not WorkflowProtectedRuntimeContextUseAuthorizationLeaseState.AUTHORIZED_UNCONSUMED
+            or lease.scope != request.scope
+            or lease.consumer_subject_id != request.consumer_subject_id
+            or lease.consumer_audience != request.consumer_audience
+            or lease.policy_id != request.source_policy_id
+            or lease.policy_version != request.source_policy_version
+            or lease.policy_digest != request.source_policy_digest
+            or lease.claim_id != claim_row.claim_id
+            or lease.claim_digest != claim_row.canonical_digest
+            or authorization_claim.claim_id != lease.claim_id
+            or authorization_claim.canonical_digest != lease.claim_digest
+            or claim_row.authorization_lease_id != lease.authorization_lease_id
+            or source.result.result_id != lease.injection_result_id
+            or source.result.canonical_digest != lease.injection_result_digest
+            or destination.current is not True
+            or destination.destination_deployment_id != lease.destination_deployment_id
+            or destination.destination_generation != lease.destination_generation
+            or destination.destination_fencing_token_digest
+            != lease.destination_fencing_token_digest
+            or slot.current is not True
+            or slot.slot_state != "inert_context_present"
+            or slot.destination_deployment_id != lease.destination_deployment_id
+            or slot.destination_generation != lease.destination_generation
+            or slot.destination_fencing_token_digest != lease.destination_fencing_token_digest
+            or slot.runtime_slot_commitment != lease.runtime_slot_commitment
+            or slot.slot_generation != lease.runtime_slot_post_generation
+            or not lease.authority.protected_runtime_context_use_authority_granted
+            or any(
+                value
+                for name, value in lease.authority.canonical_value().items()
+                if name != "protected_runtime_context_use_authority_granted"
+            )
+            or any(authorization_claim.authority.canonical_value().values())
+        ):
+            return statuses.EVIDENCE_CONFLICT
+        return None
+
+    @staticmethod
+    def _protected_runtime_context_use_authorization_consumption_claim(
+        request: WorkflowProtectedRuntimeContextUseAuthorizationConsumptionRequest,
+        lease_row: WorkflowProtectedRuntimeContextUseAuthorizationLeaseModel,
+        authorization_claim_row: WorkflowProtectedRuntimeContextUseAuthorizationClaimModel,
+        *,
+        consumed_at: datetime,
+    ) -> WorkflowProtectedRuntimeContextUseAuthorizationConsumptionClaim:
+        authority = WorkflowProtectedRuntimeContextUseAuthorizationConsumptionAuthority()
+        values: dict[str, object] = {
+            "consumption_claim_id": request.consumption_claim_id,
+            "consumption_id": request.consumption_id,
+            "authorization_lease_id": lease_row.authorization_lease_id,
+            "authorization_lease_digest": lease_row.canonical_digest,
+            "authorization_claim_id": authorization_claim_row.claim_id,
+            "authorization_claim_digest": authorization_claim_row.canonical_digest,
+            "injection_result_id": lease_row.injection_result_id,
+            "injection_result_digest": lease_row.injection_result_digest,
+            "destination_deployment_id": lease_row.destination_deployment_id,
+            "destination_generation": lease_row.destination_generation,
+            "destination_fencing_token_digest": lease_row.destination_fencing_token_digest,
+            "runtime_slot_commitment": lease_row.runtime_slot_commitment,
+            "runtime_slot_post_generation": lease_row.runtime_slot_post_generation,
+            "injected_context_usable_until": lease_row.injected_context_usable_until,
+            "use_profile_id": lease_row.use_profile_id,
+            "use_profile_version": lease_row.use_profile_version,
+            "use_profile_digest": lease_row.use_profile_digest,
+            "source_lease_state": WorkflowProtectedRuntimeContextUseAuthorizationLeaseState(
+                lease_row.state
+            ),
+            "source_lease_issued_at": lease_row.issued_at,
+            "source_lease_valid_until": lease_row.valid_until,
+            "source_lease_effective_until": lease_row.effective_until,
+            "scope": request.scope,
+            "consumer_subject_id": request.consumer_subject_id,
+            "consumer_audience": request.consumer_audience,
+            "consumer_contract_id": request.consumer_contract_id,
+            "consumer_contract_version": request.consumer_contract_version,
+            "purpose_id": request.purpose_id,
+            "policy_id": request.policy_id,
+            "policy_version": request.policy_version,
+            "policy_digest": request.policy_digest,
+            "source_policy_id": request.source_policy_id,
+            "source_policy_version": request.source_policy_version,
+            "source_policy_digest": request.source_policy_digest,
+            "idempotency_digest": request.idempotency_digest,
+            "request_fingerprint": request.request_fingerprint,
+            "irreversible_consumption_acknowledged": True,
+            "consumption_audit_digest": request.consumption_audit_digest,
+            "claimed_at": consumed_at,
+            "authority": authority,
+        }
+        return WorkflowProtectedRuntimeContextUseAuthorizationConsumptionClaim(
+            **cast(Any, values),
+            canonical_digest=canonical_digest(
+                PostgreSQLWorkflowPlanRepository._protected_runtime_context_use_authorization_consumption_digest_values(
+                    values
+                )
+            ),
+        )
+
+    @staticmethod
+    def _protected_runtime_context_use_authorization_consumption_result(
+        request: WorkflowProtectedRuntimeContextUseAuthorizationConsumptionRequest,
+        claim: WorkflowProtectedRuntimeContextUseAuthorizationConsumptionClaim,
+        *,
+        recorded_at: datetime,
+    ) -> WorkflowProtectedRuntimeContextUseAuthorizationConsumptionResult:
+        policy = (
+            code_owned_workflow_protected_runtime_context_use_authorization_consumption_policy()
+        )
+        authority = WorkflowProtectedRuntimeContextUseAuthorizationConsumptionAuthority()
+        values: dict[str, object] = {
+            "result_id": request.result_id,
+            "consumption_id": claim.consumption_id,
+            "consumption_claim_id": claim.consumption_claim_id,
+            "consumption_claim_digest": claim.canonical_digest,
+            "authorization_lease_id": claim.authorization_lease_id,
+            "authorization_lease_digest": claim.authorization_lease_digest,
+            "scope": claim.scope,
+            "consumer_subject_id": claim.consumer_subject_id,
+            "consumer_audience": claim.consumer_audience,
+            "consumer_contract_id": policy.consumer_contract_id,
+            "consumer_contract_version": policy.consumer_contract_version,
+            "purpose_id": policy.purpose_id,
+            "policy_id": policy.policy_id,
+            "policy_version": policy.policy_version,
+            "policy_digest": policy.canonical_digest,
+            "source_policy_id": policy.source_policy_id,
+            "source_policy_version": policy.source_policy_version,
+            "source_policy_digest": policy.source_policy_digest,
+            "state": (
+                WorkflowProtectedRuntimeContextUseAuthorizationConsumptionState.AUTHORIZATION_CONSUMED_WITHOUT_RUNTIME_USE
+            ),
+            "consumed_at": claim.claimed_at,
+            "recorded_at": recorded_at,
+            "authorization_lease_consumed": True,
+            "historical_result_only": True,
+            "context_accessed": False,
+            "context_used": False,
+            "runtime_started": False,
+            "runtime_resumed": False,
+            "network_activity_performed": False,
+            "connector_activity_performed": False,
+            "readiness_probe_performed": False,
+            "publication_performed": False,
+            "delivery_performed": False,
+            "dispatch_performed": False,
+            "execution_performed": False,
+            "infrastructure_mutation_performed": False,
+            "renewal_created": False,
+            "transfer_created": False,
+            "replacement_created": False,
+            "retry_created": False,
+            "authority": authority,
+        }
+        return WorkflowProtectedRuntimeContextUseAuthorizationConsumptionResult(
+            **cast(Any, values),
+            canonical_digest=canonical_digest(
+                PostgreSQLWorkflowPlanRepository._protected_runtime_context_use_authorization_consumption_digest_values(
+                    values
+                )
+            ),
+        )
+
+    @staticmethod
+    def _protected_runtime_context_use_authorization_consumption_digest_values(
+        values: dict[str, object],
+    ) -> dict[str, object]:
+        return {
+            name: (
+                value.isoformat()
+                if isinstance(value, datetime)
+                else value.value
+                if isinstance(value, Enum)
+                else value.canonical_value()
+                if hasattr(value, "canonical_value")
+                else value
+            )
+            for name, value in values.items()
+        }
+
+    @staticmethod
+    def _protected_runtime_context_use_authorization_consumption_identity_values(
+        value: Any,
+    ) -> dict[str, object]:
+        return {
+            "organization_id": value.scope.organization_id,
+            "environment_id": value.scope.environment_id,
+            "site_id": value.scope.site_id,
+            "consumer_subject_id": value.consumer_subject_id,
+            "consumer_audience": value.consumer_audience,
+            "consumer_contract_id": value.consumer_contract_id,
+            "consumer_contract_version": value.consumer_contract_version,
+            "purpose_id": value.purpose_id,
+            "policy_id": value.policy_id,
+            "policy_version": value.policy_version,
+            "policy_digest": value.policy_digest,
+            "source_policy_id": value.source_policy_id,
+            "source_policy_version": value.source_policy_version,
+            "source_policy_digest": value.source_policy_digest,
+        }
+
+    @classmethod
+    def _protected_runtime_context_use_authorization_consumption_claim_model(
+        cls,
+        claim: WorkflowProtectedRuntimeContextUseAuthorizationConsumptionClaim,
+        audit_payload: dict[str, object],
+    ) -> WorkflowProtectedRuntimeContextUseAuthorizationConsumptionClaimModel:
+        return WorkflowProtectedRuntimeContextUseAuthorizationConsumptionClaimModel(
+            consumption_claim_id=claim.consumption_claim_id,
+            consumption_id=claim.consumption_id,
+            authorization_lease_id=claim.authorization_lease_id,
+            authorization_lease_digest=claim.authorization_lease_digest,
+            authorization_claim_id=claim.authorization_claim_id,
+            authorization_claim_digest=claim.authorization_claim_digest,
+            injection_result_id=claim.injection_result_id,
+            injection_result_digest=claim.injection_result_digest,
+            destination_deployment_id=claim.destination_deployment_id,
+            destination_generation=claim.destination_generation,
+            destination_fencing_token_digest=claim.destination_fencing_token_digest,
+            runtime_slot_commitment=claim.runtime_slot_commitment,
+            runtime_slot_post_generation=claim.runtime_slot_post_generation,
+            injected_context_usable_until=claim.injected_context_usable_until,
+            use_profile_id=claim.use_profile_id,
+            use_profile_version=claim.use_profile_version,
+            use_profile_digest=claim.use_profile_digest,
+            source_lease_state=claim.source_lease_state.value,
+            source_lease_issued_at=claim.source_lease_issued_at,
+            source_lease_valid_until=claim.source_lease_valid_until,
+            source_lease_effective_until=claim.source_lease_effective_until,
+            idempotency_digest=claim.idempotency_digest,
+            request_fingerprint=claim.request_fingerprint,
+            irreversible_consumption_acknowledged=(claim.irreversible_consumption_acknowledged),
+            consumption_audit_digest=claim.consumption_audit_digest,
+            claimed_at=claim.claimed_at,
+            canonical_digest=claim.canonical_digest,
+            payload=claim.digest_payload(),
+            consumption_audit_payload=audit_payload,
+            **cls._protected_runtime_context_use_authorization_consumption_identity_values(claim),
+            **claim.authority.canonical_value(),
+        )
+
+    @classmethod
+    def _protected_runtime_context_use_authorization_consumption_result_model(
+        cls,
+        result: WorkflowProtectedRuntimeContextUseAuthorizationConsumptionResult,
+    ) -> WorkflowProtectedRuntimeContextUseAuthorizationConsumptionResultModel:
+        return WorkflowProtectedRuntimeContextUseAuthorizationConsumptionResultModel(
+            result_id=result.result_id,
+            consumption_id=result.consumption_id,
+            consumption_claim_id=result.consumption_claim_id,
+            consumption_claim_digest=result.consumption_claim_digest,
+            authorization_lease_id=result.authorization_lease_id,
+            authorization_lease_digest=result.authorization_lease_digest,
+            state=result.state.value,
+            consumed_at=result.consumed_at,
+            recorded_at=result.recorded_at,
+            authorization_lease_consumed=result.authorization_lease_consumed,
+            historical_result_only=result.historical_result_only,
+            context_accessed=result.context_accessed,
+            context_used=result.context_used,
+            runtime_started=result.runtime_started,
+            runtime_resumed=result.runtime_resumed,
+            network_activity_performed=result.network_activity_performed,
+            connector_activity_performed=result.connector_activity_performed,
+            readiness_probe_performed=result.readiness_probe_performed,
+            publication_performed=result.publication_performed,
+            delivery_performed=result.delivery_performed,
+            dispatch_performed=result.dispatch_performed,
+            execution_performed=result.execution_performed,
+            infrastructure_mutation_performed=result.infrastructure_mutation_performed,
+            renewal_created=result.renewal_created,
+            transfer_created=result.transfer_created,
+            replacement_created=result.replacement_created,
+            retry_created=result.retry_created,
+            canonical_digest=result.canonical_digest,
+            payload=result.digest_payload(),
+            **cls._protected_runtime_context_use_authorization_consumption_identity_values(result),
+            **result.authority.canonical_value(),
+        )
+
+    @classmethod
+    def _protected_runtime_context_use_authorization_consumption_claim_from_row(
+        cls,
+        row: WorkflowProtectedRuntimeContextUseAuthorizationConsumptionClaimModel,
+    ) -> WorkflowProtectedRuntimeContextUseAuthorizationConsumptionClaim:
+        payload = dict(row.payload)
+        payload["scope"] = WorkflowScope(**cast(dict[str, str], payload["scope"]))
+        payload["source_lease_state"] = WorkflowProtectedRuntimeContextUseAuthorizationLeaseState(
+            str(payload["source_lease_state"])
+        )
+        payload["authority"] = WorkflowProtectedRuntimeContextUseAuthorizationConsumptionAuthority(
+            **cast(Any, payload["authority"])
+        )
+        for name, value in tuple(payload.items()):
+            if isinstance(value, str) and (name.endswith("_at") or name.endswith("_until")):
+                payload[name] = datetime.fromisoformat(value)
+        claim = WorkflowProtectedRuntimeContextUseAuthorizationConsumptionClaim(
+            **cast(Any, payload), canonical_digest=row.canonical_digest
+        )
+        expected = cls._protected_runtime_context_use_authorization_consumption_claim_model(
+            claim, dict(row.consumption_audit_payload)
+        )
+        if row.consumption_audit_digest != canonical_digest(
+            dict(row.consumption_audit_payload)
+        ) or any(
+            getattr(row, column.name) != getattr(expected, column.name)
+            for column in row.__table__.columns
+        ):
+            cls._protected_runtime_context_use_authorization_consumption_contract_violation()
+        return claim
+
+    @classmethod
+    def _protected_runtime_context_use_authorization_consumption_result_from_row(
+        cls,
+        row: WorkflowProtectedRuntimeContextUseAuthorizationConsumptionResultModel,
+    ) -> WorkflowProtectedRuntimeContextUseAuthorizationConsumptionResult:
+        payload = dict(row.payload)
+        payload["scope"] = WorkflowScope(**cast(dict[str, str], payload["scope"]))
+        payload["state"] = WorkflowProtectedRuntimeContextUseAuthorizationConsumptionState(
+            str(payload["state"])
+        )
+        payload["authority"] = WorkflowProtectedRuntimeContextUseAuthorizationConsumptionAuthority(
+            **cast(Any, payload["authority"])
+        )
+        for name, value in tuple(payload.items()):
+            if isinstance(value, str) and name.endswith("_at"):
+                payload[name] = datetime.fromisoformat(value)
+        result = WorkflowProtectedRuntimeContextUseAuthorizationConsumptionResult(
+            **cast(Any, payload), canonical_digest=row.canonical_digest
+        )
+        expected = cls._protected_runtime_context_use_authorization_consumption_result_model(result)
+        if any(
+            getattr(row, column.name) != getattr(expected, column.name)
+            for column in row.__table__.columns
+        ):
+            cls._protected_runtime_context_use_authorization_consumption_contract_violation()
+        return result
+
+    @staticmethod
+    def _protected_runtime_context_use_authorization_consumption_contract_violation() -> NoReturn:
+        raise ValueError("runtime context use-authorization consumption evidence is invalid")
 
     async def _lock_protected_runtime_context_use_authorization_rows(
         self,
