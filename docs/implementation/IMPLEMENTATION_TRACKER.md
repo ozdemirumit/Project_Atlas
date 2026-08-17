@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-222 |
 | Title | Single-use protected runtime-context adoption after terminal authorization consumption |
-| Status | Implementation In Progress |
+| Status | Verification Complete / Delivery Pending |
 | Branch | `agent/protected-runtime-context-use` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-172 |
 | Last Updated | 2026-08-17 |
-| Next Action | Implement ADR-172 domain, protected executor boundary, PostgreSQL claim/attempt/result lifecycle, API and read-only UI; then complete full verification and delivery |
+| Next Action | Push the exact reviewed head, complete PR and PostgreSQL 17 CI, merge, then verify the independent `main` CI run |
 
 ### ATLAS-IMP-222 Scope Rationale
 
@@ -53,6 +53,31 @@
 - Production fails closed without PostgreSQL, trusted attestor, executor and distinct verification
   keys. Workload POST and normal username/password-session GET remain minimized and `no-store`; the
   UI is read-only, needs no MFA/second browser prompt and exposes no operation control.
+
+### ATLAS-IMP-222 Verification Evidence
+
+- Ruff format/check passed across `1521` backend source, test and migration files. Full MyPy passed
+  across `1107` source files with no issues. Alembic reports the single head `20260817_0145`, and
+  the isolated ADR-172 migration generated PostgreSQL SQL successfully.
+- The focused ADR-172 backend suite passed `42` tests; its live PostgreSQL test was skipped locally
+  only because `ATLAS_TEST_POSTGRES_DSN` is not configured. Full backend regression passed `2880`
+  tests with `41` environment-dependent skips for unavailable Windows symlink support or the local
+  PostgreSQL DSN.
+- Frontend ESLint and TypeScript checks passed. The `10` focused protected-use projection tests
+  passed, and the production Vite build completed successfully.
+- Two independent reviews found and closed instruction-signature, source-digest, early-uncertainty,
+  database claim-time and API error-classification issues. The executor now receives a signed,
+  nonce- and lineage-bound instruction envelope; PostgreSQL persists known uncertainty immediately,
+  uses post-lock database time, and exposes integrity failures as non-oracular `503` responses.
+- PostgreSQL 17 CI coverage now verifies the three append-only evidence tables and constraints,
+  claim/attempt transactional rollback, early uncertainty acceptance, zero-authority and time-window
+  rejection, and immutable claim/attempt/result behavior. Exact slot-CAS concurrency remains covered
+  by deterministic repository tests; no permissive local fallback was added.
+- Live validation at `http://127.0.0.1:5281/#/workspace/workflows` used one normal `atlas-demo` /
+  `local-demo` username/password session. The ADR-172 GET returned the expected fail-closed `503`
+  without a configured durable repository. Its read-only region exposed zero buttons and links,
+  `390x844` mobile layout had no horizontal overflow, and the browser console had no errors or
+  warnings.
 
 ### ATLAS-IMP-221 Scope Rationale
 
