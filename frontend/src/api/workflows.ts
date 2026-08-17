@@ -1569,6 +1569,59 @@ export type WorkflowProtectedRuntimeContextUseAuthorizationConsumptionInventory 
   durable: true;
 };
 
+export type WorkflowProtectedRuntimeContextUseAuthority = {
+  protected_runtime_context_use_authority_granted: false;
+  runtime_use_authorized: false;
+  runtime_start_authorized: false;
+  runtime_resume_authorized: false;
+  connector_activity_authorized: false;
+  protected_runtime_context_injection_authority_granted: false;
+  protected_resident_context_access_authority_granted: false;
+  target_context_capsule_opening_authorized: false;
+  target_context_capsule_handoff_authorized: false;
+  endpoint_resolution_authorized: false;
+  route_selection_authorized: false;
+  route_binding_authorized: false;
+  credential_selection_authorized: false;
+  credential_assignment_binding_authorized: false;
+  credential_access_authorized: false;
+  credential_brokerage_authorized: false;
+  credential_resolution_authorized: false;
+  protected_artifact_access_authorized: false;
+  credential_delivery_authorized: false;
+  network_access_authorized: false;
+  readiness_probe_authorized: false;
+  publication_authorized: false;
+  delivery_authorized: false;
+  dispatch_authorized: false;
+  execution_authorized: false;
+  infrastructure_mutation_authorized: false;
+};
+
+export type WorkflowProtectedRuntimeContextUse = {
+  use_id: string;
+  attempt_state: "started" | "completed";
+  result_state:
+    | "use_pending"
+    | "context_used_once_in_protected_boundary"
+    | "context_use_failed_without_use"
+    | "context_use_outcome_uncertain";
+  started_at: string;
+  completed_at: string | null;
+  context_use_performed: boolean | null;
+  policy_id: "policy.workflow-protected-runtime-context-use";
+  policy_version: "1.0";
+  use_profile_reference: string;
+  authority: WorkflowProtectedRuntimeContextUseAuthority;
+  integrity_reference: string;
+};
+
+export type WorkflowProtectedRuntimeContextUseInventory = {
+  uses: WorkflowProtectedRuntimeContextUse[];
+  server_time: string;
+  durable: true;
+};
+
 export type WorkflowProtectedRuntimeContextInjectionConsumption = {
   injection_id: string;
   attempt_state: "started" | "completed";
@@ -3051,6 +3104,52 @@ const protectedRuntimeContextUseAuthorizationConsumptionFields = [
 ] as const;
 const protectedRuntimeContextUseAuthorizationConsumptionInventoryFields = [
   "consumptions",
+  "server_time",
+  "durable",
+] as const;
+const protectedRuntimeContextUseAuthorityFields = [
+  "protected_runtime_context_use_authority_granted",
+  "runtime_use_authorized",
+  "runtime_start_authorized",
+  "runtime_resume_authorized",
+  "connector_activity_authorized",
+  "protected_runtime_context_injection_authority_granted",
+  "protected_resident_context_access_authority_granted",
+  "target_context_capsule_opening_authorized",
+  "target_context_capsule_handoff_authorized",
+  "endpoint_resolution_authorized",
+  "route_selection_authorized",
+  "route_binding_authorized",
+  "credential_selection_authorized",
+  "credential_assignment_binding_authorized",
+  "credential_access_authorized",
+  "credential_brokerage_authorized",
+  "credential_resolution_authorized",
+  "protected_artifact_access_authorized",
+  "credential_delivery_authorized",
+  "network_access_authorized",
+  "readiness_probe_authorized",
+  "publication_authorized",
+  "delivery_authorized",
+  "dispatch_authorized",
+  "execution_authorized",
+  "infrastructure_mutation_authorized",
+] as const;
+const protectedRuntimeContextUseFields = [
+  "use_id",
+  "attempt_state",
+  "result_state",
+  "started_at",
+  "completed_at",
+  "context_use_performed",
+  "policy_id",
+  "policy_version",
+  "use_profile_reference",
+  "authority",
+  "integrity_reference",
+] as const;
+const protectedRuntimeContextUseInventoryFields = [
+  "uses",
   "server_time",
   "durable",
 ] as const;
@@ -5436,6 +5535,70 @@ function isProtectedRuntimeContextUseAuthorizationConsumption(
   );
 }
 
+function hasZeroProtectedRuntimeContextUseAuthority(
+  value: unknown,
+): value is WorkflowProtectedRuntimeContextUseAuthority {
+  return (
+    isObject(value) &&
+    hasExactKeys(value, protectedRuntimeContextUseAuthorityFields) &&
+    protectedRuntimeContextUseAuthorityFields.every((field) => value[field] === false)
+  );
+}
+
+function isProtectedRuntimeContextUse(
+  value: unknown,
+  serverTime: string,
+): value is WorkflowProtectedRuntimeContextUse {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, protectedRuntimeContextUseFields) ||
+    containsCredentialMaterial(value) ||
+    !isTimezoneAwareTimestamp(value.started_at) ||
+    (value.completed_at !== null && !isTimezoneAwareTimestamp(value.completed_at))
+  ) {
+    return false;
+  }
+  const startedAt = Date.parse(value.started_at);
+  const completedAt = value.completed_at === null ? null : Date.parse(value.completed_at);
+  const evaluatedAt = Date.parse(serverTime);
+  const stateIsConsistent =
+    (value.attempt_state === "started" &&
+      (value.result_state === "use_pending" ||
+        value.result_state === "context_use_outcome_uncertain") &&
+      value.context_use_performed === null &&
+      completedAt === null) ||
+    (value.attempt_state === "completed" &&
+      value.result_state === "context_used_once_in_protected_boundary" &&
+      value.context_use_performed === true &&
+      completedAt !== null) ||
+    (value.attempt_state === "completed" &&
+      value.result_state === "context_use_failed_without_use" &&
+      value.context_use_performed === false &&
+      completedAt !== null) ||
+    (value.attempt_state === "completed" &&
+      value.result_state === "context_use_outcome_uncertain" &&
+      value.context_use_performed === null &&
+      completedAt !== null);
+  return (
+    isStableIdentifier(value.use_id) &&
+    value.use_id.startsWith("workflow-protected-runtime-context-use.") &&
+    startedAt <= evaluatedAt &&
+    (completedAt === null || (completedAt >= startedAt && completedAt <= evaluatedAt)) &&
+    stateIsConsistent &&
+    value.policy_id === "policy.workflow-protected-runtime-context-use" &&
+    value.policy_version === "1.0" &&
+    isStableIdentifier(value.use_profile_reference) &&
+    value.use_profile_reference.startsWith(
+      "integrity.workflow-protected-runtime-context-use-profile.",
+    ) &&
+    hasZeroProtectedRuntimeContextUseAuthority(value.authority) &&
+    isStableIdentifier(value.integrity_reference) &&
+    value.integrity_reference.startsWith(
+      "integrity.workflow-protected-runtime-context-use.",
+    )
+  );
+}
+
 function isProtectedRuntimeContextInjectionConsumption(
   value: unknown,
   serverTime: string,
@@ -7310,6 +7473,52 @@ export async function listWorkflowProtectedRuntimeContextUseAuthorizationConsump
     consumptionIds.add(consumption.consumption_id);
   }
   return data as WorkflowProtectedRuntimeContextUseAuthorizationConsumptionInventory;
+}
+
+export async function listWorkflowProtectedRuntimeContextUses(): Promise<WorkflowProtectedRuntimeContextUseInventory> {
+  const response = await apiFetch("/api/v1/workflows/protected-runtime-context-uses", {
+    headers: { Accept: "application/json" },
+  });
+  const data = await readData(
+    response,
+    "Workflow protected runtime-context use retrieval failed",
+  );
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, protectedRuntimeContextUseInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    !Array.isArray(data.uses) ||
+    data.uses.length > 256 ||
+    !isTimezoneAwareTimestamp(data.server_time) ||
+    data.durable !== true
+  ) {
+    throw new ApiRequestError(
+      "Workflow protected runtime-context use response was unsafe",
+      response.status,
+    );
+  }
+  const serverTime = data.server_time;
+  if (!data.uses.every((use) => isProtectedRuntimeContextUse(use, serverTime))) {
+    throw new ApiRequestError(
+      "Workflow protected runtime-context use response was unsafe",
+      response.status,
+    );
+  }
+  const useIds = new Set<string>();
+  for (const use of data.uses) {
+    if (
+      !isObject(use) ||
+      typeof use.use_id !== "string" ||
+      useIds.has(use.use_id)
+    ) {
+      throw new ApiRequestError(
+        "Workflow protected runtime-context use response was unsafe",
+        response.status,
+      );
+    }
+    useIds.add(use.use_id);
+  }
+  return data as WorkflowProtectedRuntimeContextUseInventory;
 }
 
 export async function listWorkflowProtectedRuntimeContextInjectionConsumptions(): Promise<WorkflowProtectedRuntimeContextInjectionConsumptionInventory> {
