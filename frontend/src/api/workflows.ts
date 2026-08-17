@@ -1753,6 +1753,30 @@ export type WorkflowProtectedRuntimeReadinessAuthorizationInventory = {
   durable: true;
 };
 
+export type WorkflowProtectedRuntimeReadiness = {
+  readiness_id: string;
+  attempt_state: "runtime_readiness_attempt_started";
+  result_state:
+    | "runtime_ready_in_protected_boundary"
+    | "runtime_not_ready_in_protected_boundary"
+    | "runtime_readiness_failed_without_assessment"
+    | "runtime_readiness_outcome_uncertain"
+    | null;
+  started_at: string;
+  completed_at: string | null;
+  recorded_at: string | null;
+  runtime_ready: boolean | null;
+  policy_reference: "policy.workflow-protected-runtime-readiness-consumption:1.0";
+  readiness_profile_reference: string;
+  effective_authority: false;
+};
+
+export type WorkflowProtectedRuntimeReadinessInventory = {
+  readiness: WorkflowProtectedRuntimeReadiness[];
+  server_time: string;
+  durable: true;
+};
+
 export type WorkflowProtectedRuntimeContextInjectionConsumption = {
   injection_id: string;
   attempt_state: "started" | "completed";
@@ -3396,6 +3420,23 @@ const protectedRuntimeReadinessAuthorizationFields = [
 ] as const;
 const protectedRuntimeReadinessAuthorizationInventoryFields = [
   "authorizations",
+  "server_time",
+  "durable",
+] as const;
+const protectedRuntimeReadinessFields = [
+  "readiness_id",
+  "attempt_state",
+  "result_state",
+  "started_at",
+  "completed_at",
+  "recorded_at",
+  "runtime_ready",
+  "policy_reference",
+  "readiness_profile_reference",
+  "effective_authority",
+] as const;
+const protectedRuntimeReadinessInventoryFields = [
+  "readiness",
   "server_time",
   "durable",
 ] as const;
@@ -6036,6 +6077,68 @@ function isProtectedRuntimeReadinessAuthorization(
   );
 }
 
+function isProtectedRuntimeReadiness(
+  value: unknown,
+  serverTime: string,
+): value is WorkflowProtectedRuntimeReadiness {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, protectedRuntimeReadinessFields) ||
+    containsCredentialMaterial(value) ||
+    !isTimezoneAwareTimestamp(value.started_at) ||
+    (value.completed_at !== null && !isTimezoneAwareTimestamp(value.completed_at)) ||
+    (value.recorded_at !== null && !isTimezoneAwareTimestamp(value.recorded_at))
+  ) {
+    return false;
+  }
+  const startedAt = Date.parse(value.started_at);
+  const completedAt = value.completed_at === null ? null : Date.parse(value.completed_at);
+  const recordedAt = value.recorded_at === null ? null : Date.parse(value.recorded_at);
+  const evaluatedAt = Date.parse(serverTime);
+  const pending =
+    value.result_state === null &&
+    value.completed_at === null &&
+    value.recorded_at === null &&
+    value.runtime_ready === null;
+  const ready =
+    value.result_state === "runtime_ready_in_protected_boundary" &&
+    completedAt !== null &&
+    recordedAt !== null &&
+    value.runtime_ready === true;
+  const notReady =
+    value.result_state === "runtime_not_ready_in_protected_boundary" &&
+    completedAt !== null &&
+    recordedAt !== null &&
+    value.runtime_ready === false;
+  const failedWithoutAssessment =
+    value.result_state === "runtime_readiness_failed_without_assessment" &&
+    completedAt !== null &&
+    recordedAt !== null &&
+    value.runtime_ready === null;
+  const uncertain =
+    value.result_state === "runtime_readiness_outcome_uncertain" &&
+    completedAt === null &&
+    recordedAt !== null &&
+    value.runtime_ready === null;
+  return (
+    isStableIdentifier(value.readiness_id) &&
+    value.readiness_id.startsWith("workflow-protected-runtime-readiness-consumption.") &&
+    value.attempt_state === "runtime_readiness_attempt_started" &&
+    startedAt <= evaluatedAt &&
+    (completedAt === null || (completedAt >= startedAt && completedAt <= evaluatedAt)) &&
+    (recordedAt === null ||
+      (recordedAt >= (completedAt ?? startedAt) && recordedAt <= evaluatedAt)) &&
+    (pending || ready || notReady || failedWithoutAssessment || uncertain) &&
+    value.policy_reference ===
+      "policy.workflow-protected-runtime-readiness-consumption:1.0" &&
+    isStableIdentifier(value.readiness_profile_reference) &&
+    value.readiness_profile_reference.startsWith(
+      "integrity.workflow-protected-runtime-readiness-profile.",
+    ) &&
+    value.effective_authority === false
+  );
+}
+
 function isProtectedRuntimeContextInjectionConsumption(
   value: unknown,
   serverTime: string,
@@ -8105,6 +8208,57 @@ export async function listWorkflowProtectedRuntimeReadinessAuthorizations(): Pro
     authorizationIds.add(authorization.authorization_lease_id);
   }
   return data as WorkflowProtectedRuntimeReadinessAuthorizationInventory;
+}
+
+export async function listWorkflowProtectedRuntimeReadiness(): Promise<WorkflowProtectedRuntimeReadinessInventory> {
+  const response = await apiFetch(
+    "/api/v1/workflows/protected-runtime-readiness-consumptions",
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(
+    response,
+    "Workflow protected runtime-readiness retrieval failed",
+  );
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, protectedRuntimeReadinessInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    !Array.isArray(data.readiness) ||
+    data.readiness.length > 256 ||
+    !isTimezoneAwareTimestamp(data.server_time) ||
+    data.durable !== true
+  ) {
+    throw new ApiRequestError(
+      "Workflow protected runtime-readiness response was unsafe",
+      response.status,
+    );
+  }
+  const serverTime = data.server_time;
+  if (
+    !data.readiness.every((readiness) =>
+      isProtectedRuntimeReadiness(readiness, serverTime),
+    )
+  ) {
+    throw new ApiRequestError(
+      "Workflow protected runtime-readiness response was unsafe",
+      response.status,
+    );
+  }
+  const readinessIds = new Set<string>();
+  for (const readiness of data.readiness) {
+    if (
+      !isObject(readiness) ||
+      typeof readiness.readiness_id !== "string" ||
+      readinessIds.has(readiness.readiness_id)
+    ) {
+      throw new ApiRequestError(
+        "Workflow protected runtime-readiness response was unsafe",
+        response.status,
+      );
+    }
+    readinessIds.add(readiness.readiness_id);
+  }
+  return data as WorkflowProtectedRuntimeReadinessInventory;
 }
 
 export async function listWorkflowProtectedRuntimeContextInjectionConsumptions(): Promise<WorkflowProtectedRuntimeContextInjectionConsumptionInventory> {
