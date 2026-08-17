@@ -818,6 +818,20 @@ MVP workflows do not execute C3 through C5 capabilities.
   probe, process/scheduler operation, network, connector/MCP, publication, dispatch, execution or
   mutation operation. AI remains advisory-only, AD remains authentication-only, and normal
   username/password-session GET requires no MFA or second browser prompt.
+- ADR-176 atomically appends one ADR-175 lease-consumption claim and one readiness attempt before
+  commit, then permits the request-owning service to call one approved protected-boundary,
+  metadata-only readiness assessor at most once. There is no consumption-only state, assessor call
+  while the transaction is open, or automatic retry after commit. Exact replay never calls the
+  assessor again. Timely signed receipts produce terminal ready, not-ready or
+  failed-without-assessment outcomes; timeout, crash, invalid/late receipt and persistence ambiguity
+  produce permanent uncertainty. Because readiness is observational, no mutable readiness
+  coordination head is added and the existing terminal runtime-start head is locked and validated
+  read-only. Append-only claim, attempt and result evidence with exact unique and composite foreign
+  keys derives state. The protocol exposes no runtime/process locator or material and performs no
+  DNS/TLS/socket/network, endpoint/credential, connector/MCP, model, publication, delivery,
+  dispatch, generic execution or infrastructure mutation. AI remains advisory-only, Active
+  Directory remains authentication-only, and human inventory GET uses the normal username/password
+  session without MFA or a second browser prompt.
 
 ## 39. Assumptions
 
@@ -869,3 +883,4 @@ This document is ready to enter Review when:
 | 2.4.0 | 2026-08-17 | Workflow Architecture | Added bounded single-use protected runtime-start authorization lease boundary |
 | 2.5.0 | 2026-08-17 | Workflow Architecture | Added atomic protected runtime-start consumption and single start attempt |
 | 2.6.0 | 2026-08-17 | Workflow Architecture | Added bounded single-use protected runtime-readiness authorization lease boundary |
+| 2.7.0 | 2026-08-17 | Workflow Architecture | Added atomic protected runtime-readiness consumption and single assessment attempt |

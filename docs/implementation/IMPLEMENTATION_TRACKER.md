@@ -4,14 +4,68 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-225 |
-| Title | Bounded single-use protected runtime-readiness authorization lease |
-| Status | Review |
-| Branch | `agent/protected-runtime-readiness-authorization` |
-| Pull Request | [PR #238](https://github.com/ozdemirumit/Project_Atlas/pull/238) |
-| Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-175 |
+| Task ID | ATLAS-IMP-226 |
+| Title | Atomic protected runtime-readiness consumption and single assessment attempt |
+| Status | In Progress |
+| Branch | `agent/protected-runtime-readiness-consumption` |
+| Pull Request | Not opened |
+| Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-176 |
 | Last Updated | 2026-08-17 |
-| Next Action | Require exact-head PR #238 CI, then merge by reviewed SHA and verify main CI |
+| Next Action | Implement ADR-176 domain, persistence, service, API, read-only UI and verification slices |
+
+### ATLAS-IMP-226 Scope Rationale
+
+- IMP-225 issues one at-most-one-second, single-use lease that authorizes only submission of a
+  future protected runtime-readiness request. It is not direct assessment, probe, network,
+  connector or execution authority.
+- Lease consumption and creation of the single readiness attempt must commit atomically before the
+  approved protected-boundary assessor is called. A separate consumption-only state would create
+  ambiguity without strengthening the trust boundary.
+- Readiness is an observation of the existing canonical started runtime, not a runtime lifecycle
+  transition. Append-only claim, attempt and result evidence derives state without adding another
+  mutable coordination head or changing the runtime-start head.
+
+### ATLAS-IMP-226 Acceptance Criteria
+
+- Only the exact protected consumer workload and audience bound through canonical ADR-160 through
+  ADR-175 lineage may POST. Human sessions, personal tokens, AI agents, MCP tools, connectors and
+  generic or recovery workers fail closed before protected-state I/O.
+- Caller input is limited to the ADR-175 lease identity, code-owned policy identity, tenant-scoped
+  idempotency metadata and explicit irreversible-consumption/no-retry acknowledgements. Runtime,
+  process, locator, endpoint, credential, timing, instruction, receipt and outcome are server-derived.
+- Durable exact replay is the first repository operation. Exact pending or terminal replay never
+  invokes the assessor; changed replay, competing lineage and idempotency reuse fail closed.
+- PostgreSQL locks and revalidates the complete lineage, active ADR-175 lease, destination fence,
+  protected-slot generation, successful start result and existing terminal runtime-start head under
+  authoritative database time. The runtime-start head is read-only and is not repurposed.
+- One immutable lease-consumption claim and one immutable readiness attempt commit atomically before
+  assessor I/O. Exact unique constraints and composite foreign keys enforce one claim per lease,
+  one attempt per claim and at most one result per attempt; all evidence is append-only.
+- After commit, one approved protected-boundary metadata-only assessor may be called at most once.
+  It receives no runtime/process locator or material and performs no DNS/TLS/socket/network,
+  endpoint/credential, connector/MCP, model, publication, delivery, dispatch, generic execution or
+  infrastructure mutation.
+- Timely signed receipts produce terminal ready, not-ready or failed-without-assessment results.
+  Timeout, crash, response loss, invalid/late receipt or persistence ambiguity becomes permanent
+  uncertainty; HTTP, worker, scheduler, outbox, DLQ and recovery paths never retry the assessment.
+- Results are non-bearer historical facts. Every reusable authority declaration remains false, AI
+  remains advisory-only and no readiness outcome authorizes a follow-on operation.
+- Production fails closed without PostgreSQL and required trusted assessor/signature boundaries.
+  Workload POST and username/password-session human GET are minimized and `no-store`; the read-only
+  UI requires no MFA or second browser prompt and exposes no readiness or operational controls.
+- Active Directory remains authentication-only; no Active Directory management capability, route,
+  service or MCP is introduced.
+
+### ATLAS-IMP-226 Planned Validation
+
+- Domain and service tests will prove code-owned policy, derived state, replay-first ordering,
+  commit-before-I/O, at most one assessor call, all terminal outcomes and zero reusable authority.
+- PostgreSQL tests will prove authoritative-time expiry closure, atomic claim/attempt commit, exact
+  composite lineage, one concurrent winner, immutable evidence, derived lease consumption and
+  guarded migration downgrade without a mutable readiness head.
+- API/frontend tests and live browser validation will prove workload-only POST, normal password-
+  session read-only GET, strict minimized schemas, fail-closed composition, no MFA/second session,
+  no browser POST and zero interactive readiness controls on desktop and mobile.
 
 ### ATLAS-IMP-225 Scope Rationale
 
@@ -68,6 +122,13 @@
   `local-demo` username/password session. The read-only readiness-authorization region required no
   MFA or second browser session, exposed zero controls, had no horizontal overflow at `390x844`,
   and produced no browser console warnings or errors.
+
+### ATLAS-IMP-225 Delivery Evidence
+
+- Merged through [PR #238](https://github.com/ozdemirumit/Project_Atlas/pull/238) to `main` as merge
+  commit `032c838` after exact-head backend and frontend CI completed successfully.
+- Independent `main` Continuous Integration workflow run `#864` completed successfully for the
+  merged IMP-225 change.
 
 ### ATLAS-IMP-224 Scope Rationale
 

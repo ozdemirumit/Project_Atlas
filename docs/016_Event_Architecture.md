@@ -670,6 +670,25 @@ execution or infrastructure mutation. Human GET remains read-only through the no
 password session without MFA or a second browser prompt; AI remains advisory-only and Active
 Directory remains authentication-only.
 
+ADR-176 atomically appends one immutable ADR-175 lease-consumption claim and one immutable
+readiness attempt in the same PostgreSQL transaction before any protected-boundary assessor I/O.
+That commit is the irreversible point of no return. After commit the request-owning service may
+call one approved metadata-only readiness assessor at most once. Event, outbox, workflow retry,
+scheduler, DLQ and recovery paths cannot invoke it. Exact replay returns durable state without
+another assessment, while timeout, crash, response loss, late/invalid receipt and persistence
+ambiguity become permanent `runtime_readiness_outcome_uncertain` with no automatic retry.
+
+Readiness is observational, so ADR-176 creates no mutable readiness coordination head and does not
+change the existing runtime-start head. PostgreSQL locks and validates that head in its canonical
+terminal started state, then exact unique constraints and composite foreign keys over append-only
+claim, attempt and result records derive pending, ready, not-ready, failed-without-assessment or
+uncertain state. Ready and not-ready are historical non-bearer facts and grant no follow-on
+authority. The assessor receives no runtime/process locator or material and performs no
+DNS/TLS/socket/network, endpoint/credential, connector/MCP, model, publication, delivery, dispatch,
+generic execution or infrastructure mutation. Human GET remains read-only through the normal
+username/password session without MFA or a second browser prompt; AI remains advisory-only and
+Active Directory remains authentication-only.
+
 ### 10.2 Publication State
 
 Outbox records track:
@@ -1078,3 +1097,4 @@ This document is ready to enter Review when:
 | 2.4.0 | 2026-08-17 | Workflow Architecture | Added bounded single-use protected runtime-start authorization lease boundary |
 | 2.5.0 | 2026-08-17 | Workflow Architecture | Added atomic protected runtime-start consumption and single start-attempt boundary |
 | 2.6.0 | 2026-08-17 | Workflow Architecture | Added bounded single-use protected runtime-readiness authorization lease boundary |
+| 2.7.0 | 2026-08-17 | Workflow Architecture | Added atomic protected runtime-readiness consumption and single assessment attempt |
