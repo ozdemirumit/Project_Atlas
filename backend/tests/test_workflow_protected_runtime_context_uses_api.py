@@ -5,7 +5,6 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any, cast
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from test_workflow_outbox_publication_lease_api import (
@@ -641,13 +640,6 @@ def test_ldap_username_password_is_authentication_only_without_operation_authori
     _assert_no_store(inventory)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "IMP-222 production error responses lose the endpoint no-store headers in FastAPI "
-        "dependency, validation, and AtlasError handling"
-    ),
-)
 def test_denied_validation_and_error_responses_are_also_no_store() -> None:
     service = _Service()
     app, token = _app(service)

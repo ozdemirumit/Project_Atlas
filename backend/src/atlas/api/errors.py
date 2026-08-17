@@ -48,7 +48,14 @@ class AtlasError(Exception):
 def problem_response(problem: ProblemDetails, *, no_store: bool = False) -> JSONResponse:
     headers = {"X-Correlation-ID": problem.correlation_id}
     if no_store:
-        headers["Cache-Control"] = "no-store"
+        headers.update(
+            {
+                "Cache-Control": "no-store, max-age=0",
+                "Pragma": "no-cache",
+                "X-Content-Type-Options": "nosniff",
+                "Referrer-Policy": "no-referrer",
+            }
+        )
     return JSONResponse(
         status_code=problem.status,
         content=problem.model_dump(mode="json"),
@@ -70,6 +77,7 @@ def _requires_no_store(request: Request) -> bool:
             "/api/v1/workflows/physical-transport-target-context-capsule-openings",
             "/api/v1/workflows/protected-resident-context-access-authorizations",
             "/api/v1/workflows/protected-resident-context-access-consumptions",
+            "/api/v1/workflows/protected-runtime-context-uses",
         )
     )
 
