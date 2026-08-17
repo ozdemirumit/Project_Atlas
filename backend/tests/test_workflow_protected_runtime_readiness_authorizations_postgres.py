@@ -391,7 +391,7 @@ def _lifecycle_attestation(
         "attestor_id": service.policy.required_attestor_id,
         "attestor_version": service.policy.required_attestor_version,
         "signing_key_id": service.policy.verification_signing_key_id,
-        "signature_algorithm": service.policy.signature_algorithm,
+        "signature_algorithm": "hmac-sha256",
         "observed_at": requested_at,
         "valid_until": valid_until,
         "runtime_envelope_eligible_until": valid_until,

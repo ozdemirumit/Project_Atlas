@@ -181,28 +181,29 @@ def test_models_bind_complete_adr174_lineage_and_one_canonical_claim() -> None:
         coordination: "uq_wf_rtready_src_started_head",
     }
     for table, constraint_name in scoped_target_constraints.items():
-        constraint = next(
+        scoped_constraint = next(
             item
             for item in table.constraints
             if isinstance(item, UniqueConstraint) and item.name == constraint_name
         )
-        assert _constraint_columns(constraint)[:3] == SCOPE_COLUMNS
+        assert _constraint_columns(scoped_constraint)[:3] == SCOPE_COLUMNS
 
     for table in (lease, claim):
         source_constraints = [
-            constraint
-            for constraint in table.foreign_key_constraints
-            if constraint.name is not None
-            and constraint.name.startswith(
+            source_constraint
+            for source_constraint in table.foreign_key_constraints
+            if isinstance(source_constraint.name, str)
+            and source_constraint.name.startswith(
                 "fk_wf_rtready_lease_" if table is lease else "fk_wf_rtready_claim_"
             )
         ]
         assert len(source_constraints) == 7
-        for constraint in source_constraints:
-            assert isinstance(constraint, ForeignKeyConstraint)
-            assert tuple(column.name for column in constraint.columns)[:3] == SCOPE_COLUMNS
+        for source_constraint in source_constraints:
+            assert isinstance(source_constraint, ForeignKeyConstraint)
+            assert tuple(column.name for column in source_constraint.columns)[:3] == SCOPE_COLUMNS
             assert (
-                tuple(element.column.name for element in constraint.elements)[:3] == SCOPE_COLUMNS
+                tuple(element.column.name for element in source_constraint.elements)[:3]
+                == SCOPE_COLUMNS
             )
     assert all(
         isinstance(constraint, UniqueConstraint)

@@ -612,7 +612,7 @@ async def test_non_consumer_is_denied_before_protected_state_io() -> None:
 @pytest.mark.asyncio
 async def test_cross_lineage_starter_receipt_is_rejected_before_attestation() -> None:
     source = _source()
-    source.starter_receipt.consumption_id = "runtime-start.other"
+    cast(Any, source.starter_receipt).consumption_id = "runtime-start.other"
     events: list[str] = []
     repository = _Repository(source, events)
 
