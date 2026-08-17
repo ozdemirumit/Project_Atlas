@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-223 |
 | Title | Bounded single-use protected runtime-start authorization lease |
-| Status | In Progress |
+| Status | Delivery Pending |
 | Branch | `agent/protected-runtime-start-authorization` |
-| Pull Request | Pending |
+| Pull Request | Pending creation |
 | Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-173 |
 | Last Updated | 2026-08-17 |
-| Next Action | Complete ADR-173, then implement its workload-only issuance, durable PostgreSQL evidence and read-only human projection |
+| Next Action | Push the exact reviewed head, pass PostgreSQL-backed PR CI, merge, and verify independent `main` CI |
 
 ### ATLAS-IMP-223 Scope Rationale
 
@@ -49,6 +49,30 @@
 - Production fails closed without PostgreSQL and the trusted attestor. Workload POST and normal
   username/password-session GET are minimized, non-oracle and `no-store`; the read-only UI requires
   no MFA or second browser prompt and exposes no start, consume, retry, resume or execute control.
+
+### ATLAS-IMP-223 Verification Evidence
+
+- Ruff format/check passed across `1531` backend source, test and migration files. Full MyPy passed
+  across `1384` source files with no issues. Alembic reports the single head `20260817_0146`; the
+  isolated ADR-173 upgrade and guarded downgrade both generated PostgreSQL SQL successfully.
+- The integrated ADR-173 backend and relevant regression suite passed `77` tests. Two live
+  PostgreSQL tests were skipped locally only because `ATLAS_TEST_POSTGRES_DSN` is not configured;
+  CI runs those concurrency, forged-lineage, append-only, projection and downgrade checks against
+  PostgreSQL 17.
+- Frontend ESLint and TypeScript checks passed. The complete Workflow Planning workspace suite
+  passed `566` tests, and the production Vite build completed successfully.
+- Independent API/frontend review found and closed a strict response-contract mismatch: the UI now
+  accepts the backend's minimized `destination_profile_reference` and no longer expects or exposes
+  the protected ADR-172 source-result reference.
+- Independent security/persistence review found and closed runtime-envelope locking, replay,
+  consumed/expired projection, composite lineage and real PostgreSQL concurrency-test gaps. Signed
+  attestation now binds the canonical runtime envelope and eligibility deadline; PostgreSQL locks a
+  guarded coordination head and projects effective authority from one authoritative statement.
+- Live validation at `http://127.0.0.1:5290/#/workspace/workflows` used one normal `atlas-demo` /
+  `local-demo` username/password session against the IMP-223 backend on port `8015`. The new GET
+  returned the expected fail-closed `503` without a configured durable repository. Its read-only
+  region exposed no operation control, desktop and `390x844` mobile layouts had no horizontal
+  overflow or incoherent overlap, and the browser console had no errors or warnings.
 
 ### ATLAS-IMP-222 Scope Rationale
 
