@@ -242,7 +242,9 @@ def _claim_request(
     service, _, _ = _service()
     source = _authorization_source_at(base, suffix=suffix)
     policy = code_owned_workflow_protected_runtime_start_consumption_policy()
-    idempotency_key = "imp-224-runtime-start"
+    idempotency_key = (
+        "imp-224-runtime-start" if suffix is None else f"imp-224-runtime-start.{suffix}"
+    )
     idempotency_digest = canonical_digest(
         {
             "scope": SCOPE.canonical_value(),
@@ -404,7 +406,7 @@ async def _seed_actual_repository_path(
     authorization_claim_model = repository._protected_runtime_start_claim_model(
         authorization_claim,
         authorization_lease_id=lease.authorization_lease_id,
-        idempotency_key="imp-223-seed",
+        idempotency_key=f"imp-223-seed.{lease.authorization_lease_id}",
         audit_payload=AUTHORIZATION_AUDIT_PAYLOAD,
         source_result=cast(Any, source_result_stub),
     )
