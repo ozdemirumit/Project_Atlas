@@ -13,7 +13,7 @@ from typing import Any, cast
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import CheckConstraint, MetaData, Table, func, insert, select, text
+from sqlalchemy import CheckConstraint, MetaData, Table, func, insert, null, select, text
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -79,6 +79,33 @@ USE_PROFILE_DIGEST = (
     code_owned_workflow_protected_runtime_context_use_authorization_policy().use_profile_digest
 )
 AUTHORIZATION_AUDIT_PAYLOAD: dict[str, object] = {"seed": "imp-224-actual-repository-claim-race"}
+
+
+class _PinnedObservationPostgreSQLWorkflowPlanRepository(PostgreSQLWorkflowPlanRepository):
+    def __init__(self, *, observed_at: datetime, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._pinned_observed_at = observed_at
+
+    async def _lock_protected_runtime_start_consumption_rows(
+        self,
+        session: AsyncSession,
+        *,
+        request: WorkflowProtectedRuntimeStartConsumptionClaimRequest,
+    ) -> Any:
+        locked = await super()._lock_protected_runtime_start_consumption_rows(
+            session,
+            request=request,
+        )
+        authorization = replace(
+            locked.authorization,
+            first_observed_at=self._pinned_observed_at,
+            observed_at=self._pinned_observed_at,
+        )
+        return replace(
+            locked,
+            authorization=authorization,
+            observed_at=self._pinned_observed_at,
+        )
 
 
 def _checks(table: Table) -> str:
@@ -723,6 +750,7 @@ async def test_result_model_inherits_required_consumer_identity() -> None:
         result_row.consumer_contract_version == request.candidate_attempt.consumer_contract_version
     )
     assert result_row.purpose_id == request.candidate_attempt.purpose_id
+    assert result_row.starter_receipt_payload.compare(null())
 
 
 def test_suffixed_live_source_keeps_code_owned_destination() -> None:
@@ -910,16 +938,9 @@ async def test_live_postgres_real_repository_claim_race_when_configured() -> Non
             assert await second_connection.scalar(text("SHOW session_replication_role")) == "origin"
             await first_connection.rollback()
             await second_connection.rollback()
-            observed_at = cast(
-                datetime,
-                await first_connection.scalar(select(func.clock_timestamp())),
+            pinned_observed_at = request.source.authorization_lease.issued_at + timedelta(
+                milliseconds=100
             )
-            await first_connection.rollback()
-            wait_seconds = (
-                request.source.authorization_lease.issued_at - observed_at
-            ).total_seconds()
-            if wait_seconds > 0:
-                await asyncio.sleep(wait_seconds + 0.02)
 
             def first_session() -> AsyncSession:
                 return AsyncSession(bind=first_connection, expire_on_commit=False)
@@ -927,11 +948,15 @@ async def test_live_postgres_real_repository_claim_race_when_configured() -> Non
             def second_session() -> AsyncSession:
                 return AsyncSession(bind=second_connection, expire_on_commit=False)
 
-            first_repository = PostgreSQLWorkflowPlanRepository(
-                engine=engine, session_factory=first_session
+            first_repository = _PinnedObservationPostgreSQLWorkflowPlanRepository(
+                engine=engine,
+                session_factory=first_session,
+                observed_at=pinned_observed_at,
             )
-            second_repository = PostgreSQLWorkflowPlanRepository(
-                engine=engine, session_factory=second_session
+            second_repository = _PinnedObservationPostgreSQLWorkflowPlanRepository(
+                engine=engine,
+                session_factory=second_session,
+                observed_at=pinned_observed_at,
             )
             first_write, second_write = await asyncio.gather(
                 first_repository.claim_protected_runtime_start_consumption(request),

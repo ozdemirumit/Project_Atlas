@@ -8,7 +8,7 @@ from enum import Enum
 from hashlib import sha256
 from typing import Any, NoReturn, cast
 
-from sqlalchemy import and_, exists, func, literal, or_, select, text, update
+from sqlalchemy import and_, exists, func, literal, null, or_, select, text, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import (
@@ -8460,7 +8460,7 @@ class PostgreSQLWorkflowPlanRepository:
             consumer_contract_version=attempt_row.consumer_contract_version,
             purpose_id=attempt_row.purpose_id,
             starter_receipt_payload=(
-                None
+                null()
                 if request.receipt is None
                 else {
                     **request.receipt.digest_payload(),
