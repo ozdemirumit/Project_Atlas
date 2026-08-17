@@ -9948,6 +9948,7 @@ class PostgreSQLWorkflowPlanRepository:
             source_authorization_claim: Any = locked_start_authorization_claim
             source_authorization_lease: Any = locked_start_authorization_lease
             source_start_attempt: Any = locked_start_attempt
+            source_start_instruction_digest = locked_start_attempt.instruction_digest
             coordination_state = head.state
             runtime_start_attempt_pending = head.runtime_start_attempt_pending
             runtime_start_attempt_terminal = head.runtime_start_attempt_terminal
@@ -9958,6 +9959,7 @@ class PostgreSQLWorkflowPlanRepository:
             source_authorization_claim = source.start_authorization_claim
             source_authorization_lease = source.start_authorization_lease
             source_start_attempt = source.attempt
+            source_start_instruction_digest = source.starter_receipt.instruction_digest
             coordination_state = "start_attempt_terminal"
             runtime_start_attempt_pending = False
             runtime_start_attempt_terminal = True
@@ -9985,7 +9987,7 @@ class PostgreSQLWorkflowPlanRepository:
             runtime_slot_commitment=value.protected_slot_commitment,
             runtime_slot_generation=value.protected_slot_generation,
             protected_operation_reference=source_start_attempt.protected_operation_reference,
-            start_instruction_digest=source_start_attempt.instruction_digest,
+            start_instruction_digest=source_start_instruction_digest,
             start_started_at=source_start_attempt.started_at,
             start_invocation_deadline=source_start_attempt.invocation_deadline,
             coordination_state=coordination_state,
