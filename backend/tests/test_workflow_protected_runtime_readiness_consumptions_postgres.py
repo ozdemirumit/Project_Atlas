@@ -66,6 +66,13 @@ POSTGRES_PATH = (
 )
 SOURCE = POSTGRES_PATH.read_text(encoding="utf-8")
 TREE = ast.parse(SOURCE)
+MIGRATION_PATH = (
+    Path(__file__).parents[1]
+    / "migrations"
+    / "versions"
+    / "20260817_0149_workflow_protected_runtime_readiness_consumption.py"
+)
+MIGRATION_SOURCE = MIGRATION_PATH.read_text(encoding="utf-8")
 REPOSITORY = next(
     node
     for node in TREE.body
@@ -155,6 +162,42 @@ def test_result_write_resolves_database_acknowledgement_errors_by_exact_read() -
     implementation = _method_source("record_protected_runtime_readiness_consumption_result")
     assert "except SQLAlchemyError" in implementation
     assert implementation.index("await session.commit()") < implementation.index("existing = cast(")
+
+
+def test_attempt_and_result_outcomes_do_not_inherit_the_start_operation_reference() -> None:
+    expected_operation_reference_by_constraint = {
+        "fk_wf_rtready_cons_claim_outcome": True,
+        "fk_wf_rtready_cons_attempt_outcome": False,
+        "fk_wf_rtready_cons_result_outcome": False,
+    }
+    models = (
+        WorkflowProtectedRuntimeReadinessConsumptionClaimModel,
+        WorkflowProtectedRuntimeReadinessConsumptionAttemptModel,
+        WorkflowProtectedRuntimeReadinessConsumptionResultModel,
+    )
+
+    for model in models:
+        constraint = next(
+            item
+            for item in model.__table__.foreign_key_constraints
+            if item.name in expected_operation_reference_by_constraint
+            and item.name.endswith("_outcome")
+        )
+        assert (
+            "protected_operation_reference" in constraint.column_keys
+        ) is expected_operation_reference_by_constraint[constraint.name]
+
+    lease_constraint_names = {
+        constraint.name
+        for constraint in (
+            WorkflowProtectedRuntimeReadinessAuthorizationLeaseModel.__table__.constraints
+        )
+    }
+    assert "uq_wf_rtready_auth_lease_consume_outcome_projection" in lease_constraint_names
+    assert (
+        '_lease_outcome_columns(include_operation_reference=prefix == "claim")' in MIGRATION_SOURCE
+    )
+    assert "uq_wf_rtready_auth_lease_consume_outcome_projection" in MIGRATION_SOURCE
 
 
 def test_authorization_inventory_derives_consumption_without_mutating_the_lease() -> None:

@@ -726,7 +726,8 @@ async def test_semantic_audit_distinguishes_attempt_invocation_and_terminal_resu
     assert assessor.calls == 1
     assert [event.result_code for event in audit_sink.events] == [
         "protected_runtime_readiness_lease_consumed_attempt_committed",
-        "protected_runtime_readiness_assessor_invocation_started",
+        "protected_runtime_readiness_assessor_invocation_intent_recorded",
+        "protected_runtime_readiness_assessor_invocation_returned",
         "protected_runtime_readiness_recorded_runtime_ready_in_protected_boundary",
         "protected_runtime_readiness_replayed_runtime_ready_in_protected_boundary",
     ]
@@ -739,6 +740,30 @@ async def test_semantic_audit_distinguishes_attempt_invocation_and_terminal_resu
     assert metadata["assessment_authority"] == "false"
     assert metadata["execution_authority"] == "false"
     assert metadata["infrastructure_mutation_authority"] == "false"
+
+
+@pytest.mark.asyncio
+async def test_assessor_failure_audit_records_intent_failure_and_uncertainty() -> None:
+    audit_sink = _AuditSink()
+    service, _, assessor = _service(fail_assessor=True, audit_sink=audit_sink)
+
+    presentation = await _consume(service)
+
+    assert presentation.result is not None
+    assert (
+        presentation.result.state
+        is (
+            WorkflowProtectedRuntimeReadinessConsumptionResultState
+        ).RUNTIME_READINESS_OUTCOME_UNCERTAIN
+    )
+    assert assessor.calls == 1
+    assert [event.result_code for event in audit_sink.events] == [
+        "protected_runtime_readiness_lease_consumed_attempt_committed",
+        "protected_runtime_readiness_assessor_invocation_intent_recorded",
+        "protected_runtime_readiness_assessor_invocation_failed",
+        "protected_runtime_readiness_outcome_uncertain",
+    ]
+    assert audit_sink.events[2].occurred_at >= _context().requested_at
 
 
 @pytest.mark.asyncio

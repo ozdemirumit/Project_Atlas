@@ -16496,6 +16496,26 @@ class WorkflowProtectedRuntimeReadinessAuthorizationLeaseModel(
             name="uq_wf_rtready_auth_lease_consume_outcome",
         ),
         UniqueConstraint(
+            "authorization_lease_id",
+            "canonical_digest",
+            "start_instruction_digest",
+            "start_started_at",
+            "start_invocation_deadline",
+            "start_completed_at",
+            "start_result_recorded_at",
+            "starter_receipt_digest",
+            "start_result_state",
+            "start_outcome_known",
+            "runtime_started",
+            "coordination_state",
+            "runtime_start_attempt_pending",
+            "runtime_start_attempt_terminal",
+            "runtime_resumed",
+            "process_created",
+            "process_scheduled",
+            name="uq_wf_rtready_auth_lease_consume_outcome_projection",
+        ),
+        UniqueConstraint(
             *_WF_RTREADY_SCOPE_COLUMNS,
             "authorization_lease_id",
             "start_result_id",
@@ -16763,10 +16783,9 @@ def _workflow_protected_runtime_readiness_consumption_lease_constraint(
 def _workflow_protected_runtime_readiness_consumption_outcome_constraint(
     *, prefix: str
 ) -> ForeignKeyConstraint:
-    columns = (
+    columns: tuple[str, ...] = (
         "authorization_lease_id",
         "authorization_lease_digest",
-        "protected_operation_reference",
         "start_instruction_digest",
         "start_started_at",
         "start_invocation_deadline",
@@ -16783,6 +16802,8 @@ def _workflow_protected_runtime_readiness_consumption_outcome_constraint(
         "process_created",
         "process_scheduled",
     )
+    if prefix == "claim":
+        columns = (*columns[:2], "protected_operation_reference", *columns[2:])
     remote = ("authorization_lease_id", "canonical_digest", *columns[2:])
     return ForeignKeyConstraint(
         columns,

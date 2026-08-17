@@ -229,11 +229,10 @@ def _lease_lineage_columns() -> tuple[str, ...]:
     )
 
 
-def _lease_outcome_columns() -> tuple[str, ...]:
-    return (
+def _lease_outcome_columns(*, include_operation_reference: bool = True) -> tuple[str, ...]:
+    columns = (
         "authorization_lease_id",
         "authorization_lease_digest",
-        "protected_operation_reference",
         "start_instruction_digest",
         "start_started_at",
         "start_invocation_deadline",
@@ -250,6 +249,9 @@ def _lease_outcome_columns() -> tuple[str, ...]:
         "process_created",
         "process_scheduled",
     )
+    if include_operation_reference:
+        return (*columns[:2], "protected_operation_reference", *columns[2:])
+    return columns
 
 
 def _lease_constraints(*, prefix: str) -> tuple[sa.ForeignKeyConstraint, ...]:
@@ -261,7 +263,7 @@ def _lease_constraints(*, prefix: str) -> tuple[sa.ForeignKeyConstraint, ...]:
         "claim_digest",
         *lineage[4:],
     )
-    outcome = _lease_outcome_columns()
+    outcome = _lease_outcome_columns(include_operation_reference=prefix == "claim")
     outcome_remote = ("authorization_lease_id", "canonical_digest", *outcome[2:])
     return (
         sa.ForeignKeyConstraint(
@@ -323,6 +325,12 @@ def upgrade() -> None:
         "uq_wf_rtready_auth_lease_consume_outcome",
         LEASE_TABLE,
         ["authorization_lease_id", "canonical_digest", *lease_outcome[2:]],
+    )
+    projected_lease_outcome = _lease_outcome_columns(include_operation_reference=False)
+    op.create_unique_constraint(
+        "uq_wf_rtready_auth_lease_consume_outcome_projection",
+        LEASE_TABLE,
+        ["authorization_lease_id", "canonical_digest", *projected_lease_outcome[2:]],
     )
 
     op.create_table(
@@ -730,5 +738,10 @@ def downgrade() -> None:
     op.execute(sa.text(f"DROP FUNCTION IF EXISTS {FINAL_VALIDATION_FUNCTION}()"))
     op.execute(sa.text(f"DROP FUNCTION IF EXISTS {APPEND_ONLY_FUNCTION}()"))
     op.drop_constraint("uq_wf_rtready_auth_lease_consume_outcome", LEASE_TABLE, type_="unique")
+    op.drop_constraint(
+        "uq_wf_rtready_auth_lease_consume_outcome_projection",
+        LEASE_TABLE,
+        type_="unique",
+    )
     op.drop_constraint("uq_wf_rtready_auth_lease_consume", LEASE_TABLE, type_="unique")
     op.drop_constraint("uq_wf_rtready_auth_lease_identity", LEASE_TABLE, type_="unique")

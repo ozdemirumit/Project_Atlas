@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, fields
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from typing import Any, NoReturn, cast
 from uuid import uuid4
@@ -266,14 +266,29 @@ class WorkflowProtectedRuntimeReadinessConsumptionService:
         )
         await self._postcommit_audit(
             context,
-            result_code="protected_runtime_readiness_assessor_invocation_started",
+            result_code="protected_runtime_readiness_assessor_invocation_intent_recorded",
             attempt=attempt,
         )
-        result: WorkflowProtectedRuntimeReadinessResult | None = None
         try:
             receipt = await self._assessor.assess_runtime_readiness(
                 build_workflow_protected_runtime_readiness_invocation(envelope)
             )
+        except Exception:
+            await self._postcommit_audit(
+                context,
+                result_code="protected_runtime_readiness_assessor_invocation_failed",
+                attempt=attempt,
+                occurred_at=datetime.now(UTC),
+            )
+            return await self._record_uncertainty(claim=claim, attempt=attempt, context=context)
+        await self._postcommit_audit(
+            context,
+            result_code="protected_runtime_readiness_assessor_invocation_returned",
+            attempt=attempt,
+            occurred_at=datetime.now(UTC),
+        )
+        result: WorkflowProtectedRuntimeReadinessResult | None = None
+        try:
             recorded_at = await self._repository.get_authoritative_time()
             if recorded_at >= attempt.invocation_deadline:
                 self._raise("protected_runtime_readiness_receipt_arrived_after_deadline")
@@ -586,6 +601,7 @@ class WorkflowProtectedRuntimeReadinessConsumptionService:
         result_code: str,
         attempt: WorkflowProtectedRuntimeReadinessAttempt,
         result: WorkflowProtectedRuntimeReadinessResult | None = None,
+        occurred_at: datetime | None = None,
     ) -> None:
         metadata = [
             ("attempt_id", attempt.attempt_id),
@@ -611,7 +627,7 @@ class WorkflowProtectedRuntimeReadinessConsumptionService:
                     schema_version="1.0",
                     producer=WORKFLOW_PROTECTED_RUNTIME_READINESS_CONSUMPTION_PRODUCER,
                     producer_version=__version__,
-                    occurred_at=context.requested_at,
+                    occurred_at=occurred_at or context.requested_at,
                     correlation_id=context.correlation_id,
                     subject_id=context.subject_id,
                     actor_type=context.actor_type,
