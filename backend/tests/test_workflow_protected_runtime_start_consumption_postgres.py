@@ -149,6 +149,9 @@ def _authorization_source_at(base: datetime, *, suffix: str | None = None) -> An
             "use_claim_id": f"runtime-use-claim.{suffix}",
             "authorization_consumption_result_id": f"use-auth-result.{suffix}",
             "runtime_envelope_id": f"runtime-envelope.{suffix}",
+            "runtime_envelope_commitment": canonical_digest(
+                {"runtime_envelope_id": f"runtime-envelope.{suffix}"}
+            ),
         }
     )
     claim_ids = (
