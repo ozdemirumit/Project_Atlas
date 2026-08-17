@@ -397,7 +397,7 @@ def _lifecycle_attestation(
     source: Any,
     *,
     requested_at: datetime,
-    validity_milliseconds: int = 850,
+    validity_milliseconds: int = 1_000,
 ) -> tuple[WorkflowProtectedRuntimeReadinessLifecycleAttestation, str]:
     nonce = canonical_digest({"nonce": uuid4().hex})
     attestation_request = service._attestation_request(
@@ -473,7 +473,7 @@ async def _authorization_request(
     *,
     idempotency_key: str,
     lifecycle_verifier: Any,
-    validity_milliseconds: int = 850,
+    validity_milliseconds: int = 1_000,
 ) -> WorkflowProtectedRuntimeReadinessAuthorizationLeaseRequest:
     receipt_verifier = _AcceptAllReceiptVerifier()
     service = WorkflowProtectedRuntimeReadinessAuthorizationService(
