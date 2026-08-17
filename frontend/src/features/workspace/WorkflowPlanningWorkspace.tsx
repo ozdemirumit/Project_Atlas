@@ -4825,9 +4825,9 @@ export default function WorkflowPlanningWorkspace({
                           </code>
                         </span>
                         <span>
-                          Source result{" "}
-                          <code title={authorization.source_result_reference}>
-                            {shortDigest(authorization.source_result_reference)}
+                          Destination profile{" "}
+                          <code title={authorization.destination_profile_reference}>
+                            {shortDigest(authorization.destination_profile_reference)}
                           </code>
                         </span>
                         <span>

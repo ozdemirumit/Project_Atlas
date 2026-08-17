@@ -1480,8 +1480,8 @@ const protectedRuntimeStartAuthorization: WorkflowProtectedRuntimeStartAuthoriza
   purpose_id: "purpose.workflow-protected-runtime-start-evaluation",
   policy_id: "policy.workflow-protected-runtime-start-authorization",
   policy_version: "1.0",
-  source_result_reference:
-    "integrity.workflow-protected-runtime-context-use.1234567890abcdef",
+  destination_profile_reference:
+    "integrity.workflow-protected-destination-profile.1234567890abcdef",
   runtime_start_profile_reference:
     "integrity.workflow-protected-runtime-start-profile.1234567890abcdef",
   authority: {
@@ -8627,7 +8627,7 @@ describe("WorkflowPlanningWorkspace", () => {
         "purpose_id",
         "policy_id",
         "policy_version",
-        "source_result_reference",
+        "destination_profile_reference",
         "runtime_start_profile_reference",
         "authority",
         "integrity_reference",
@@ -8693,7 +8693,7 @@ describe("WorkflowPlanningWorkspace", () => {
     expect(records).toHaveTextContent(/Policy.*purpose/i);
     expect(records).toHaveTextContent(/Consumer contract/i);
     expect(records).toHaveTextContent(/Issued.*valid until.*effective until/i);
-    expect(records).toHaveTextContent(/Source result/i);
+    expect(records).toHaveTextContent(/Destination profile/i);
     expect(records).toHaveTextContent(/Dedicated future start-request lease active for one request/i);
     expect(records).toHaveTextContent(/Dedicated future start-request lease inactive/i);
     expect(records).toHaveTextContent(
@@ -8701,7 +8701,7 @@ describe("WorkflowPlanningWorkspace", () => {
     );
     expect(
       within(section).getAllByTitle(
-        protectedRuntimeStartAuthorization.source_result_reference,
+        protectedRuntimeStartAuthorization.destination_profile_reference,
       )[0],
     ).toBeVisible();
     expect(

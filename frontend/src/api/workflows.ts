@@ -1664,7 +1664,7 @@ export type WorkflowProtectedRuntimeStartAuthorization = {
   purpose_id: "purpose.workflow-protected-runtime-start-evaluation";
   policy_id: "policy.workflow-protected-runtime-start-authorization";
   policy_version: "1.0";
-  source_result_reference: string;
+  destination_profile_reference: string;
   runtime_start_profile_reference: string;
   authority: WorkflowProtectedRuntimeStartAuthorizationAuthority;
   integrity_reference: string;
@@ -3248,7 +3248,7 @@ const protectedRuntimeStartAuthorizationFields = [
   "purpose_id",
   "policy_id",
   "policy_version",
-  "source_result_reference",
+  "destination_profile_reference",
   "runtime_start_profile_reference",
   "authority",
   "integrity_reference",
@@ -5753,9 +5753,9 @@ function isProtectedRuntimeStartAuthorization(
     value.purpose_id === "purpose.workflow-protected-runtime-start-evaluation" &&
     value.policy_id === "policy.workflow-protected-runtime-start-authorization" &&
     value.policy_version === "1.0" &&
-    isStableIdentifier(value.source_result_reference) &&
-    value.source_result_reference.startsWith(
-      "integrity.workflow-protected-runtime-context-use.",
+    isStableIdentifier(value.destination_profile_reference) &&
+    value.destination_profile_reference.startsWith(
+      "integrity.workflow-protected-destination-profile.",
     ) &&
     isStableIdentifier(value.runtime_start_profile_reference) &&
     value.runtime_start_profile_reference.startsWith(
