@@ -351,7 +351,7 @@ async def test_live_postgres_tables_constraints_and_append_only_triggers_when_co
                 assert "context_terminal_non_reusable" in constraints
                 assert "use_count_pre = 0" in constraints
                 assert "use_count_post = 1" in constraints
-                assert "1 second" in constraints
+                assert any(interval in constraints for interval in ("1 second", "00:00:01"))
                 assert "executor_receipt_digest" in constraints
                 assert "runtime_envelope_commitment" in constraints
                 assert "runtime_start_attempt_pending" in constraints
