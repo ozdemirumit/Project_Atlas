@@ -107,10 +107,14 @@ def test_preflight_is_durable_replay_first_and_never_attests() -> None:
     assert "session.add" not in preflight
 
 
-def test_lock_loads_complete_source_in_one_join_with_two_database_times() -> None:
+def test_lock_loads_complete_source_with_prelock_database_time_in_one_join() -> None:
     lock = _method_source("_lock_protected_runtime_readiness_authorization_rows")
 
-    assert lock.count("clock_timestamp") == 2
+    assert lock.count("clock_timestamp") == 3
+    assert '.cte("runtime_readiness_first_observation")' in lock
+    assert '.prefix_with("MATERIALIZED")' in lock
+    assert ".join(first_observation, true())" in lock
+    assert "first_observation.c.first_observed_at" in lock
     assert "_lock_protected_runtime_start_authorization_rows" not in lock
     assert "source_scope = and_(" in lock
     assert "consumer_subject_id" in lock

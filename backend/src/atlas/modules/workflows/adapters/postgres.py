@@ -8,7 +8,7 @@ from enum import Enum
 from hashlib import sha256
 from typing import Any, NoReturn, cast
 
-from sqlalchemy import and_, exists, func, literal, null, or_, select, text, update
+from sqlalchemy import and_, exists, func, literal, null, or_, select, text, true, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import (
@@ -9041,7 +9041,6 @@ class PostgreSQLWorkflowPlanRepository:
         consumer_contract_version: str | None = None,
         for_update: bool = True,
     ) -> _ProtectedRuntimeReadinessAuthorizationLockedSources:
-        first_observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
         source_scope = and_(
             WorkflowProtectedRuntimeStartConsumptionResultModel.organization_id
             == scope.organization_id,
@@ -9072,6 +9071,11 @@ class PostgreSQLWorkflowPlanRepository:
             statement = statement.execution_options(populate_existing=True)
             return statement.with_for_update() if for_update else statement
 
+        first_observation = (
+            select(func.clock_timestamp().label("first_observed_at"))
+            .cte("runtime_readiness_first_observation")
+            .prefix_with("MATERIALIZED")
+        )
         source_statement = (
             select(
                 WorkflowProtectedRuntimeContextUseClaimModel,
@@ -9085,8 +9089,10 @@ class PostgreSQLWorkflowPlanRepository:
                 WorkflowProtectedRuntimeContextInjectionDestinationHeadModel,
                 WorkflowProtectedRuntimeContextInjectionSlotHeadModel,
                 WorkflowProtectedRuntimeStartCoordinationHeadModel,
+                first_observation.c.first_observed_at,
             )
             .select_from(WorkflowProtectedRuntimeStartConsumptionResultModel)
+            .join(first_observation, true())
             .join(
                 WorkflowProtectedRuntimeStartAuthorizationLeaseModel,
                 WorkflowProtectedRuntimeStartAuthorizationLeaseModel.authorization_lease_id
@@ -9159,6 +9165,7 @@ class PostgreSQLWorkflowPlanRepository:
         )
         source_row = (await session.execute(locked(source_statement))).one_or_none()
         if source_row is None:
+            observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
             return _ProtectedRuntimeReadinessAuthorizationLockedSources(
                 None,
                 None,
@@ -9171,8 +9178,8 @@ class PostgreSQLWorkflowPlanRepository:
                 None,
                 (),
                 (),
-                first_observed_at,
-                first_observed_at,
+                observed_at,
+                observed_at,
             )
         (
             use_claim,
@@ -9186,6 +9193,7 @@ class PostgreSQLWorkflowPlanRepository:
             destination_head,
             slot_head,
             coordination_head,
+            first_observed_at,
         ) = source_row
         start_authorization = _ProtectedRuntimeStartAuthorizationLockedSources(
             use_claim,
