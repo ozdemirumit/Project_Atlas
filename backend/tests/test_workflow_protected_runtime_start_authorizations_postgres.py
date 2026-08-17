@@ -4,7 +4,7 @@ import asyncio
 import inspect
 import os
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -23,6 +23,13 @@ from sqlalchemy import (
 )
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from test_workflow_protected_runtime_context_uses_postgres import (
+    NOW as CONTEXT_USE_NOW,
+)
+from test_workflow_protected_runtime_context_uses_postgres import (
+    _claim_request,
+    _uncertain_result,
+)
 from test_workflow_protected_runtime_start_authorizations import (
     _Attestor,
     _authorize,
@@ -91,6 +98,133 @@ def _coordination_row(*, suffix: str, use_result_id: str) -> dict[str, object]:
         "version": 1,
         "updated_at": datetime.now(UTC),
     }
+
+
+async def _runtime_context_use_result_parent_model(
+    repository: PostgreSQLWorkflowPlanRepository,
+    source: Any,
+) -> WorkflowProtectedRuntimeContextUseResultModel:
+    request = await _claim_request()
+    claim = repository._protected_runtime_context_use_claim(request, claimed_at=CONTEXT_USE_NOW)
+    attempt = repository._protected_runtime_context_use_attempt(
+        request,
+        claim=claim,
+        started_at=CONTEXT_USE_NOW + timedelta(milliseconds=10),
+        use_deadline=CONTEXT_USE_NOW + timedelta(milliseconds=500),
+    )
+    claim_row = repository._protected_runtime_context_adoption_claim_model(request, claim)
+    attempt_row = repository._protected_runtime_context_use_attempt_model(request, claim, attempt)
+    result = _uncertain_result(
+        claim_digest=claim.canonical_digest,
+        attempt=attempt,
+        recorded_at=attempt.started_at + timedelta(milliseconds=20),
+    )
+    result_row = repository._protected_runtime_context_use_result_model(
+        cast(
+            Any,
+            SimpleNamespace(
+                result=result,
+                receipt=None,
+                expected_claim_digest=claim.canonical_digest,
+                expected_attempt_digest=attempt.canonical_digest,
+            ),
+        ),
+        claim_row=claim_row,
+        attempt_row=attempt_row,
+    )
+
+    source_result = source.result
+    completed_at = source_result.completed_at
+    assert completed_at is not None
+    for name in (
+        "result_id",
+        "canonical_digest",
+        "use_id",
+        "attempt_id",
+        "attempt_digest",
+        "claim_id",
+        "claim_digest",
+        "authorization_consumption_result_id",
+        "authorization_consumption_result_digest",
+        "destination_deployment_id",
+        "destination_generation",
+        "destination_fencing_token_digest",
+        "runtime_slot_commitment",
+        "runtime_slot_pre_generation",
+        "runtime_slot_post_generation",
+        "use_count_pre",
+        "use_count_post",
+        "use_profile_id",
+        "use_profile_version",
+        "use_profile_digest",
+        "executor_receipt_digest",
+        "outcome_known",
+        "context_adopted",
+        "protected_runtime_context_use_performed",
+        "context_terminal_non_reusable",
+        "transient_material_zeroized",
+    ):
+        setattr(result_row, name, getattr(source_result, name))
+    result_row.claimed_at = completed_at - timedelta(milliseconds=2)
+    result_row.started_at = completed_at - timedelta(milliseconds=1)
+    result_row.completed_at = completed_at
+    result_row.recorded_at = source_result.recorded_at
+    result_row.use_deadline = source_result.use_deadline
+    result_row.state = source_result.state.value
+    result_row.failure_class = None
+    receipt_fields = (
+        "authorization_consumption_result_id",
+        "authorization_consumption_result_digest",
+        "destination_deployment_id",
+        "destination_generation",
+        "destination_fencing_token_digest",
+        "runtime_slot_commitment",
+        "runtime_slot_pre_generation",
+        "runtime_slot_post_generation",
+        "use_count_pre",
+        "use_count_post",
+        "use_profile_id",
+        "use_profile_version",
+        "use_profile_digest",
+        "executor_contract_id",
+        "executor_contract_version",
+        "executor_id",
+        "executor_version",
+        "state",
+        "failure_class",
+        "protected_runtime_context_use_performed",
+        "context_adopted",
+        "context_terminal_non_reusable",
+        "transient_material_zeroized",
+        "context_disclosed",
+        "runtime_started",
+        "runtime_resumed",
+        "process_created",
+        "prompt_constructed",
+        "model_inference_performed",
+        "model_output_created",
+        "filesystem_activity_performed",
+        "provider_activity_performed",
+        "connector_activity_performed",
+        "network_activity_performed",
+        "readiness_probe_performed",
+        "publication_performed",
+        "delivery_performed",
+        "dispatch_performed",
+        "execution_performed",
+        "infrastructure_mutation_performed",
+    )
+    result_row.executor_receipt_payload = {
+        **{name: getattr(result_row, name) for name in receipt_fields},
+        "canonical_digest": result_row.executor_receipt_digest,
+        "signing_key_id": result_row.receipt_verification_signing_key_id,
+        "instruction_digest": result_row.instruction_digest,
+        "protected_operation_reference": result_row.protected_operation_reference,
+        "integrity_signature": "a" * 64,
+        "attested_by": result_row.executor_id,
+        "signature_algorithm": "hmac-sha256",
+    }
+    return result_row
 
 
 def test_migration_is_linear_append_only_guarded_and_non_colliding() -> None:
@@ -418,6 +552,9 @@ async def test_live_postgres_tables_constraints_and_append_only_triggers_when_co
                 )
                 request = memory_repository.requests[0]
                 repository = PostgreSQLWorkflowPlanRepository(engine=engine)
+                parent_result_model = await _runtime_context_use_result_parent_model(
+                    repository, source
+                )
                 assert source.result.runtime_slot_post_generation is not None
                 source_result = SimpleNamespace(
                     runtime_slot_pre_generation=(source.result.runtime_slot_post_generation - 1),
@@ -436,6 +573,10 @@ async def test_live_postgres_tables_constraints_and_append_only_triggers_when_co
                 head_model.version = 2
 
                 await connection.execute(text("SET LOCAL session_replication_role = replica"))
+                await connection.execute(
+                    insert(cast(Any, WorkflowProtectedRuntimeContextUseResultModel.__table__)),
+                    _model_values(parent_result_model),
+                )
                 await connection.execute(
                     insert(cast(Any, WorkflowProtectedRuntimeStartCoordinationHeadModel.__table__)),
                     _model_values(head_model),
