@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import inspect
-from datetime import UTC, datetime
 from typing import Any, cast
 
 import pytest
@@ -9,15 +8,18 @@ import pytest
 from atlas.modules.workflows.adapters import protected_runtime_context_users as adapters
 from atlas.modules.workflows.adapters.protected_runtime_context_users import (
     DenyAllWorkflowProtectedRuntimeContextUseEligibilitySignatureVerifier,
+    DenyAllWorkflowProtectedRuntimeContextUseInstructionSignatureVerifier,
     DenyAllWorkflowProtectedRuntimeContextUseReceiptSignatureVerifier,
     UnavailableWorkflowProtectedRuntimeContextTrustedUser,
     UnavailableWorkflowProtectedRuntimeContextUseEligibilityAttestor,
+    UnavailableWorkflowProtectedRuntimeContextUseInstructionSigner,
 )
 from atlas.modules.workflows.application.protected_runtime_context_use_ports import (
     WorkflowProtectedRuntimeContextUseError,
 )
 from atlas.modules.workflows.domain.protected_runtime_context_use_domain import (
-    WorkflowProtectedRuntimeContextUseInvocation,
+    WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNATURE_ALGORITHM,
+    WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNING_KEY_ID,
     code_owned_workflow_protected_runtime_context_use_policy,
 )
 
@@ -25,9 +27,17 @@ from atlas.modules.workflows.domain.protected_runtime_context_use_domain import 
 def test_production_defaults_are_unavailable_and_verifiers_deny_all() -> None:
     policy = code_owned_workflow_protected_runtime_context_use_policy()
     attestor = UnavailableWorkflowProtectedRuntimeContextUseEligibilityAttestor()
+    instruction_signer = UnavailableWorkflowProtectedRuntimeContextUseInstructionSigner()
     trusted_user = UnavailableWorkflowProtectedRuntimeContextTrustedUser()
 
     assert attestor.available is False
+    assert instruction_signer.available is False
+    assert instruction_signer.signing_key_id == (
+        WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNING_KEY_ID
+    )
+    assert instruction_signer.signature_algorithm == (
+        WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNATURE_ALGORITHM
+    )
     assert trusted_user.available is False
     assert trusted_user.executor_contract_id == policy.required_executor_contract_id
     assert trusted_user.executor_contract_version == policy.required_executor_contract_version
@@ -38,6 +48,12 @@ def test_production_defaults_are_unavailable_and_verifiers_deny_all() -> None:
     assert trusted_user.use_profile_digest == policy.use_profile_digest
     assert (
         DenyAllWorkflowProtectedRuntimeContextUseEligibilitySignatureVerifier().verify_context_use_eligibility_attestation(
+            cast(Any, object())
+        )
+        is False
+    )
+    assert (
+        DenyAllWorkflowProtectedRuntimeContextUseInstructionSignatureVerifier().verify_instruction_envelope(
             cast(Any, object())
         )
         is False
@@ -60,16 +76,21 @@ async def test_unavailable_components_fail_closed_without_side_effects() -> None
             cast(Any, object())
         )
 
-    invocation = WorkflowProtectedRuntimeContextUseInvocation(
-        protected_operation_reference="protected-operation.imp-222",
-        instruction_digest="a" * 64,
-        use_deadline=datetime(2026, 8, 17, 12, 0, tzinfo=UTC),
-    )
+    with pytest.raises(
+        WorkflowProtectedRuntimeContextUseError,
+        match="protected_runtime_context_use_instruction_signer_unavailable",
+    ):
+        UnavailableWorkflowProtectedRuntimeContextUseInstructionSigner().sign_instruction_envelope_digest(
+            "a" * 64
+        )
+
     with pytest.raises(
         WorkflowProtectedRuntimeContextUseError,
         match="protected_runtime_context_trusted_user_unavailable",
     ):
-        await UnavailableWorkflowProtectedRuntimeContextTrustedUser().use_context(invocation)
+        await UnavailableWorkflowProtectedRuntimeContextTrustedUser().use_context(
+            cast(Any, object())
+        )
 
 
 def test_module_has_no_canonical_or_deterministic_development_success_adapter() -> None:

@@ -13,6 +13,11 @@ from .protected_runtime_context_use_authorization_domain import (
     code_owned_workflow_protected_runtime_context_use_authorization_policy,
 )
 
+WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNING_KEY_ID = (
+    "key.workflow-protected-runtime-context-use-instruction.v1"
+)
+WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNATURE_ALGORITHM = "hmac-sha256"
+
 
 class WorkflowProtectedRuntimeContextUseAttemptState(StrEnum):
     USE_STARTED = "use_started"
@@ -358,9 +363,17 @@ class WorkflowProtectedRuntimeContextUseAttempt:
 class WorkflowProtectedRuntimeContextUseInstruction:
     use_id: str
     attempt_id: str
+    attempt_digest: str
     claim_id: str
+    claim_digest: str
     authorization_consumption_result_id: str
     authorization_consumption_result_digest: str
+    authorization_consumption_claim_id: str
+    authorization_consumption_claim_digest: str
+    authorization_lease_id: str
+    authorization_lease_digest: str
+    injection_result_id: str
+    injection_result_digest: str
     protected_operation_reference: str
     destination_deployment_id: str
     destination_generation: int
@@ -377,11 +390,24 @@ class WorkflowProtectedRuntimeContextUseInstruction:
     executor_contract_version: str
     executor_id: str
     executor_version: str
+    eligibility_attestation_id: str
+    eligibility_attestation_digest: str
+    request_nonce_digest: str
+    scope: WorkflowScope
+    consumer_subject_id: str
+    consumer_audience: str
+    consumer_contract_id: str
+    consumer_contract_version: str
+    purpose_id: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
     started_at: datetime
     use_deadline: datetime
     canonical_digest: str
 
     def __post_init__(self) -> None:
+        policy = code_owned_workflow_protected_runtime_context_use_policy()
         _require_identifiers(self, _INSTRUCTION_IDENTIFIERS)
         _require_digests(self, _INSTRUCTION_DIGESTS)
         if (
@@ -393,6 +419,21 @@ class WorkflowProtectedRuntimeContextUseInstruction:
             or self.started_at.tzinfo is None
             or self.use_deadline.tzinfo is None
             or not self.started_at < self.use_deadline
+            or self.consumer_subject_id != policy.consumer_subject_id
+            or self.consumer_audience != policy.consumer_audience
+            or self.consumer_contract_id != policy.consumer_contract_id
+            or self.consumer_contract_version != policy.consumer_contract_version
+            or self.purpose_id != policy.purpose_id
+            or self.policy_id != policy.policy_id
+            or self.policy_version != policy.policy_version
+            or self.policy_digest != policy.canonical_digest
+            or self.use_profile_id != policy.use_profile_id
+            or self.use_profile_version != policy.use_profile_version
+            or self.use_profile_digest != policy.use_profile_digest
+            or self.executor_contract_id != policy.required_executor_contract_id
+            or self.executor_contract_version != policy.required_executor_contract_version
+            or self.executor_id != policy.approved_executor_id
+            or self.executor_version != policy.approved_executor_version
         ):
             raise ValueError("protected runtime context use instruction is invalid")
         _require_canonical_digest(self)
@@ -402,18 +443,58 @@ class WorkflowProtectedRuntimeContextUseInstruction:
 
 
 @dataclass(frozen=True, slots=True)
+class WorkflowProtectedRuntimeContextUseSignedInstructionEnvelope:
+    """Signed, non-bearer instruction evidence for the protected call gate."""
+
+    instruction: WorkflowProtectedRuntimeContextUseInstruction
+    signing_key_id: str
+    signature_algorithm: str
+    integrity_signature: str
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        _require_identifiers(self, ("signing_key_id", "signature_algorithm"))
+        _require_digests(self, ("integrity_signature", "canonical_digest"))
+        if (
+            self.signing_key_id != WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNING_KEY_ID
+            or self.signature_algorithm
+            != WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNATURE_ALGORITHM
+        ):
+            raise ValueError("protected runtime context use instruction envelope is invalid")
+        _require_canonical_digest(self)
+
+    def signature_payload(self) -> dict[str, object]:
+        return {
+            "instruction": self.instruction.digest_payload()
+            | {"canonical_digest": self.instruction.canonical_digest},
+            "signing_key_id": self.signing_key_id,
+            "signature_algorithm": self.signature_algorithm,
+        }
+
+    def digest_payload(self) -> dict[str, object]:
+        return self.signature_payload() | {"integrity_signature": self.integrity_signature}
+
+
+@dataclass(frozen=True, slots=True)
 class WorkflowProtectedRuntimeContextUseInvocation:
     """The complete payload allowed across the authenticated protected call gate."""
 
     protected_operation_reference: str
     instruction_digest: str
     use_deadline: datetime
+    signed_instruction_envelope: WorkflowProtectedRuntimeContextUseSignedInstructionEnvelope
 
     def __post_init__(self) -> None:
         _require_identifiers(self, ("protected_operation_reference",))
         _require_digests(self, ("instruction_digest",))
-        if self.use_deadline.tzinfo is None:
-            raise ValueError("protected runtime context use invocation deadline must be aware")
+        instruction = self.signed_instruction_envelope.instruction
+        if (
+            self.use_deadline.tzinfo is None
+            or self.protected_operation_reference != instruction.protected_operation_reference
+            or self.instruction_digest != instruction.canonical_digest
+            or self.use_deadline != instruction.use_deadline
+        ):
+            raise ValueError("protected runtime context use invocation is invalid")
 
 
 @dataclass(frozen=True, slots=True)
@@ -745,6 +826,9 @@ _INSTRUCTION_IDENTIFIERS = (
     "attempt_id",
     "claim_id",
     "authorization_consumption_result_id",
+    "authorization_consumption_claim_id",
+    "authorization_lease_id",
+    "injection_result_id",
     "protected_operation_reference",
     "destination_deployment_id",
     "use_profile_id",
@@ -753,12 +837,28 @@ _INSTRUCTION_IDENTIFIERS = (
     "executor_contract_version",
     "executor_id",
     "executor_version",
+    "eligibility_attestation_id",
+    "consumer_subject_id",
+    "consumer_audience",
+    "consumer_contract_id",
+    "consumer_contract_version",
+    "purpose_id",
+    "policy_id",
+    "policy_version",
 )
 _INSTRUCTION_DIGESTS = (
+    "attempt_digest",
+    "claim_digest",
     "authorization_consumption_result_digest",
+    "authorization_consumption_claim_digest",
+    "authorization_lease_digest",
+    "injection_result_digest",
     "destination_fencing_token_digest",
     "runtime_slot_commitment",
     "use_profile_digest",
+    "eligibility_attestation_digest",
+    "request_nonce_digest",
+    "policy_digest",
     "canonical_digest",
 )
 _RECEIPT_IDENTIFIERS = (
@@ -868,6 +968,8 @@ def _canonical_value(value: object) -> object:
 
 
 __all__ = [
+    "WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNATURE_ALGORITHM",
+    "WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNING_KEY_ID",
     "WorkflowProtectedRuntimeContextUseAttempt",
     "WorkflowProtectedRuntimeContextUseAttemptState",
     "WorkflowProtectedRuntimeContextUseAuthority",
@@ -879,6 +981,7 @@ __all__ = [
     "WorkflowProtectedRuntimeContextUseReceipt",
     "WorkflowProtectedRuntimeContextUseResult",
     "WorkflowProtectedRuntimeContextUseResultState",
+    "WorkflowProtectedRuntimeContextUseSignedInstructionEnvelope",
     "code_owned_workflow_protected_runtime_context_use_policy",
     "code_owned_workflow_protected_runtime_context_use_policy_values",
 ]

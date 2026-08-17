@@ -11,12 +11,15 @@ from atlas.modules.workflows.domain.protected_runtime_context_use_authorization_
     WorkflowProtectedRuntimeContextUseAuthorizationConsumptionResult,
 )
 from atlas.modules.workflows.domain.protected_runtime_context_use_domain import (
+    WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNATURE_ALGORITHM,
+    WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNING_KEY_ID,
     WorkflowProtectedRuntimeContextUseAttempt,
     WorkflowProtectedRuntimeContextUseClaim,
     WorkflowProtectedRuntimeContextUseInstruction,
     WorkflowProtectedRuntimeContextUseInvocation,
     WorkflowProtectedRuntimeContextUseReceipt,
     WorkflowProtectedRuntimeContextUseResult,
+    WorkflowProtectedRuntimeContextUseSignedInstructionEnvelope,
     code_owned_workflow_protected_runtime_context_use_policy,
 )
 
@@ -186,6 +189,25 @@ class WorkflowProtectedRuntimeContextUseEligibilitySignatureVerifier(Protocol):
     ) -> bool: ...
 
 
+class WorkflowProtectedRuntimeContextUseInstructionSigner(Protocol):
+    @property
+    def available(self) -> bool: ...
+
+    @property
+    def signing_key_id(self) -> str: ...
+
+    @property
+    def signature_algorithm(self) -> str: ...
+
+    def sign_instruction_envelope_digest(self, payload_digest: str) -> str: ...
+
+
+class WorkflowProtectedRuntimeContextUseInstructionSignatureVerifier(Protocol):
+    def verify_instruction_envelope(
+        self, envelope: WorkflowProtectedRuntimeContextUseSignedInstructionEnvelope
+    ) -> bool: ...
+
+
 class WorkflowProtectedRuntimeContextTrustedUser(Protocol):
     @property
     def available(self) -> bool: ...
@@ -336,6 +358,7 @@ def build_workflow_protected_runtime_context_use_instruction(
     attempt: WorkflowProtectedRuntimeContextUseAttempt,
 ) -> WorkflowProtectedRuntimeContextUseInstruction:
     aliases = {
+        "attempt_digest": attempt.canonical_digest,
         "executor_contract_id": attempt.required_executor_contract_id,
         "executor_contract_version": attempt.required_executor_contract_version,
         "executor_id": attempt.approved_executor_id,
@@ -353,13 +376,48 @@ def build_workflow_protected_runtime_context_use_instruction(
     )
 
 
+def build_workflow_protected_runtime_context_use_signed_instruction_envelope(
+    instruction: WorkflowProtectedRuntimeContextUseInstruction,
+    signer: WorkflowProtectedRuntimeContextUseInstructionSigner,
+) -> WorkflowProtectedRuntimeContextUseSignedInstructionEnvelope:
+    if (
+        not signer.available
+        or signer.signing_key_id
+        != WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNING_KEY_ID
+        or signer.signature_algorithm
+        != WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNATURE_ALGORITHM
+    ):
+        raise WorkflowProtectedRuntimeContextUseError(
+            "protected_runtime_context_use_instruction_signer_unavailable"
+        )
+    signature_payload = {
+        "instruction": instruction.digest_payload()
+        | {"canonical_digest": instruction.canonical_digest},
+        "signing_key_id": signer.signing_key_id,
+        "signature_algorithm": signer.signature_algorithm,
+    }
+    integrity_signature = signer.sign_instruction_envelope_digest(
+        canonical_digest(signature_payload)
+    )
+    values = signature_payload | {"integrity_signature": integrity_signature}
+    return WorkflowProtectedRuntimeContextUseSignedInstructionEnvelope(
+        instruction=instruction,
+        signing_key_id=signer.signing_key_id,
+        signature_algorithm=signer.signature_algorithm,
+        integrity_signature=integrity_signature,
+        canonical_digest=canonical_digest(values),
+    )
+
+
 def build_workflow_protected_runtime_context_use_invocation(
     instruction: WorkflowProtectedRuntimeContextUseInstruction,
+    signed_instruction_envelope: WorkflowProtectedRuntimeContextUseSignedInstructionEnvelope,
 ) -> WorkflowProtectedRuntimeContextUseInvocation:
     return WorkflowProtectedRuntimeContextUseInvocation(
         protected_operation_reference=instruction.protected_operation_reference,
         instruction_digest=instruction.canonical_digest,
         use_deadline=instruction.use_deadline,
+        signed_instruction_envelope=signed_instruction_envelope,
     )
 
 
@@ -490,6 +548,8 @@ __all__ = [
     "WorkflowProtectedRuntimeContextUseEligibilityAttestor",
     "WorkflowProtectedRuntimeContextUseEligibilitySignatureVerifier",
     "WorkflowProtectedRuntimeContextUseError",
+    "WorkflowProtectedRuntimeContextUseInstructionSignatureVerifier",
+    "WorkflowProtectedRuntimeContextUseInstructionSigner",
     "WorkflowProtectedRuntimeContextUseReceiptSignatureVerifier",
     "WorkflowProtectedRuntimeContextUseReplayLookup",
     "WorkflowProtectedRuntimeContextUseReplayLookupRequest",
@@ -501,5 +561,6 @@ __all__ = [
     "WorkflowProtectedRuntimeContextUseSource",
     "build_workflow_protected_runtime_context_use_instruction",
     "build_workflow_protected_runtime_context_use_invocation",
+    "build_workflow_protected_runtime_context_use_signed_instruction_envelope",
     "validate_workflow_protected_runtime_context_use_claim_request",
 ]

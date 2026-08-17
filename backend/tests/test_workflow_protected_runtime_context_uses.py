@@ -45,6 +45,8 @@ from atlas.modules.workflows.domain.protected_runtime_context_use_authorization_
     WorkflowProtectedRuntimeContextUseAuthorizationLeaseState,
 )
 from atlas.modules.workflows.domain.protected_runtime_context_use_domain import (
+    WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNATURE_ALGORITHM,
+    WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNING_KEY_ID,
     WorkflowProtectedRuntimeContextUseAttempt,
     WorkflowProtectedRuntimeContextUseAttemptState,
     WorkflowProtectedRuntimeContextUseAuthority,
@@ -212,6 +214,37 @@ class _SignatureVerifier:
         return self.valid
 
 
+class _InstructionSigner:
+    @property
+    def available(self) -> bool:
+        return True
+
+    @property
+    def signing_key_id(self) -> str:
+        return WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNING_KEY_ID
+
+    @property
+    def signature_algorithm(self) -> str:
+        return WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNATURE_ALGORITHM
+
+    def sign_instruction_envelope_digest(self, payload_digest: str) -> str:
+        return canonical_digest({"payload_digest": payload_digest, "test_key": "imp-222"})
+
+
+class _InstructionSignatureVerifier:
+    def __init__(self, *, valid: bool = True) -> None:
+        self.valid = valid
+
+    def verify_instruction_envelope(self, envelope: Any) -> bool:
+        expected = canonical_digest(
+            {
+                "payload_digest": canonical_digest(envelope.signature_payload()),
+                "test_key": "imp-222",
+            }
+        )
+        return self.valid and envelope.integrity_signature == expected
+
+
 class _Attestor:
     def __init__(self, events: list[str]) -> None:
         self.events = events
@@ -331,6 +364,10 @@ class _TrustedUser:
         assert self.attempt is not None
         instruction = build_workflow_protected_runtime_context_use_instruction(self.attempt)
         assert invocation.instruction_digest == instruction.canonical_digest
+        assert invocation.signed_instruction_envelope.instruction == instruction
+        assert invocation.signed_instruction_envelope.signing_key_id == (
+            WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNING_KEY_ID
+        )
         values: dict[str, object] = {
             "instruction_digest": instruction.canonical_digest,
             "protected_operation_reference": instruction.protected_operation_reference,
@@ -578,6 +615,7 @@ def _service(
     fail_executor: bool = False,
     valid_attestation: bool = True,
     valid_receipt: bool = True,
+    valid_instruction_signature: bool = True,
 ) -> tuple[WorkflowProtectedRuntimeContextUseService, _Repository, _Attestor, _TrustedUser]:
     events: list[str] = []
     trusted_user = _TrustedUser(events, fail=fail_executor)
@@ -589,6 +627,10 @@ def _service(
         eligibility_signature_verifier=_SignatureVerifier(valid=valid_attestation),
         trusted_user=trusted_user,
         receipt_signature_verifier=_SignatureVerifier(valid=valid_receipt),
+        instruction_signer=_InstructionSigner(),
+        instruction_signature_verifier=_InstructionSignatureVerifier(
+            valid=valid_instruction_signature
+        ),
     )
     return service, repository, attestor, trusted_user
 
@@ -648,6 +690,31 @@ async def test_exact_terminal_replay_performs_no_attestor_or_executor_io() -> No
     assert repository.events == ["replay"]
     assert trusted_user.calls == 1
     assert len(attestor.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_missing_instruction_security_components_fail_before_protected_state_io() -> None:
+    events: list[str] = []
+    trusted_user = _TrustedUser(events)
+    repository = _Repository(trusted_user, events)
+    attestor = _Attestor(events)
+    service = WorkflowProtectedRuntimeContextUseService(
+        repository=repository,
+        eligibility_attestor=attestor,
+        eligibility_signature_verifier=_SignatureVerifier(),
+        trusted_user=trusted_user,
+        receipt_signature_verifier=_SignatureVerifier(),
+    )
+
+    with pytest.raises(
+        WorkflowProtectedRuntimeContextUseError,
+        match="protected_runtime_context_use_trusted_component_unavailable",
+    ):
+        await _use(service)
+
+    assert events == ["replay"]
+    assert attestor.calls == []
+    assert trusted_user.calls == 0
 
 
 @pytest.mark.asyncio
@@ -711,6 +778,18 @@ async def test_invalid_receipt_becomes_uncertain_and_is_never_reinvoked() -> Non
     await _use(service)
     assert trusted_user.calls == 1
     assert repository.events[-1] == "replay"
+
+
+@pytest.mark.asyncio
+async def test_invalid_instruction_envelope_fails_closed_before_executor_io() -> None:
+    service, repository, _, trusted_user = _service(valid_instruction_signature=False)
+
+    presentation = await _use(service)
+
+    assert presentation.result is not None
+    assert presentation.result.state.value == "context_use_outcome_uncertain"
+    assert trusted_user.calls == 0
+    assert "executor" not in repository.events
 
 
 @pytest.mark.asyncio

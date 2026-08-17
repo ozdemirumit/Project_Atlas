@@ -8,9 +8,12 @@ from atlas.modules.workflows.application.protected_runtime_context_use_ports imp
     WorkflowProtectedRuntimeContextUseError,
 )
 from atlas.modules.workflows.domain.protected_runtime_context_use_domain import (
+    WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNATURE_ALGORITHM,
+    WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNING_KEY_ID,
     WorkflowProtectedRuntimeContextUseInvocation,
     WorkflowProtectedRuntimeContextUsePolicy,
     WorkflowProtectedRuntimeContextUseReceipt,
+    WorkflowProtectedRuntimeContextUseSignedInstructionEnvelope,
     code_owned_workflow_protected_runtime_context_use_policy,
 )
 
@@ -38,6 +41,32 @@ class DenyAllWorkflowProtectedRuntimeContextUseEligibilitySignatureVerifier:
 class DenyAllWorkflowProtectedRuntimeContextUseReceiptSignatureVerifier:
     def verify_receipt(self, receipt: WorkflowProtectedRuntimeContextUseReceipt) -> bool:
         del receipt
+        return False
+
+
+class UnavailableWorkflowProtectedRuntimeContextUseInstructionSigner:
+    @property
+    def available(self) -> bool:
+        return False
+
+    @property
+    def signing_key_id(self) -> str:
+        return WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNING_KEY_ID
+
+    @property
+    def signature_algorithm(self) -> str:
+        return WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNATURE_ALGORITHM
+
+    def sign_instruction_envelope_digest(self, payload_digest: str) -> str:
+        del payload_digest
+        _raise("protected_runtime_context_use_instruction_signer_unavailable")
+
+
+class DenyAllWorkflowProtectedRuntimeContextUseInstructionSignatureVerifier:
+    def verify_instruction_envelope(
+        self, envelope: WorkflowProtectedRuntimeContextUseSignedInstructionEnvelope
+    ) -> bool:
+        del envelope
         return False
 
 
@@ -91,7 +120,9 @@ def _raise(code: str) -> NoReturn:
 
 __all__ = [
     "DenyAllWorkflowProtectedRuntimeContextUseEligibilitySignatureVerifier",
+    "DenyAllWorkflowProtectedRuntimeContextUseInstructionSignatureVerifier",
     "DenyAllWorkflowProtectedRuntimeContextUseReceiptSignatureVerifier",
     "UnavailableWorkflowProtectedRuntimeContextTrustedUser",
     "UnavailableWorkflowProtectedRuntimeContextUseEligibilityAttestor",
+    "UnavailableWorkflowProtectedRuntimeContextUseInstructionSigner",
 ]

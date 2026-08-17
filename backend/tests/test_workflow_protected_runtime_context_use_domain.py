@@ -10,9 +10,12 @@ import pytest
 from atlas.modules.workflows.application.protected_runtime_context_use_ports import (
     build_workflow_protected_runtime_context_use_instruction,
     build_workflow_protected_runtime_context_use_invocation,
+    build_workflow_protected_runtime_context_use_signed_instruction_envelope,
 )
 from atlas.modules.workflows.domain.models import WorkflowScope, canonical_digest
 from atlas.modules.workflows.domain.protected_runtime_context_use_domain import (
+    WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNATURE_ALGORITHM,
+    WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNING_KEY_ID,
     WorkflowProtectedRuntimeContextUseAttempt,
     WorkflowProtectedRuntimeContextUseAttemptState,
     WorkflowProtectedRuntimeContextUseAuthority,
@@ -26,6 +29,23 @@ from atlas.modules.workflows.domain.protected_runtime_context_use_domain import 
 
 NOW = datetime(2026, 8, 17, 12, 0, tzinfo=UTC)
 SCOPE = WorkflowScope("organization.test", "environment.test", "site.test")
+
+
+class _InstructionSigner:
+    @property
+    def available(self) -> bool:
+        return True
+
+    @property
+    def signing_key_id(self) -> str:
+        return WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNING_KEY_ID
+
+    @property
+    def signature_algorithm(self) -> str:
+        return WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNATURE_ALGORITHM
+
+    def sign_instruction_envelope_digest(self, payload_digest: str) -> str:
+        return canonical_digest({"payload_digest": payload_digest, "test_key": "imp-222"})
 
 
 def _canonical_mapping(values: dict[str, object]) -> dict[str, object]:
@@ -315,17 +335,43 @@ def test_claim_and_attempt_require_irreversibility_zero_to_one_and_deadline() ->
         _attempt(expected_use_count_post=2)
 
 
-def test_instruction_and_invocation_minimize_the_trusted_boundary_payload() -> None:
-    instruction = build_workflow_protected_runtime_context_use_instruction(_attempt())
-    invocation = build_workflow_protected_runtime_context_use_invocation(instruction)
+def test_instruction_envelope_binds_full_lineage_and_minimizes_the_call_gate() -> None:
+    attempt = _attempt()
+    instruction = build_workflow_protected_runtime_context_use_instruction(attempt)
+    envelope = build_workflow_protected_runtime_context_use_signed_instruction_envelope(
+        instruction, _InstructionSigner()
+    )
+    invocation = build_workflow_protected_runtime_context_use_invocation(instruction, envelope)
 
     assert invocation.protected_operation_reference == instruction.protected_operation_reference
     assert invocation.instruction_digest == instruction.canonical_digest
+    assert invocation.signed_instruction_envelope == envelope
+    assert instruction.attempt_digest == attempt.canonical_digest
+    assert instruction.claim_digest == attempt.claim_digest
+    assert instruction.authorization_consumption_claim_digest == (
+        attempt.authorization_consumption_claim_digest
+    )
+    assert instruction.authorization_lease_digest == attempt.authorization_lease_digest
+    assert instruction.injection_result_digest == attempt.injection_result_digest
+    assert instruction.request_nonce_digest == attempt.request_nonce_digest
+    assert instruction.scope == attempt.scope
+    assert instruction.consumer_subject_id == attempt.consumer_subject_id
+    assert instruction.policy_digest == attempt.policy_digest
+    assert envelope.signing_key_id == (
+        WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNING_KEY_ID
+    )
+    assert envelope.signature_algorithm == (
+        WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNATURE_ALGORITHM
+    )
     assert set(invocation.__slots__) == {
         "protected_operation_reference",
         "instruction_digest",
         "use_deadline",
+        "signed_instruction_envelope",
     }
+
+    with pytest.raises(ValueError, match="instruction envelope is invalid"):
+        replace(envelope, signing_key_id="key.unapproved")
 
 
 def test_verified_success_is_use_fact_only_and_rejects_forbidden_effects() -> None:

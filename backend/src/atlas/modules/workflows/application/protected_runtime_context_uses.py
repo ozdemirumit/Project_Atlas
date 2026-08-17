@@ -14,6 +14,8 @@ from atlas.modules.workflows.application.protected_runtime_context_use_ports imp
     WorkflowProtectedRuntimeContextUseEligibilityAttestor,
     WorkflowProtectedRuntimeContextUseEligibilitySignatureVerifier,
     WorkflowProtectedRuntimeContextUseError,
+    WorkflowProtectedRuntimeContextUseInstructionSignatureVerifier,
+    WorkflowProtectedRuntimeContextUseInstructionSigner,
     WorkflowProtectedRuntimeContextUseReceiptSignatureVerifier,
     WorkflowProtectedRuntimeContextUseReplayLookup,
     WorkflowProtectedRuntimeContextUseReplayLookupRequest,
@@ -24,6 +26,7 @@ from atlas.modules.workflows.application.protected_runtime_context_use_ports imp
     WorkflowProtectedRuntimeContextUseSource,
     build_workflow_protected_runtime_context_use_instruction,
     build_workflow_protected_runtime_context_use_invocation,
+    build_workflow_protected_runtime_context_use_signed_instruction_envelope,
 )
 from atlas.modules.workflows.application.target_context_capsule_handoff_authorization_leases import (  # noqa: E501
     WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_AUDIENCE,
@@ -32,6 +35,8 @@ from atlas.modules.workflows.application.target_context_capsule_handoff_authoriz
 )
 from atlas.modules.workflows.domain.models import WorkflowScope, canonical_digest
 from atlas.modules.workflows.domain.protected_runtime_context_use_domain import (
+    WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNATURE_ALGORITHM,
+    WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNING_KEY_ID,
     WorkflowProtectedRuntimeContextUseAttempt,
     WorkflowProtectedRuntimeContextUseAuthority,
     WorkflowProtectedRuntimeContextUseFailureClass,
@@ -40,6 +45,7 @@ from atlas.modules.workflows.domain.protected_runtime_context_use_domain import 
     WorkflowProtectedRuntimeContextUseReceipt,
     WorkflowProtectedRuntimeContextUseResult,
     WorkflowProtectedRuntimeContextUseResultState,
+    WorkflowProtectedRuntimeContextUseSignedInstructionEnvelope,
     code_owned_workflow_protected_runtime_context_use_policy,
 )
 
@@ -69,6 +75,10 @@ class WorkflowProtectedRuntimeContextUseService:
         ),
         trusted_user: WorkflowProtectedRuntimeContextTrustedUser,
         receipt_signature_verifier: WorkflowProtectedRuntimeContextUseReceiptSignatureVerifier,
+        instruction_signer: WorkflowProtectedRuntimeContextUseInstructionSigner | None = None,
+        instruction_signature_verifier: (
+            WorkflowProtectedRuntimeContextUseInstructionSignatureVerifier | None
+        ) = None,
         policy: WorkflowProtectedRuntimeContextUsePolicy | None = None,
     ) -> None:
         self._repository = repository
@@ -76,6 +86,8 @@ class WorkflowProtectedRuntimeContextUseService:
         self._eligibility_signature_verifier = eligibility_signature_verifier
         self._trusted_user = trusted_user
         self._receipt_signature_verifier = receipt_signature_verifier
+        self._instruction_signer = instruction_signer
+        self._instruction_signature_verifier = instruction_signature_verifier
         self._policy = policy or code_owned_workflow_protected_runtime_context_use_policy()
 
     @property
@@ -249,8 +261,20 @@ class WorkflowProtectedRuntimeContextUseService:
             self._raise("protected_runtime_context_use_claim_commit_uncertain")
 
         instruction = build_workflow_protected_runtime_context_use_instruction(claimed.attempt)
-        invocation = build_workflow_protected_runtime_context_use_invocation(instruction)
         try:
+            signed_instruction_envelope = (
+                build_workflow_protected_runtime_context_use_signed_instruction_envelope(
+                    instruction,
+                    cast(
+                        WorkflowProtectedRuntimeContextUseInstructionSigner,
+                        self._instruction_signer,
+                    ),
+                )
+            )
+            self._verify_instruction_envelope(signed_instruction_envelope, instruction)
+            invocation = build_workflow_protected_runtime_context_use_invocation(
+                instruction, signed_instruction_envelope
+            )
             receipt = await self._trusted_user.use_context(invocation)
             self._verify_receipt(receipt, instruction)
             recorded_at = await self._repository.get_authoritative_time()
@@ -543,6 +567,20 @@ class WorkflowProtectedRuntimeContextUseService:
         ):
             self._raise("protected_runtime_context_use_receipt_invalid")
 
+    def _verify_instruction_envelope(
+        self,
+        envelope: WorkflowProtectedRuntimeContextUseSignedInstructionEnvelope,
+        instruction: WorkflowProtectedRuntimeContextUseInstruction,
+    ) -> None:
+        verifier = self._instruction_signature_verifier
+        if (
+            verifier is None
+            or envelope.instruction != instruction
+            or envelope.instruction.canonical_digest != instruction.canonical_digest
+            or not verifier.verify_instruction_envelope(envelope)
+        ):
+            self._raise("protected_runtime_context_use_instruction_envelope_invalid")
+
     def _build_receipted_result(
         self,
         *,
@@ -641,6 +679,13 @@ class WorkflowProtectedRuntimeContextUseService:
         if (
             not self._eligibility_attestor.available
             or not self._trusted_user.available
+            or self._instruction_signer is None
+            or not self._instruction_signer.available
+            or self._instruction_signature_verifier is None
+            or self._instruction_signer.signing_key_id
+            != WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNING_KEY_ID
+            or self._instruction_signer.signature_algorithm
+            != WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_INSTRUCTION_SIGNATURE_ALGORITHM
             or self._trusted_user.executor_contract_id != self._policy.required_executor_contract_id
             or self._trusted_user.executor_contract_version
             != self._policy.required_executor_contract_version
