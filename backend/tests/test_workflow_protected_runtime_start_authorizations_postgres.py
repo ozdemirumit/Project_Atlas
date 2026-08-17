@@ -23,9 +23,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from test_workflow_protected_runtime_context_uses_postgres import (
-    NOW as CONTEXT_USE_NOW,
-)
+from test_workflow_protected_runtime_context_uses import NOW as CONTEXT_USE_NOW
 from test_workflow_protected_runtime_context_uses_postgres import (
     _claim_request,
     _uncertain_result,
