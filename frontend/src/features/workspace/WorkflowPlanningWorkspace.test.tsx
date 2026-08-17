@@ -9035,6 +9035,13 @@ describe("WorkflowPlanningWorkspace", () => {
     ["a nonce", { ...protectedRuntimeStart, nonce: "hidden" }],
     ["a lease", { ...protectedRuntimeStart, authorization_lease_id: "hidden" }],
     ["effective authority", { ...protectedRuntimeStart, effective_authority: true }],
+    [
+      "a noncanonical policy",
+      {
+        ...protectedRuntimeStart,
+        policy_reference: "policy.workflow-protected-runtime-start:2.0",
+      },
+    ],
     ["a contradictory outcome", { ...protectedRuntimeStart, runtime_started: false }],
     [
       "the obsolete start prefix",

@@ -11,7 +11,7 @@
 | Pull Request | Pending creation |
 | Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-174 |
 | Last Updated | 2026-08-17 |
-| Next Action | Define ADR-174, then implement the atomic consumption/start protocol and its PostgreSQL-backed verification |
+| Next Action | Complete final re-review, commit the verified implementation, open its pull request and run exact-head CI |
 
 ### ATLAS-IMP-224 Scope Rationale
 
@@ -57,6 +57,28 @@
   verification keys. Workload POST and normal username/password-session GET are minimized and
   `no-store`; the read-only UI requires no MFA or second browser prompt and exposes no start, retry,
   resume, process, schedule or execute control.
+
+### ATLAS-IMP-224 Verification Evidence
+
+- Ruff format/check passed across `1541` backend source, test and migration files. Full MyPy passed
+  across `1115` source files with no issues, and Alembic reports the single head `20260817_0147`.
+- The isolated ADR-174 upgrade from `20260817_0146` and downgrade back to `20260817_0146` both
+  generated PostgreSQL SQL successfully. The upgrade now aborts explicitly if legacy pending or
+  terminal runtime-start state lacks the atomic consumption evidence required by ADR-174.
+- The integrated ADR-174 backend and relevant IMP-222/223 regression suite passed `164` tests.
+  Five live PostgreSQL tests were skipped locally only because `ATLAS_TEST_POSTGRES_DSN` is not
+  configured; CI runs the real two-connection claim race, result transition, append-only and
+  migration checks against PostgreSQL 17.
+- Frontend ESLint, TypeScript and production Vite build passed. The focused protected runtime-start
+  workspace suite passed `12` tests covering success, pending, known failure, permanent uncertainty,
+  loading, empty, authorization failure, repository failure and strict fail-closed parsing.
+- Independent security and persistence review found and closed signature-reverification,
+  trusted-verifier availability, uncertainty/no-retry, lock-order, composite-lineage,
+  coordination-state, upgrade-preflight and real repository-concurrency test gaps.
+- Live validation at `http://127.0.0.1:5291/#/workspace/workflows` used one normal `atlas-demo` /
+  `local-demo` username/password session. The new read-only region required no MFA or second browser
+  session, exposed zero interactive controls, had no horizontal overflow at `390x844`, and produced
+  no browser console errors or warnings.
 
 ### ATLAS-IMP-223 Scope Rationale
 

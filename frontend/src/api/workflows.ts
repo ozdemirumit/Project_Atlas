@@ -1688,7 +1688,7 @@ export type WorkflowProtectedRuntimeStart = {
   completed_at: string | null;
   recorded_at: string | null;
   runtime_started: boolean | null;
-  policy_reference: string;
+  policy_reference: "policy.workflow-protected-runtime-start:1.0";
   runtime_start_profile_reference: string;
   effective_authority: false;
 };
@@ -5856,7 +5856,7 @@ function isProtectedRuntimeStart(
     (recordedAt === null ||
       (recordedAt >= (completedAt ?? startedAt) && recordedAt <= evaluatedAt)) &&
     (pending || succeeded || failedWithoutStart || uncertain) &&
-    isIdentifier(value.policy_reference) &&
+    value.policy_reference === "policy.workflow-protected-runtime-start:1.0" &&
     isStableIdentifier(value.runtime_start_profile_reference) &&
     value.runtime_start_profile_reference.startsWith(
       "integrity.workflow-protected-runtime-start-profile.",

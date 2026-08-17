@@ -89,6 +89,10 @@ from atlas.modules.workflows.domain.protected_runtime_start_authorization_domain
     WorkflowProtectedRuntimeStartAuthorizationLeaseState,
     code_owned_workflow_protected_runtime_start_authorization_policy,
 )
+from atlas.modules.workflows.domain.protected_runtime_start_consumption_domain import (
+    WorkflowProtectedRuntimeStartConsumptionAttempt,
+    WorkflowProtectedRuntimeStartConsumptionResult,
+)
 
 STABLE_ID = r"^[a-z][a-z0-9_.:-]{2,239}$"
 
@@ -3593,6 +3597,146 @@ class WorkflowProtectedRuntimeStartAuthorizationResponse(BaseModel):
 
 class WorkflowProtectedRuntimeStartAuthorizationInventoryResponse(BaseModel):
     data: WorkflowProtectedRuntimeStartAuthorizationInventoryData
+    meta: ResponseMeta
+
+
+class CreateWorkflowProtectedRuntimeStartConsumptionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    authorization_lease_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    policy_id: Literal["policy.workflow-protected-runtime-start"]
+    policy_version: Literal["1.0"]
+    irreversible_consumption_acknowledged: Literal[True]
+    uncertainty_no_retry_acknowledged: Literal[True]
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class WorkflowProtectedRuntimeStartConsumptionData(BaseModel):
+    """Minimized runtime-start outcome without protected invocation metadata."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    start_id: str = Field(min_length=3, max_length=240, pattern=STABLE_ID)
+    attempt_state: Literal["runtime_start_attempt_started"]
+    result_state: (
+        Literal[
+            "runtime_started_in_protected_boundary",
+            "runtime_start_failed_without_start",
+            "runtime_start_outcome_uncertain",
+        ]
+        | None
+    )
+    started_at: datetime
+    completed_at: datetime | None
+    recorded_at: datetime | None
+    runtime_started: bool | None
+    policy_reference: str = Field(min_length=1, max_length=240)
+    runtime_start_profile_reference: str = Field(
+        min_length=3,
+        max_length=128,
+        pattern=STABLE_ID,
+    )
+    effective_authority: Literal[False]
+
+    @model_validator(mode="after")
+    def validate_outcome(self) -> WorkflowProtectedRuntimeStartConsumptionData:
+        pending = (
+            self.result_state is None
+            and self.completed_at is None
+            and self.recorded_at is None
+            and self.runtime_started is None
+        )
+        success = (
+            self.result_state == "runtime_started_in_protected_boundary"
+            and self.completed_at is not None
+            and self.recorded_at is not None
+            and self.runtime_started is True
+        )
+        failed = (
+            self.result_state == "runtime_start_failed_without_start"
+            and self.completed_at is not None
+            and self.recorded_at is not None
+            and self.runtime_started is False
+        )
+        uncertain = (
+            self.result_state == "runtime_start_outcome_uncertain"
+            and self.completed_at is None
+            and self.recorded_at is not None
+            and self.runtime_started is None
+        )
+        if not (pending or success or failed or uncertain):
+            raise ValueError("runtime-start outcome projection is inconsistent")
+        if self.recorded_at is not None and self.recorded_at < self.started_at:
+            raise ValueError("runtime-start outcome predates its attempt")
+        if self.completed_at is not None and (
+            self.completed_at < self.started_at
+            or self.recorded_at is None
+            or self.recorded_at < self.completed_at
+        ):
+            raise ValueError("runtime-start completion projection is inconsistent")
+        return self
+
+    @classmethod
+    def from_domain(
+        cls,
+        attempt: WorkflowProtectedRuntimeStartConsumptionAttempt,
+        result: WorkflowProtectedRuntimeStartConsumptionResult | None,
+        *,
+        evaluated_at: datetime | None = None,
+    ) -> WorkflowProtectedRuntimeStartConsumptionData:
+        if result is not None and (
+            result.attempt_id != attempt.attempt_id
+            or result.attempt_digest != attempt.canonical_digest
+            or result.consumption_id != attempt.consumption_id
+            or result.scope != attempt.scope
+        ):
+            raise ValueError("runtime-start attempt and outcome do not match")
+        effective_uncertainty = (
+            result is None
+            and evaluated_at is not None
+            and evaluated_at.tzinfo is not None
+            and evaluated_at >= attempt.invocation_deadline
+        )
+        return cls(
+            start_id=attempt.consumption_id,
+            attempt_state=attempt.state.value,
+            result_state=(
+                "runtime_start_outcome_uncertain"
+                if effective_uncertainty
+                else (None if result is None else result.state.value)
+            ),
+            started_at=attempt.started_at,
+            completed_at=None if result is None else result.completed_at,
+            recorded_at=(
+                evaluated_at
+                if effective_uncertainty
+                else (None if result is None else result.recorded_at)
+            ),
+            runtime_started=None if result is None else result.runtime_started,
+            policy_reference=f"{attempt.policy_id}:{attempt.policy_version}",
+            runtime_start_profile_reference=(
+                "integrity.workflow-protected-runtime-start-profile."
+                f"{sha256(attempt.runtime_start_profile_digest.encode('utf-8')).hexdigest()[:24]}"
+            ),
+            effective_authority=False,
+        )
+
+
+class WorkflowProtectedRuntimeStartConsumptionInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    starts: list[WorkflowProtectedRuntimeStartConsumptionData] = Field(max_length=256)
+    server_time: datetime
+    durable: Literal[True]
+
+
+class WorkflowProtectedRuntimeStartConsumptionResponse(BaseModel):
+    data: WorkflowProtectedRuntimeStartConsumptionData
+    meta: ResponseMeta
+
+
+class WorkflowProtectedRuntimeStartConsumptionInventoryResponse(BaseModel):
+    data: WorkflowProtectedRuntimeStartConsumptionInventoryData
     meta: ResponseMeta
 
 
