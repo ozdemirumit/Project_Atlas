@@ -8644,6 +8644,7 @@ def create_app(
                 instruction_signer=readiness_instruction_signer,
                 instruction_signature_verifier=readiness_instruction_verifier,
                 receipt_signature_verifier=readiness_receipt_verifier,
+                audit_sink=resolved_audit_sink,
             )
         )
     else:

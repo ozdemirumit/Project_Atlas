@@ -127,8 +127,10 @@ The service performs durable replay lookup as its first repository operation.
 - Commit failure prevents assessor invocation.
 - Commit ambiguity is treated as consumed or potentially consumed and never permits invocation.
 - Cancellation before commit consumes nothing; cancellation at or after commit creates no retry.
-- Timeout, crash, response loss, malformed or late receipt, conflicting evidence and result-write
-  ambiguity produce permanent `runtime_readiness_outcome_uncertain`.
+- Timeout, crash, response loss, malformed or late receipt, conflicting evidence and unresolved
+  result-write ambiguity produce permanent `runtime_readiness_outcome_uncertain`. A lost commit
+  acknowledgement is resolved only by an exact durable read of the deterministic result identity;
+  finding the exact signed result proves the write and does not invoke the assessor again.
 
 Event delivery, HTTP retry middleware, workflow retries, scheduler retries, outbox consumers, DLQ
 replay and recovery workers are prohibited from calling the assessor.

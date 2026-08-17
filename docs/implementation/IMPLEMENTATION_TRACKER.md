@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-226 |
 | Title | Atomic protected runtime-readiness consumption and single assessment attempt |
-| Status | Validation complete; delivery in progress |
+| Status | CI remediation complete; delivery in progress |
 | Branch | `agent/protected-runtime-readiness-consumption` |
 | Pull Request | [#239](https://github.com/ozdemirumit/Project_Atlas/pull/239) |
 | Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-176 |
 | Last Updated | 2026-08-17 |
-| Next Action | Open the IMP-226 pull request, complete exact-head CI, merge, and verify main CI |
+| Next Action | Push the remediated exact head, complete CI, merge PR #239, and verify main CI |
 
 ### ATLAS-IMP-226 Scope Rationale
 
@@ -46,8 +46,10 @@
   endpoint/credential, connector/MCP, model, publication, delivery, dispatch, generic execution or
   infrastructure mutation.
 - Timely signed receipts produce terminal ready, not-ready or failed-without-assessment results.
-  Timeout, crash, response loss, invalid/late receipt or persistence ambiguity becomes permanent
-  uncertainty; HTTP, worker, scheduler, outbox, DLQ and recovery paths never retry the assessment.
+  Receipt delivery is rechecked against authoritative database time after assessor return. Timeout,
+  crash, response loss, invalid/late receipt or unresolved persistence ambiguity becomes permanent
+  uncertainty; an exact deterministic durable read may resolve a lost commit acknowledgement without
+  another assessor call. HTTP, worker, scheduler, outbox, DLQ and recovery paths never retry.
 - Results are non-bearer historical facts. Every reusable authority declaration remains false, AI
   remains advisory-only and no readiness outcome authorizes a follow-on operation.
 - Production fails closed without PostgreSQL and required trusted assessor/signature boundaries.
@@ -72,6 +74,12 @@
   returned `201`; the minimized readiness inventory returned `200`, `durable=true`, an empty safe
   state and `Cache-Control: no-store`. No MFA, second browser session or human mutation endpoint was
   required.
+- CI remediation added authoritative post-assessor deadline enforcement, exact durable recovery of
+  a lost result-commit acknowledgement, and minimized semantic audit events for replay, atomic
+  consumption/attempt commit, assessor invocation and every terminal outcome. The focused hardened
+  suite passed `49` tests with three live PostgreSQL tests skipped locally only because the local
+  non-superuser fixture account cannot set `session_replication_role`; Linux CI runs those paths with
+  the required isolated PostgreSQL test privileges.
 
 ### ATLAS-IMP-225 Scope Rationale
 

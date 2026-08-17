@@ -8,6 +8,7 @@ from typing import Any, cast
 
 import pytest
 
+from atlas.core.audit import AuditRecord
 from atlas.modules.workflows.application.protected_runtime_readiness_consumption_ports import (
     WorkflowProtectedRuntimeReadinessConsumptionClaimRequest,
     WorkflowProtectedRuntimeReadinessConsumptionClaimStatus,
@@ -56,6 +57,14 @@ from atlas.modules.workflows.domain.protected_runtime_start_consumption_domain i
 
 NOW = datetime(2026, 8, 17, 12, 0, tzinfo=UTC)
 SCOPE = WorkflowScope("organization.test", "environment.test", "site.test")
+
+
+class _AuditSink:
+    def __init__(self) -> None:
+        self.events: list[AuditRecord] = []
+
+    async def record(self, event: AuditRecord) -> None:
+        self.events.append(event)
 
 
 def _canonical_value(value: object) -> object:
@@ -315,7 +324,9 @@ class _Repository:
         self.committed = False
         self.claim_commit_fails = False
         self.known_result_write_fails = False
+        self.known_result_commit_ack_lost = False
         self.uncertainty_write_fails = False
+        self.postcommit_authoritative_time = NOW + timedelta(milliseconds=500)
         self.force_replay_none = False
         self.replay_status: WorkflowProtectedRuntimeReadinessConsumptionReplayStatus | None = None
         self.claim_status = WorkflowProtectedRuntimeReadinessConsumptionClaimStatus.CLAIMED
@@ -350,7 +361,7 @@ class _Repository:
 
     async def get_authoritative_time(self) -> datetime:
         self.events.append("time")
-        return NOW if not self.committed else NOW + timedelta(milliseconds=500)
+        return NOW if not self.committed else self.postcommit_authoritative_time
 
     async def claim_protected_runtime_readiness_consumption(
         self, request: WorkflowProtectedRuntimeReadinessConsumptionClaimRequest
@@ -388,6 +399,9 @@ class _Repository:
         )
         if self.known_result_write_fails and not uncertain:
             raise RuntimeError("known result write ambiguous")
+        if self.known_result_commit_ack_lost and not uncertain:
+            self.result = request.result
+            raise RuntimeError("known result commit acknowledgement lost")
         if self.uncertainty_write_fails and uncertain:
             raise RuntimeError("uncertainty write unavailable")
         if self.result is None:
@@ -422,6 +436,7 @@ def _service(
     instruction_verifier_available: bool = True,
     valid_receipt: bool = True,
     receipt_verifier_available: bool = True,
+    audit_sink: _AuditSink | None = None,
 ) -> tuple[WorkflowProtectedRuntimeReadinessConsumptionService, _Repository, _Assessor]:
     events: list[str] = []
     repository = _Repository(events)
@@ -445,6 +460,7 @@ def _service(
             valid=valid_receipt,
             available=receipt_verifier_available,
         ),
+        audit_sink=audit_sink or _AuditSink(),
     )
     return service, repository, assessor
 
@@ -660,6 +676,69 @@ async def test_known_result_write_ambiguity_becomes_permanent_uncertainty() -> N
     )
     assert assessor.calls == 1
     assert repository.events[-2:] == ["time", "result"]
+
+
+@pytest.mark.asyncio
+async def test_exact_durable_read_resolves_result_commit_acknowledgement_loss() -> None:
+    service, repository, assessor = _service()
+    repository.known_result_commit_ack_lost = True
+
+    presentation = await _consume(service)
+
+    assert presentation.result is not None
+    assert (
+        presentation.result.state
+        is (
+            WorkflowProtectedRuntimeReadinessConsumptionResultState
+        ).RUNTIME_READY_IN_PROTECTED_BOUNDARY
+    )
+    assert assessor.calls == 1
+    assert repository.events[-2:] == ["result", "replay"]
+
+
+@pytest.mark.asyncio
+async def test_receipt_delivered_after_authoritative_deadline_is_uncertain() -> None:
+    service, repository, assessor = _service()
+    repository.postcommit_authoritative_time = NOW + timedelta(seconds=2)
+
+    presentation = await _consume(service)
+
+    assert presentation.result is not None
+    assert (
+        presentation.result.state
+        is (
+            WorkflowProtectedRuntimeReadinessConsumptionResultState
+        ).RUNTIME_READINESS_OUTCOME_UNCERTAIN
+    )
+    assert assessor.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_semantic_audit_distinguishes_attempt_invocation_and_terminal_result() -> None:
+    audit_sink = _AuditSink()
+    service, _, assessor = _service(audit_sink=audit_sink)
+
+    presentation = await _consume(service)
+    replayed = await _consume(service)
+
+    assert presentation.result is not None
+    assert replayed == presentation
+    assert assessor.calls == 1
+    assert [event.result_code for event in audit_sink.events] == [
+        "protected_runtime_readiness_lease_consumed_attempt_committed",
+        "protected_runtime_readiness_assessor_invocation_started",
+        "protected_runtime_readiness_recorded_runtime_ready_in_protected_boundary",
+        "protected_runtime_readiness_replayed_runtime_ready_in_protected_boundary",
+    ]
+    assert all(
+        event.event_type == "atlas.workflow.protected-runtime-readiness-consumption.observation"
+        for event in audit_sink.events
+    )
+    metadata = dict(audit_sink.events[-1].target_metadata)
+    assert metadata["result_state"] == "runtime_ready_in_protected_boundary"
+    assert metadata["assessment_authority"] == "false"
+    assert metadata["execution_authority"] == "false"
+    assert metadata["infrastructure_mutation_authority"] == "false"
 
 
 @pytest.mark.asyncio

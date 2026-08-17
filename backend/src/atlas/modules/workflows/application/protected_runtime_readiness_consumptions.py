@@ -4,7 +4,10 @@ from dataclasses import dataclass, fields
 from datetime import datetime, timedelta
 from hashlib import sha256
 from typing import Any, NoReturn, cast
+from uuid import uuid4
 
+from atlas import __version__
+from atlas.core.audit import AuditRecord, AuditSink
 from atlas.modules.workflows.application.protected_runtime_readiness_consumption_ports import (
     WorkflowProtectedRuntimeReadinessAssessor,
     WorkflowProtectedRuntimeReadinessConsumptionClaimRequest,
@@ -55,6 +58,9 @@ from atlas.modules.workflows.domain.protected_runtime_readiness_consumption_doma
 _RUNTIME_READINESS_OUTCOME_UNCERTAIN_NO_RETRY = (
     "protected_runtime_readiness_outcome_uncertain_no_retry"
 )
+WORKFLOW_PROTECTED_RUNTIME_READINESS_CONSUMPTION_PRODUCER = (
+    "project-atlas-workflow-protected-runtime-readiness-consumer"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +82,7 @@ class WorkflowProtectedRuntimeReadinessConsumptionService:
             WorkflowProtectedRuntimeReadinessInstructionSignatureVerifier
         ),
         receipt_signature_verifier: (WorkflowProtectedRuntimeReadinessReceiptSignatureVerifier),
+        audit_sink: AuditSink,
         policy: WorkflowProtectedRuntimeReadinessConsumptionPolicy | None = None,
     ) -> None:
         self._repository = repository
@@ -83,6 +90,7 @@ class WorkflowProtectedRuntimeReadinessConsumptionService:
         self._instruction_signer = instruction_signer
         self._instruction_signature_verifier = instruction_signature_verifier
         self._receipt_signature_verifier = receipt_signature_verifier
+        self._audit_sink = audit_sink
         self._policy = (
             policy or code_owned_workflow_protected_runtime_readiness_consumption_policy()
         )
@@ -154,22 +162,29 @@ class WorkflowProtectedRuntimeReadinessConsumptionService:
         consumption_id = f"workflow-protected-runtime-readiness-consumption.{seed[:24]}"
 
         # ADR-176 requires durable replay to be the first repository operation.
+        replay_request = WorkflowProtectedRuntimeReadinessConsumptionReplayLookupRequest(
+            authorization_lease_id=authorization_lease_id,
+            scope=context.scope,
+            consumer_subject_id=context.subject_id,
+            consumer_audience=context.credential_audience,
+            policy_id=self._policy.policy_id,
+            policy_version=self._policy.policy_version,
+            policy_digest=self._policy.canonical_digest,
+            idempotency_digest=idempotency_digest,
+            request_fingerprint=request_fingerprint,
+            consumption_id=consumption_id,
+        )
         replay = await self._repository.lookup_protected_runtime_readiness_consumption_replay(
-            WorkflowProtectedRuntimeReadinessConsumptionReplayLookupRequest(
-                authorization_lease_id=authorization_lease_id,
-                scope=context.scope,
-                consumer_subject_id=context.subject_id,
-                consumer_audience=context.credential_audience,
-                policy_id=self._policy.policy_id,
-                policy_version=self._policy.policy_version,
-                policy_digest=self._policy.canonical_digest,
-                idempotency_digest=idempotency_digest,
-                request_fingerprint=request_fingerprint,
-                consumption_id=consumption_id,
-            )
+            replay_request
         )
         historical = self._resolve_replay(replay)
         if historical is not None:
+            await self._postcommit_audit(
+                context,
+                result_code=self._audit_result_code("replayed", historical.result),
+                attempt=historical.attempt,
+                result=historical.result,
+            )
             return historical
 
         self._require_trusted_components()
@@ -232,20 +247,42 @@ class WorkflowProtectedRuntimeReadinessConsumptionService:
             claimed.status, claimed.attempt, claimed.result
         )
         if historical_after_claim is not None:
+            await self._postcommit_audit(
+                context,
+                result_code=self._audit_result_code(
+                    "claim_replayed", historical_after_claim.result
+                ),
+                attempt=historical_after_claim.attempt,
+                result=historical_after_claim.result,
+            )
             return historical_after_claim
         if claimed.claim != claim or claimed.attempt != attempt or claimed.result is not None:
             self._raise("protected_runtime_readiness_consumption_repository_violation")
 
+        await self._postcommit_audit(
+            context,
+            result_code="protected_runtime_readiness_lease_consumed_attempt_committed",
+            attempt=attempt,
+        )
+        await self._postcommit_audit(
+            context,
+            result_code="protected_runtime_readiness_assessor_invocation_started",
+            attempt=attempt,
+        )
+        result: WorkflowProtectedRuntimeReadinessResult | None = None
         try:
             receipt = await self._assessor.assess_runtime_readiness(
                 build_workflow_protected_runtime_readiness_invocation(envelope)
             )
+            recorded_at = await self._repository.get_authoritative_time()
+            if recorded_at >= attempt.invocation_deadline:
+                self._raise("protected_runtime_readiness_receipt_arrived_after_deadline")
             self._verify_receipt(receipt, instruction)
             result = self._build_receipted_result(
                 claim=claim,
                 attempt=attempt,
                 receipt=receipt,
-                recorded_at=await self._repository.get_authoritative_time(),
+                recorded_at=recorded_at,
             )
             write = await self._repository.record_protected_runtime_readiness_consumption_result(
                 WorkflowProtectedRuntimeReadinessConsumptionResultRequest(
@@ -256,7 +293,23 @@ class WorkflowProtectedRuntimeReadinessConsumptionService:
                 )
             )
         except Exception:
-            return await self._record_uncertainty(claim=claim, attempt=attempt)
+            if result is not None:
+                resolved = await self._resolve_result_write_ambiguity(
+                    replay_request=replay_request,
+                    attempt=attempt,
+                    candidate_result=result,
+                )
+                if resolved is not None:
+                    await self._postcommit_audit(
+                        context,
+                        result_code=self._audit_result_code(
+                            "result_write_resolved", resolved.result
+                        ),
+                        attempt=resolved.attempt,
+                        result=resolved.result,
+                    )
+                    return resolved
+            return await self._record_uncertainty(claim=claim, attempt=attempt, context=context)
         if (
             write.status
             not in (
@@ -265,8 +318,17 @@ class WorkflowProtectedRuntimeReadinessConsumptionService:
             )
             or write.result is None
         ):
-            return await self._record_uncertainty(claim=claim, attempt=attempt)
-        return WorkflowProtectedRuntimeReadinessConsumptionPresentation(attempt, write.result)
+            return await self._record_uncertainty(claim=claim, attempt=attempt, context=context)
+        presentation = WorkflowProtectedRuntimeReadinessConsumptionPresentation(
+            attempt, write.result
+        )
+        await self._postcommit_audit(
+            context,
+            result_code=self._audit_result_code("recorded", write.result),
+            attempt=attempt,
+            result=write.result,
+        )
+        return presentation
 
     async def list_presentations(
         self, *, scope: WorkflowScope, limit: int = 256
@@ -425,6 +487,7 @@ class WorkflowProtectedRuntimeReadinessConsumptionService:
         *,
         claim: WorkflowProtectedRuntimeReadinessConsumptionClaim,
         attempt: WorkflowProtectedRuntimeReadinessAttempt,
+        context: WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationContext,
     ) -> WorkflowProtectedRuntimeReadinessConsumptionPresentation:
         try:
             recorded_at = await self._repository.get_authoritative_time()
@@ -481,7 +544,100 @@ class WorkflowProtectedRuntimeReadinessConsumptionService:
             ).RUNTIME_READINESS_OUTCOME_UNCERTAIN
         ):
             self._raise(_RUNTIME_READINESS_OUTCOME_UNCERTAIN_NO_RETRY)
-        return WorkflowProtectedRuntimeReadinessConsumptionPresentation(attempt, write.result)
+        presentation = WorkflowProtectedRuntimeReadinessConsumptionPresentation(
+            attempt, write.result
+        )
+        await self._postcommit_audit(
+            context,
+            result_code="protected_runtime_readiness_outcome_uncertain",
+            attempt=attempt,
+            result=write.result,
+        )
+        return presentation
+
+    async def _resolve_result_write_ambiguity(
+        self,
+        *,
+        replay_request: WorkflowProtectedRuntimeReadinessConsumptionReplayLookupRequest,
+        attempt: WorkflowProtectedRuntimeReadinessAttempt,
+        candidate_result: WorkflowProtectedRuntimeReadinessResult,
+    ) -> WorkflowProtectedRuntimeReadinessConsumptionPresentation | None:
+        try:
+            replay = await self._repository.lookup_protected_runtime_readiness_consumption_replay(
+                replay_request
+            )
+        except Exception:
+            return None
+        if (
+            replay.status is WorkflowProtectedRuntimeReadinessConsumptionReplayStatus.TERMINAL
+            and replay.attempt == attempt
+            and replay.result is not None
+            and replay.result.canonical_digest == candidate_result.canonical_digest
+        ):
+            return WorkflowProtectedRuntimeReadinessConsumptionPresentation(
+                replay.attempt, replay.result
+            )
+        return None
+
+    async def _postcommit_audit(
+        self,
+        context: WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationContext,
+        *,
+        result_code: str,
+        attempt: WorkflowProtectedRuntimeReadinessAttempt,
+        result: WorkflowProtectedRuntimeReadinessResult | None = None,
+    ) -> None:
+        metadata = [
+            ("attempt_id", attempt.attempt_id),
+            ("consumption_id", attempt.consumption_id),
+            ("attempt_digest", attempt.canonical_digest),
+            ("assessment_authority", "false"),
+            ("execution_authority", "false"),
+            ("infrastructure_mutation_authority", "false"),
+        ]
+        if result is not None:
+            metadata.extend(
+                (
+                    ("result_id", result.result_id),
+                    ("result_state", result.state.value),
+                    ("result_digest", result.canonical_digest),
+                )
+            )
+        try:
+            await self._audit_sink.record(
+                AuditRecord(
+                    event_id=f"evt_{uuid4().hex}",
+                    event_type="atlas.workflow.protected-runtime-readiness-consumption.observation",
+                    schema_version="1.0",
+                    producer=WORKFLOW_PROTECTED_RUNTIME_READINESS_CONSUMPTION_PRODUCER,
+                    producer_version=__version__,
+                    occurred_at=context.requested_at,
+                    correlation_id=context.correlation_id,
+                    subject_id=context.subject_id,
+                    actor_type=context.actor_type,
+                    authentication_method=context.authentication_method,
+                    assurance_level="workload",
+                    permission_id="workflow.protected-runtime-readiness-consumptions.create",
+                    resource_type="resource.workflow-protected-runtime-readiness-consumption",
+                    scope_reference="/".join(
+                        (*context.scope.canonical_value().values(), "runtime-readiness")
+                    ),
+                    decision_id=context.decision_id,
+                    outcome="succeeded",
+                    result_code=result_code,
+                    idempotency_key=None,
+                    target_metadata=tuple(metadata),
+                )
+            )
+        except Exception:
+            return
+
+    @staticmethod
+    def _audit_result_code(
+        prefix: str, result: WorkflowProtectedRuntimeReadinessResult | None
+    ) -> str:
+        suffix = "attempt_pending" if result is None else result.state.value
+        return f"protected_runtime_readiness_{prefix}_{suffix}"
 
     def _validate_source(
         self,

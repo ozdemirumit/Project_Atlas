@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import asdict, dataclass
 from dataclasses import replace as dataclass_replace
 from datetime import datetime, timedelta
@@ -10,7 +11,7 @@ from typing import Any, NoReturn, cast
 
 from sqlalchemy import and_, exists, func, literal, null, or_, select, text, true, update
 from sqlalchemy.engine import CursorResult
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -10384,8 +10385,9 @@ class PostgreSQLWorkflowPlanRepository:
                 await session.flush()
                 await session.commit()
                 return result_type(statuses.RECORDED, request.result)
-            except IntegrityError:
-                await session.rollback()
+            except SQLAlchemyError:
+                with suppress(SQLAlchemyError):
+                    await session.rollback()
         async with self._sessions() as session:
             existing = cast(
                 WorkflowProtectedRuntimeReadinessConsumptionResultModel | None,

@@ -875,8 +875,19 @@ async def test_live_postgres_readiness_repository_race_replay_scope_guards_and_e
         async with engine.connect() as connection:
             assert (
                 await connection.scalar(text("SELECT version_num FROM alembic_version"))
-                == "20260817_0148"
+                == "20260817_0149"
             )
+            for table_name in (
+                WorkflowProtectedRuntimeReadinessAuthorizationLeaseModel.__tablename__,
+                WorkflowProtectedRuntimeReadinessAuthorizationClaimModel.__tablename__,
+            ):
+                assert (
+                    await connection.scalar(
+                        text("SELECT to_regclass(:table_name)"),
+                        {"table_name": table_name},
+                    )
+                    == table_name
+                )
 
         remaining = (
             winner.lease.effective_until - await repository.get_authoritative_time()

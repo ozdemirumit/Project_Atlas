@@ -151,6 +151,12 @@ def test_repository_has_no_mutable_readiness_coordination_head() -> None:
     assert "head.state =" not in implementation
 
 
+def test_result_write_resolves_database_acknowledgement_errors_by_exact_read() -> None:
+    implementation = _method_source("record_protected_runtime_readiness_consumption_result")
+    assert "except SQLAlchemyError" in implementation
+    assert implementation.index("await session.commit()") < implementation.index("existing = cast(")
+
+
 def test_authorization_inventory_derives_consumption_without_mutating_the_lease() -> None:
     presentation = _method_source("list_protected_runtime_readiness_authorization_presentations")
     assert "WorkflowProtectedRuntimeReadinessConsumptionClaimModel" in presentation
@@ -187,6 +193,11 @@ class _ReceiptVerifier:
         return True
 
 
+class _AuditSink:
+    async def record(self, event: object) -> None:
+        del event
+
+
 class _UnusedAssessor:
     available = True
 
@@ -214,6 +225,7 @@ def _service(
         instruction_signer=_InstructionSigner(),
         instruction_signature_verifier=_InstructionVerifier(),
         receipt_signature_verifier=_ReceiptVerifier(),
+        audit_sink=cast(Any, _AuditSink()),
     )
 
 
@@ -420,14 +432,35 @@ async def test_live_postgres_readiness_consumption_race_result_and_guards() -> N
             authorization_lease_id=lease.authorization_lease_id,
             idempotency_key=f"imp-226-consume-{uuid4().hex}",
         )
+        first, second = await asyncio.wait_for(
+            asyncio.gather(
+                repository.claim_protected_runtime_readiness_consumption(request),
+                repository.claim_protected_runtime_readiness_consumption(request),
+            ),
+            timeout=15,
+        )
+        assert {first.status, second.status} == {
+            WorkflowProtectedRuntimeReadinessConsumptionClaimStatus.CLAIMED,
+            WorkflowProtectedRuntimeReadinessConsumptionClaimStatus.REPLAY_PENDING,
+        }
+
+        tampered_start_request, tampered_lease = await _seed_authorization(
+            engine, repository, suffix=f"imp226-tampered-{uuid4().hex[:12]}"
+        )
+        seeded.append(tampered_start_request)
+        tampered_request = await _consumption_request(
+            repository,
+            authorization_lease_id=tampered_lease.authorization_lease_id,
+            idempotency_key=f"imp-226-tampered-{uuid4().hex}",
+        )
         async with repository._sessions() as session:
             authorization_lease_row = await session.get(
                 WorkflowProtectedRuntimeReadinessAuthorizationLeaseModel,
-                lease.authorization_lease_id,
+                tampered_lease.authorization_lease_id,
             )
             assert authorization_lease_row is not None
             tampered_model = repository._protected_runtime_readiness_consumption_claim_model(
-                request, authorization_lease_row=authorization_lease_row
+                tampered_request, authorization_lease_row=authorization_lease_row
             )
             tampered_values = {
                 column.name: getattr(tampered_model, column.name)
@@ -448,17 +481,6 @@ async def test_live_postgres_readiness_consumption_race_result_and_guards() -> N
                 )
                 await transaction.commit()
             await transaction.rollback()
-        first, second = await asyncio.wait_for(
-            asyncio.gather(
-                repository.claim_protected_runtime_readiness_consumption(request),
-                repository.claim_protected_runtime_readiness_consumption(request),
-            ),
-            timeout=15,
-        )
-        assert {first.status, second.status} == {
-            WorkflowProtectedRuntimeReadinessConsumptionClaimStatus.CLAIMED,
-            WorkflowProtectedRuntimeReadinessConsumptionClaimStatus.REPLAY_PENDING,
-        }
         replay = await repository.lookup_protected_runtime_readiness_consumption_replay(
             repository._protected_runtime_readiness_consumption_replay_request(request)
         )
