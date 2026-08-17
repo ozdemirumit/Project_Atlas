@@ -8,10 +8,10 @@
 | Title | Bounded single-use protected runtime-readiness authorization lease |
 | Status | Review |
 | Branch | `agent/protected-runtime-readiness-authorization` |
-| Pull Request | Not opened |
+| Pull Request | [PR #238](https://github.com/ozdemirumit/Project_Atlas/pull/238) |
 | Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-175 |
 | Last Updated | 2026-08-17 |
-| Next Action | Push the reviewed branch, open the pull request and require exact-head CI |
+| Next Action | Require exact-head PR #238 CI, then merge by reviewed SHA and verify main CI |
 
 ### ATLAS-IMP-225 Scope Rationale
 
