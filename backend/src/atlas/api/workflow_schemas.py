@@ -3763,9 +3763,10 @@ class CreateWorkflowProtectedRuntimeProcessCreationAuthorizationInput(BaseModel)
     model_config = ConfigDict(extra="forbid")
 
     readiness_result_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
-    readiness_result_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
     policy_id: Literal["policy.workflow-protected-runtime-process-creation-authorization"]
     policy_version: Literal["1.0"]
+    single_use_nonrenewable_nontransferable_future_request_acknowledged: Literal[True]
+    no_process_creation_or_scheduling_authority_acknowledged: Literal[True]
     idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
 
 

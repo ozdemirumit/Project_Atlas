@@ -19,6 +19,8 @@ from atlas.modules.workflows.application.protected_runtime_process_creation_auth
     WorkflowProtectedRuntimeProcessCreationAuthorizationPreflightRequest,
     WorkflowProtectedRuntimeProcessCreationAuthorizationPreflightResult,
     WorkflowProtectedRuntimeProcessCreationAuthorizationPreflightStatus,
+    WorkflowProtectedRuntimeProcessCreationAuthorizationPresentation,
+    WorkflowProtectedRuntimeProcessCreationAuthorizationPresentationState,
     WorkflowProtectedRuntimeProcessCreationAuthorizationSource,
     WorkflowProtectedRuntimeProcessCreationAuthorizationSourceRequest,
     WorkflowProtectedRuntimeProcessCreationLifecycleAttestation,
@@ -315,13 +317,22 @@ class _Repository:
         self.preflight_status = (
             WorkflowProtectedRuntimeProcessCreationAuthorizationPreflightStatus.NONE
         )
+        self.authoritative_time = NOW + timedelta(milliseconds=200)
         self.replay_lease: WorkflowProtectedRuntimeProcessCreationAuthorizationLease | None = None
+        self.preflight_requests: list[
+            WorkflowProtectedRuntimeProcessCreationAuthorizationPreflightRequest
+        ] = []
+        self.source_requests: list[
+            WorkflowProtectedRuntimeProcessCreationAuthorizationSourceRequest
+        ] = []
         self.requests: list[WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseRequest] = []
+        self.leases: list[WorkflowProtectedRuntimeProcessCreationAuthorizationLease] = []
+        self.presentation_times: list[datetime] = []
 
     async def preflight_protected_runtime_process_creation_authorization(
         self, request: WorkflowProtectedRuntimeProcessCreationAuthorizationPreflightRequest
     ) -> WorkflowProtectedRuntimeProcessCreationAuthorizationPreflightResult:
-        del request
+        self.preflight_requests.append(request)
         self.events.append("preflight")
         return WorkflowProtectedRuntimeProcessCreationAuthorizationPreflightResult(
             status=self.preflight_status,
@@ -333,12 +344,13 @@ class _Repository:
         self, request: WorkflowProtectedRuntimeProcessCreationAuthorizationSourceRequest
     ) -> WorkflowProtectedRuntimeProcessCreationAuthorizationSource:
         self.events.append("source")
+        self.source_requests.append(request)
         assert request.readiness_result_id == self.source.result.result_id
         return self.source
 
     async def get_authoritative_time(self) -> datetime:
         self.events.append("authoritative_time")
-        return NOW + timedelta(milliseconds=200)
+        return self.authoritative_time
 
     async def authorize_protected_runtime_process_creation(
         self, request: WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseRequest
@@ -346,10 +358,48 @@ class _Repository:
         self.events.append("authorize")
         validate_workflow_protected_runtime_process_creation_authorization_request(request)
         self.requests.append(request)
+        self.leases.append(request.candidate)
         return WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseResult(
             status=WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseStatus.AUTHORIZED,
             lease=request.candidate,
             evaluated_at=NOW + timedelta(milliseconds=250),
+        )
+
+    async def list_protected_runtime_process_creation_authorization_presentations(
+        self,
+        *,
+        scope: WorkflowScope,
+        evaluated_at: datetime,
+        authorization_lease_ids: tuple[str, ...] | None = None,
+        limit: int = 256,
+    ) -> tuple[WorkflowProtectedRuntimeProcessCreationAuthorizationPresentation, ...]:
+        self.presentation_times.append(evaluated_at)
+        leases = (
+            lease
+            for lease in self.leases
+            if lease.scope == scope
+            and (
+                authorization_lease_ids is None
+                or lease.authorization_lease_id in authorization_lease_ids
+            )
+        )
+        return tuple(
+            WorkflowProtectedRuntimeProcessCreationAuthorizationPresentation(
+                lease=lease,
+                consumed=False,
+                evaluated_at=evaluated_at,
+                effective_state=(
+                    WorkflowProtectedRuntimeProcessCreationAuthorizationPresentationState.ACTIVE
+                    if lease.is_active(evaluated_at=evaluated_at, consumed=False)
+                    else (
+                        WorkflowProtectedRuntimeProcessCreationAuthorizationPresentationState.EXPIRED
+                    )
+                ),
+                protected_runtime_process_creation_authority_granted=lease.is_active(
+                    evaluated_at=evaluated_at, consumed=False
+                ),
+            )
+            for lease in tuple(leases)[:limit]
         )
 
 
@@ -486,9 +536,10 @@ async def _authorize(
 ) -> WorkflowProtectedRuntimeProcessCreationAuthorizationLease:
     return await service.authorize(
         readiness_result_id=source.result.result_id,
-        readiness_result_digest=source.result.canonical_digest,
         policy_id=service.policy.policy_id,
         policy_version=service.policy.policy_version,
+        single_use_nonrenewable_nontransferable_future_request_acknowledged=True,
+        no_process_creation_or_scheduling_authority_acknowledged=True,
         idempotency_key="imp-227-process-creation",
         context=_context(),
     )
@@ -503,9 +554,10 @@ def test_public_authorize_surface_is_metadata_only() -> None:
     assert parameters == {
         "self",
         "readiness_result_id",
-        "readiness_result_digest",
         "policy_id",
         "policy_version",
+        "single_use_nonrenewable_nontransferable_future_request_acknowledged",
+        "no_process_creation_or_scheduling_authority_acknowledged",
         "idempotency_key",
         "context",
     }
@@ -521,12 +573,28 @@ async def test_replay_first_then_issues_bounded_nonoperational_lease() -> None:
     lease = await _authorize(_service(repository), source)
 
     assert repository.events == [
-        "preflight",
         "source",
+        "preflight",
         "attest",
         "authoritative_time",
         "authorize",
     ]
+    assert not hasattr(repository.source_requests[0], "readiness_result_digest")
+    assert repository.preflight_requests[0].readiness_result_digest == (
+        source.result.canonical_digest
+    )
+    policy = code_owned_workflow_protected_runtime_process_creation_authorization_policy()
+    assert repository.preflight_requests[0].request_fingerprint == canonical_digest(
+        {
+            "policy_digest": policy.canonical_digest,
+            "scope": SCOPE.canonical_value(),
+            "readiness_result_digest": source.result.canonical_digest,
+            "readiness_result_id": source.result.result_id,
+            "subject_id": WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_SUBJECT,
+            "single_use_nonrenewable_nontransferable_future_request_acknowledged": True,
+            "no_process_creation_or_scheduling_authority_acknowledged": True,
+        }
+    )
     assert lease.valid_until - lease.issued_at <= timedelta(seconds=1)
     assert lease.single_use is True
     assert lease.renewable is False
@@ -542,7 +610,7 @@ async def test_replay_first_then_issues_bounded_nonoperational_lease() -> None:
     )
     replay_repository.replay_lease = lease
     assert await _authorize(_service(replay_repository), source) == lease
-    assert replay_repository.events == ["preflight"]
+    assert replay_repository.events == ["source", "preflight"]
 
 
 @pytest.mark.asyncio
@@ -556,7 +624,7 @@ async def test_only_exact_ready_result_is_eligible() -> None:
     with pytest.raises(WorkflowProtectedRuntimeProcessCreationAuthorizationError) as exc_info:
         await _authorize(_service(repository), source)
     assert exc_info.value.code == "workflow_protected_runtime_process_creation_evidence_conflict"
-    assert repository.events == ["preflight", "source"]
+    assert repository.events == ["source"]
 
 
 @pytest.mark.asyncio
@@ -567,7 +635,7 @@ async def test_attestation_fails_closed_if_process_or_schedule_exists(field_name
     with pytest.raises(WorkflowProtectedRuntimeProcessCreationAuthorizationError) as exc_info:
         await _authorize(_service(repository, attestation_overrides={field_name: True}), source)
     assert exc_info.value.code == "workflow_protected_runtime_process_creation_attestation_invalid"
-    assert repository.events == ["preflight", "source", "attest", "authoritative_time"]
+    assert repository.events == ["source", "preflight", "attest", "authoritative_time"]
     assert repository.requests == []
 
 
@@ -579,9 +647,10 @@ async def test_non_consumer_is_denied_before_protected_state_io() -> None:
     with pytest.raises(WorkflowProtectedRuntimeProcessCreationAuthorizationError) as exc_info:
         await service.authorize(
             readiness_result_id=source.result.result_id,
-            readiness_result_digest=source.result.canonical_digest,
             policy_id=service.policy.policy_id,
             policy_version=service.policy.policy_version,
+            single_use_nonrenewable_nontransferable_future_request_acknowledged=True,
+            no_process_creation_or_scheduling_authority_acknowledged=True,
             idempotency_key="imp-227-process-creation",
             context=_context(subject_id="human.user"),
         )
@@ -605,3 +674,75 @@ async def test_semantic_audit_states_that_no_operation_was_performed() -> None:
     assert metadata["connector_activity_authority"] == "false"
     assert metadata["execution_authority"] == "false"
     assert metadata["infrastructure_mutation_authority"] == "false"
+
+
+@pytest.mark.asyncio
+async def test_missing_acknowledgement_is_denied_and_minimally_audited() -> None:
+    source = _source()
+    repository = _Repository(source)
+    audit = _AuditSink()
+    service = _service(repository, audit)
+
+    with pytest.raises(WorkflowProtectedRuntimeProcessCreationAuthorizationError) as exc_info:
+        await service.authorize(
+            readiness_result_id=source.result.result_id,
+            policy_id=service.policy.policy_id,
+            policy_version=service.policy.policy_version,
+            single_use_nonrenewable_nontransferable_future_request_acknowledged=False,
+            no_process_creation_or_scheduling_authority_acknowledged=True,
+            idempotency_key="imp-227-process-creation",
+            context=_context(),
+        )
+
+    assert exc_info.value.code.endswith("acknowledgement_required")
+    assert repository.events == []
+    record = cast(Any, audit.records[-1])
+    metadata = dict(record.target_metadata)
+    assert record.outcome == "denied"
+    assert record.event_type.endswith(".rejected")
+    assert record.result_code.endswith("acknowledgement_required")
+    assert set(metadata) == {
+        "readiness_result_reference",
+        "protected_runtime_process_creation_request_authority",
+        "process_creation_performed",
+        "scheduling_performed",
+        "execution_performed",
+        "infrastructure_mutation_performed",
+    }
+    assert not any(value == source.result.result_id for value in metadata.values())
+    assert all(metadata[name] == "false" for name in set(metadata) - {"readiness_result_reference"})
+
+
+@pytest.mark.asyncio
+async def test_expiry_audit_uses_inventory_time_and_is_idempotent_per_service() -> None:
+    source = _source()
+    repository = _Repository(source)
+    audit = _AuditSink()
+    service = _service(repository, audit)
+    lease = await _authorize(service, source)
+    repository.authoritative_time = lease.effective_until
+
+    first = await service.list_presentations(scope=SCOPE)
+    second = await service.list_presentations(scope=SCOPE)
+
+    assert first.server_time == second.server_time == lease.effective_until
+    assert repository.presentation_times == [lease.effective_until, lease.effective_until]
+    assert all(
+        presentation.evaluated_at == first.server_time
+        and presentation.effective_state.value == "expired"
+        and not presentation.protected_runtime_process_creation_authority_granted
+        for presentation in first.presentations
+    )
+    expiry_records = [
+        cast(Any, record)
+        for record in audit.records
+        if cast(Any, record).event_type.endswith(".expired")
+    ]
+    assert len(expiry_records) == 1
+    assert expiry_records[0].occurred_at == lease.effective_until
+    assert (
+        dict(expiry_records[0].target_metadata)[
+            "protected_runtime_process_creation_request_authority"
+        ]
+        == "false"
+    )

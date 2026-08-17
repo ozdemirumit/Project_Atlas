@@ -7689,16 +7689,15 @@ async def list_workflow_protected_runtime_process_creation_authorizations(
         request.app.state.workflow_protected_runtime_process_creation_authorization_service,
     )
     try:
-        presentations = await service.list_presentations(scope=scope, limit=256)
-        server_time = await service.repository.get_authoritative_time()
-        if any(presentation.lease.scope != scope for presentation in presentations):
+        inventory = await service.list_presentations(scope=scope, limit=256)
+        if any(presentation.lease.scope != scope for presentation in inventory.presentations):
             raise RuntimeError("protected process-creation authorization scope mismatch")
         inventory_data = WorkflowProtectedRuntimeProcessCreationAuthorizationInventoryData(
             authorizations=[
                 WorkflowProtectedRuntimeProcessCreationAuthorizationData.from_domain(presentation)
-                for presentation in presentations
+                for presentation in inventory.presentations
             ],
-            server_time=server_time,
+            server_time=inventory.server_time,
             durable=service.durable,
         )
     except Exception as error:
@@ -7742,9 +7741,14 @@ async def create_workflow_protected_runtime_process_creation_authorization(
     try:
         lease = await service.authorize(
             readiness_result_id=payload.readiness_result_id,
-            readiness_result_digest=payload.readiness_result_digest,
             policy_id=payload.policy_id,
             policy_version=payload.policy_version,
+            single_use_nonrenewable_nontransferable_future_request_acknowledged=(
+                payload.single_use_nonrenewable_nontransferable_future_request_acknowledged
+            ),
+            no_process_creation_or_scheduling_authority_acknowledged=(
+                payload.no_process_creation_or_scheduling_authority_acknowledged
+            ),
             idempotency_key=payload.idempotency_key,
             context=WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationContext(
                 subject_id=subject.subject_id,
@@ -7759,16 +7763,14 @@ async def create_workflow_protected_runtime_process_creation_authorization(
                 requested_at=datetime.now(UTC),
             ),
         )
-        presentations = await (
-            service.repository.list_protected_runtime_process_creation_authorization_presentations(
-                scope=scope,
-                authorization_lease_ids=(lease.authorization_lease_id,),
-                limit=1,
-            )
+        inventory = await service.list_presentations(
+            scope=scope,
+            authorization_lease_ids=(lease.authorization_lease_id,),
+            limit=1,
         )
-        if len(presentations) != 1:
+        if len(inventory.presentations) != 1:
             raise RuntimeError("process-creation authorization projection unavailable")
-        presentation = presentations[0]
+        presentation = inventory.presentations[0]
         if presentation.lease.canonical_digest != lease.canonical_digest:
             raise RuntimeError("process-creation authorization projection mismatch")
         data = WorkflowProtectedRuntimeProcessCreationAuthorizationData.from_domain(presentation)

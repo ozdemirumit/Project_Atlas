@@ -11,11 +11,11 @@ from atlas.modules.workflows.application.protected_runtime_process_creation_auth
     WORKFLOW_PROTECTED_RUNTIME_PROCESS_CREATION_ATTESTOR_ID,
     WORKFLOW_PROTECTED_RUNTIME_PROCESS_CREATION_ATTESTOR_VERSION,
     WorkflowProtectedRuntimeProcessCreationAuthorizationError,
+    WorkflowProtectedRuntimeProcessCreationAuthorizationInventory,
     WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseRequest,
     WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseStatus,
     WorkflowProtectedRuntimeProcessCreationAuthorizationPreflightRequest,
     WorkflowProtectedRuntimeProcessCreationAuthorizationPreflightStatus,
-    WorkflowProtectedRuntimeProcessCreationAuthorizationPresentation,
     WorkflowProtectedRuntimeProcessCreationAuthorizationRepository,
     WorkflowProtectedRuntimeProcessCreationAuthorizationSource,
     WorkflowProtectedRuntimeProcessCreationAuthorizationSourceRequest,
@@ -74,6 +74,7 @@ class WorkflowProtectedRuntimeProcessCreationAuthorizationService:
         self._lifecycle_signature_verifier = lifecycle_signature_verifier
         self._readiness_receipt_signature_verifier = readiness_receipt_signature_verifier
         self._audit_sink = audit_sink
+        self._observed_expiry_audit_ids: set[str] = set()
         self._policy = (
             policy or code_owned_workflow_protected_runtime_process_creation_authorization_policy()
         )
@@ -94,9 +95,43 @@ class WorkflowProtectedRuntimeProcessCreationAuthorizationService:
         self,
         *,
         readiness_result_id: str,
-        readiness_result_digest: str,
         policy_id: str,
         policy_version: str,
+        single_use_nonrenewable_nontransferable_future_request_acknowledged: bool,
+        no_process_creation_or_scheduling_authority_acknowledged: bool,
+        idempotency_key: str,
+        context: WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationContext,
+    ) -> WorkflowProtectedRuntimeProcessCreationAuthorizationLease:
+        try:
+            return await self._authorize(
+                readiness_result_id=readiness_result_id,
+                policy_id=policy_id,
+                policy_version=policy_version,
+                single_use_nonrenewable_nontransferable_future_request_acknowledged=(
+                    single_use_nonrenewable_nontransferable_future_request_acknowledged
+                ),
+                no_process_creation_or_scheduling_authority_acknowledged=(
+                    no_process_creation_or_scheduling_authority_acknowledged
+                ),
+                idempotency_key=idempotency_key,
+                context=context,
+            )
+        except WorkflowProtectedRuntimeProcessCreationAuthorizationError as error:
+            await self._rejection_audit(
+                context,
+                result_code=error.code,
+                readiness_result_id=readiness_result_id,
+            )
+            raise
+
+    async def _authorize(
+        self,
+        *,
+        readiness_result_id: str,
+        policy_id: str,
+        policy_version: str,
+        single_use_nonrenewable_nontransferable_future_request_acknowledged: bool,
+        no_process_creation_or_scheduling_authority_acknowledged: bool,
         idempotency_key: str,
         context: WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationContext,
     ) -> WorkflowProtectedRuntimeProcessCreationAuthorizationLease:
@@ -104,10 +139,37 @@ class WorkflowProtectedRuntimeProcessCreationAuthorizationService:
         if not self._repository.durable:
             self._raise("workflow_protected_runtime_process_creation_durable_repository_required")
         result_id = self._identifier(readiness_result_id, "readiness_result_id")
-        result_digest = self._digest(readiness_result_digest, "readiness_result_digest")
         normalized_key = self._idempotency_key(idempotency_key)
+        if (
+            single_use_nonrenewable_nontransferable_future_request_acknowledged is not True
+            or no_process_creation_or_scheduling_authority_acknowledged is not True
+        ):
+            self._raise("workflow_protected_runtime_process_creation_acknowledgement_required")
         if policy_id != self._policy.policy_id or policy_version != self._policy.policy_version:
             self._raise("workflow_protected_runtime_process_creation_policy_conflict")
+        if not self._lifecycle_attestor.available:
+            self._raise("workflow_protected_runtime_process_creation_trusted_attestor_unavailable")
+        try:
+            source = (
+                await self._repository.get_protected_runtime_process_creation_authorization_source(
+                    WorkflowProtectedRuntimeProcessCreationAuthorizationSourceRequest(
+                        readiness_result_id=result_id,
+                        scope=context.scope,
+                        consumer_subject_id=self._policy.consumer_subject_id,
+                        consumer_audience=self._policy.consumer_audience,
+                        consumer_contract_id=self._policy.consumer_contract_id,
+                        consumer_contract_version=self._policy.consumer_contract_version,
+                    )
+                )
+            )
+        except WorkflowProtectedRuntimeProcessCreationAuthorizationError:
+            raise
+        except Exception:
+            self._raise("workflow_protected_runtime_process_creation_repository_unavailable")
+        if source is None:
+            self._raise("workflow_protected_runtime_process_creation_evidence_conflict")
+        result_digest = source.result.canonical_digest
+        self._validate_source(source, expected_digest=result_digest, scope=context.scope)
         idempotency_digest = canonical_digest(
             {
                 "idempotency_key": normalized_key,
@@ -122,6 +184,8 @@ class WorkflowProtectedRuntimeProcessCreationAuthorizationService:
                 "readiness_result_digest": result_digest,
                 "readiness_result_id": result_id,
                 "subject_id": context.subject_id,
+                "single_use_nonrenewable_nontransferable_future_request_acknowledged": True,
+                "no_process_creation_or_scheduling_authority_acknowledged": True,
             }
         )
         preflight_request = WorkflowProtectedRuntimeProcessCreationAuthorizationPreflightRequest(
@@ -168,29 +232,6 @@ class WorkflowProtectedRuntimeProcessCreationAuthorizationService:
             self._raise_preflight_status(preflight.status)
         if preflight.lease is not None or preflight.evaluated_at is None:
             self._raise("workflow_protected_runtime_process_creation_repository_contract_violation")
-        if not self._lifecycle_attestor.available:
-            self._raise("workflow_protected_runtime_process_creation_trusted_attestor_unavailable")
-        try:
-            source = (
-                await self._repository.get_protected_runtime_process_creation_authorization_source(
-                    WorkflowProtectedRuntimeProcessCreationAuthorizationSourceRequest(
-                        readiness_result_id=result_id,
-                        readiness_result_digest=result_digest,
-                        scope=context.scope,
-                        consumer_subject_id=self._policy.consumer_subject_id,
-                        consumer_audience=self._policy.consumer_audience,
-                        consumer_contract_id=self._policy.consumer_contract_id,
-                        consumer_contract_version=self._policy.consumer_contract_version,
-                    )
-                )
-            )
-        except WorkflowProtectedRuntimeProcessCreationAuthorizationError:
-            raise
-        except Exception:
-            self._raise("workflow_protected_runtime_process_creation_repository_unavailable")
-        if source is None:
-            self._raise("workflow_protected_runtime_process_creation_evidence_conflict")
-        self._validate_source(source, expected_digest=result_digest, scope=context.scope)
         nonce_digest = canonical_digest({"nonce": uuid4().hex, "fingerprint": fingerprint})
         attestation_request = self._attestation_request(
             source,
@@ -266,20 +307,34 @@ class WorkflowProtectedRuntimeProcessCreationAuthorizationService:
         return outcome.lease
 
     async def list_presentations(
-        self, *, scope: WorkflowScope, limit: int = 256
-    ) -> tuple[WorkflowProtectedRuntimeProcessCreationAuthorizationPresentation, ...]:
+        self,
+        *,
+        scope: WorkflowScope,
+        authorization_lease_ids: tuple[str, ...] | None = None,
+        limit: int = 256,
+    ) -> WorkflowProtectedRuntimeProcessCreationAuthorizationInventory:
         if not self._repository.durable:
             self._raise("workflow_protected_runtime_process_creation_durable_repository_required")
         try:
-            return await (
+            server_time = await self._repository.get_authoritative_time()
+            presentations = await (
                 self._repository
             ).list_protected_runtime_process_creation_authorization_presentations(
-                scope=scope, limit=max(1, min(limit, 256))
+                scope=scope,
+                evaluated_at=server_time,
+                authorization_lease_ids=authorization_lease_ids,
+                limit=max(1, min(limit, 256)),
+            )
+            inventory = WorkflowProtectedRuntimeProcessCreationAuthorizationInventory(
+                server_time=server_time,
+                presentations=presentations,
             )
         except WorkflowProtectedRuntimeProcessCreationAuthorizationError:
             raise
         except Exception:
             self._raise("workflow_protected_runtime_process_creation_repository_unavailable")
+        await self._audit_observed_expiries(inventory)
+        return inventory
 
     def _validate_source(
         self,
@@ -702,6 +757,125 @@ class WorkflowProtectedRuntimeProcessCreationAuthorizationService:
         except Exception:
             return
 
+    async def _rejection_audit(
+        self,
+        context: WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationContext,
+        *,
+        result_code: str,
+        readiness_result_id: str,
+    ) -> None:
+        evidence_reference = canonical_digest({"readiness_result_id": readiness_result_id.strip()})[
+            :24
+        ]
+        try:
+            await self._audit_sink.record(
+                AuditRecord(
+                    event_id=f"evt_{uuid4().hex}",
+                    event_type=(
+                        "atlas.workflow.protected-runtime-process-creation-authorization.rejected"
+                    ),
+                    schema_version="1.0",
+                    producer=WORKFLOW_PROTECTED_RUNTIME_PROCESS_CREATION_AUTHORIZATION_PRODUCER,
+                    producer_version=__version__,
+                    occurred_at=context.requested_at,
+                    correlation_id=context.correlation_id,
+                    subject_id=context.subject_id,
+                    actor_type=context.actor_type,
+                    authentication_method=context.authentication_method,
+                    assurance_level="workload",
+                    permission_id=(
+                        "workflow.protected-runtime-process-creation-authorizations.create"
+                    ),
+                    resource_type=(
+                        "resource.workflow-protected-runtime-process-creation-authorization-lease"
+                    ),
+                    scope_reference="/".join(
+                        (*context.scope.canonical_value().values(), "runtime-process-creation")
+                    ),
+                    decision_id=context.decision_id,
+                    outcome="denied",
+                    result_code=result_code,
+                    idempotency_key=None,
+                    target_metadata=(
+                        ("readiness_result_reference", f"integrity.{evidence_reference}"),
+                        ("protected_runtime_process_creation_request_authority", "false"),
+                        ("process_creation_performed", "false"),
+                        ("scheduling_performed", "false"),
+                        ("execution_performed", "false"),
+                        ("infrastructure_mutation_performed", "false"),
+                    ),
+                )
+            )
+        except Exception:
+            return
+
+    async def _audit_observed_expiries(
+        self, inventory: WorkflowProtectedRuntimeProcessCreationAuthorizationInventory
+    ) -> None:
+        for presentation in inventory.presentations:
+            if presentation.effective_state.value != "expired":
+                continue
+            lease = presentation.lease
+            audit_digest = canonical_digest(
+                {
+                    "authorization_lease_digest": lease.canonical_digest,
+                    "effective_until": lease.effective_until.isoformat(),
+                    "event": "observed-expiry",
+                }
+            )
+            event_id = f"evt_{audit_digest[:32]}"
+            if event_id in self._observed_expiry_audit_ids:
+                continue
+            self._observed_expiry_audit_ids.add(event_id)
+            try:
+                await self._audit_sink.record(
+                    AuditRecord(
+                        event_id=event_id,
+                        event_type=(
+                            "atlas.workflow."
+                            "protected-runtime-process-creation-authorization.expired"
+                        ),
+                        schema_version="1.0",
+                        producer=(
+                            WORKFLOW_PROTECTED_RUNTIME_PROCESS_CREATION_AUTHORIZATION_PRODUCER
+                        ),
+                        producer_version=__version__,
+                        occurred_at=inventory.server_time,
+                        correlation_id=f"expiry-observation.{audit_digest[:24]}",
+                        subject_id=None,
+                        actor_type="service",
+                        authentication_method="internal_projection",
+                        assurance_level="system",
+                        permission_id=(
+                            "workflow.protected-runtime-process-creation-authorizations.read"
+                        ),
+                        resource_type=(
+                            "resource.workflow-protected-runtime-process-creation-"
+                            "authorization-lease"
+                        ),
+                        scope_reference="/".join(
+                            (*lease.scope.canonical_value().values(), "runtime-process-creation")
+                        ),
+                        decision_id=None,
+                        outcome="succeeded",
+                        result_code=(
+                            "workflow_protected_runtime_process_creation_authorization_expired"
+                        ),
+                        idempotency_key=None,
+                        target_metadata=(
+                            ("authorization_reference", f"integrity.{audit_digest[:24]}"),
+                            ("effective_state", "expired"),
+                            ("protected_runtime_process_creation_request_authority", "false"),
+                            ("process_creation_performed", "false"),
+                            ("scheduling_performed", "false"),
+                            ("execution_performed", "false"),
+                            ("infrastructure_mutation_performed", "false"),
+                        ),
+                    )
+                )
+            except Exception:
+                self._observed_expiry_audit_ids.discard(event_id)
+
     @classmethod
     def _raise_preflight_status(
         cls, status: WorkflowProtectedRuntimeProcessCreationAuthorizationPreflightStatus
@@ -769,12 +943,6 @@ class WorkflowProtectedRuntimeProcessCreationAuthorizationService:
                 f"workflow_protected_runtime_process_creation_{name}_invalid"
             )
         return normalized
-
-    @classmethod
-    def _digest(cls, value: str, name: str) -> str:
-        if len(value) != 64 or any(c not in "0123456789abcdef" for c in value):
-            cls._raise(f"workflow_protected_runtime_process_creation_{name}_invalid")
-        return value
 
     @classmethod
     def _idempotency_key(cls, value: str) -> str:

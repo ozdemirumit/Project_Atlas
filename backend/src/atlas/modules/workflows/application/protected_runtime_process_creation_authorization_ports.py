@@ -243,7 +243,6 @@ class WorkflowProtectedRuntimeProcessCreationAuthorizationPreflightResult:
 @dataclass(frozen=True, slots=True)
 class WorkflowProtectedRuntimeProcessCreationAuthorizationSourceRequest:
     readiness_result_id: str
-    readiness_result_digest: str
     scope: WorkflowScope
     consumer_subject_id: str
     consumer_audience: str
@@ -303,6 +302,20 @@ class WorkflowProtectedRuntimeProcessCreationAuthorizationPresentation:
             raise ValueError("runtime process-creation authorization presentation is inconsistent")
 
 
+@dataclass(frozen=True, slots=True)
+class WorkflowProtectedRuntimeProcessCreationAuthorizationInventory:
+    server_time: datetime
+    presentations: tuple[WorkflowProtectedRuntimeProcessCreationAuthorizationPresentation, ...]
+
+    def __post_init__(self) -> None:
+        if self.server_time.tzinfo is None or any(
+            presentation.evaluated_at != self.server_time for presentation in self.presentations
+        ):
+            raise ValueError(
+                "runtime process-creation authorization inventory has inconsistent time"
+            )
+
+
 class WorkflowProtectedRuntimeProcessCreationAuthorizationRepository(Protocol):
     @property
     def durable(self) -> bool: ...
@@ -325,6 +338,7 @@ class WorkflowProtectedRuntimeProcessCreationAuthorizationRepository(Protocol):
         self,
         *,
         scope: WorkflowScope,
+        evaluated_at: datetime,
         authorization_lease_ids: tuple[str, ...] | None = None,
         limit: int = 256,
     ) -> tuple[WorkflowProtectedRuntimeProcessCreationAuthorizationPresentation, ...]: ...
@@ -667,6 +681,7 @@ def _canonical_value(value: Any) -> object:
 
 __all__ = [
     "WorkflowProtectedRuntimeProcessCreationAuthorizationError",
+    "WorkflowProtectedRuntimeProcessCreationAuthorizationInventory",
     "WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseRequest",
     "WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseResult",
     "WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseStatus",

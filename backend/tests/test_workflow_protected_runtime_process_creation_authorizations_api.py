@@ -106,11 +106,13 @@ class _Service:
         self,
         *,
         scope: WorkflowScope,
+        evaluated_at: datetime,
         authorization_lease_ids: tuple[str, ...] | None = None,
         limit: int = 256,
     ) -> tuple[SimpleNamespace, ...]:
         del limit
         self.repository_calls += 1
+        assert evaluated_at == self.evaluated_at
         presentations = (
             ()
             if self.lease is None or (not self.ignore_scope and self.lease.scope != scope)
@@ -125,12 +127,22 @@ class _Service:
         )
 
     async def list_presentations(
-        self, *, scope: WorkflowScope, limit: int = 256
-    ) -> tuple[SimpleNamespace, ...]:
-        return await self.list_protected_runtime_process_creation_authorization_presentations(
-            scope=scope,
-            limit=limit,
+        self,
+        *,
+        scope: WorkflowScope,
+        authorization_lease_ids: tuple[str, ...] | None = None,
+        limit: int = 256,
+    ) -> SimpleNamespace:
+        server_time = await self.get_authoritative_time()
+        presentations = (
+            await self.list_protected_runtime_process_creation_authorization_presentations(
+                scope=scope,
+                evaluated_at=server_time,
+                authorization_lease_ids=authorization_lease_ids,
+                limit=limit,
+            )
         )
+        return SimpleNamespace(server_time=server_time, presentations=presentations)
 
 
 class _FailingService(_Service):
@@ -149,10 +161,11 @@ class _FailingService(_Service):
         self,
         *,
         scope: WorkflowScope,
+        evaluated_at: datetime,
         authorization_lease_ids: tuple[str, ...] | None = None,
         limit: int = 256,
     ) -> tuple[SimpleNamespace, ...]:
-        del scope, authorization_lease_ids, limit
+        del scope, evaluated_at, authorization_lease_ids, limit
         self.repository_calls += 1
         raise RuntimeError("database unavailable")
 
@@ -185,13 +198,14 @@ class _TrustedProcessCreationLifecycleAttestor:
         return True
 
 
-def _payload() -> dict[str, str]:
+def _payload() -> dict[str, object]:
     policy = code_owned_workflow_protected_runtime_process_creation_authorization_policy()
     return {
         "readiness_result_id": "workflow-protected-runtime-readiness-result.imp-226",
-        "readiness_result_digest": "a" * 64,
         "policy_id": policy.policy_id,
         "policy_version": policy.policy_version,
+        "single_use_nonrenewable_nontransferable_future_request_acknowledged": True,
+        "no_process_creation_or_scheduling_authority_acknowledged": True,
         "idempotency_key": "runtime-process-creation-authorization-api-0001",
     }
 
@@ -329,9 +343,10 @@ def test_exact_workload_post_and_password_session_get_are_minimized_without_mfa(
     assert inventory.json()["data"]["durable"] is True
     assert set(service.calls[0]) == {
         "readiness_result_id",
-        "readiness_result_digest",
         "policy_id",
         "policy_version",
+        "single_use_nonrenewable_nontransferable_future_request_acknowledged",
+        "no_process_creation_or_scheduling_authority_acknowledged",
         "idempotency_key",
         "context",
     }
@@ -396,6 +411,7 @@ def test_strict_post_rejects_authority_and_all_operational_material_before_io() 
     )
     headers = _workload_headers(token, WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_AUDIENCE)
     forbidden_inputs: tuple[tuple[str, object], ...] = (
+        ("readiness_result_digest", "a" * 64),
         ("ttl_seconds", 300),
         ("authority", {"execution_authorized": True}),
         ("runtime", {"slot": "runtime.untrusted"}),
@@ -422,6 +438,42 @@ def test_strict_post_rejects_authority_and_all_operational_material_before_io() 
             )
             assert response.status_code == 422
             _assert_no_store(response)
+
+    assert service.calls == []
+    assert service.repository_calls == 0
+
+
+def test_post_requires_both_literal_true_boundary_acknowledgements_before_io() -> None:
+    workload_service, token = _workload_service_and_token(
+        identity_id=WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_SUBJECT,
+        audience=WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_AUDIENCE,
+    )
+    service = _Service()
+    app = create_app(
+        _settings(),
+        workload_identity_service=workload_service,
+        workflow_protected_runtime_process_creation_authorization_service=cast(Any, service),
+    )
+    headers = _workload_headers(token, WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_AUDIENCE)
+    acknowledgement_fields = (
+        "single_use_nonrenewable_nontransferable_future_request_acknowledged",
+        "no_process_creation_or_scheduling_authority_acknowledged",
+    )
+
+    with TestClient(app) as client:
+        for field_name in acknowledgement_fields:
+            missing = _payload()
+            missing.pop(field_name)
+            missing_response = client.post(ENDPOINT, json=missing, headers=headers)
+            false_response = client.post(
+                ENDPOINT,
+                json={**_payload(), field_name: False},
+                headers=headers,
+            )
+            assert missing_response.status_code == 422
+            assert false_response.status_code == 422
+            _assert_no_store(missing_response)
+            _assert_no_store(false_response)
 
     assert service.calls == []
     assert service.repository_calls == 0
