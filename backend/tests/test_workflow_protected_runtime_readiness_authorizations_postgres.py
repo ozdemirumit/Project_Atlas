@@ -107,7 +107,7 @@ def test_preflight_is_durable_replay_first_and_never_attests() -> None:
     assert "session.add" not in preflight
 
 
-def test_lock_loads_complete_source_in_order_with_two_database_times() -> None:
+def test_lock_loads_complete_source_in_one_join_with_two_database_times() -> None:
     lock = _method_source("_lock_protected_runtime_readiness_authorization_rows")
 
     assert lock.count("clock_timestamp") == 2
@@ -115,19 +115,24 @@ def test_lock_loads_complete_source_in_order_with_two_database_times() -> None:
     assert "source_scope = and_(" in lock
     assert "consumer_subject_id" in lock
     assert "consumer_audience" in lock
-    use_claim = lock.index("\n        use_claim = cast(")
-    use_attempt = lock.index("\n        use_attempt = cast(")
-    use_result = lock.index("\n        use_result = cast(")
-    assert use_claim < use_attempt < use_result
-    assert use_result < lock.index("start_authorization_claim =")
-    assert lock.index("start_authorization_claim =") < lock.index("start_authorization_lease =")
-    assert lock.index("start_authorization_lease =") < lock.index("start_claim =")
-    assert lock.index("start_claim =") < lock.index("start_attempt =")
-    assert lock.index("start_attempt =") < lock.index("start_result =")
-    assert lock.index("start_result =") < lock.index("destination_head =")
-    assert lock.index("destination_head =") < lock.index("slot_head =")
-    assert lock.index("slot_head =") < lock.index("coordination_head =")
-    assert lock.index("coordination_head =") < lock.index("existing_claims =")
+    assert "source_statement = (" in lock
+    assert "await session.execute(locked(source_statement))" in lock
+    assert "session.get" not in lock
+    for model in (
+        "WorkflowProtectedRuntimeContextUseClaimModel",
+        "WorkflowProtectedRuntimeContextUseAttemptModel",
+        "WorkflowProtectedRuntimeContextUseResultModel",
+        "WorkflowProtectedRuntimeStartAuthorizationClaimModel",
+        "WorkflowProtectedRuntimeStartAuthorizationLeaseModel",
+        "WorkflowProtectedRuntimeStartConsumptionClaimModel",
+        "WorkflowProtectedRuntimeStartConsumptionAttemptModel",
+        "WorkflowProtectedRuntimeStartConsumptionResultModel",
+        "WorkflowProtectedRuntimeContextInjectionDestinationHeadModel",
+        "WorkflowProtectedRuntimeContextInjectionSlotHeadModel",
+        "WorkflowProtectedRuntimeStartCoordinationHeadModel",
+    ):
+        assert model in lock
+    assert lock.index("source_statement = (") < lock.index("existing_claims =")
     assert lock.index("existing_claims =") < lock.index("existing_leases =")
     assert "with_for_update" in lock
 

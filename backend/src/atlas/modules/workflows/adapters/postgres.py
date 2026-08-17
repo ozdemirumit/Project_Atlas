@@ -9067,64 +9067,98 @@ class PostgreSQLWorkflowPlanRepository:
                 WorkflowProtectedRuntimeStartConsumptionResultModel.consumer_contract_version
                 == consumer_contract_version,
             )
-        seed_result = cast(
-            WorkflowProtectedRuntimeStartConsumptionResultModel | None,
-            await session.scalar(
-                select(WorkflowProtectedRuntimeStartConsumptionResultModel).where(
-                    WorkflowProtectedRuntimeStartConsumptionResultModel.result_id
-                    == start_result_id,
-                    source_scope,
-                )
-            ),
-        )
-        seed_lease = (
-            None
-            if seed_result is None
-            else cast(
-                WorkflowProtectedRuntimeStartAuthorizationLeaseModel | None,
-                await session.scalar(
-                    select(WorkflowProtectedRuntimeStartAuthorizationLeaseModel).where(
-                        WorkflowProtectedRuntimeStartAuthorizationLeaseModel.authorization_lease_id
-                        == seed_result.authorization_lease_id,
-                        WorkflowProtectedRuntimeStartAuthorizationLeaseModel.organization_id
-                        == scope.organization_id,
-                        WorkflowProtectedRuntimeStartAuthorizationLeaseModel.environment_id
-                        == scope.environment_id,
-                        WorkflowProtectedRuntimeStartAuthorizationLeaseModel.site_id
-                        == scope.site_id,
-                        WorkflowProtectedRuntimeStartAuthorizationLeaseModel.consumer_subject_id
-                        == consumer_subject_id,
-                        WorkflowProtectedRuntimeStartAuthorizationLeaseModel.consumer_audience
-                        == consumer_audience,
-                    )
-                ),
-            )
-        )
-        if seed_result is None or seed_lease is None:
-            return _ProtectedRuntimeReadinessAuthorizationLockedSources(
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                (),
-                (),
-                first_observed_at,
-                first_observed_at,
-            )
 
         def locked(statement: Any) -> Any:
             statement = statement.execution_options(populate_existing=True)
             return statement.with_for_update() if for_update else statement
 
-        seed_use_result = await session.get(
-            WorkflowProtectedRuntimeContextUseResultModel, seed_lease.use_result_id
+        source_statement = (
+            select(
+                WorkflowProtectedRuntimeContextUseClaimModel,
+                WorkflowProtectedRuntimeContextUseAttemptModel,
+                WorkflowProtectedRuntimeContextUseResultModel,
+                WorkflowProtectedRuntimeStartAuthorizationClaimModel,
+                WorkflowProtectedRuntimeStartAuthorizationLeaseModel,
+                WorkflowProtectedRuntimeStartConsumptionClaimModel,
+                WorkflowProtectedRuntimeStartConsumptionAttemptModel,
+                WorkflowProtectedRuntimeStartConsumptionResultModel,
+                WorkflowProtectedRuntimeContextInjectionDestinationHeadModel,
+                WorkflowProtectedRuntimeContextInjectionSlotHeadModel,
+                WorkflowProtectedRuntimeStartCoordinationHeadModel,
+            )
+            .select_from(WorkflowProtectedRuntimeStartConsumptionResultModel)
+            .join(
+                WorkflowProtectedRuntimeStartAuthorizationLeaseModel,
+                WorkflowProtectedRuntimeStartAuthorizationLeaseModel.authorization_lease_id
+                == WorkflowProtectedRuntimeStartConsumptionResultModel.authorization_lease_id,
+            )
+            .join(
+                WorkflowProtectedRuntimeContextUseResultModel,
+                WorkflowProtectedRuntimeContextUseResultModel.result_id
+                == WorkflowProtectedRuntimeStartAuthorizationLeaseModel.use_result_id,
+            )
+            .join(
+                WorkflowProtectedRuntimeContextUseClaimModel,
+                WorkflowProtectedRuntimeContextUseClaimModel.claim_id
+                == WorkflowProtectedRuntimeContextUseResultModel.claim_id,
+            )
+            .join(
+                WorkflowProtectedRuntimeContextUseAttemptModel,
+                WorkflowProtectedRuntimeContextUseAttemptModel.attempt_id
+                == WorkflowProtectedRuntimeContextUseResultModel.attempt_id,
+            )
+            .join(
+                WorkflowProtectedRuntimeStartAuthorizationClaimModel,
+                WorkflowProtectedRuntimeStartAuthorizationClaimModel.claim_id
+                == WorkflowProtectedRuntimeStartAuthorizationLeaseModel.claim_id,
+            )
+            .join(
+                WorkflowProtectedRuntimeStartConsumptionClaimModel,
+                WorkflowProtectedRuntimeStartConsumptionClaimModel.claim_id
+                == WorkflowProtectedRuntimeStartConsumptionResultModel.claim_id,
+            )
+            .join(
+                WorkflowProtectedRuntimeStartConsumptionAttemptModel,
+                WorkflowProtectedRuntimeStartConsumptionAttemptModel.attempt_id
+                == WorkflowProtectedRuntimeStartConsumptionResultModel.attempt_id,
+            )
+            .join(
+                WorkflowProtectedRuntimeContextInjectionDestinationHeadModel,
+                WorkflowProtectedRuntimeContextInjectionDestinationHeadModel.destination_deployment_id
+                == WorkflowProtectedRuntimeStartConsumptionResultModel.destination_deployment_id,
+            )
+            .join(
+                WorkflowProtectedRuntimeContextInjectionSlotHeadModel,
+                and_(
+                    WorkflowProtectedRuntimeContextInjectionSlotHeadModel.destination_deployment_id
+                    == (
+                        WorkflowProtectedRuntimeStartConsumptionResultModel.destination_deployment_id
+                    ),
+                    WorkflowProtectedRuntimeContextInjectionSlotHeadModel.runtime_slot_commitment
+                    == WorkflowProtectedRuntimeStartAuthorizationLeaseModel.runtime_slot_commitment,
+                ),
+            )
+            .join(
+                WorkflowProtectedRuntimeStartCoordinationHeadModel,
+                WorkflowProtectedRuntimeStartCoordinationHeadModel.use_result_id
+                == WorkflowProtectedRuntimeStartAuthorizationLeaseModel.use_result_id,
+            )
+            .where(
+                WorkflowProtectedRuntimeStartConsumptionResultModel.result_id == start_result_id,
+                source_scope,
+                WorkflowProtectedRuntimeStartAuthorizationLeaseModel.organization_id
+                == scope.organization_id,
+                WorkflowProtectedRuntimeStartAuthorizationLeaseModel.environment_id
+                == scope.environment_id,
+                WorkflowProtectedRuntimeStartAuthorizationLeaseModel.site_id == scope.site_id,
+                WorkflowProtectedRuntimeStartAuthorizationLeaseModel.consumer_subject_id
+                == consumer_subject_id,
+                WorkflowProtectedRuntimeStartAuthorizationLeaseModel.consumer_audience
+                == consumer_audience,
+            )
         )
-        if seed_use_result is None:
+        source_row = (await session.execute(locked(source_statement))).one_or_none()
+        if source_row is None:
             return _ProtectedRuntimeReadinessAuthorizationLockedSources(
                 None,
                 None,
@@ -9140,130 +9174,19 @@ class PostgreSQLWorkflowPlanRepository:
                 first_observed_at,
                 first_observed_at,
             )
-
-        use_claim = cast(
-            WorkflowProtectedRuntimeContextUseClaimModel | None,
-            await session.scalar(
-                locked(
-                    select(WorkflowProtectedRuntimeContextUseClaimModel).where(
-                        WorkflowProtectedRuntimeContextUseClaimModel.claim_id
-                        == seed_use_result.claim_id
-                    )
-                )
-            ),
-        )
-        use_attempt = cast(
-            WorkflowProtectedRuntimeContextUseAttemptModel | None,
-            await session.scalar(
-                locked(
-                    select(WorkflowProtectedRuntimeContextUseAttemptModel).where(
-                        WorkflowProtectedRuntimeContextUseAttemptModel.attempt_id
-                        == seed_use_result.attempt_id
-                    )
-                )
-            ),
-        )
-        use_result = cast(
-            WorkflowProtectedRuntimeContextUseResultModel | None,
-            await session.scalar(
-                locked(
-                    select(WorkflowProtectedRuntimeContextUseResultModel).where(
-                        WorkflowProtectedRuntimeContextUseResultModel.result_id
-                        == seed_lease.use_result_id
-                    )
-                )
-            ),
-        )
-        start_authorization_claim = cast(
-            WorkflowProtectedRuntimeStartAuthorizationClaimModel | None,
-            await session.scalar(
-                locked(
-                    select(WorkflowProtectedRuntimeStartAuthorizationClaimModel).where(
-                        WorkflowProtectedRuntimeStartAuthorizationClaimModel.claim_id
-                        == seed_lease.claim_id
-                    )
-                )
-            ),
-        )
-        start_authorization_lease = cast(
-            WorkflowProtectedRuntimeStartAuthorizationLeaseModel | None,
-            await session.scalar(
-                locked(
-                    select(WorkflowProtectedRuntimeStartAuthorizationLeaseModel).where(
-                        WorkflowProtectedRuntimeStartAuthorizationLeaseModel.authorization_lease_id
-                        == seed_lease.authorization_lease_id
-                    )
-                )
-            ),
-        )
-        start_claim = cast(
-            WorkflowProtectedRuntimeStartConsumptionClaimModel | None,
-            await session.scalar(
-                locked(
-                    select(WorkflowProtectedRuntimeStartConsumptionClaimModel).where(
-                        WorkflowProtectedRuntimeStartConsumptionClaimModel.claim_id
-                        == seed_result.claim_id
-                    )
-                )
-            ),
-        )
-        start_attempt = cast(
-            WorkflowProtectedRuntimeStartConsumptionAttemptModel | None,
-            await session.scalar(
-                locked(
-                    select(WorkflowProtectedRuntimeStartConsumptionAttemptModel).where(
-                        WorkflowProtectedRuntimeStartConsumptionAttemptModel.attempt_id
-                        == seed_result.attempt_id
-                    )
-                )
-            ),
-        )
-        start_result = cast(
-            WorkflowProtectedRuntimeStartConsumptionResultModel | None,
-            await session.scalar(
-                locked(
-                    select(WorkflowProtectedRuntimeStartConsumptionResultModel).where(
-                        WorkflowProtectedRuntimeStartConsumptionResultModel.result_id
-                        == start_result_id
-                    )
-                )
-            ),
-        )
-        destination_head = cast(
-            WorkflowProtectedRuntimeContextInjectionDestinationHeadModel | None,
-            await session.scalar(
-                locked(
-                    select(WorkflowProtectedRuntimeContextInjectionDestinationHeadModel).where(
-                        WorkflowProtectedRuntimeContextInjectionDestinationHeadModel.destination_deployment_id
-                        == seed_result.destination_deployment_id
-                    )
-                )
-            ),
-        )
-        slot_head = cast(
-            WorkflowProtectedRuntimeContextInjectionSlotHeadModel | None,
-            await session.scalar(
-                locked(
-                    select(WorkflowProtectedRuntimeContextInjectionSlotHeadModel).where(
-                        WorkflowProtectedRuntimeContextInjectionSlotHeadModel.destination_deployment_id
-                        == seed_result.destination_deployment_id,
-                        WorkflowProtectedRuntimeContextInjectionSlotHeadModel.runtime_slot_commitment
-                        == seed_lease.runtime_slot_commitment,
-                    )
-                )
-            ),
-        )
-        coordination_head = cast(
-            WorkflowProtectedRuntimeStartCoordinationHeadModel | None,
-            await session.scalar(
-                locked(
-                    select(WorkflowProtectedRuntimeStartCoordinationHeadModel).where(
-                        WorkflowProtectedRuntimeStartCoordinationHeadModel.use_result_id
-                        == seed_lease.use_result_id
-                    )
-                )
-            ),
-        )
+        (
+            use_claim,
+            use_attempt,
+            use_result,
+            start_authorization_claim,
+            start_authorization_lease,
+            start_claim,
+            start_attempt,
+            start_result,
+            destination_head,
+            slot_head,
+            coordination_head,
+        ) = source_row
         start_authorization = _ProtectedRuntimeStartAuthorizationLockedSources(
             use_claim,
             use_attempt,
