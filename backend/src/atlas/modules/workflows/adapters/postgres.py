@@ -9067,6 +9067,38 @@ class PostgreSQLWorkflowPlanRepository:
                 == consumer_contract_version,
             )
 
+        claim_model = WorkflowProtectedRuntimeReadinessAuthorizationClaimModel
+        claim_scope = and_(
+            claim_model.organization_id == scope.organization_id,
+            claim_model.environment_id == scope.environment_id,
+            claim_model.site_id == scope.site_id,
+            claim_model.consumer_subject_id == consumer_subject_id,
+            claim_model.consumer_audience == consumer_audience,
+        )
+        claim_filters: list[Any] = [
+            and_(claim_model.start_result_id == start_result_id, claim_scope)
+        ]
+        if idempotency_key is not None:
+            claim_filters.append(
+                and_(
+                    claim_scope,
+                    claim_model.idempotency_scope_id
+                    == self._protected_runtime_readiness_idempotency_scope(
+                        scope, consumer_subject_id, consumer_audience
+                    ),
+                    claim_model.idempotency_key == idempotency_key,
+                )
+            )
+        lease_model = WorkflowProtectedRuntimeReadinessAuthorizationLeaseModel
+        lease_scope = and_(
+            lease_model.organization_id == scope.organization_id,
+            lease_model.environment_id == scope.environment_id,
+            lease_model.site_id == scope.site_id,
+            lease_model.consumer_subject_id == consumer_subject_id,
+            lease_model.consumer_audience == consumer_audience,
+        )
+        lease_filter = and_(lease_model.start_result_id == start_result_id, lease_scope)
+
         def locked(statement: Any) -> Any:
             statement = statement.execution_options(populate_existing=True)
             return statement.with_for_update() if for_update else statement
@@ -9090,6 +9122,9 @@ class PostgreSQLWorkflowPlanRepository:
                 WorkflowProtectedRuntimeContextInjectionSlotHeadModel,
                 WorkflowProtectedRuntimeStartCoordinationHeadModel,
                 first_observation.c.first_observed_at,
+                exists(select(literal(1)).where(or_(*claim_filters))),
+                exists(select(literal(1)).where(lease_filter)),
+                func.clock_timestamp(),
             )
             .select_from(WorkflowProtectedRuntimeStartConsumptionResultModel)
             .join(first_observation, true())
@@ -9194,6 +9229,9 @@ class PostgreSQLWorkflowPlanRepository:
             slot_head,
             coordination_head,
             first_observed_at,
+            prior_claim_exists,
+            prior_lease_exists,
+            observed_at,
         ) = source_row
         start_authorization = _ProtectedRuntimeStartAuthorizationLockedSources(
             use_claim,
@@ -9207,46 +9245,6 @@ class PostgreSQLWorkflowPlanRepository:
             first_observed_at,
             first_observed_at,
         )
-        claim_model = WorkflowProtectedRuntimeReadinessAuthorizationClaimModel
-        claim_scope = and_(
-            claim_model.organization_id == scope.organization_id,
-            claim_model.environment_id == scope.environment_id,
-            claim_model.site_id == scope.site_id,
-            claim_model.consumer_subject_id == consumer_subject_id,
-            claim_model.consumer_audience == consumer_audience,
-        )
-        claim_filters: list[Any] = [
-            and_(claim_model.start_result_id == start_result_id, claim_scope)
-        ]
-        if idempotency_key is not None:
-            claim_filters.append(
-                and_(
-                    claim_scope,
-                    claim_model.idempotency_scope_id
-                    == self._protected_runtime_readiness_idempotency_scope(
-                        scope, consumer_subject_id, consumer_audience
-                    ),
-                    claim_model.idempotency_key == idempotency_key,
-                )
-            )
-        lease_model = WorkflowProtectedRuntimeReadinessAuthorizationLeaseModel
-        lease_scope = and_(
-            lease_model.organization_id == scope.organization_id,
-            lease_model.environment_id == scope.environment_id,
-            lease_model.site_id == scope.site_id,
-            lease_model.consumer_subject_id == consumer_subject_id,
-            lease_model.consumer_audience == consumer_audience,
-        )
-        lease_filter = and_(lease_model.start_result_id == start_result_id, lease_scope)
-        prior_claim_exists, prior_lease_exists, observed_at = (
-            await session.execute(
-                select(
-                    exists(select(literal(1)).where(or_(*claim_filters))),
-                    exists(select(literal(1)).where(lease_filter)),
-                    func.clock_timestamp(),
-                )
-            )
-        ).one()
         if not prior_claim_exists and not prior_lease_exists:
             return _ProtectedRuntimeReadinessAuthorizationLockedSources(
                 start_authorization,

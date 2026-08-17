@@ -121,7 +121,9 @@ def test_lock_loads_complete_source_with_prelock_database_time_in_one_join() -> 
     assert "consumer_audience" in lock
     assert "source_statement = (" in lock
     assert "await session.execute(locked(source_statement))" in lock
-    assert "prior_claim_exists, prior_lease_exists, observed_at" in lock
+    assert "prior_claim_exists," in lock
+    assert "prior_lease_exists," in lock
+    assert "observed_at," in lock
     assert "exists(select(literal(1)).where(or_(*claim_filters)))" in lock
     assert "exists(select(literal(1)).where(lease_filter))" in lock
     assert "if not prior_claim_exists and not prior_lease_exists:" in lock
