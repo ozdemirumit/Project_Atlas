@@ -74,6 +74,9 @@ def _model_values(model: object) -> dict[str, object]:
 def _coordination_row(*, suffix: str, use_result_id: str) -> dict[str, object]:
     return {
         "runtime_envelope_id": f"runtime-envelope.{suffix}",
+        "organization_id": "organization.test",
+        "environment_id": "environment.test",
+        "site_id": "site.test",
         "runtime_envelope_commitment": suffix.ljust(64, "a")[:64],
         "runtime_envelope_generation": 2,
         "use_result_id": use_result_id,

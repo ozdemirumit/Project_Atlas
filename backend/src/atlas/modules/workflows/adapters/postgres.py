@@ -7580,6 +7580,9 @@ class PostgreSQLWorkflowPlanRepository:
         )
         return WorkflowProtectedRuntimeStartCoordinationHeadModel(
             runtime_envelope_id=envelope.runtime_envelope_id,
+            organization_id=source.use_claim.scope.organization_id,
+            environment_id=source.use_claim.scope.environment_id,
+            site_id=source.use_claim.scope.site_id,
             runtime_envelope_commitment=envelope.runtime_envelope_commitment,
             runtime_envelope_generation=envelope.runtime_envelope_generation,
             use_result_id=result.result_id,
@@ -7617,6 +7620,9 @@ class PostgreSQLWorkflowPlanRepository:
             getattr(head, name) == getattr(expected, name)
             for name in (
                 "runtime_envelope_id",
+                "organization_id",
+                "environment_id",
+                "site_id",
                 "runtime_envelope_commitment",
                 "runtime_envelope_generation",
                 "use_result_id",

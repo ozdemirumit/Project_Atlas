@@ -434,6 +434,9 @@ async def _seed_actual_repository_path(
     attempt_model = repository._protected_runtime_start_consumption_attempt_model(request)
     head_model = WorkflowProtectedRuntimeStartCoordinationHeadModel(
         runtime_envelope_id=lease.runtime_envelope_id,
+        organization_id=request.candidate_attempt.scope.organization_id,
+        environment_id=request.candidate_attempt.scope.environment_id,
+        site_id=request.candidate_attempt.scope.site_id,
         runtime_envelope_commitment=lease.runtime_envelope_commitment,
         runtime_envelope_generation=lease.runtime_envelope_generation,
         use_result_id=lease.use_result_id,
