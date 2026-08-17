@@ -162,9 +162,9 @@ def _authorization_source_at(base: datetime, *, suffix: str | None = None) -> An
         }
     )
     issued_at = (
-        base + timedelta(seconds=5) if suffix is not None else base - timedelta(milliseconds=100)
+        base + timedelta(seconds=15) if suffix is not None else base - timedelta(milliseconds=100)
     )
-    valid_until = issued_at + timedelta(milliseconds=800)
+    valid_until = issued_at + timedelta(seconds=1)
     attestation_valid_until = valid_until + timedelta(milliseconds=200)
     lease_payload = lease.digest_payload()
     lease_payload.update(
@@ -238,6 +238,7 @@ def _claim_request(
             "request_fingerprint": request_fingerprint,
         }
     )
+    candidate_started_at = source.authorization_lease.issued_at if suffix is not None else base
     claim = service._build_claim(
         source=source,
         claim_id=f"workflow-protected-runtime-start-consumption-claim.{seed[:24]}",
@@ -246,9 +247,14 @@ def _claim_request(
         scope=SCOPE,
         idempotency_digest=idempotency_digest,
         request_fingerprint=request_fingerprint,
-        claimed_at=base,
+        claimed_at=candidate_started_at,
     )
-    attempt = service._build_attempt(source=source, claim=claim, started_at=base, seed=seed)
+    attempt = service._build_attempt(
+        source=source,
+        claim=claim,
+        started_at=candidate_started_at,
+        seed=seed,
+    )
     instruction = build_workflow_protected_runtime_start_instruction(attempt)
     envelope = build_workflow_protected_runtime_start_signed_instruction_envelope(
         instruction, _InstructionSigner()
@@ -605,6 +611,9 @@ def test_repository_locks_lineage_commits_before_return_and_never_calls_starter(
     result_lock_source = inspect.getsource(
         PostgreSQLWorkflowPlanRepository._lock_protected_runtime_start_consumption_result_rows
     )
+    validity_source = inspect.getsource(
+        PostgreSQLWorkflowPlanRepository._protected_runtime_start_consumption_request_is_valid
+    )
 
     assert "_lock_protected_runtime_start_authorization_rows" in lock_source
     assert "with_for_update" in lock_source
@@ -614,6 +623,7 @@ def test_repository_locks_lineage_commits_before_return_and_never_calls_starter(
     assert claim_source.index("head.state") < claim_source.index("await session.commit")
     assert "start_attempt_pending" in claim_source
     assert "start_attempt_terminal" in result_source
+    assert "lease.issued_at <= locked.authorization.first_observed_at" in validity_source
     assert result_lock_source.index(
         "_lock_protected_runtime_start_authorization_rows"
     ) < result_lock_source.index("WorkflowProtectedRuntimeStartConsumptionClaimModel")
@@ -691,6 +701,30 @@ def test_repository_models_round_trip_signed_attempt_evidence() -> None:
     )
 
 
+@pytest.mark.asyncio
+async def test_result_model_inherits_required_consumer_identity() -> None:
+    request = _claim_request()
+    repository = cast(Any, PostgreSQLWorkflowPlanRepository)
+    attempt_row = repository._protected_runtime_start_consumption_attempt_model(request)
+    result_request = await _terminal_result_request(
+        request,
+        recorded_at=request.candidate_attempt.started_at,
+    )
+
+    result_row = repository._protected_runtime_start_consumption_result_model(
+        result_request,
+        attempt_row=attempt_row,
+    )
+
+    assert result_row.consumer_subject_id == request.candidate_attempt.consumer_subject_id
+    assert result_row.consumer_audience == request.candidate_attempt.consumer_audience
+    assert result_row.consumer_contract_id == request.candidate_attempt.consumer_contract_id
+    assert (
+        result_row.consumer_contract_version == request.candidate_attempt.consumer_contract_version
+    )
+    assert result_row.purpose_id == request.candidate_attempt.purpose_id
+
+
 def test_suffixed_live_source_keeps_code_owned_destination() -> None:
     request = _claim_request(base=NOW, suffix="live-a")
 
@@ -698,6 +732,8 @@ def test_suffixed_live_source_keeps_code_owned_destination() -> None:
     assert request.source.authorization_claim.destination_deployment_id == DESTINATION_DEPLOYMENT_ID
     assert request.source.authorization_lease.use_profile_digest == USE_PROFILE_DIGEST
     assert request.source.authorization_claim.use_profile_digest == USE_PROFILE_DIGEST
+    assert request.candidate_claim.claimed_at == request.source.authorization_lease.issued_at
+    assert request.candidate_attempt.started_at == request.source.authorization_lease.issued_at
 
 
 def test_persisted_starter_receipt_requires_available_exact_signature_verifier() -> None:
@@ -874,6 +910,16 @@ async def test_live_postgres_real_repository_claim_race_when_configured() -> Non
             assert await second_connection.scalar(text("SHOW session_replication_role")) == "origin"
             await first_connection.rollback()
             await second_connection.rollback()
+            observed_at = cast(
+                datetime,
+                await first_connection.scalar(select(func.clock_timestamp())),
+            )
+            await first_connection.rollback()
+            wait_seconds = (
+                request.source.authorization_lease.issued_at - observed_at
+            ).total_seconds()
+            if wait_seconds > 0:
+                await asyncio.sleep(wait_seconds + 0.02)
 
             def first_session() -> AsyncSession:
                 return AsyncSession(bind=first_connection, expire_on_commit=False)

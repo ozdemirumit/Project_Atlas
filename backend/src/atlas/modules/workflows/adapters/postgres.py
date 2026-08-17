@@ -8181,6 +8181,7 @@ class PostgreSQLWorkflowPlanRepository:
             and slot.destination_fencing_token_digest == lease.destination_fencing_token_digest
             and slot.runtime_slot_commitment == lease.runtime_slot_commitment
             and slot.slot_generation == lease.runtime_slot_post_generation
+            and lease.issued_at <= locked.authorization.first_observed_at
             and locked.observed_at < lease.valid_until
             and locked.observed_at < lease.effective_until
             and locked.observed_at + margin <= lease.valid_until
@@ -8453,6 +8454,11 @@ class PostgreSQLWorkflowPlanRepository:
             instruction_digest=attempt_row.instruction_digest,
             started_at=attempt_row.started_at,
             invocation_deadline=attempt_row.invocation_deadline,
+            consumer_subject_id=attempt_row.consumer_subject_id,
+            consumer_audience=attempt_row.consumer_audience,
+            consumer_contract_id=attempt_row.consumer_contract_id,
+            consumer_contract_version=attempt_row.consumer_contract_version,
+            purpose_id=attempt_row.purpose_id,
             starter_receipt_payload=(
                 None
                 if request.receipt is None
