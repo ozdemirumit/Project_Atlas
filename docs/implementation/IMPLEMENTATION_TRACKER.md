@@ -8,10 +8,10 @@
 | Title | Bounded single-use protected runtime-start authorization lease |
 | Status | Delivery Pending |
 | Branch | `agent/protected-runtime-start-authorization` |
-| Pull Request | Pending creation |
+| Pull Request | [#236](https://github.com/ozdemirumit/Project_Atlas/pull/236) |
 | Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-173 |
 | Last Updated | 2026-08-17 |
-| Next Action | Push the exact reviewed head, pass PostgreSQL-backed PR CI, merge, and verify independent `main` CI |
+| Next Action | Pass exact-head PR CI, merge, and verify independent `main` CI |
 
 ### ATLAS-IMP-223 Scope Rationale
 
