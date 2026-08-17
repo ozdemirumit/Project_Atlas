@@ -9455,6 +9455,8 @@ class PostgreSQLWorkflowPlanRepository:
         *,
         receipt_verifier: WorkflowProtectedRuntimeStartReceiptSignatureVerifier | None,
     ) -> WorkflowProtectedRuntimeReadinessAuthorizationSource | None:
+        if locked.verified_source is not None:
+            return locked.verified_source
         if (
             locked.start_authorization is None
             or locked.start_authorization_claim is None
