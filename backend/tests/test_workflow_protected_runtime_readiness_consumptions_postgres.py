@@ -711,7 +711,7 @@ async def test_live_postgres_readiness_consumption_race_result_and_guards() -> N
             timeout=30,
         )
         assert downgrade.returncode != 0
-        assert "refusing downgrade" in (downgrade.stdout + downgrade.stderr).lower()
+        assert "refusing guarded downgrade" in (downgrade.stdout + downgrade.stderr).lower()
     finally:
         if seeded:
             await _cleanup(engine, tuple(seeded))
