@@ -87,6 +87,7 @@ jobs:
           tests/test_workflow_protected_runtime_context_use_authorization_consumptions_postgres.py
           tests/test_workflow_protected_runtime_context_uses_postgres.py
           tests/test_workflow_protected_runtime_start_authorizations_postgres.py
+          tests/test_workflow_protected_runtime_start_consumption_postgres.py
           -k live_postgres
       - name: Test
         working-directory: backend

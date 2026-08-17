@@ -638,6 +638,21 @@ consumption-only layer. Human inventory GET remains read-only under the normal u
 session with no MFA or second-browser prompt; AI remains advisory-only and Active Directory remains
 authentication-only.
 
+ADR-174 consumes that exact ADR-173 lease and commits one immutable consumption claim, one started
+attempt and the guarded `authorized_unconsumed -> start_attempt_pending` coordination transition
+in one PostgreSQL transaction before protected starter I/O. There is no consumption-only state.
+The starter receives one signed metadata-only instruction and independently deduplicates the exact
+attempt while applying a compare-and-swap to the pre-existing inactive runtime envelope. Event,
+outbox, workflow retry, DLQ replay and recovery workers are prohibited from invoking the starter.
+
+A timely signed receipt may prove `runtime_started_in_protected_boundary` or a known
+`runtime_start_failed_without_start`; timeout, crash, response loss, invalid/late receipt, partial
+transition or persistence ambiguity is permanently `runtime_start_outcome_uncertain` and is never
+automatically retried. `runtime_started=true` is historical outcome only. It grants no resume,
+process/scheduling, inference, network, connector/MCP, dispatch, execution or mutation authority.
+Human GET remains read-only in the normal username/password session without MFA or a second browser
+prompt; AI remains advisory-only and Active Directory remains authentication-only.
+
 ### 10.2 Publication State
 
 Outbox records track:

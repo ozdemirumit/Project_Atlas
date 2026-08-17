@@ -50,6 +50,7 @@ import {
   listWorkflowProtectedRuntimeContextUseAuthorizationConsumptions,
   listWorkflowProtectedRuntimeContextUses,
   listWorkflowProtectedRuntimeStartAuthorizations,
+  listWorkflowProtectedRuntimeStarts,
   listWorkflowPhysicalTransportTargetContextBindings,
   listWorkflowPhysicalTransportCredentialAssignmentSnapshots,
   listWorkflowPhysicalTransportCredentialAssignmentFreshnessAdmissions,
@@ -388,6 +389,16 @@ export default function WorkflowPlanningWorkspace({
       siteId,
     ],
     queryFn: listWorkflowProtectedRuntimeStartAuthorizations,
+    retry: false,
+  });
+  const protectedRuntimeStartQuery = useQuery({
+    queryKey: [
+      "workflow-protected-runtime-starts",
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: listWorkflowProtectedRuntimeStarts,
     retry: false,
   });
   const targetQuery = useQuery({
@@ -909,6 +920,10 @@ export default function WorkflowPlanningWorkspace({
   const protectedRuntimeStartAuthorizationErrorStatus =
     protectedRuntimeStartAuthorizationQuery.error instanceof ApiRequestError
       ? protectedRuntimeStartAuthorizationQuery.error.status
+      : undefined;
+  const protectedRuntimeStartErrorStatus =
+    protectedRuntimeStartQuery.error instanceof ApiRequestError
+      ? protectedRuntimeStartQuery.error.status
       : undefined;
   const eventEnvelopes = eventEnvelopesForAdmission;
   const transportAdmissions = transportAdmissionsForArtifacts;
@@ -4867,6 +4882,146 @@ export default function WorkflowPlanningWorkspace({
             runtime-start request lease. It is not runtime-start, resume, process, scheduling,
             inference, network, connector, MCP, dispatch, execution or infrastructure-mutation
             authority, and this view cannot consume or retry it.
+          </span>
+        </div>
+      </section>
+
+      <section
+        className="workflow-physical-route-binding-band workflow-target-context-opening-band"
+        aria-labelledby="workflow-protected-runtime-start-title"
+      >
+        <div className="workflow-section-heading">
+          <div>
+            <p className="eyebrow">PROTECTED START OUTCOME EVIDENCE</p>
+            <h2 id="workflow-protected-runtime-start-title">Protected runtime starts</h2>
+          </div>
+          <span>Read only</span>
+        </div>
+        {protectedRuntimeStartQuery.isLoading && (
+          <div className="workflow-empty-state" role="status">
+            <RefreshCw className="spin" size={18} />
+            <span>Loading protected runtime starts...</span>
+          </div>
+        )}
+        {protectedRuntimeStartQuery.isError && (
+          <div className="workflow-inline-error" role="alert">
+            <AlertTriangle aria-hidden="true" size={18} />
+            <div>
+              <strong>
+                {protectedRuntimeStartErrorStatus === 401
+                  ? "Your session has expired"
+                  : protectedRuntimeStartErrorStatus === 403
+                    ? "Protected runtime-start permission is missing"
+                    : "Protected runtime starts are unavailable"}
+              </strong>
+              <span>
+                {protectedRuntimeStartErrorStatus === 401
+                  ? "Sign in again to continue."
+                  : protectedRuntimeStartErrorStatus === 403
+                    ? "Your current role or scope cannot inspect protected runtime-start evidence."
+                    : "The protected runtime-start repository is unavailable or failed closed; no runtime outcome or authority is inferred."}
+              </span>
+            </div>
+          </div>
+        )}
+        {protectedRuntimeStartQuery.isSuccess &&
+          protectedRuntimeStartQuery.data.starts.length === 0 && (
+            <div className="workflow-empty-state" role="status">
+              <LockKeyhole size={19} />
+              <span>No protected runtime starts are recorded in this scope.</span>
+            </div>
+          )}
+        {protectedRuntimeStartQuery.isSuccess &&
+          protectedRuntimeStartQuery.data.starts.length > 0 && (
+            <ol
+              className="workflow-step-preview workflow-physical-route-binding-list workflow-target-context-opening-list"
+              aria-label="Protected runtime starts"
+            >
+              {protectedRuntimeStartQuery.data.starts.map((start) => {
+                const outcome =
+                  start.result_state === null
+                    ? "Pending"
+                    : start.result_state === "runtime_started_in_protected_boundary"
+                      ? "Started"
+                      : start.result_state === "runtime_start_failed_without_start"
+                        ? "Known failure"
+                        : "Outcome uncertain";
+                const outcomeClass =
+                  start.result_state === "runtime_started_in_protected_boundary"
+                    ? "success"
+                    : start.result_state === "runtime_start_outcome_uncertain"
+                      ? "warning"
+                      : "neutral";
+                const OutcomeIcon =
+                  start.result_state === "runtime_started_in_protected_boundary"
+                    ? CheckCircle2
+                    : start.result_state === "runtime_start_failed_without_start"
+                      ? Ban
+                      : start.result_state === "runtime_start_outcome_uncertain"
+                        ? AlertTriangle
+                        : FileClock;
+                return (
+                  <li key={start.start_id}>
+                    <OutcomeIcon size={18} />
+                    <div>
+                      <strong>
+                        <code title={start.start_id}>{safeHolderIdentifier(start.start_id)}</code>
+                        <span className={`state-badge ${outcomeClass}`}>{outcome}</span>
+                      </strong>
+                      <div className="workflow-physical-route-binding-grid">
+                        <span>
+                          Attempt {readableKind(start.attempt_state)} | result{" "}
+                          {start.result_state === null
+                            ? "pending"
+                            : readableKind(start.result_state)}
+                        </span>
+                        <span>
+                          Started {formatTimestamp(start.started_at)} | completed{" "}
+                          {start.completed_at === null
+                            ? "pending"
+                            : formatTimestamp(start.completed_at)}
+                          {" | "}recorded{" "}
+                          {start.recorded_at === null
+                            ? "pending"
+                            : formatTimestamp(start.recorded_at)}
+                        </span>
+                        <span>
+                          Runtime started{" "}
+                          {start.runtime_started === null
+                            ? "unknown"
+                            : start.runtime_started
+                              ? "true"
+                              : "false"}
+                        </span>
+                        <span>
+                          Policy{" "}
+                          <code title={start.policy_reference}>
+                            {safeHolderIdentifier(start.policy_reference)}
+                          </code>
+                        </span>
+                        <span>
+                          Runtime-start profile{" "}
+                          <code title={start.runtime_start_profile_reference}>
+                            {shortDigest(start.runtime_start_profile_reference)}
+                          </code>
+                        </span>
+                        <span className="workflow-physical-route-binding-authority">
+                          Effective authority false. This record is historical outcome evidence
+                          only.
+                        </span>
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+        <div className="workflow-safety-boundary" role="note">
+          <LockKeyhole size={18} />
+          <span>
+            Read-only evidence. This view cannot start, retry or resume a runtime; create a
+            process or schedule; invoke a connector or MCP; dispatch or execute work; or mutate
+            infrastructure. Pending and uncertain outcomes never imply permission to retry.
           </span>
         </div>
       </section>
