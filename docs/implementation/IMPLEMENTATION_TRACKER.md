@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-224 |
 | Title | Atomic protected runtime-start lease consumption and single start attempt |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/protected-runtime-start-consumption` |
-| Pull Request | Pending creation |
+| Pull Request | [PR #237](https://github.com/ozdemirumit/Project_Atlas/pull/237) |
 | Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-174 |
 | Last Updated | 2026-08-17 |
-| Next Action | Complete final re-review, commit the verified implementation, open its pull request and run exact-head CI |
+| Next Action | Monitor exact-head PR CI, resolve any failure, then merge and verify independent `main` CI |
 
 ### ATLAS-IMP-224 Scope Rationale
 
