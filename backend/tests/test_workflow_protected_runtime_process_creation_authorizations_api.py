@@ -324,7 +324,7 @@ def test_exact_workload_post_and_password_session_get_are_minimized_without_mfa(
     }
     assert item["readiness_result_reference"] == (
         "integrity.workflow-protected-runtime-readiness-result."
-        f"{sha256(_payload()['readiness_result_id'].encode('utf-8')).hexdigest()[:24]}"
+        f"{sha256(cast(str, _payload()['readiness_result_id']).encode('utf-8')).hexdigest()[:24]}"
     )
     policy = code_owned_workflow_protected_runtime_process_creation_authorization_policy()
     assert item["process_creation_profile_reference"] == (

@@ -11529,13 +11529,14 @@ class PostgreSQLWorkflowPlanRepository:
         self,
         *,
         scope: WorkflowScope,
+        evaluated_at: datetime,
         authorization_lease_ids: tuple[str, ...] | None = None,
         limit: int = 256,
     ) -> tuple[WorkflowProtectedRuntimeProcessCreationAuthorizationPresentation, ...]:
         if authorization_lease_ids == ():
             return ()
         model = WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseModel
-        statement = select(model, func.statement_timestamp()).where(
+        statement = select(model).where(
             model.organization_id == scope.organization_id,
             model.environment_id == scope.environment_id,
             model.site_id == scope.site_id,
@@ -11544,9 +11545,9 @@ class PostgreSQLWorkflowPlanRepository:
             statement = statement.where(model.authorization_lease_id.in_(authorization_lease_ids))
         statement = statement.order_by(model.issued_at.desc()).limit(max(1, min(limit, 512)))
         async with self._sessions() as session:
-            rows = (await session.execute(statement)).all()
+            rows = tuple((await session.scalars(statement)).all())
         presentations: list[WorkflowProtectedRuntimeProcessCreationAuthorizationPresentation] = []
-        for row, evaluated_at in rows:
+        for row in rows:
             lease = self._protected_runtime_process_creation_authorization_lease_from_row(row)
             active = lease.is_active(evaluated_at=evaluated_at, consumed=False)
             state = (
