@@ -4075,6 +4075,44 @@ async def authorize_workflow_protected_runtime_start_consumption_read(
     return decision
 
 
+async def authorize_workflow_protected_runtime_readiness_authorization_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    """Authorize the ADR-175 minimized inventory for a normal human session."""
+
+    if subject.kind is not SubjectKind.HUMAN:
+        raise AtlasError(
+            status=403,
+            code="human_identity_required",
+            title="Human identity required",
+            detail="This read-only inventory is available only to an authenticated human.",
+        )
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=WORKFLOW_PROTECTED_RUNTIME_START_AUTHORIZATION_READ,
+            resource_type="resource.workflow.protected-runtime-readiness-authorization",
+            scope=workflow_protected_runtime_start_authorization_scope(
+                subject.organization_id, settings.environment
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
 async def authorize_workflow_protected_runtime_context_use_read(
     request: Request,
     subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
