@@ -110,7 +110,7 @@ def test_preflight_is_durable_replay_first_and_never_attests() -> None:
 def test_lock_loads_complete_source_with_prelock_database_time_in_one_join() -> None:
     lock = _method_source("_lock_protected_runtime_readiness_authorization_rows")
 
-    assert lock.count("clock_timestamp") == 4
+    assert lock.count("clock_timestamp") == 5
     assert '.cte("runtime_readiness_first_observation")' in lock
     assert '.prefix_with("MATERIALIZED")' in lock
     assert ".join(first_observation, true())" in lock
@@ -127,6 +127,8 @@ def test_lock_loads_complete_source_with_prelock_database_time_in_one_join() -> 
     assert "exists(select(literal(1)).where(or_(*claim_filters)))" in lock
     assert "exists(select(literal(1)).where(lease_filter))" in lock
     assert "if not prior_claim_exists and not prior_lease_exists:" in lock
+    assert "if expected_source is not None:" in lock
+    assert ").with_only_columns(" in lock
     assert lock.index("if not prior_claim_exists and not prior_lease_exists:") < lock.index(
         "existing_claims ="
     )
@@ -565,6 +567,7 @@ async def _assert_authorization_preconditions(
             consumer_subject_id=request.consumer_subject_id,
             consumer_audience=request.consumer_audience,
             idempotency_key=request.idempotency_key,
+            expected_source=request.source,
         )
         working = repository._protected_runtime_readiness_retimed_request(
             request, issued_at=locked.observed_at
@@ -622,6 +625,7 @@ async def _assert_authorization_preconditions(
             final_working.candidate,
             final_working.lifecycle_attestation,
             locked=locked,
+            source=final_working.source,
         )
         repository._protected_runtime_readiness_claim_model(
             final_working.candidate_claim,
@@ -629,6 +633,7 @@ async def _assert_authorization_preconditions(
             idempotency_key=final_working.idempotency_key,
             audit_payload=audit_payload,
             locked=locked,
+            source=final_working.source,
         )
         await session.rollback()
 

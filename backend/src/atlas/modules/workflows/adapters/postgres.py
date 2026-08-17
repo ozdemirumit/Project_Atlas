@@ -1046,6 +1046,7 @@ class _ProtectedRuntimeReadinessAuthorizationLockedSources:
     existing_leases: tuple[WorkflowProtectedRuntimeReadinessAuthorizationLeaseModel, ...]
     first_observed_at: datetime
     observed_at: datetime
+    verified_source: WorkflowProtectedRuntimeReadinessAuthorizationSource | None = None
 
 
 class PostgreSQLWorkflowPlanRepository:
@@ -8887,6 +8888,7 @@ class PostgreSQLWorkflowPlanRepository:
                 consumer_subject_id=request.consumer_subject_id,
                 consumer_audience=request.consumer_audience,
                 idempotency_key=request.idempotency_key,
+                expected_source=request.source,
             )
             replay = self._protected_runtime_readiness_replay(request, locked)
             if replay is not None:
@@ -8948,6 +8950,7 @@ class PostgreSQLWorkflowPlanRepository:
                         working.candidate,
                         working.lifecycle_attestation,
                         locked=locked,
+                        source=working.source,
                     )
                 )
                 await session.flush()
@@ -8958,6 +8961,7 @@ class PostgreSQLWorkflowPlanRepository:
                         idempotency_key=working.idempotency_key,
                         audit_payload=audit_payload,
                         locked=locked,
+                        source=working.source,
                     )
                 )
                 await session.commit()
@@ -8973,6 +8977,7 @@ class PostgreSQLWorkflowPlanRepository:
                 consumer_subject_id=request.consumer_subject_id,
                 consumer_audience=request.consumer_audience,
                 idempotency_key=request.idempotency_key,
+                expected_source=request.source,
             )
             replay = self._protected_runtime_readiness_replay(request, locked)
             existing = bool(locked.existing_claims or locked.existing_leases)
@@ -9039,6 +9044,7 @@ class PostgreSQLWorkflowPlanRepository:
         expected_start_result_digest: str | None = None,
         consumer_contract_id: str | None = None,
         consumer_contract_version: str | None = None,
+        expected_source: WorkflowProtectedRuntimeReadinessAuthorizationSource | None = None,
         for_update: bool = True,
     ) -> _ProtectedRuntimeReadinessAuthorizationLockedSources:
         source_scope = and_(
@@ -9198,6 +9204,92 @@ class PostgreSQLWorkflowPlanRepository:
                 == consumer_audience,
             )
         )
+        if expected_source is not None:
+            source = expected_source
+            result = source.result
+            attempt = source.attempt
+            expected_start_claim = source.start_claim
+            expected_start_lease = source.start_authorization_lease
+            expected_start_authorization_claim = source.start_authorization_claim
+            source_statement = source_statement.where(
+                WorkflowProtectedRuntimeStartConsumptionResultModel.canonical_digest
+                == result.canonical_digest,
+                WorkflowProtectedRuntimeStartConsumptionResultModel.claim_id
+                == expected_start_claim.claim_id,
+                WorkflowProtectedRuntimeStartConsumptionResultModel.attempt_id
+                == attempt.attempt_id,
+                WorkflowProtectedRuntimeStartConsumptionResultModel.authorization_lease_id
+                == expected_start_lease.authorization_lease_id,
+                WorkflowProtectedRuntimeStartConsumptionClaimModel.claim_id
+                == expected_start_claim.claim_id,
+                WorkflowProtectedRuntimeStartConsumptionClaimModel.canonical_digest
+                == expected_start_claim.canonical_digest,
+                WorkflowProtectedRuntimeStartConsumptionAttemptModel.attempt_id
+                == attempt.attempt_id,
+                WorkflowProtectedRuntimeStartConsumptionAttemptModel.canonical_digest
+                == attempt.canonical_digest,
+                WorkflowProtectedRuntimeStartAuthorizationLeaseModel.authorization_lease_id
+                == expected_start_lease.authorization_lease_id,
+                WorkflowProtectedRuntimeStartAuthorizationLeaseModel.canonical_digest
+                == expected_start_lease.canonical_digest,
+                WorkflowProtectedRuntimeStartAuthorizationClaimModel.claim_id
+                == expected_start_authorization_claim.claim_id,
+                WorkflowProtectedRuntimeStartAuthorizationClaimModel.canonical_digest
+                == expected_start_authorization_claim.canonical_digest,
+                WorkflowProtectedRuntimeContextUseResultModel.result_id
+                == expected_start_lease.use_result_id,
+                WorkflowProtectedRuntimeContextUseResultModel.canonical_digest
+                == expected_start_lease.use_result_digest,
+                WorkflowProtectedRuntimeContextUseAttemptModel.attempt_id
+                == expected_start_lease.use_attempt_id,
+                WorkflowProtectedRuntimeContextUseAttemptModel.canonical_digest
+                == expected_start_lease.use_attempt_digest,
+                WorkflowProtectedRuntimeContextUseClaimModel.claim_id
+                == expected_start_lease.use_claim_id,
+                WorkflowProtectedRuntimeContextUseClaimModel.canonical_digest
+                == expected_start_lease.use_claim_digest,
+                WorkflowProtectedRuntimeContextInjectionDestinationHeadModel.current.is_(True),
+                WorkflowProtectedRuntimeContextInjectionDestinationHeadModel.destination_generation
+                == result.destination_generation,
+                WorkflowProtectedRuntimeContextInjectionDestinationHeadModel.destination_fencing_token_digest
+                == attempt.destination_fencing_token_digest,
+                WorkflowProtectedRuntimeContextInjectionSlotHeadModel.current.is_(True),
+                WorkflowProtectedRuntimeContextInjectionSlotHeadModel.slot_state
+                == "context_used_terminal",
+                WorkflowProtectedRuntimeContextInjectionSlotHeadModel.destination_generation
+                == result.destination_generation,
+                WorkflowProtectedRuntimeContextInjectionSlotHeadModel.destination_fencing_token_digest
+                == attempt.destination_fencing_token_digest,
+                WorkflowProtectedRuntimeContextInjectionSlotHeadModel.slot_generation
+                == result.runtime_envelope_generation,
+                WorkflowProtectedRuntimeStartCoordinationHeadModel.state
+                == "start_attempt_terminal",
+                WorkflowProtectedRuntimeStartCoordinationHeadModel.active_authorization_lease_id
+                == expected_start_lease.authorization_lease_id,
+                WorkflowProtectedRuntimeStartCoordinationHeadModel.consumption_claim_id
+                == expected_start_claim.claim_id,
+                WorkflowProtectedRuntimeStartCoordinationHeadModel.runtime_start_attempt_id
+                == attempt.attempt_id,
+                WorkflowProtectedRuntimeStartCoordinationHeadModel.runtime_start_result_id
+                == result.result_id,
+                WorkflowProtectedRuntimeStartCoordinationHeadModel.runtime_start_result_digest
+                == result.canonical_digest,
+                WorkflowProtectedRuntimeStartCoordinationHeadModel.runtime_start_attempt_pending.is_(
+                    False
+                ),
+                WorkflowProtectedRuntimeStartCoordinationHeadModel.runtime_start_attempt_terminal.is_(
+                    True
+                ),
+                WorkflowProtectedRuntimeStartCoordinationHeadModel.runtime_started.is_(True),
+                WorkflowProtectedRuntimeStartCoordinationHeadModel.runtime_resumed.is_(False),
+                WorkflowProtectedRuntimeStartCoordinationHeadModel.process_created.is_(False),
+                WorkflowProtectedRuntimeStartCoordinationHeadModel.process_scheduled.is_(False),
+            ).with_only_columns(
+                first_observation.c.first_observed_at,
+                exists(select(literal(1)).where(or_(*claim_filters))),
+                exists(select(literal(1)).where(lease_filter)),
+                func.clock_timestamp(),
+            )
         source_row = (await session.execute(locked(source_statement))).one_or_none()
         if source_row is None:
             observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
@@ -9215,39 +9307,32 @@ class PostgreSQLWorkflowPlanRepository:
                 (),
                 observed_at,
                 observed_at,
+                None,
             )
-        (
-            use_claim,
-            use_attempt,
-            use_result,
-            start_authorization_claim,
-            start_authorization_lease,
-            start_claim,
-            start_attempt,
-            start_result,
-            destination_head,
-            slot_head,
-            coordination_head,
-            first_observed_at,
-            prior_claim_exists,
-            prior_lease_exists,
-            observed_at,
-        ) = source_row
-        start_authorization = _ProtectedRuntimeStartAuthorizationLockedSources(
-            use_claim,
-            use_attempt,
-            use_result,
-            destination_head,
-            slot_head,
-            coordination_head,
-            () if start_authorization_claim is None else (start_authorization_claim,),
-            () if start_authorization_lease is None else (start_authorization_lease,),
-            first_observed_at,
-            first_observed_at,
-        )
-        if not prior_claim_exists and not prior_lease_exists:
-            return _ProtectedRuntimeReadinessAuthorizationLockedSources(
-                start_authorization,
+        if expected_source is not None:
+            first_observed_at, prior_claim_exists, prior_lease_exists, observed_at = source_row
+            if not prior_claim_exists and not prior_lease_exists:
+                return _ProtectedRuntimeReadinessAuthorizationLockedSources(
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    (),
+                    (),
+                    cast(datetime, first_observed_at),
+                    cast(datetime, observed_at),
+                    expected_source,
+                )
+        else:
+            (
+                use_claim,
+                use_attempt,
+                use_result,
                 start_authorization_claim,
                 start_authorization_lease,
                 start_claim,
@@ -9256,11 +9341,39 @@ class PostgreSQLWorkflowPlanRepository:
                 destination_head,
                 slot_head,
                 coordination_head,
-                (),
-                (),
                 first_observed_at,
-                cast(datetime, observed_at),
+                prior_claim_exists,
+                prior_lease_exists,
+                observed_at,
+            ) = source_row
+            start_authorization = _ProtectedRuntimeStartAuthorizationLockedSources(
+                use_claim,
+                use_attempt,
+                use_result,
+                destination_head,
+                slot_head,
+                coordination_head,
+                () if start_authorization_claim is None else (start_authorization_claim,),
+                () if start_authorization_lease is None else (start_authorization_lease,),
+                first_observed_at,
+                first_observed_at,
             )
+            if not prior_claim_exists and not prior_lease_exists:
+                return _ProtectedRuntimeReadinessAuthorizationLockedSources(
+                    start_authorization,
+                    start_authorization_claim,
+                    start_authorization_lease,
+                    start_claim,
+                    start_attempt,
+                    start_result,
+                    destination_head,
+                    slot_head,
+                    coordination_head,
+                    (),
+                    (),
+                    first_observed_at,
+                    cast(datetime, observed_at),
+                )
         existing_claims = tuple(
             (
                 await session.scalars(
@@ -9290,6 +9403,23 @@ class PostgreSQLWorkflowPlanRepository:
             ).all()
         )
         observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+        if expected_source is not None:
+            return _ProtectedRuntimeReadinessAuthorizationLockedSources(
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                existing_claims,
+                existing_leases,
+                cast(datetime, first_observed_at),
+                observed_at,
+                expected_source,
+            )
         return _ProtectedRuntimeReadinessAuthorizationLockedSources(
             start_authorization,
             start_authorization_claim,
@@ -9443,9 +9573,11 @@ class PostgreSQLWorkflowPlanRepository:
     ) -> bool:
         try:
             validate_workflow_protected_runtime_readiness_authorization_request(request)
-            source = self._protected_runtime_readiness_source_from_locked(
-                locked,
-                receipt_verifier=request.offline_start_receipt_signature_verifier,
+            source = locked.verified_source or (
+                self._protected_runtime_readiness_source_from_locked(
+                    locked,
+                    receipt_verifier=request.offline_start_receipt_signature_verifier,
+                )
             )
             signature_valid = self._protected_runtime_readiness_attestation_signature_valid(
                 request.offline_signature_verifier, request.lifecycle_attestation
@@ -9575,8 +9707,10 @@ class PostgreSQLWorkflowPlanRepository:
             claim = self._protected_runtime_readiness_claim_from_row(claim_row)
             lease = self._protected_runtime_readiness_lease_from_row(lease_row)
             attestation = self._protected_runtime_readiness_attestation_from_row(lease_row)
-            source = self._protected_runtime_readiness_source_from_locked(
-                locked, receipt_verifier=receipt_verifier
+            source = locked.verified_source or (
+                self._protected_runtime_readiness_source_from_locked(
+                    locked, receipt_verifier=receipt_verifier
+                )
             )
             if (
                 source is None
@@ -9715,11 +9849,13 @@ class PostgreSQLWorkflowPlanRepository:
         attestation: WorkflowProtectedRuntimeReadinessLifecycleAttestation,
         *,
         locked: _ProtectedRuntimeReadinessAuthorizationLockedSources,
+        source: WorkflowProtectedRuntimeReadinessAuthorizationSource | None = None,
     ) -> WorkflowProtectedRuntimeReadinessAuthorizationLeaseModel:
         values = cls._protected_runtime_readiness_model_values(
             WorkflowProtectedRuntimeReadinessAuthorizationLeaseModel,
             lease,
             locked=locked,
+            source=source,
         )
         policy = code_owned_workflow_protected_runtime_readiness_authorization_policy()
         values.update(
@@ -9746,11 +9882,13 @@ class PostgreSQLWorkflowPlanRepository:
         idempotency_key: str,
         audit_payload: dict[str, object],
         locked: _ProtectedRuntimeReadinessAuthorizationLockedSources,
+        source: WorkflowProtectedRuntimeReadinessAuthorizationSource | None = None,
     ) -> WorkflowProtectedRuntimeReadinessAuthorizationClaimModel:
         values = cls._protected_runtime_readiness_model_values(
             WorkflowProtectedRuntimeReadinessAuthorizationClaimModel,
             claim,
             locked=locked,
+            source=source,
         )
         policy = code_owned_workflow_protected_runtime_readiness_authorization_policy()
         values.update(
@@ -9772,24 +9910,45 @@ class PostgreSQLWorkflowPlanRepository:
         value: Any,
         *,
         locked: _ProtectedRuntimeReadinessAuthorizationLockedSources,
+        source: WorkflowProtectedRuntimeReadinessAuthorizationSource | None = None,
     ) -> dict[str, Any]:
-        start_authorization = locked.start_authorization
-        start_authorization_claim = locked.start_authorization_claim
-        start_authorization_lease = locked.start_authorization_lease
-        start_claim = locked.start_claim
-        start_attempt = locked.start_attempt
-        start_result = locked.start_result
-        head = locked.coordination_head
-        if (
-            start_authorization is None
-            or start_authorization_claim is None
-            or start_authorization_lease is None
-            or start_claim is None
-            or start_attempt is None
-            or start_result is None
-            or head is None
-        ):
-            raise ValueError("runtime readiness source rows are incomplete")
+        if source is None:
+            start_authorization = locked.start_authorization
+            locked_start_authorization_claim = locked.start_authorization_claim
+            locked_start_authorization_lease = locked.start_authorization_lease
+            start_claim = locked.start_claim
+            locked_start_attempt = locked.start_attempt
+            start_result = locked.start_result
+            head = locked.coordination_head
+            if (
+                start_authorization is None
+                or locked_start_authorization_claim is None
+                or locked_start_authorization_lease is None
+                or start_claim is None
+                or locked_start_attempt is None
+                or start_result is None
+                or head is None
+            ):
+                raise ValueError("runtime readiness source rows are incomplete")
+            source_authorization_claim: Any = locked_start_authorization_claim
+            source_authorization_lease: Any = locked_start_authorization_lease
+            source_start_attempt: Any = locked_start_attempt
+            coordination_state = head.state
+            runtime_start_attempt_pending = head.runtime_start_attempt_pending
+            runtime_start_attempt_terminal = head.runtime_start_attempt_terminal
+            runtime_resumed = head.runtime_resumed
+            process_created = head.process_created
+            process_scheduled = head.process_scheduled
+        else:
+            source_authorization_claim = source.start_authorization_claim
+            source_authorization_lease = source.start_authorization_lease
+            source_start_attempt = source.attempt
+            coordination_state = "start_attempt_terminal"
+            runtime_start_attempt_pending = False
+            runtime_start_attempt_terminal = True
+            runtime_resumed = False
+            process_created = False
+            process_scheduled = False
         payload = value.digest_payload()
         columns = {column.name for column in model.__table__.columns}
         values = {name: getattr(value, name) for name in columns if hasattr(value, name)}
@@ -9804,22 +9963,22 @@ class PostgreSQLWorkflowPlanRepository:
             start_consumption_claim_digest=value.start_claim_digest,
             runtime_start_authorization_lease_id=value.start_authorization_lease_id,
             runtime_start_authorization_lease_digest=(value.start_authorization_lease_digest),
-            runtime_start_authorization_claim_id=start_authorization_claim.claim_id,
-            runtime_start_authorization_claim_digest=(start_authorization_claim.canonical_digest),
-            use_result_id=start_authorization_lease.use_result_id,
-            use_result_digest=start_authorization_lease.use_result_digest,
+            runtime_start_authorization_claim_id=source_authorization_claim.claim_id,
+            runtime_start_authorization_claim_digest=(source_authorization_claim.canonical_digest),
+            use_result_id=source_authorization_lease.use_result_id,
+            use_result_digest=source_authorization_lease.use_result_digest,
             runtime_slot_commitment=value.protected_slot_commitment,
             runtime_slot_generation=value.protected_slot_generation,
-            protected_operation_reference=start_attempt.protected_operation_reference,
-            start_instruction_digest=start_attempt.instruction_digest,
-            start_started_at=start_attempt.started_at,
-            start_invocation_deadline=start_attempt.invocation_deadline,
-            coordination_state=head.state,
-            runtime_start_attempt_pending=head.runtime_start_attempt_pending,
-            runtime_start_attempt_terminal=head.runtime_start_attempt_terminal,
-            runtime_resumed=head.runtime_resumed,
-            process_created=head.process_created,
-            process_scheduled=head.process_scheduled,
+            protected_operation_reference=source_start_attempt.protected_operation_reference,
+            start_instruction_digest=source_start_attempt.instruction_digest,
+            start_started_at=source_start_attempt.started_at,
+            start_invocation_deadline=source_start_attempt.invocation_deadline,
+            coordination_state=coordination_state,
+            runtime_start_attempt_pending=runtime_start_attempt_pending,
+            runtime_start_attempt_terminal=runtime_start_attempt_terminal,
+            runtime_resumed=runtime_resumed,
+            process_created=process_created,
+            process_scheduled=process_scheduled,
         )
         values.update(
             {
