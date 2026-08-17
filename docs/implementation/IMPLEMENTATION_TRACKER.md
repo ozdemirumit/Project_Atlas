@@ -4,14 +4,59 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-223 |
-| Title | Bounded single-use protected runtime-start authorization lease |
-| Status | Delivery Pending |
-| Branch | `agent/protected-runtime-start-authorization` |
-| Pull Request | [#236](https://github.com/ozdemirumit/Project_Atlas/pull/236) |
-| Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-173 |
+| Task ID | ATLAS-IMP-224 |
+| Title | Atomic protected runtime-start lease consumption and single start attempt |
+| Status | In Progress |
+| Branch | `agent/protected-runtime-start-consumption` |
+| Pull Request | Pending creation |
+| Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-174 |
 | Last Updated | 2026-08-17 |
-| Next Action | Pass exact-head PR CI, merge, and verify independent `main` CI |
+| Next Action | Define ADR-174, then implement the atomic consumption/start protocol and its PostgreSQL-backed verification |
+
+### ATLAS-IMP-224 Scope Rationale
+
+- IMP-223 grants the exact protected consumer workload one non-bearer lease lasting at most one
+  second, but the runtime envelope remains inactive and no runtime-start attempt exists.
+- ADR-173 requires the next point of no return to consume that exact lease and initiate one start
+  attempt atomically. A separate consumption-only stage would add recovery states without adding a
+  stronger trust boundary.
+- Runtime start is limited to the exact pre-existing protected runtime envelope. It must not become
+  generic process creation, scheduling, resume, inference, connector/MCP, network or infrastructure
+  operation authority.
+
+### ATLAS-IMP-224 Acceptance Criteria
+
+- Only the exact protected consumer workload and audience bound through canonical ADR-160 through
+  ADR-173 lineage may POST. Human sessions, personal tokens, AI agents, MCP tools, connectors and
+  generic workers fail closed before protected-state I/O.
+- Caller input is limited to the ADR-173 lease identity, code-owned policy identity, tenant-scoped
+  idempotency metadata and explicit irreversible-attempt/uncertainty acknowledgements. Lease digest,
+  runtime envelope, slot, destination, instruction, deadline, authority and outcome are server-derived.
+- Durable exact replay is classified before attestor or starter I/O. Changed replay, competing
+  lineage and idempotency reuse fail closed; a committed started attempt is never resumed or
+  reinvoked.
+- PostgreSQL locks and revalidates the complete lineage, guarded coordination head, destination
+  generation/fence, runtime-slot generation and authoritative database time while the exact lease
+  is active, unconsumed and unexpired.
+- One immutable consumption claim and one started-attempt record are committed atomically with the
+  coordination transition from `authorized_unconsumed` to `start_attempt_pending` before protected
+  starter I/O. No consumption-only intermediate state exists.
+- The trusted protected starter receives one signed, nonce-, attempt-, lineage-, fence-, envelope-
+  and deadline-bound metadata-only instruction. It independently deduplicates the exact attempt and
+  applies one compare-and-swap from the pre-existing inactive envelope to its start outcome.
+- Known success or known failure requires a timely verified minimized receipt. Timeout, crash,
+  late/invalid receipt, partial transition, persistence ambiguity or cleanup uncertainty is
+  permanently `runtime_start_outcome_uncertain`; Atlas never automatically retries or restores the
+  consumed lease.
+- Verified success starts only the exact existing protected runtime envelope. It does not resume a
+  runtime, create or schedule a generic process, construct a prompt, invoke model inference, use
+  endpoint/credential/network, call connectors or MCP, dispatch work or mutate infrastructure.
+- Result and receipt are historical non-bearer evidence. Every reusable authority declaration is
+  false after the attempt; `runtime_started=true` is an outcome fact and grants no follow-on action.
+- Production fails closed without PostgreSQL, the trusted starter and distinct instruction/receipt
+  verification keys. Workload POST and normal username/password-session GET are minimized and
+  `no-store`; the read-only UI requires no MFA or second browser prompt and exposes no start, retry,
+  resume, process, schedule or execute control.
 
 ### ATLAS-IMP-223 Scope Rationale
 
@@ -73,6 +118,17 @@
   returned the expected fail-closed `503` without a configured durable repository. Its read-only
   region exposed no operation control, desktop and `390x844` mobile layouts had no horizontal
   overflow or incoherent overlap, and the browser console had no errors or warnings.
+
+### ATLAS-IMP-223 Delivery Evidence
+
+- Merged through [PR #236](https://github.com/ozdemirumit/Project_Atlas/pull/236) from exact reviewed
+  head `c75a3ba932feafad42f1e3beaa0d3b8882a3bd65` to `main` merge
+  `34a0bfde94ad14f0d70ac5bae2900502787db433`.
+- Exact-head [PR CI run 31996867578](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31996867578)
+  passed frontend in 8m50s and backend in 18m09s, including PostgreSQL 17 integration, migration and
+  migration round-trip validation.
+- Independent [main CI run 31998101623](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31998101623)
+  passed frontend in 9m10s and backend in 13m49s for the exact merge commit.
 
 ### ATLAS-IMP-222 Scope Rationale
 
