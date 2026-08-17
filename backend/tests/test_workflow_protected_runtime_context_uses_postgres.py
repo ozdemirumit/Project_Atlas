@@ -360,7 +360,7 @@ async def test_claim_and_attempt_rows_round_trip_and_tampering_fails_closed() ->
     assert repository._protected_runtime_context_use_attempt_from_row(attempt_row) == attempt
     assert result_row.organization_id == attempt.scope.organization_id
     assert result_row.consumer_subject_id == attempt.consumer_subject_id
-    assert result_row.__table__.c.executor_receipt_payload.type.none_as_null is True
+    assert cast(Any, result_row.__table__.c.executor_receipt_payload.type).none_as_null is True
 
     claim_row.policy_digest = "0" * 64
     with pytest.raises(
