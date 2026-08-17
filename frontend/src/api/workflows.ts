@@ -1699,6 +1699,60 @@ export type WorkflowProtectedRuntimeStartInventory = {
   durable: true;
 };
 
+export type WorkflowProtectedRuntimeReadinessAuthorizationAuthority = {
+  protected_runtime_readiness_authority_granted: boolean;
+  protected_runtime_start_authority_granted: false;
+  protected_runtime_context_use_authority_granted: false;
+  runtime_use_authorized: false;
+  runtime_start_authorized: false;
+  runtime_resume_authorized: false;
+  connector_activity_authorized: false;
+  protected_runtime_context_injection_authority_granted: false;
+  protected_resident_context_access_authority_granted: false;
+  target_context_capsule_opening_authorized: false;
+  target_context_capsule_handoff_authorized: false;
+  endpoint_resolution_authorized: false;
+  route_selection_authorized: false;
+  route_binding_authorized: false;
+  credential_selection_authorized: false;
+  credential_assignment_binding_authorized: false;
+  credential_access_authorized: false;
+  credential_brokerage_authorized: false;
+  credential_resolution_authorized: false;
+  protected_artifact_access_authorized: false;
+  credential_delivery_authorized: false;
+  network_access_authorized: false;
+  readiness_probe_authorized: false;
+  publication_authorized: false;
+  delivery_authorized: false;
+  dispatch_authorized: false;
+  execution_authorized: false;
+  infrastructure_mutation_authorized: false;
+};
+
+export type WorkflowProtectedRuntimeReadinessAuthorization = {
+  authorization_lease_id: string;
+  state: "authorized_unconsumed";
+  effective_state: "active" | "expired";
+  issued_at: string;
+  valid_until: string;
+  effective_until: string;
+  consumer_contract_id: "contract.workflow-protected-transport-target-context-capsule-consumer";
+  consumer_contract_version: "1.0";
+  purpose_id: "purpose.workflow-protected-runtime-readiness-evaluation";
+  policy_id: "policy.workflow-protected-runtime-readiness-authorization";
+  policy_version: "1.0";
+  readiness_profile_reference: string;
+  authority: WorkflowProtectedRuntimeReadinessAuthorizationAuthority;
+  integrity_reference: string;
+};
+
+export type WorkflowProtectedRuntimeReadinessAuthorizationInventory = {
+  authorizations: WorkflowProtectedRuntimeReadinessAuthorization[];
+  server_time: string;
+  durable: true;
+};
+
 export type WorkflowProtectedRuntimeContextInjectionConsumption = {
   injection_id: string;
   attempt_state: "started" | "completed";
@@ -3294,6 +3348,57 @@ const protectedRuntimeStartFields = [
   "effective_authority",
 ] as const;
 const protectedRuntimeStartInventoryFields = ["starts", "server_time", "durable"] as const;
+const protectedRuntimeReadinessAuthorizationAuthorityFields = [
+  "protected_runtime_readiness_authority_granted",
+  "protected_runtime_start_authority_granted",
+  "protected_runtime_context_use_authority_granted",
+  "runtime_use_authorized",
+  "runtime_start_authorized",
+  "runtime_resume_authorized",
+  "connector_activity_authorized",
+  "protected_runtime_context_injection_authority_granted",
+  "protected_resident_context_access_authority_granted",
+  "target_context_capsule_opening_authorized",
+  "target_context_capsule_handoff_authorized",
+  "endpoint_resolution_authorized",
+  "route_selection_authorized",
+  "route_binding_authorized",
+  "credential_selection_authorized",
+  "credential_assignment_binding_authorized",
+  "credential_access_authorized",
+  "credential_brokerage_authorized",
+  "credential_resolution_authorized",
+  "protected_artifact_access_authorized",
+  "credential_delivery_authorized",
+  "network_access_authorized",
+  "readiness_probe_authorized",
+  "publication_authorized",
+  "delivery_authorized",
+  "dispatch_authorized",
+  "execution_authorized",
+  "infrastructure_mutation_authorized",
+] as const;
+const protectedRuntimeReadinessAuthorizationFields = [
+  "authorization_lease_id",
+  "state",
+  "effective_state",
+  "issued_at",
+  "valid_until",
+  "effective_until",
+  "consumer_contract_id",
+  "consumer_contract_version",
+  "purpose_id",
+  "policy_id",
+  "policy_version",
+  "readiness_profile_reference",
+  "authority",
+  "integrity_reference",
+] as const;
+const protectedRuntimeReadinessAuthorizationInventoryFields = [
+  "authorizations",
+  "server_time",
+  "durable",
+] as const;
 const protectedRuntimeContextInjectionConsumptionFields = [
   "injection_id",
   "attempt_state",
@@ -5865,6 +5970,72 @@ function isProtectedRuntimeStart(
   );
 }
 
+function hasProtectedRuntimeReadinessRequestOnlyAuthority(
+  value: unknown,
+  readinessRequestAuthorityGranted: boolean,
+): value is WorkflowProtectedRuntimeReadinessAuthorizationAuthority {
+  return (
+    isObject(value) &&
+    hasExactKeys(value, protectedRuntimeReadinessAuthorizationAuthorityFields) &&
+    protectedRuntimeReadinessAuthorizationAuthorityFields.every((field) =>
+      field === "protected_runtime_readiness_authority_granted"
+        ? value[field] === readinessRequestAuthorityGranted
+        : value[field] === false,
+    )
+  );
+}
+
+function isProtectedRuntimeReadinessAuthorization(
+  value: unknown,
+  serverTime: string,
+): value is WorkflowProtectedRuntimeReadinessAuthorization {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, protectedRuntimeReadinessAuthorizationFields) ||
+    containsCredentialMaterial(value) ||
+    !isTimezoneAwareTimestamp(value.issued_at) ||
+    !isTimezoneAwareTimestamp(value.valid_until) ||
+    !isTimezoneAwareTimestamp(value.effective_until)
+  ) {
+    return false;
+  }
+  const issuedAt = Date.parse(value.issued_at);
+  const validUntil = Date.parse(value.valid_until);
+  const effectiveUntil = Date.parse(value.effective_until);
+  const evaluatedAt = Date.parse(serverTime);
+  const expectedEffectiveState = evaluatedAt >= validUntil ? "expired" : "active";
+  return (
+    isStableIdentifier(value.authorization_lease_id) &&
+    value.authorization_lease_id.startsWith(
+      "workflow-protected-runtime-readiness-lease.",
+    ) &&
+    value.state === "authorized_unconsumed" &&
+    value.effective_state === expectedEffectiveState &&
+    issuedAt <= evaluatedAt &&
+    issuedAt < validUntil &&
+    validUntil - issuedAt <= 1_000 &&
+    validUntil === effectiveUntil &&
+    value.consumer_contract_id ===
+      "contract.workflow-protected-transport-target-context-capsule-consumer" &&
+    value.consumer_contract_version === "1.0" &&
+    value.purpose_id === "purpose.workflow-protected-runtime-readiness-evaluation" &&
+    value.policy_id === "policy.workflow-protected-runtime-readiness-authorization" &&
+    value.policy_version === "1.0" &&
+    isStableIdentifier(value.readiness_profile_reference) &&
+    value.readiness_profile_reference.startsWith(
+      "integrity.workflow-protected-runtime-readiness-profile.",
+    ) &&
+    hasProtectedRuntimeReadinessRequestOnlyAuthority(
+      value.authority,
+      expectedEffectiveState === "active",
+    ) &&
+    isStableIdentifier(value.integrity_reference) &&
+    value.integrity_reference.startsWith(
+      "integrity.workflow-protected-runtime-readiness-authorization.",
+    )
+  );
+}
+
 function isProtectedRuntimeContextInjectionConsumption(
   value: unknown,
   serverTime: string,
@@ -7883,6 +8054,57 @@ export async function listWorkflowProtectedRuntimeStarts(): Promise<WorkflowProt
     startIds.add(start.start_id);
   }
   return data as WorkflowProtectedRuntimeStartInventory;
+}
+
+export async function listWorkflowProtectedRuntimeReadinessAuthorizations(): Promise<WorkflowProtectedRuntimeReadinessAuthorizationInventory> {
+  const response = await apiFetch(
+    "/api/v1/workflows/protected-runtime-readiness-authorizations",
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(
+    response,
+    "Workflow protected runtime-readiness authorization retrieval failed",
+  );
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, protectedRuntimeReadinessAuthorizationInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    !Array.isArray(data.authorizations) ||
+    data.authorizations.length > 256 ||
+    !isTimezoneAwareTimestamp(data.server_time) ||
+    data.durable !== true
+  ) {
+    throw new ApiRequestError(
+      "Workflow protected runtime-readiness authorization response was unsafe",
+      response.status,
+    );
+  }
+  const serverTime = data.server_time;
+  if (
+    !data.authorizations.every((authorization) =>
+      isProtectedRuntimeReadinessAuthorization(authorization, serverTime),
+    )
+  ) {
+    throw new ApiRequestError(
+      "Workflow protected runtime-readiness authorization response was unsafe",
+      response.status,
+    );
+  }
+  const authorizationIds = new Set<string>();
+  for (const authorization of data.authorizations) {
+    if (
+      !isObject(authorization) ||
+      typeof authorization.authorization_lease_id !== "string" ||
+      authorizationIds.has(authorization.authorization_lease_id)
+    ) {
+      throw new ApiRequestError(
+        "Workflow protected runtime-readiness authorization response was unsafe",
+        response.status,
+      );
+    }
+    authorizationIds.add(authorization.authorization_lease_id);
+  }
+  return data as WorkflowProtectedRuntimeReadinessAuthorizationInventory;
 }
 
 export async function listWorkflowProtectedRuntimeContextInjectionConsumptions(): Promise<WorkflowProtectedRuntimeContextInjectionConsumptionInventory> {

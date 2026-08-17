@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, fields
 from datetime import datetime
 from enum import StrEnum
+from functools import lru_cache
 from typing import Any, cast
 
 from .models import WorkflowScope, canonical_digest
@@ -170,6 +171,7 @@ def code_owned_workflow_protected_runtime_start_consumption_policy_values() -> d
     }
 
 
+@lru_cache(maxsize=1)
 def code_owned_workflow_protected_runtime_start_consumption_policy() -> (
     WorkflowProtectedRuntimeStartConsumptionPolicy
 ):

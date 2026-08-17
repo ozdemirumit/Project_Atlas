@@ -653,6 +653,23 @@ process/scheduling, inference, network, connector/MCP, dispatch, execution or mu
 Human GET remains read-only in the normal username/password session without MFA or a second browser
 prompt; AI remains advisory-only and Active Directory remains authentication-only.
 
+ADR-175 defines the next independent append-only authorization boundary from only one canonical
+ADR-174 `runtime_started_in_protected_boundary` result. Start success is historical evidence and
+does not prove current readiness. Before a transaction, the exact protected consumer workload may
+obtain fresh signed, server-nonce-bound, metadata-only runtime-lifecycle and readiness-eligibility
+evidence. PostgreSQL then locks and revalidates the complete ADR-160 through ADR-174 lineage,
+successful start result, current destination generation/fence, protected slot generation, guarded
+started coordination head and database time before appending one claim and one lease valid for no
+more than one second.
+
+All existing reusable authority declarations remain false. Only the lease may set
+`protected_runtime_readiness_authority_granted=true`, meaning solely that the exact workload may
+submit one future readiness-attempt request. IMP-225 performs no readiness probe, process or
+scheduler operation, DNS/TLS/socket/network activity, connector/MCP call, publication, dispatch,
+execution or infrastructure mutation. Human GET remains read-only through the normal username/
+password session without MFA or a second browser prompt; AI remains advisory-only and Active
+Directory remains authentication-only.
+
 ### 10.2 Publication State
 
 Outbox records track:
@@ -1059,3 +1076,5 @@ This document is ready to enter Review when:
 | 2.2.0 | 2026-08-17 | Workflow Architecture | Added atomic protected runtime-context use-authorization lease consumption without runtime-context use |
 | 2.3.0 | 2026-08-17 | Workflow Architecture | Added single-use protected runtime-context adoption boundary |
 | 2.4.0 | 2026-08-17 | Workflow Architecture | Added bounded single-use protected runtime-start authorization lease boundary |
+| 2.5.0 | 2026-08-17 | Workflow Architecture | Added atomic protected runtime-start consumption and single start-attempt boundary |
+| 2.6.0 | 2026-08-17 | Workflow Architecture | Added bounded single-use protected runtime-readiness authorization lease boundary |

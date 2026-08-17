@@ -90,7 +90,9 @@ def _source_claim() -> WorkflowProtectedRuntimeContextUseAuthorizationConsumptio
         "authorization_claim_digest": "2" * 64,
         "injection_result_id": "injection-result.imp-219",
         "injection_result_digest": "3" * 64,
-        "destination_deployment_id": "deployment.imp-222",
+        "destination_deployment_id": (
+            "deployment.workflow-protected-target-context-capsule-consumer"
+        ),
         "destination_generation": 7,
         "destination_fencing_token_digest": "4" * 64,
         "runtime_slot_commitment": "5" * 64,

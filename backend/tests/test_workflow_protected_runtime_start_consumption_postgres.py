@@ -17,6 +17,28 @@ from sqlalchemy import CheckConstraint, MetaData, Table, func, insert, null, sel
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from test_workflow_protected_runtime_context_uses import NOW as CONTEXT_USE_NOW
+from test_workflow_protected_runtime_context_uses import (
+    _canonical_mapping as _runtime_context_use_canonical_mapping,
+)
+from test_workflow_protected_runtime_context_uses import (
+    _service as _runtime_context_use_service,
+)
+from test_workflow_protected_runtime_context_uses_postgres import (
+    _claim_request as _runtime_context_use_claim_request,
+)
+from test_workflow_protected_runtime_start_authorizations import (
+    _Attestor as _RuntimeStartAuthorizationAttestor,
+)
+from test_workflow_protected_runtime_start_authorizations import (
+    _ReceiptVerifier as _RuntimeStartAuthorizationReceiptVerifier,
+)
+from test_workflow_protected_runtime_start_authorizations import (
+    _Repository as _RuntimeStartAuthorizationRepository,
+)
+from test_workflow_protected_runtime_start_authorizations import (
+    _service as _runtime_start_authorization_service,
+)
 from test_workflow_protected_runtime_start_authorizations_postgres import (
     _runtime_context_use_result_parent_model,
 )
@@ -32,6 +54,9 @@ from test_workflow_protected_runtime_start_consumptions import (
 from atlas.core.persistence.models import (
     WorkflowProtectedRuntimeContextInjectionDestinationHeadModel,
     WorkflowProtectedRuntimeContextInjectionSlotHeadModel,
+    WorkflowProtectedRuntimeContextUseAttemptModel,
+    WorkflowProtectedRuntimeContextUseClaimModel,
+    WorkflowProtectedRuntimeContextUseResultModel,
     WorkflowProtectedRuntimeStartAuthorizationLeaseModel,
     WorkflowProtectedRuntimeStartConsumptionAttemptModel,
     WorkflowProtectedRuntimeStartConsumptionClaimModel,
@@ -42,15 +67,28 @@ from atlas.modules.workflows.adapters.postgres import PostgreSQLWorkflowPlanRepo
 from atlas.modules.workflows.adapters.protected_runtime_starters import (
     DenyAllWorkflowProtectedRuntimeStartReceiptSignatureVerifier,
 )
+from atlas.modules.workflows.application.protected_runtime_context_use_ports import (
+    WorkflowProtectedRuntimeContextUseResultRequest,
+    build_workflow_protected_runtime_context_use_instruction,
+)
+from atlas.modules.workflows.application.protected_runtime_start_authorization_ports import (
+    WorkflowProtectedRuntimeStartAuthorizationSource,
+    WorkflowProtectedRuntimeStartLifecycleAttestation,
+)
 from atlas.modules.workflows.application.protected_runtime_start_consumption_ports import (
     WorkflowProtectedRuntimeStartConsumptionClaimRequest,
     WorkflowProtectedRuntimeStartConsumptionResultRequest,
+    WorkflowProtectedRuntimeStartConsumptionSource,
     build_workflow_protected_runtime_start_instruction,
     build_workflow_protected_runtime_start_signed_instruction_envelope,
 )
 from atlas.modules.workflows.domain.models import canonical_digest
 from atlas.modules.workflows.domain.protected_runtime_context_use_authorization_domain import (
     code_owned_workflow_protected_runtime_context_use_authorization_policy,
+)
+from atlas.modules.workflows.domain.protected_runtime_context_use_domain import (
+    WorkflowProtectedRuntimeContextUseReceipt,
+    WorkflowProtectedRuntimeContextUseResultState,
 )
 from atlas.modules.workflows.domain.protected_runtime_start_consumption_domain import (
     WorkflowProtectedRuntimeStartConsumptionResultState,
@@ -141,11 +179,20 @@ def _authorization_source_at(base: datetime, *, suffix: str | None = None) -> An
         if suffix is None
         else {
             "use_result_id": f"runtime-use-result.{suffix}",
+            "use_result_digest": canonical_digest(
+                {"use_result_id": f"runtime-use-result.{suffix}"}
+            ),
             "use_id": f"runtime-use.{suffix}",
             "use_attempt_id": f"runtime-use-attempt.{suffix}",
             "use_claim_id": f"runtime-use-claim.{suffix}",
             "authorization_consumption_result_id": f"use-auth-result.{suffix}",
             "runtime_envelope_id": f"runtime-envelope.{suffix}",
+            "runtime_envelope_commitment": canonical_digest(
+                {"runtime_envelope_id": f"runtime-envelope.{suffix}"}
+            ),
+            "runtime_slot_commitment": canonical_digest(
+                {"runtime_slot_id": f"runtime-slot.{suffix}"}
+            ),
         }
     )
     claim_ids = (
@@ -188,9 +235,7 @@ def _authorization_source_at(base: datetime, *, suffix: str | None = None) -> An
             "lifecycle_attestation_id": f"runtime-start-attestation.{suffix}",
         }
     )
-    issued_at = (
-        base + timedelta(seconds=15) if suffix is not None else base - timedelta(milliseconds=100)
-    )
+    issued_at = base - timedelta(milliseconds=500 if suffix is not None else 100)
     valid_until = issued_at + timedelta(seconds=1)
     attestation_valid_until = valid_until + timedelta(milliseconds=200)
     lease_payload = lease.digest_payload()
@@ -229,13 +274,184 @@ def _authorization_source_at(base: datetime, *, suffix: str | None = None) -> An
     return type(source)(authorization_lease=lease, authorization_claim=claim)
 
 
+async def _valid_runtime_start_authorization_evidence(
+    repository: PostgreSQLWorkflowPlanRepository,
+    *,
+    base: datetime,
+) -> tuple[
+    WorkflowProtectedRuntimeStartConsumptionSource,
+    tuple[
+        WorkflowProtectedRuntimeContextUseClaimModel,
+        WorkflowProtectedRuntimeContextUseAttemptModel,
+        WorkflowProtectedRuntimeContextUseResultModel,
+    ],
+    WorkflowProtectedRuntimeStartLifecycleAttestation,
+]:
+    context_request = await _runtime_context_use_claim_request()
+    use_claim = repository._protected_runtime_context_use_claim(
+        context_request, claimed_at=CONTEXT_USE_NOW
+    )
+    use_attempt = repository._protected_runtime_context_use_attempt(
+        context_request,
+        claim=use_claim,
+        started_at=CONTEXT_USE_NOW + timedelta(milliseconds=10),
+        use_deadline=CONTEXT_USE_NOW + timedelta(milliseconds=500),
+    )
+    instruction = build_workflow_protected_runtime_context_use_instruction(use_attempt)
+    receipt_values: dict[str, object] = {
+        "instruction_digest": instruction.canonical_digest,
+        "protected_operation_reference": instruction.protected_operation_reference,
+        "authorization_consumption_result_id": instruction.authorization_consumption_result_id,
+        "authorization_consumption_result_digest": (
+            instruction.authorization_consumption_result_digest
+        ),
+        "destination_deployment_id": instruction.destination_deployment_id,
+        "destination_generation": instruction.destination_generation,
+        "destination_fencing_token_digest": instruction.destination_fencing_token_digest,
+        "runtime_slot_commitment": instruction.runtime_slot_commitment,
+        "runtime_slot_pre_generation": instruction.runtime_slot_pre_generation,
+        "runtime_slot_post_generation": instruction.expected_runtime_slot_post_generation,
+        "use_count_pre": 0,
+        "use_count_post": 1,
+        "use_profile_id": instruction.use_profile_id,
+        "use_profile_version": instruction.use_profile_version,
+        "use_profile_digest": instruction.use_profile_digest,
+        "executor_contract_id": instruction.executor_contract_id,
+        "executor_contract_version": instruction.executor_contract_version,
+        "executor_id": instruction.executor_id,
+        "executor_version": instruction.executor_version,
+        "state": (
+            WorkflowProtectedRuntimeContextUseResultState
+        ).CONTEXT_USED_ONCE_IN_PROTECTED_BOUNDARY,
+        "failure_class": None,
+        "context_adopted": True,
+        "protected_runtime_context_use_performed": True,
+        "context_terminal_non_reusable": True,
+        "transient_material_zeroized": True,
+        "context_disclosed": False,
+        "runtime_started": False,
+        "runtime_resumed": False,
+        "process_created": False,
+        "prompt_constructed": False,
+        "model_inference_performed": False,
+        "model_output_created": False,
+        "filesystem_activity_performed": False,
+        "provider_activity_performed": False,
+        "connector_activity_performed": False,
+        "network_activity_performed": False,
+        "readiness_probe_performed": False,
+        "publication_performed": False,
+        "delivery_performed": False,
+        "dispatch_performed": False,
+        "execution_performed": False,
+        "infrastructure_mutation_performed": False,
+        "completed_at": instruction.started_at + timedelta(milliseconds=100),
+        "use_deadline": instruction.use_deadline,
+        "attested_by": instruction.executor_id,
+        "signing_key_id": use_attempt.receipt_verification_signing_key_id,
+        "signature_algorithm": "hmac-sha256",
+        "integrity_signature": "b" * 64,
+    }
+    use_receipt = WorkflowProtectedRuntimeContextUseReceipt(
+        **cast(Any, receipt_values),
+        canonical_digest=canonical_digest(_runtime_context_use_canonical_mapping(receipt_values)),
+    )
+    context_service, _, _, _ = _runtime_context_use_service()
+    use_result = context_service._build_receipted_result(
+        claim_digest=use_claim.canonical_digest,
+        attempt=use_attempt,
+        receipt=use_receipt,
+        recorded_at=use_receipt.completed_at + timedelta(milliseconds=50),
+    )
+    use_claim_row = repository._protected_runtime_context_adoption_claim_model(
+        context_request, use_claim
+    )
+    use_attempt_row = repository._protected_runtime_context_use_attempt_model(
+        context_request, use_claim, use_attempt
+    )
+    use_result_row = repository._protected_runtime_context_use_result_model(
+        WorkflowProtectedRuntimeContextUseResultRequest(
+            result=use_result,
+            receipt=use_receipt,
+            expected_claim_digest=use_claim.canonical_digest,
+            expected_attempt_digest=use_attempt.canonical_digest,
+        ),
+        claim_row=use_claim_row,
+        attempt_row=use_attempt_row,
+    )
+    source = WorkflowProtectedRuntimeStartAuthorizationSource(
+        result=use_result,
+        attempt=use_attempt,
+        use_claim=use_claim,
+        use_receipt=use_receipt,
+    )
+    events: list[str] = []
+    attestor = _RuntimeStartAuthorizationAttestor(events)
+    start_service = _runtime_start_authorization_service(
+        _RuntimeStartAuthorizationRepository(source, events),
+        attestor,
+        _RuntimeStartAuthorizationReceiptVerifier(),
+    )
+    attestation_request = start_service._attestation_request(
+        source,
+        nonce_digest=canonical_digest({"runtime_start_nonce": uuid4().hex}),
+        requested_at=base - timedelta(milliseconds=700),
+    )
+    template = await attestor.attest_runtime_start_lifecycle(attestation_request)
+    attestation_values = {
+        name: getattr(template, name) for name in template.__slots__ if name != "canonical_digest"
+    }
+    attestation_values.update(
+        attestation_id=f"runtime-start-attestation.{uuid4().hex}",
+        observed_at=base - timedelta(milliseconds=600),
+        valid_until=base + timedelta(milliseconds=500),
+        runtime_envelope_eligible_until=base + timedelta(milliseconds=700),
+    )
+    attestation = WorkflowProtectedRuntimeStartLifecycleAttestation(
+        **cast(Any, attestation_values), canonical_digest="0" * 64
+    )
+    attestation = replace(
+        attestation,
+        canonical_digest=canonical_digest(attestation.digest_payload()),
+    )
+    idempotency_digest = canonical_digest(
+        {"runtime_start_source": use_result.canonical_digest, "seed": uuid4().hex}
+    )
+    request_fingerprint = canonical_digest(
+        {
+            "runtime_start_source": use_result.canonical_digest,
+            "idempotency_digest": idempotency_digest,
+        }
+    )
+    authorization_claim, authorization_lease = start_service._build_candidates(
+        source=source,
+        attestation=attestation,
+        issued_at=base - timedelta(milliseconds=500),
+        idempotency_digest=idempotency_digest,
+        request_fingerprint=request_fingerprint,
+    )
+    return (
+        WorkflowProtectedRuntimeStartConsumptionSource(
+            authorization_lease=authorization_lease,
+            authorization_claim=authorization_claim,
+        ),
+        (use_claim_row, use_attempt_row, use_result_row),
+        attestation,
+    )
+
+
 def _claim_request(
-    *, base: datetime = NOW, suffix: str | None = None
+    *,
+    base: datetime = NOW,
+    suffix: str | None = None,
+    source: WorkflowProtectedRuntimeStartConsumptionSource | None = None,
 ) -> WorkflowProtectedRuntimeStartConsumptionClaimRequest:
     service, _, _ = _service()
-    source = _authorization_source_at(base, suffix=suffix)
+    source = source or _authorization_source_at(base, suffix=suffix)
     policy = code_owned_workflow_protected_runtime_start_consumption_policy()
-    idempotency_key = "imp-224-runtime-start"
+    idempotency_key = (
+        "imp-224-runtime-start" if suffix is None else f"imp-224-runtime-start.{suffix}"
+    )
     idempotency_digest = canonical_digest(
         {
             "scope": SCOPE.canonical_value(),
@@ -336,52 +552,63 @@ async def _seed_actual_repository_path(
     request: WorkflowProtectedRuntimeStartConsumptionClaimRequest,
     *,
     seed_consumption: bool,
+    runtime_context_models: tuple[
+        WorkflowProtectedRuntimeContextUseClaimModel,
+        WorkflowProtectedRuntimeContextUseAttemptModel,
+        WorkflowProtectedRuntimeContextUseResultModel,
+    ]
+    | None = None,
+    authorization_attestation: WorkflowProtectedRuntimeStartLifecycleAttestation | None = None,
 ) -> WorkflowProtectedRuntimeStartConsumptionResultRequest:
     lease = request.source.authorization_lease
     authorization_claim = request.source.authorization_claim
     result_request = await _terminal_result_request(
         request, recorded_at=request.candidate_attempt.started_at
     )
-    source_result = SimpleNamespace(
-        result_id=lease.use_result_id,
-        canonical_digest=lease.use_result_digest,
-        use_id=lease.use_id,
-        attempt_id=lease.use_attempt_id,
-        attempt_digest=lease.use_attempt_digest,
-        claim_id=lease.use_claim_id,
-        claim_digest=lease.use_claim_digest,
-        authorization_consumption_result_id=lease.authorization_consumption_result_id,
-        authorization_consumption_result_digest=(lease.authorization_consumption_result_digest),
-        destination_deployment_id=lease.destination_deployment_id,
-        destination_generation=lease.destination_generation,
-        destination_fencing_token_digest=lease.destination_fencing_token_digest,
-        runtime_slot_commitment=lease.runtime_slot_commitment,
-        runtime_slot_pre_generation=lease.runtime_slot_post_generation - 1,
-        runtime_slot_post_generation=lease.runtime_slot_post_generation,
-        use_count_pre=0,
-        use_count_post=lease.use_count_post,
-        use_profile_id=lease.use_profile_id,
-        use_profile_version=lease.use_profile_version,
-        use_profile_digest=lease.use_profile_digest,
-        executor_receipt_digest=lease.use_receipt_digest,
-        outcome_known=lease.use_outcome_known,
-        context_adopted=lease.context_adopted,
-        protected_runtime_context_use_performed=(lease.protected_runtime_context_use_performed),
-        context_terminal_non_reusable=lease.context_terminal_non_reusable,
-        transient_material_zeroized=lease.transient_material_zeroized,
-        completed_at=lease.use_completed_at,
-        recorded_at=lease.use_result_recorded_at,
-        use_deadline=lease.use_completed_at + timedelta(milliseconds=500),
-        state=lease.use_result_state,
-    )
-    parent_result = await _runtime_context_use_result_parent_model(
-        repository, SimpleNamespace(result=source_result)
-    )
+    if runtime_context_models is None:
+        source_result = SimpleNamespace(
+            result_id=lease.use_result_id,
+            canonical_digest=lease.use_result_digest,
+            use_id=lease.use_id,
+            attempt_id=lease.use_attempt_id,
+            attempt_digest=lease.use_attempt_digest,
+            claim_id=lease.use_claim_id,
+            claim_digest=lease.use_claim_digest,
+            authorization_consumption_result_id=lease.authorization_consumption_result_id,
+            authorization_consumption_result_digest=(lease.authorization_consumption_result_digest),
+            destination_deployment_id=lease.destination_deployment_id,
+            destination_generation=lease.destination_generation,
+            destination_fencing_token_digest=lease.destination_fencing_token_digest,
+            runtime_slot_commitment=lease.runtime_slot_commitment,
+            runtime_slot_pre_generation=lease.runtime_slot_post_generation - 1,
+            runtime_slot_post_generation=lease.runtime_slot_post_generation,
+            use_count_pre=0,
+            use_count_post=lease.use_count_post,
+            use_profile_id=lease.use_profile_id,
+            use_profile_version=lease.use_profile_version,
+            use_profile_digest=lease.use_profile_digest,
+            executor_receipt_digest=lease.use_receipt_digest,
+            outcome_known=lease.use_outcome_known,
+            context_adopted=lease.context_adopted,
+            protected_runtime_context_use_performed=(lease.protected_runtime_context_use_performed),
+            context_terminal_non_reusable=lease.context_terminal_non_reusable,
+            transient_material_zeroized=lease.transient_material_zeroized,
+            completed_at=lease.use_completed_at,
+            recorded_at=lease.use_result_recorded_at,
+            use_deadline=lease.use_completed_at + timedelta(milliseconds=500),
+            state=lease.use_result_state,
+        )
+        parent_result = await _runtime_context_use_result_parent_model(
+            repository, SimpleNamespace(result=source_result)
+        )
+        context_models: tuple[object, ...] = (parent_result,)
+    else:
+        context_models = runtime_context_models
     source_result_stub = SimpleNamespace(
         runtime_slot_pre_generation=lease.runtime_slot_post_generation - 1,
         use_count_pre=0,
     )
-    attestation = SimpleNamespace(
+    attestation = authorization_attestation or SimpleNamespace(
         observed_at=lease.issued_at,
         canonical_digest=lease.lifecycle_attestation_digest,
         digest_payload=lambda: {
@@ -394,11 +621,21 @@ async def _seed_actual_repository_path(
         cast(Any, attestation),
         source_result=cast(Any, source_result_stub),
     )
+    authorization_audit_payload: dict[str, object] = (
+        AUTHORIZATION_AUDIT_PAYLOAD
+        if runtime_context_models is None
+        else {
+            "policy_digest": authorization_claim.policy_digest,
+            "request_fingerprint": authorization_claim.request_fingerprint,
+            "scope": authorization_claim.scope.canonical_value(),
+            "use_result_id": authorization_claim.use_result_id,
+        }
+    )
     authorization_claim_model = repository._protected_runtime_start_claim_model(
         authorization_claim,
         authorization_lease_id=lease.authorization_lease_id,
-        idempotency_key="imp-223-seed",
-        audit_payload=AUTHORIZATION_AUDIT_PAYLOAD,
+        idempotency_key=f"imp-223-seed.{lease.authorization_lease_id}",
+        audit_payload=authorization_audit_payload,
         source_result=cast(Any, source_result_stub),
     )
     destination_payload = {
@@ -434,6 +671,9 @@ async def _seed_actual_repository_path(
     attempt_model = repository._protected_runtime_start_consumption_attempt_model(request)
     head_model = WorkflowProtectedRuntimeStartCoordinationHeadModel(
         runtime_envelope_id=lease.runtime_envelope_id,
+        organization_id=request.candidate_attempt.scope.organization_id,
+        environment_id=request.candidate_attempt.scope.environment_id,
+        site_id=request.candidate_attempt.scope.site_id,
         runtime_envelope_commitment=lease.runtime_envelope_commitment,
         runtime_envelope_generation=lease.runtime_envelope_generation,
         use_result_id=lease.use_result_id,
@@ -475,7 +715,7 @@ async def _seed_actual_repository_path(
             )
         )
     for model in (
-        parent_result,
+        *context_models,
         head_model,
         lease_model,
         authorization_claim_model,
@@ -1329,6 +1569,9 @@ async def test_live_postgres_schema_guards_append_only_and_one_claim_winner_when
 
             head_values = {
                 "runtime_envelope_id": f"runtime-envelope.{uuid4().hex}",
+                "organization_id": SCOPE.organization_id,
+                "environment_id": SCOPE.environment_id,
+                "site_id": SCOPE.site_id,
                 "runtime_envelope_commitment": "1" * 64,
                 "runtime_envelope_generation": 2,
                 "use_result_id": f"use-result.{uuid4().hex}",

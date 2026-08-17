@@ -22,6 +22,9 @@ from atlas.modules.workflows.application.protected_runtime_context_use_authoriza
 from atlas.modules.workflows.application.protected_runtime_context_uses import (
     WorkflowProtectedRuntimeContextUsePresentation,
 )
+from atlas.modules.workflows.application.protected_runtime_readiness_authorization_ports import (
+    WorkflowProtectedRuntimeReadinessAuthorizationPresentation,
+)
 from atlas.modules.workflows.application.protected_runtime_start_authorization_ports import (
     WorkflowProtectedRuntimeStartAuthorizationPresentation,
 )
@@ -84,6 +87,10 @@ from atlas.modules.workflows.domain.protected_runtime_context_use_domain import 
 )
 from atlas.modules.workflows.domain.protected_runtime_context_use_domain import (
     WorkflowProtectedRuntimeContextUseResultState as UseResultState,
+)
+from atlas.modules.workflows.domain.protected_runtime_readiness_authorization_domain import (
+    WorkflowProtectedRuntimeReadinessAuthorizationLeaseState,
+    code_owned_workflow_protected_runtime_readiness_authorization_policy,
 )
 from atlas.modules.workflows.domain.protected_runtime_start_authorization_domain import (
     WorkflowProtectedRuntimeStartAuthorizationLeaseState,
@@ -3597,6 +3604,148 @@ class WorkflowProtectedRuntimeStartAuthorizationResponse(BaseModel):
 
 class WorkflowProtectedRuntimeStartAuthorizationInventoryResponse(BaseModel):
     data: WorkflowProtectedRuntimeStartAuthorizationInventoryData
+    meta: ResponseMeta
+
+
+class CreateWorkflowProtectedRuntimeReadinessAuthorizationInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    start_result_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    start_result_digest: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    policy_id: Literal["policy.workflow-protected-runtime-readiness-authorization"]
+    policy_version: Literal["1.0"]
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class WorkflowProtectedRuntimeReadinessAuthorizationAuthorityData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    protected_runtime_readiness_authority_granted: bool
+    protected_runtime_start_authority_granted: Literal[False]
+    protected_runtime_context_use_authority_granted: Literal[False]
+    runtime_use_authorized: Literal[False]
+    runtime_start_authorized: Literal[False]
+    runtime_resume_authorized: Literal[False]
+    connector_activity_authorized: Literal[False]
+    protected_runtime_context_injection_authority_granted: Literal[False]
+    protected_resident_context_access_authority_granted: Literal[False]
+    target_context_capsule_opening_authorized: Literal[False]
+    target_context_capsule_handoff_authorized: Literal[False]
+    endpoint_resolution_authorized: Literal[False]
+    route_selection_authorized: Literal[False]
+    route_binding_authorized: Literal[False]
+    credential_selection_authorized: Literal[False]
+    credential_assignment_binding_authorized: Literal[False]
+    credential_access_authorized: Literal[False]
+    credential_brokerage_authorized: Literal[False]
+    credential_resolution_authorized: Literal[False]
+    protected_artifact_access_authorized: Literal[False]
+    credential_delivery_authorized: Literal[False]
+    network_access_authorized: Literal[False]
+    readiness_probe_authorized: Literal[False]
+    publication_authorized: Literal[False]
+    delivery_authorized: Literal[False]
+    dispatch_authorized: Literal[False]
+    execution_authorized: Literal[False]
+    infrastructure_mutation_authorized: Literal[False]
+
+
+class WorkflowProtectedRuntimeReadinessAuthorizationData(BaseModel):
+    """Minimized future-readiness-request authority without protected lineage."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    authorization_lease_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    state: Literal["authorized_unconsumed"]
+    effective_state: Literal["active", "expired"]
+    issued_at: datetime
+    valid_until: datetime
+    effective_until: datetime
+    consumer_contract_id: Literal[
+        "contract.workflow-protected-transport-target-context-capsule-consumer"
+    ]
+    consumer_contract_version: Literal["1.0"]
+    purpose_id: Literal["purpose.workflow-protected-runtime-readiness-evaluation"]
+    policy_id: Literal["policy.workflow-protected-runtime-readiness-authorization"]
+    policy_version: Literal["1.0"]
+    readiness_profile_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    authority: WorkflowProtectedRuntimeReadinessAuthorizationAuthorityData
+    integrity_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+
+    @model_validator(mode="after")
+    def validate_effective_authority(
+        self,
+    ) -> WorkflowProtectedRuntimeReadinessAuthorizationData:
+        if self.authority.protected_runtime_readiness_authority_granted != (
+            self.effective_state == "active"
+        ):
+            raise ValueError("runtime-readiness authorization projection is inconsistent")
+        return self
+
+    @classmethod
+    def from_domain(
+        cls,
+        presentation: WorkflowProtectedRuntimeReadinessAuthorizationPresentation,
+    ) -> WorkflowProtectedRuntimeReadinessAuthorizationData:
+        lease = presentation.lease
+        policy = code_owned_workflow_protected_runtime_readiness_authorization_policy()
+        authority = lease.authority
+        return cls(
+            authorization_lease_id=lease.authorization_lease_id,
+            state=(
+                WorkflowProtectedRuntimeReadinessAuthorizationLeaseState.AUTHORIZED_UNCONSUMED.value
+            ),
+            effective_state=presentation.effective_state.value,
+            issued_at=lease.issued_at,
+            valid_until=lease.valid_until,
+            effective_until=lease.effective_until,
+            consumer_contract_id=lease.consumer_contract_id,
+            consumer_contract_version=lease.consumer_contract_version,
+            purpose_id=lease.purpose_id,
+            policy_id=lease.policy_id,
+            policy_version=lease.policy_version,
+            readiness_profile_reference=(
+                "integrity.workflow-protected-runtime-readiness-profile."
+                f"{sha256(policy.readiness_profile_digest.encode('utf-8')).hexdigest()[:24]}"
+            ),
+            authority=WorkflowProtectedRuntimeReadinessAuthorizationAuthorityData(
+                **{
+                    **authority.canonical_value(),
+                    "protected_runtime_readiness_authority_granted": (
+                        presentation.protected_runtime_readiness_authority_granted
+                    ),
+                }
+            ),
+            integrity_reference=(
+                "integrity.workflow-protected-runtime-readiness-authorization."
+                f"{sha256(lease.authorization_lease_id.encode('utf-8')).hexdigest()[:24]}"
+            ),
+        )
+
+
+class WorkflowProtectedRuntimeReadinessAuthorizationInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    authorizations: list[WorkflowProtectedRuntimeReadinessAuthorizationData] = Field(max_length=256)
+    server_time: datetime
+    durable: bool
+
+    @model_validator(mode="after")
+    def validate_durable_inventory(
+        self,
+    ) -> WorkflowProtectedRuntimeReadinessAuthorizationInventoryData:
+        if not self.durable:
+            raise ValueError("runtime-readiness authorization inventory must be durable")
+        return self
+
+
+class WorkflowProtectedRuntimeReadinessAuthorizationResponse(BaseModel):
+    data: WorkflowProtectedRuntimeReadinessAuthorizationData
+    meta: ResponseMeta
+
+
+class WorkflowProtectedRuntimeReadinessAuthorizationInventoryResponse(BaseModel):
+    data: WorkflowProtectedRuntimeReadinessAuthorizationInventoryData
     meta: ResponseMeta
 
 

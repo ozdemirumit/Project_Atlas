@@ -807,6 +807,17 @@ MVP workflows do not execute C3 through C5 capabilities.
   no-effect failure; every other post-commit outcome is permanently uncertain. The result is
   non-bearer historical evidence, `runtime_started=true` grants no follow-on authority, AI remains
   advisory-only and AD remains authentication-only.
+- ADR-175 issues one append-only, single-use, non-renewable, non-transferable and non-bearer
+  protected runtime-readiness authorization lease from only one canonical ADR-174
+  `runtime_started_in_protected_boundary` result. Fresh signed, server-nonce-bound, metadata-only
+  evidence must prove the exact runtime remains started and bound to the current destination fence,
+  protected slot generation and code-owned readiness profile. PostgreSQL applies complete ADR-160
+  through ADR-174 lineage locks and two database-time observations before appending one claim and
+  an at-most-one-second lease. Only `protected_runtime_readiness_authority_granted` may be true on
+  the active lease, and it permits only one future readiness-attempt request. IMP-225 performs no
+  probe, process/scheduler operation, network, connector/MCP, publication, dispatch, execution or
+  mutation operation. AI remains advisory-only, AD remains authentication-only, and normal
+  username/password-session GET requires no MFA or second browser prompt.
 
 ## 39. Assumptions
 
@@ -856,3 +867,5 @@ This document is ready to enter Review when:
 | 2.2.0 | 2026-08-17 | Workflow Architecture | Added atomic protected runtime-context use-authorization lease consumption without runtime-context use |
 | 2.3.0 | 2026-08-17 | Workflow Architecture | Added single-use protected runtime-context adoption boundary |
 | 2.4.0 | 2026-08-17 | Workflow Architecture | Added bounded single-use protected runtime-start authorization lease boundary |
+| 2.5.0 | 2026-08-17 | Workflow Architecture | Added atomic protected runtime-start consumption and single start attempt |
+| 2.6.0 | 2026-08-17 | Workflow Architecture | Added bounded single-use protected runtime-readiness authorization lease boundary |

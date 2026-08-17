@@ -265,6 +265,15 @@ from atlas.modules.workflows.domain.protected_runtime_context_use_domain import 
     code_owned_workflow_protected_runtime_context_use_policy,
     code_owned_workflow_protected_runtime_context_use_policy_values,
 )
+from atlas.modules.workflows.domain.protected_runtime_readiness_authorization_domain import (
+    WorkflowProtectedRuntimeReadinessAuthorizationAuthority,
+    WorkflowProtectedRuntimeReadinessAuthorizationClaim,
+    WorkflowProtectedRuntimeReadinessAuthorizationLease,
+    WorkflowProtectedRuntimeReadinessAuthorizationLeaseState,
+    WorkflowProtectedRuntimeReadinessAuthorizationPolicy,
+    code_owned_workflow_protected_runtime_readiness_authorization_policy,
+    code_owned_workflow_protected_runtime_readiness_authorization_policy_values,
+)
 from atlas.modules.workflows.domain.protected_runtime_start_authorization_domain import (
     WorkflowProtectedRuntimeStartAuthorizationAuthority,
     WorkflowProtectedRuntimeStartAuthorizationClaim,
@@ -469,6 +478,11 @@ __all__ = [
     "WorkflowProtectedRuntimeContextUseReceipt",
     "WorkflowProtectedRuntimeContextUseResult",
     "WorkflowProtectedRuntimeContextUseResultState",
+    "WorkflowProtectedRuntimeReadinessAuthorizationAuthority",
+    "WorkflowProtectedRuntimeReadinessAuthorizationClaim",
+    "WorkflowProtectedRuntimeReadinessAuthorizationLease",
+    "WorkflowProtectedRuntimeReadinessAuthorizationLeaseState",
+    "WorkflowProtectedRuntimeReadinessAuthorizationPolicy",
     "WorkflowProtectedRuntimeStartAuthorizationAuthority",
     "WorkflowProtectedRuntimeStartAuthorizationClaim",
     "WorkflowProtectedRuntimeStartAuthorizationLease",
@@ -559,6 +573,8 @@ __all__ = [
     "code_owned_workflow_protected_runtime_context_use_authorization_policy_values",
     "code_owned_workflow_protected_runtime_context_use_policy",
     "code_owned_workflow_protected_runtime_context_use_policy_values",
+    "code_owned_workflow_protected_runtime_readiness_authorization_policy",
+    "code_owned_workflow_protected_runtime_readiness_authorization_policy_values",
     "code_owned_workflow_protected_runtime_start_authorization_policy",
     "code_owned_workflow_protected_runtime_start_authorization_policy_values",
     "code_owned_workflow_protected_runtime_start_consumption_policy",

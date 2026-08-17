@@ -358,6 +358,7 @@ async def test_claim_and_attempt_rows_round_trip_and_tampering_fails_closed() ->
 
     assert repository._protected_runtime_context_adoption_claim_from_row(claim_row) == claim
     assert repository._protected_runtime_context_use_attempt_from_row(attempt_row) == attempt
+    assert repository._protected_runtime_context_use_result_from_row(result_row) == result
     assert result_row.organization_id == attempt.scope.organization_id
     assert result_row.consumer_subject_id == attempt.consumer_subject_id
     assert cast(Any, result_row.__table__.c.executor_receipt_payload.type).none_as_null is True
