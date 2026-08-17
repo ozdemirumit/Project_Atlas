@@ -128,7 +128,7 @@ def test_lock_loads_complete_source_with_prelock_database_time_in_one_join() -> 
     assert "exists(select(literal(1)).where(lease_filter))" in lock
     assert "if not prior_claim_exists and not prior_lease_exists:" in lock
     assert "if expected_source is not None:" in lock
-    assert ").with_only_columns(" in lock
+    assert lock.count(".select_from(WorkflowProtectedRuntimeStartConsumptionResultModel)") == 2
     assert lock.index("if not prior_claim_exists and not prior_lease_exists:") < lock.index(
         "existing_claims ="
     )

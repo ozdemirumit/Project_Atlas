@@ -9210,85 +9210,98 @@ class PostgreSQLWorkflowPlanRepository:
             attempt = source.attempt
             expected_start_claim = source.start_claim
             expected_start_lease = source.start_authorization_lease
-            expected_start_authorization_claim = source.start_authorization_claim
-            source_statement = source_statement.where(
-                WorkflowProtectedRuntimeStartConsumptionResultModel.canonical_digest
-                == result.canonical_digest,
-                WorkflowProtectedRuntimeStartConsumptionResultModel.claim_id
-                == expected_start_claim.claim_id,
-                WorkflowProtectedRuntimeStartConsumptionResultModel.attempt_id
-                == attempt.attempt_id,
-                WorkflowProtectedRuntimeStartConsumptionResultModel.authorization_lease_id
-                == expected_start_lease.authorization_lease_id,
-                WorkflowProtectedRuntimeStartConsumptionClaimModel.claim_id
-                == expected_start_claim.claim_id,
-                WorkflowProtectedRuntimeStartConsumptionClaimModel.canonical_digest
-                == expected_start_claim.canonical_digest,
-                WorkflowProtectedRuntimeStartConsumptionAttemptModel.attempt_id
-                == attempt.attempt_id,
-                WorkflowProtectedRuntimeStartConsumptionAttemptModel.canonical_digest
-                == attempt.canonical_digest,
-                WorkflowProtectedRuntimeStartAuthorizationLeaseModel.authorization_lease_id
-                == expected_start_lease.authorization_lease_id,
-                WorkflowProtectedRuntimeStartAuthorizationLeaseModel.canonical_digest
-                == expected_start_lease.canonical_digest,
-                WorkflowProtectedRuntimeStartAuthorizationClaimModel.claim_id
-                == expected_start_authorization_claim.claim_id,
-                WorkflowProtectedRuntimeStartAuthorizationClaimModel.canonical_digest
-                == expected_start_authorization_claim.canonical_digest,
-                WorkflowProtectedRuntimeContextUseResultModel.result_id
-                == expected_start_lease.use_result_id,
-                WorkflowProtectedRuntimeContextUseResultModel.canonical_digest
-                == expected_start_lease.use_result_digest,
-                WorkflowProtectedRuntimeContextUseAttemptModel.attempt_id
-                == expected_start_lease.use_attempt_id,
-                WorkflowProtectedRuntimeContextUseAttemptModel.canonical_digest
-                == expected_start_lease.use_attempt_digest,
-                WorkflowProtectedRuntimeContextUseClaimModel.claim_id
-                == expected_start_lease.use_claim_id,
-                WorkflowProtectedRuntimeContextUseClaimModel.canonical_digest
-                == expected_start_lease.use_claim_digest,
-                WorkflowProtectedRuntimeContextInjectionDestinationHeadModel.current.is_(True),
-                WorkflowProtectedRuntimeContextInjectionDestinationHeadModel.destination_generation
-                == result.destination_generation,
-                WorkflowProtectedRuntimeContextInjectionDestinationHeadModel.destination_fencing_token_digest
-                == attempt.destination_fencing_token_digest,
-                WorkflowProtectedRuntimeContextInjectionSlotHeadModel.current.is_(True),
-                WorkflowProtectedRuntimeContextInjectionSlotHeadModel.slot_state
-                == "context_used_terminal",
-                WorkflowProtectedRuntimeContextInjectionSlotHeadModel.destination_generation
-                == result.destination_generation,
-                WorkflowProtectedRuntimeContextInjectionSlotHeadModel.destination_fencing_token_digest
-                == attempt.destination_fencing_token_digest,
-                WorkflowProtectedRuntimeContextInjectionSlotHeadModel.slot_generation
-                == result.runtime_envelope_generation,
-                WorkflowProtectedRuntimeStartCoordinationHeadModel.state
-                == "start_attempt_terminal",
-                WorkflowProtectedRuntimeStartCoordinationHeadModel.active_authorization_lease_id
-                == expected_start_lease.authorization_lease_id,
-                WorkflowProtectedRuntimeStartCoordinationHeadModel.consumption_claim_id
-                == expected_start_claim.claim_id,
-                WorkflowProtectedRuntimeStartCoordinationHeadModel.runtime_start_attempt_id
-                == attempt.attempt_id,
-                WorkflowProtectedRuntimeStartCoordinationHeadModel.runtime_start_result_id
-                == result.result_id,
-                WorkflowProtectedRuntimeStartCoordinationHeadModel.runtime_start_result_digest
-                == result.canonical_digest,
-                WorkflowProtectedRuntimeStartCoordinationHeadModel.runtime_start_attempt_pending.is_(
-                    False
-                ),
-                WorkflowProtectedRuntimeStartCoordinationHeadModel.runtime_start_attempt_terminal.is_(
-                    True
-                ),
-                WorkflowProtectedRuntimeStartCoordinationHeadModel.runtime_started.is_(True),
-                WorkflowProtectedRuntimeStartCoordinationHeadModel.runtime_resumed.is_(False),
-                WorkflowProtectedRuntimeStartCoordinationHeadModel.process_created.is_(False),
-                WorkflowProtectedRuntimeStartCoordinationHeadModel.process_scheduled.is_(False),
-            ).with_only_columns(
-                first_observation.c.first_observed_at,
-                exists(select(literal(1)).where(or_(*claim_filters))),
-                exists(select(literal(1)).where(lease_filter)),
-                func.clock_timestamp(),
+            source_statement = (
+                select(
+                    first_observation.c.first_observed_at,
+                    exists(select(literal(1)).where(or_(*claim_filters))),
+                    exists(select(literal(1)).where(lease_filter)),
+                    func.clock_timestamp(),
+                )
+                .select_from(WorkflowProtectedRuntimeStartConsumptionResultModel)
+                .join(first_observation, true())
+                .join(
+                    WorkflowProtectedRuntimeContextInjectionDestinationHeadModel,
+                    WorkflowProtectedRuntimeContextInjectionDestinationHeadModel.destination_deployment_id
+                    == (
+                        WorkflowProtectedRuntimeStartConsumptionResultModel.destination_deployment_id
+                    ),
+                )
+                .join(
+                    WorkflowProtectedRuntimeContextInjectionSlotHeadModel,
+                    and_(
+                        WorkflowProtectedRuntimeContextInjectionSlotHeadModel.destination_deployment_id
+                        == (
+                            WorkflowProtectedRuntimeStartConsumptionResultModel.destination_deployment_id
+                        ),
+                        WorkflowProtectedRuntimeContextInjectionSlotHeadModel.runtime_slot_commitment
+                        == attempt.runtime_slot_commitment,
+                    ),
+                )
+                .join(
+                    WorkflowProtectedRuntimeStartCoordinationHeadModel,
+                    WorkflowProtectedRuntimeStartCoordinationHeadModel.runtime_start_result_id
+                    == WorkflowProtectedRuntimeStartConsumptionResultModel.result_id,
+                )
+                .where(
+                    WorkflowProtectedRuntimeStartConsumptionResultModel.result_id
+                    == result.result_id,
+                    source_scope,
+                    WorkflowProtectedRuntimeStartConsumptionResultModel.canonical_digest
+                    == result.canonical_digest,
+                    WorkflowProtectedRuntimeStartConsumptionResultModel.claim_id
+                    == expected_start_claim.claim_id,
+                    WorkflowProtectedRuntimeStartConsumptionResultModel.attempt_id
+                    == attempt.attempt_id,
+                    WorkflowProtectedRuntimeStartConsumptionResultModel.authorization_lease_id
+                    == expected_start_lease.authorization_lease_id,
+                    WorkflowProtectedRuntimeStartConsumptionResultModel.state == result.state.value,
+                    WorkflowProtectedRuntimeStartConsumptionResultModel.outcome_known.is_(True),
+                    WorkflowProtectedRuntimeStartConsumptionResultModel.runtime_started.is_(True),
+                    WorkflowProtectedRuntimeStartConsumptionResultModel.starter_receipt_digest
+                    == result.starter_receipt_digest,
+                    WorkflowProtectedRuntimeStartConsumptionResultModel.recorded_at
+                    == result.recorded_at,
+                    WorkflowProtectedRuntimeContextInjectionDestinationHeadModel.current.is_(True),
+                    WorkflowProtectedRuntimeContextInjectionDestinationHeadModel.destination_generation
+                    == result.destination_generation,
+                    WorkflowProtectedRuntimeContextInjectionDestinationHeadModel.destination_fencing_token_digest
+                    == attempt.destination_fencing_token_digest,
+                    WorkflowProtectedRuntimeContextInjectionSlotHeadModel.current.is_(True),
+                    WorkflowProtectedRuntimeContextInjectionSlotHeadModel.slot_state
+                    == "context_used_terminal",
+                    WorkflowProtectedRuntimeContextInjectionSlotHeadModel.destination_generation
+                    == result.destination_generation,
+                    WorkflowProtectedRuntimeContextInjectionSlotHeadModel.destination_fencing_token_digest
+                    == attempt.destination_fencing_token_digest,
+                    WorkflowProtectedRuntimeContextInjectionSlotHeadModel.slot_generation
+                    == result.runtime_envelope_generation,
+                    WorkflowProtectedRuntimeStartCoordinationHeadModel.state
+                    == "start_attempt_terminal",
+                    WorkflowProtectedRuntimeStartCoordinationHeadModel.runtime_envelope_id
+                    == attempt.runtime_envelope_id,
+                    WorkflowProtectedRuntimeStartCoordinationHeadModel.runtime_envelope_commitment
+                    == result.runtime_envelope_commitment,
+                    WorkflowProtectedRuntimeStartCoordinationHeadModel.runtime_envelope_generation
+                    == result.runtime_envelope_generation,
+                    WorkflowProtectedRuntimeStartCoordinationHeadModel.active_authorization_lease_id
+                    == expected_start_lease.authorization_lease_id,
+                    WorkflowProtectedRuntimeStartCoordinationHeadModel.consumption_claim_id
+                    == expected_start_claim.claim_id,
+                    WorkflowProtectedRuntimeStartCoordinationHeadModel.runtime_start_attempt_id
+                    == attempt.attempt_id,
+                    WorkflowProtectedRuntimeStartCoordinationHeadModel.runtime_start_result_digest
+                    == result.canonical_digest,
+                    WorkflowProtectedRuntimeStartCoordinationHeadModel.runtime_start_attempt_pending.is_(
+                        False
+                    ),
+                    WorkflowProtectedRuntimeStartCoordinationHeadModel.runtime_start_attempt_terminal.is_(
+                        True
+                    ),
+                    WorkflowProtectedRuntimeStartCoordinationHeadModel.runtime_started.is_(True),
+                    WorkflowProtectedRuntimeStartCoordinationHeadModel.runtime_resumed.is_(False),
+                    WorkflowProtectedRuntimeStartCoordinationHeadModel.process_created.is_(False),
+                    WorkflowProtectedRuntimeStartCoordinationHeadModel.process_scheduled.is_(False),
+                )
             )
         source_row = (await session.execute(locked(source_statement))).one_or_none()
         if source_row is None:
