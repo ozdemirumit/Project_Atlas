@@ -31,7 +31,6 @@ from atlas.core.persistence.models import (
 )
 from atlas.modules.workflows.adapters.postgres import PostgreSQLWorkflowPlanRepository
 from atlas.modules.workflows.application.protected_runtime_readiness_authorization_ports import (
-    WorkflowProtectedRuntimeReadinessAuthorizationLeaseStatus,
     WorkflowProtectedRuntimeReadinessAuthorizationSourceRequest,
 )
 from atlas.modules.workflows.application.protected_runtime_readiness_consumption_ports import (
@@ -380,22 +379,58 @@ async def _seed_authorization(
         )
     )
     assert source is not None
-    authorization_request = await _authorization_request(
-        repository,
-        source,
-        idempotency_key=f"imp-226-auth-{uuid4().hex}",
-        lifecycle_verifier=_ExactLifecycleVerifier(),
-    )
-    outcome = await repository.authorize_protected_runtime_readiness(authorization_request)
-    assert outcome.status is WorkflowProtectedRuntimeReadinessAuthorizationLeaseStatus.AUTHORIZED
-    assert outcome.lease is not None
-    assert outcome.evaluated_at is not None
-    working = repository._protected_runtime_readiness_retimed_request(
-        authorization_request, issued_at=outcome.evaluated_at
-    )
-    assert working.candidate == outcome.lease
+    idempotency_key = f"imp-226-auth-{uuid4().hex}"
+    policy = code_owned_workflow_protected_runtime_readiness_consumption_policy()
+    async with repository._sessions() as session:
+        locked = await repository._lock_protected_runtime_readiness_authorization_rows(
+            session,
+            start_result_id=source.result.result_id,
+            scope=source.result.scope,
+            consumer_subject_id=policy.consumer_subject_id,
+            consumer_audience=policy.consumer_audience,
+            idempotency_key=idempotency_key,
+            expected_source=source,
+        )
+        authorization_request = await _authorization_request(
+            repository,
+            source,
+            idempotency_key=idempotency_key,
+            lifecycle_verifier=_ExactLifecycleVerifier(),
+            first_observed_at=locked.observed_at,
+        )
+        working = repository._protected_runtime_readiness_retimed_request(
+            authorization_request, issued_at=locked.observed_at
+        )
+        assert repository._protected_runtime_readiness_evidence_matches(working, locked)
+        audit_payload = {
+            "start_result_id": working.candidate.start_result_id,
+            "policy_digest": working.candidate.policy_digest,
+            "request_fingerprint": working.request_fingerprint,
+            "scope": working.scope.canonical_value(),
+        }
+        assert canonical_digest(audit_payload) == working.candidate_claim.authorization_audit_digest
+        session.add(
+            repository._protected_runtime_readiness_lease_model(
+                working.candidate,
+                working.lifecycle_attestation,
+                locked=locked,
+                source=working.source,
+            )
+        )
+        await session.flush()
+        session.add(
+            repository._protected_runtime_readiness_claim_model(
+                working.candidate_claim,
+                authorization_lease_id=working.candidate.authorization_lease_id,
+                idempotency_key=working.idempotency_key,
+                audit_payload=audit_payload,
+                locked=locked,
+                source=working.source,
+            )
+        )
+        await session.commit()
     return start_request, WorkflowProtectedRuntimeReadinessConsumptionSource(
-        outcome.lease, working.candidate_claim
+        working.candidate, working.candidate_claim
     )
 
 

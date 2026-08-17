@@ -496,6 +496,7 @@ async def _authorization_request(
     idempotency_key: str,
     lifecycle_verifier: Any,
     validity_milliseconds: int = 1_000,
+    first_observed_at: datetime | None = None,
 ) -> WorkflowProtectedRuntimeReadinessAuthorizationLeaseRequest:
     receipt_verifier = _AcceptAllReceiptVerifier()
     service = WorkflowProtectedRuntimeReadinessAuthorizationService(
@@ -505,7 +506,7 @@ async def _authorization_request(
         start_receipt_signature_verifier=cast(Any, receipt_verifier),
         audit_sink=cast(Any, _UnusedAuditSink()),
     )
-    first_observed_at = await repository.get_authoritative_time()
+    first_observed_at = first_observed_at or await repository.get_authoritative_time()
     attestation, nonce = _lifecycle_attestation(
         service,
         source,
