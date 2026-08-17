@@ -342,7 +342,8 @@ async def test_live_postgres_tables_constraints_and_append_only_triggers_when_co
                                 "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
                                 "WHERE conrelid IN "
                                 "('workflow_event_runtime_start_auth_leases'::regclass, "
-                                "'workflow_event_runtime_start_auth_claims'::regclass)"
+                                "'workflow_event_runtime_start_auth_claims'::regclass, "
+                                "'workflow_event_runtime_start_coordination_heads'::regclass)"
                             )
                         )
                     ).scalars()
