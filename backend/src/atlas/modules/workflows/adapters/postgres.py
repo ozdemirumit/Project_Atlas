@@ -1011,7 +1011,11 @@ class PostgreSQLWorkflowPlanRepository:
         self,
         verifier: WorkflowProtectedRuntimeContextUseReceiptSignatureVerifier,
     ) -> None:
-        current = self._protected_runtime_context_use_receipt_signature_verifier
+        current = getattr(
+            self,
+            "_protected_runtime_context_use_receipt_signature_verifier",
+            None,
+        )
         if current is not None and current is not verifier:
             raise ValueError("protected runtime-context use receipt verifier is already bound")
         self._protected_runtime_context_use_receipt_signature_verifier = verifier
