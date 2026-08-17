@@ -7612,7 +7612,10 @@ class PostgreSQLWorkflowPlanRepository:
         raise ValueError("runtime context use-authorization consumption evidence is invalid")
 
     async def get_protected_runtime_context_use_source(
-        self, *, authorization_consumption_result_id: str
+        self,
+        *,
+        authorization_consumption_result_id: str,
+        authorization_consumption_result_digest: str,
     ) -> WorkflowProtectedRuntimeContextUseSource | None:
         claim_model = WorkflowProtectedRuntimeContextUseAuthorizationConsumptionClaimModel
         result_model = WorkflowProtectedRuntimeContextUseAuthorizationConsumptionResultModel
@@ -7624,7 +7627,10 @@ class PostgreSQLWorkflowPlanRepository:
                         result_model,
                         result_model.consumption_claim_id == claim_model.consumption_claim_id,
                     )
-                    .where(result_model.result_id == authorization_consumption_result_id)
+                    .where(
+                        result_model.result_id == authorization_consumption_result_id,
+                        result_model.canonical_digest == authorization_consumption_result_digest,
+                    )
                 )
             ).one_or_none()
         if row is None:
@@ -7640,6 +7646,7 @@ class PostgreSQLWorkflowPlanRepository:
             self._protected_runtime_context_use_repository_contract_violation()
         if (
             result.result_id != authorization_consumption_result_id
+            or result.canonical_digest != authorization_consumption_result_digest
             or result.consumption_claim_id != claim.consumption_claim_id
             or result.consumption_claim_digest != claim.canonical_digest
             or result.authorization_lease_id != claim.authorization_lease_id
@@ -7724,10 +7731,7 @@ class PostgreSQLWorkflowPlanRepository:
                 return result_type(statuses.EVIDENCE_CONFLICT)
             claim = self._protected_runtime_context_use_claim(
                 request,
-                claimed_at=min(
-                    locked.first_observed_at,
-                    request.eligibility_attestation.observed_at,
-                ),
+                claimed_at=locked.observed_at,
             )
             deadline = self._protected_runtime_context_use_deadline(
                 request, started_at=locked.observed_at
@@ -8110,6 +8114,8 @@ class PostgreSQLWorkflowPlanRepository:
         claim = matching[0]
         if (
             claim.authorization_consumption_result_id != request.authorization_consumption_result_id
+            or claim.authorization_consumption_result_digest
+            != request.authorization_consumption_result_digest
             or claim.use_id != request.use_id
             or claim.request_fingerprint != request.request_fingerprint
             or claim.policy_id != request.policy_id
@@ -8160,6 +8166,9 @@ class PostgreSQLWorkflowPlanRepository:
         return WorkflowProtectedRuntimeContextUseReplayLookupRequest(
             authorization_consumption_result_id=(
                 request.source.authorization_consumption_result.result_id
+            ),
+            authorization_consumption_result_digest=(
+                request.source.authorization_consumption_result.canonical_digest
             ),
             scope=request.scope,
             consumer_subject_id=request.consumer_subject_id,
@@ -8350,6 +8359,9 @@ class PostgreSQLWorkflowPlanRepository:
             "attempt_id": request.attempt_id,
             "authorization_consumption_result_id": (
                 request.source.authorization_consumption_result.result_id
+            ),
+            "authorization_consumption_result_digest": (
+                request.source.authorization_consumption_result.canonical_digest
             ),
             "scope": request.scope.canonical_value(),
             "consumer_subject_id": request.consumer_subject_id,

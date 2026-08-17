@@ -95,6 +95,7 @@ async def _claim_request() -> WorkflowProtectedRuntimeContextUseClaimRequest:
     fingerprint = canonical_digest(
         {
             "authorization_consumption_result_id": source_result.result_id,
+            "authorization_consumption_result_digest": source_result.canonical_digest,
             "scope": SCOPE.canonical_value(),
             "consumer_subject_id": policy.consumer_subject_id,
             "consumer_audience": policy.consumer_audience,
@@ -117,6 +118,7 @@ async def _claim_request() -> WorkflowProtectedRuntimeContextUseClaimRequest:
         "claim_id": claim_id,
         "attempt_id": attempt_id,
         "authorization_consumption_result_id": source_result.result_id,
+        "authorization_consumption_result_digest": source_result.canonical_digest,
         "scope": SCOPE.canonical_value(),
         "consumer_subject_id": policy.consumer_subject_id,
         "consumer_audience": policy.consumer_audience,
@@ -198,6 +200,7 @@ def test_repository_contract_is_replay_first_locked_and_two_clocked() -> None:
     assert claim_source.index("_cas_protected_runtime_context_use_slot") < claim_source.index(
         "session.add"
     )
+    assert "claimed_at=locked.observed_at" in claim_source
     assert claim_source.index("session.flush") < claim_source.index("session.commit")
 
 

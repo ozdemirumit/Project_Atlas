@@ -3523,6 +3523,9 @@ class CreateWorkflowProtectedRuntimeContextUseInput(BaseModel):
     authorization_consumption_result_id: str = Field(
         min_length=3, max_length=128, pattern=STABLE_ID
     )
+    authorization_consumption_result_digest: str = Field(
+        min_length=64, max_length=64, pattern=r"^[a-f0-9]{64}$"
+    )
     policy_id: Literal["policy.workflow-protected-runtime-context-use"]
     policy_version: Literal["1.0"]
     irreversible_use_acknowledged: Literal[True]

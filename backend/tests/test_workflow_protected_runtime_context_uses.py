@@ -466,13 +466,18 @@ class _Repository:
         )
 
     async def get_protected_runtime_context_use_source(
-        self, *, authorization_consumption_result_id: str
+        self,
+        *,
+        authorization_consumption_result_id: str,
+        authorization_consumption_result_digest: str,
     ) -> WorkflowProtectedRuntimeContextUseSource | None:
         self.events.append("source")
         return (
             self.source
             if authorization_consumption_result_id
             == self.source.authorization_consumption_result.result_id
+            and authorization_consumption_result_digest
+            == self.source.authorization_consumption_result.canonical_digest
             else None
         )
 
@@ -640,6 +645,9 @@ async def _use(
 ) -> WorkflowProtectedRuntimeContextUsePresentation:
     return await service.use(
         authorization_consumption_result_id="use-authorization-consumption-result.imp-221",
+        authorization_consumption_result_digest=(
+            _source().authorization_consumption_result.canonical_digest
+        ),
         policy_id=service.policy.policy_id,
         policy_version=service.policy.policy_version,
         irreversible_use_acknowledged=True,
@@ -801,6 +809,9 @@ async def test_request_rejects_human_or_missing_irreversible_acknowledgement() -
     with pytest.raises(WorkflowProtectedRuntimeContextUseError, match="request_invalid"):
         await service.use(
             authorization_consumption_result_id="use-authorization-consumption-result.imp-221",
+            authorization_consumption_result_digest=(
+                _source().authorization_consumption_result.canonical_digest
+            ),
             policy_id=service.policy.policy_id,
             policy_version=service.policy.policy_version,
             irreversible_use_acknowledged=False,

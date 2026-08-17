@@ -245,6 +245,7 @@ class WorkflowProtectedRuntimeContextUseReceiptSignatureVerifier(Protocol):
 @dataclass(frozen=True, slots=True)
 class WorkflowProtectedRuntimeContextUseReplayLookupRequest:
     authorization_consumption_result_id: str
+    authorization_consumption_result_digest: str
     scope: WorkflowScope
     consumer_subject_id: str
     consumer_audience: str
@@ -334,7 +335,10 @@ class WorkflowProtectedRuntimeContextUseRepository(Protocol):
     ) -> WorkflowProtectedRuntimeContextUseReplayLookup: ...
 
     async def get_protected_runtime_context_use_source(
-        self, *, authorization_consumption_result_id: str
+        self,
+        *,
+        authorization_consumption_result_id: str,
+        authorization_consumption_result_digest: str,
     ) -> WorkflowProtectedRuntimeContextUseSource | None: ...
 
     async def claim_protected_runtime_context_use(

@@ -106,6 +106,7 @@ class WorkflowProtectedRuntimeContextUseService:
         self,
         *,
         authorization_consumption_result_id: str,
+        authorization_consumption_result_digest: str,
         policy_id: str,
         policy_version: str,
         irreversible_use_acknowledged: bool,
@@ -115,6 +116,7 @@ class WorkflowProtectedRuntimeContextUseService:
     ) -> WorkflowProtectedRuntimeContextUsePresentation:
         self._require_request(
             authorization_consumption_result_id=authorization_consumption_result_id,
+            authorization_consumption_result_digest=authorization_consumption_result_digest,
             policy_id=policy_id,
             policy_version=policy_version,
             irreversible_use_acknowledged=irreversible_use_acknowledged,
@@ -136,6 +138,9 @@ class WorkflowProtectedRuntimeContextUseService:
         request_fingerprint = canonical_digest(
             {
                 "authorization_consumption_result_id": authorization_consumption_result_id,
+                "authorization_consumption_result_digest": (
+                    authorization_consumption_result_digest
+                ),
                 "scope": context.scope.canonical_value(),
                 "consumer_subject_id": context.subject_id,
                 "consumer_audience": context.credential_audience,
@@ -150,6 +155,9 @@ class WorkflowProtectedRuntimeContextUseService:
         seed = canonical_digest(
             {
                 "authorization_consumption_result_id": authorization_consumption_result_id,
+                "authorization_consumption_result_digest": (
+                    authorization_consumption_result_digest
+                ),
                 "idempotency_digest": idempotency_digest,
                 "request_fingerprint": request_fingerprint,
             }
@@ -160,6 +168,7 @@ class WorkflowProtectedRuntimeContextUseService:
         replay = await self._repository.lookup_protected_runtime_context_use_replay(
             WorkflowProtectedRuntimeContextUseReplayLookupRequest(
                 authorization_consumption_result_id=authorization_consumption_result_id,
+                authorization_consumption_result_digest=(authorization_consumption_result_digest),
                 scope=context.scope,
                 consumer_subject_id=context.subject_id,
                 consumer_audience=context.credential_audience,
@@ -178,6 +187,7 @@ class WorkflowProtectedRuntimeContextUseService:
         self._require_trusted_components()
         evidence = await self._load_and_attest(
             authorization_consumption_result_id=authorization_consumption_result_id,
+            authorization_consumption_result_digest=authorization_consumption_result_digest,
             context=context,
         )
         claim_id = f"workflow-protected-runtime-context-use-claim.{seed[:24]}"
@@ -190,6 +200,7 @@ class WorkflowProtectedRuntimeContextUseService:
             "claim_id": claim_id,
             "attempt_id": attempt_id,
             "authorization_consumption_result_id": authorization_consumption_result_id,
+            "authorization_consumption_result_digest": authorization_consumption_result_digest,
             "scope": context.scope.canonical_value(),
             "consumer_subject_id": context.subject_id,
             "consumer_audience": context.credential_audience,
@@ -330,13 +341,20 @@ class WorkflowProtectedRuntimeContextUseService:
         self,
         *,
         authorization_consumption_result_id: str,
+        authorization_consumption_result_digest: str,
         context: WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationContext,
     ) -> _FreshUseEvidence:
         source = await self._repository.get_protected_runtime_context_use_source(
-            authorization_consumption_result_id=authorization_consumption_result_id
+            authorization_consumption_result_id=authorization_consumption_result_id,
+            authorization_consumption_result_digest=(authorization_consumption_result_digest),
         )
         if source is None:
             self._raise("protected_runtime_context_use_source_not_found")
+        if (
+            source.authorization_consumption_result.canonical_digest
+            != authorization_consumption_result_digest
+        ):
+            self._raise("protected_runtime_context_use_source_invalid")
         now = await self._repository.get_authoritative_time()
         self._validate_source(source=source, scope=context.scope, evaluated_at=now)
         claim = source.authorization_consumption_claim
@@ -718,6 +736,7 @@ class WorkflowProtectedRuntimeContextUseService:
             self._raise("protected_runtime_context_use_request_invalid")
         for name in (
             "authorization_consumption_result_id",
+            "authorization_consumption_result_digest",
             "policy_id",
             "policy_version",
             "idempotency_key",
@@ -731,6 +750,13 @@ class WorkflowProtectedRuntimeContextUseService:
                 or any(character.isspace() for character in value)
             ):
                 self._raise("protected_runtime_context_use_request_invalid")
+        digest = values["authorization_consumption_result_digest"]
+        if (
+            not isinstance(digest, str)
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+        ):
+            self._raise("protected_runtime_context_use_request_invalid")
 
     def _resolve_replay(
         self, replay: WorkflowProtectedRuntimeContextUseReplayLookup

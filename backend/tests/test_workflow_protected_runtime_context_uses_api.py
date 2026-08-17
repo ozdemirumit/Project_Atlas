@@ -35,6 +35,7 @@ from atlas.modules.workflows.adapters.protected_runtime_context_users import (
 from atlas.modules.workflows.application import (
     WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_AUDIENCE,
     WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_SUBJECT,
+    WorkflowProtectedRuntimeContextUseError,
     WorkflowProtectedRuntimeContextUsePresentation,
     WorkflowProtectedRuntimeContextUseReplayLookup,
     WorkflowProtectedRuntimeContextUseReplayStatus,
@@ -139,6 +140,16 @@ class _FailingService(_Service):
         raise RuntimeError("database unavailable")
 
 
+class _IntegrityFailingService(_Service):
+    def __init__(self, code: str) -> None:
+        super().__init__()
+        self.code = code
+
+    async def use(self, **kwargs: Any) -> WorkflowProtectedRuntimeContextUsePresentation:
+        del kwargs
+        raise WorkflowProtectedRuntimeContextUseError(self.code)
+
+
 class _DurableNoReplayRepository:
     durable = True
 
@@ -196,6 +207,7 @@ def _request_payload() -> dict[str, object]:
             "workflow-protected-runtime-context-use-authorization-consumption-result."
             "0123456789abcdef01234567"
         ),
+        "authorization_consumption_result_digest": "a" * 64,
         "policy_id": policy.policy_id,
         "policy_version": policy.policy_version,
         "irreversible_use_acknowledged": True,
@@ -334,6 +346,7 @@ def test_exact_workload_only_post_and_password_browser_get_are_minimized_no_stor
     call = service.calls[0]
     assert set(call) == {
         "authorization_consumption_result_id",
+        "authorization_consumption_result_digest",
         "policy_id",
         "policy_version",
         "irreversible_use_acknowledged",
@@ -341,6 +354,7 @@ def test_exact_workload_only_post_and_password_browser_get_are_minimized_no_stor
         "idempotency_key",
         "context",
     }
+    assert call["authorization_consumption_result_digest"] == "a" * 64
     assert call["context"].subject_id == (
         WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_SUBJECT
     )
@@ -431,7 +445,6 @@ def test_post_requires_the_exact_schema_and_rejects_sensitive_caller_owned_field
     headers = _workload_headers(token, WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_AUDIENCE)
     payload = _request_payload()
     unsafe_fields: tuple[tuple[str, object], ...] = (
-        ("authorization_consumption_result_digest", "a" * 64),
         ("authorization_consumption_claim_id", "claim.untrusted"),
         ("authorization_lease_id", "lease.untrusted"),
         ("injection_result_id", "injection.untrusted"),
@@ -542,6 +555,30 @@ def test_service_outage_is_503_and_non_oracular() -> None:
         detail = response.json()["detail"].lower()
         for forbidden in ("context id", "context digest", "slot", "receipt", "fence"):
             assert forbidden not in detail
+
+
+def test_repository_and_commit_integrity_errors_are_503_not_authorization_denials() -> None:
+    for code in (
+        "protected_runtime_context_use_repository_contract_violation",
+        "protected_runtime_context_use_repository_violation",
+        "protected_runtime_context_use_claim_commit_uncertain",
+        "protected_runtime_context_use_instruction_envelope_invalid",
+    ):
+        app, token = _app(_IntegrityFailingService(code))
+        with TestClient(app) as client:
+            response = client.post(
+                ENDPOINT,
+                json=_request_payload(),
+                headers=_workload_headers(
+                    token, WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_AUDIENCE
+                ),
+            )
+
+        assert response.status_code == 503
+        assert response.json()["code"] == (
+            "workflow_protected_runtime_context_use_service_unavailable"
+        )
+        _assert_no_store(response)
 
 
 def test_default_composition_is_503_without_durability_or_trusted_components() -> None:

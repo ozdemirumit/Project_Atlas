@@ -14389,8 +14389,8 @@ class WorkflowProtectedRuntimeContextUseAttemptModel(
         CheckConstraint(_WF_RTCTX_USE_CONTRACT, name="ck_wf_rtctx_use_attempt_contract"),
         CheckConstraint("state = 'use_started'", name="ck_wf_rtctx_use_attempt_state"),
         CheckConstraint(
-            "claimed_at <= eligibility_attestation_observed_at "
-            "AND eligibility_attestation_observed_at <= started_at "
+            "eligibility_attestation_observed_at <= claimed_at "
+            "AND claimed_at <= started_at "
             "AND started_at < use_deadline "
             "AND use_deadline <= attestation_valid_until "
             "AND use_deadline <= injected_context_usable_until",

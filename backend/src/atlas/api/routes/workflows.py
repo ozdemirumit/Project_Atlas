@@ -479,6 +479,16 @@ def _no_store(response: Response) -> None:
     )
 
 
+def _protected_runtime_context_use_error_is_unavailable(code: str) -> bool:
+    return (
+        "unavailable" in code
+        or "repository" in code
+        or "commit_uncertain" in code
+        or "instruction_envelope_invalid" in code
+        or code.endswith("durable_repository_required")
+    )
+
+
 async def _context(
     request: Request,
     subject: AuthenticatedSubject,
@@ -7242,6 +7252,9 @@ async def create_workflow_protected_runtime_context_use(
     try:
         presentation = await service.use(
             authorization_consumption_result_id=(payload.authorization_consumption_result_id),
+            authorization_consumption_result_digest=(
+                payload.authorization_consumption_result_digest
+            ),
             policy_id=payload.policy_id,
             policy_version=payload.policy_version,
             irreversible_use_acknowledged=payload.irreversible_use_acknowledged,
@@ -7266,9 +7279,7 @@ async def create_workflow_protected_runtime_context_use(
             evaluated_at=server_time,
         )
     except WorkflowProtectedRuntimeContextUseError as error:
-        unavailable = "unavailable" in error.code or error.code.endswith(
-            "durable_repository_required"
-        )
+        unavailable = _protected_runtime_context_use_error_is_unavailable(error.code)
         raise AtlasError(
             status=503 if unavailable else 409,
             code=(
