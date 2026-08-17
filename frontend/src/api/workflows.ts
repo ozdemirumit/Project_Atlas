@@ -1676,6 +1676,29 @@ export type WorkflowProtectedRuntimeStartAuthorizationInventory = {
   durable: true;
 };
 
+export type WorkflowProtectedRuntimeStart = {
+  start_id: string;
+  attempt_state: "runtime_start_attempt_started";
+  result_state:
+    | "runtime_started_in_protected_boundary"
+    | "runtime_start_failed_without_start"
+    | "runtime_start_outcome_uncertain"
+    | null;
+  started_at: string;
+  completed_at: string | null;
+  recorded_at: string | null;
+  runtime_started: boolean | null;
+  policy_reference: string;
+  runtime_start_profile_reference: string;
+  effective_authority: false;
+};
+
+export type WorkflowProtectedRuntimeStartInventory = {
+  starts: WorkflowProtectedRuntimeStart[];
+  server_time: string;
+  durable: true;
+};
+
 export type WorkflowProtectedRuntimeContextInjectionConsumption = {
   injection_id: string;
   attempt_state: "started" | "completed";
@@ -3258,6 +3281,19 @@ const protectedRuntimeStartAuthorizationInventoryFields = [
   "server_time",
   "durable",
 ] as const;
+const protectedRuntimeStartFields = [
+  "start_id",
+  "attempt_state",
+  "result_state",
+  "started_at",
+  "completed_at",
+  "recorded_at",
+  "runtime_started",
+  "policy_reference",
+  "runtime_start_profile_reference",
+  "effective_authority",
+] as const;
+const protectedRuntimeStartInventoryFields = ["starts", "server_time", "durable"] as const;
 const protectedRuntimeContextInjectionConsumptionFields = [
   "injection_id",
   "attempt_state",
@@ -5772,6 +5808,63 @@ function isProtectedRuntimeStartAuthorization(
   );
 }
 
+function isProtectedRuntimeStart(
+  value: unknown,
+  serverTime: string,
+): value is WorkflowProtectedRuntimeStart {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, protectedRuntimeStartFields) ||
+    containsCredentialMaterial(value) ||
+    !isTimezoneAwareTimestamp(value.started_at) ||
+    (value.completed_at !== null && !isTimezoneAwareTimestamp(value.completed_at)) ||
+    (value.recorded_at !== null && !isTimezoneAwareTimestamp(value.recorded_at))
+  ) {
+    return false;
+  }
+  const startedAt = Date.parse(value.started_at);
+  const completedAt = value.completed_at === null ? null : Date.parse(value.completed_at);
+  const recordedAt = value.recorded_at === null ? null : Date.parse(value.recorded_at);
+  const evaluatedAt = Date.parse(serverTime);
+  const pending =
+    value.result_state === null &&
+    value.completed_at === null &&
+    value.recorded_at === null &&
+    value.runtime_started === null;
+  const succeeded =
+    value.result_state === "runtime_started_in_protected_boundary" &&
+    completedAt !== null &&
+    recordedAt !== null &&
+    value.runtime_started === true;
+  const failedWithoutStart =
+    value.result_state === "runtime_start_failed_without_start" &&
+    completedAt !== null &&
+    recordedAt !== null &&
+    value.runtime_started === false;
+  const uncertain =
+    value.result_state === "runtime_start_outcome_uncertain" &&
+    completedAt === null &&
+    recordedAt !== null &&
+    value.runtime_started === null;
+  return (
+    isStableIdentifier(value.start_id) &&
+    value.start_id.startsWith("workflow-protected-runtime-start-consumption.") &&
+    value.attempt_state === "runtime_start_attempt_started" &&
+    startedAt <= evaluatedAt &&
+    (completedAt === null ||
+      (completedAt >= startedAt && completedAt <= evaluatedAt)) &&
+    (recordedAt === null ||
+      (recordedAt >= (completedAt ?? startedAt) && recordedAt <= evaluatedAt)) &&
+    (pending || succeeded || failedWithoutStart || uncertain) &&
+    isIdentifier(value.policy_reference) &&
+    isStableIdentifier(value.runtime_start_profile_reference) &&
+    value.runtime_start_profile_reference.startsWith(
+      "integrity.workflow-protected-runtime-start-profile.",
+    ) &&
+    value.effective_authority === false
+  );
+}
+
 function isProtectedRuntimeContextInjectionConsumption(
   value: unknown,
   serverTime: string,
@@ -7743,6 +7836,53 @@ export async function listWorkflowProtectedRuntimeStartAuthorizations(): Promise
     authorizationIds.add(authorization.authorization_lease_id);
   }
   return data as WorkflowProtectedRuntimeStartAuthorizationInventory;
+}
+
+export async function listWorkflowProtectedRuntimeStarts(): Promise<WorkflowProtectedRuntimeStartInventory> {
+  const response = await apiFetch(
+    "/api/v1/workflows/protected-runtime-start-consumptions",
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(
+    response,
+    "Workflow protected runtime-start retrieval failed",
+  );
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, protectedRuntimeStartInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    !Array.isArray(data.starts) ||
+    data.starts.length > 256 ||
+    !isTimezoneAwareTimestamp(data.server_time) ||
+    data.durable !== true
+  ) {
+    throw new ApiRequestError(
+      "Workflow protected runtime-start response was unsafe",
+      response.status,
+    );
+  }
+  const serverTime = data.server_time;
+  if (!data.starts.every((start) => isProtectedRuntimeStart(start, serverTime))) {
+    throw new ApiRequestError(
+      "Workflow protected runtime-start response was unsafe",
+      response.status,
+    );
+  }
+  const startIds = new Set<string>();
+  for (const start of data.starts) {
+    if (
+      !isObject(start) ||
+      typeof start.start_id !== "string" ||
+      startIds.has(start.start_id)
+    ) {
+      throw new ApiRequestError(
+        "Workflow protected runtime-start response was unsafe",
+        response.status,
+      );
+    }
+    startIds.add(start.start_id);
+  }
+  return data as WorkflowProtectedRuntimeStartInventory;
 }
 
 export async function listWorkflowProtectedRuntimeContextInjectionConsumptions(): Promise<WorkflowProtectedRuntimeContextInjectionConsumptionInventory> {

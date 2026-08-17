@@ -38,6 +38,7 @@ import {
   type WorkflowProtectedRuntimeContextUseAuthorizationConsumption,
   type WorkflowProtectedRuntimeContextUse,
   type WorkflowProtectedRuntimeStartAuthorization,
+  type WorkflowProtectedRuntimeStart,
   type WorkflowPhysicalTransportTargetContextBinding,
   type WorkflowPhysicalTransportCredentialAssignmentSnapshot,
   type WorkflowPhysicalTransportCredentialAssignmentBinding,
@@ -1517,6 +1518,20 @@ const protectedRuntimeStartAuthorization: WorkflowProtectedRuntimeStartAuthoriza
     "integrity.workflow-protected-runtime-start-authorization.1234567890abcdef",
 };
 
+const protectedRuntimeStart: WorkflowProtectedRuntimeStart = {
+  start_id: "workflow-protected-runtime-start-consumption.1234567890abcdef12345678",
+  attempt_state: "runtime_start_attempt_started",
+  result_state: "runtime_started_in_protected_boundary",
+  started_at: "2026-08-14T10:08:30.800Z",
+  completed_at: "2026-08-14T10:08:31Z",
+  recorded_at: "2026-08-14T10:08:31.100Z",
+  runtime_started: true,
+  policy_reference: "policy.workflow-protected-runtime-start:1.0",
+  runtime_start_profile_reference:
+    "integrity.workflow-protected-runtime-start-profile.1234567890abcdef",
+  effective_authority: false,
+};
+
 const protectedRuntimeContextInjectionConsumption: WorkflowProtectedRuntimeContextInjectionConsumption = {
   injection_id:
     "workflow-protected-runtime-context-injection-consumption.1234567890abcdef12345678",
@@ -2343,6 +2358,26 @@ function protectedRuntimeStartAuthorizationResponse(
   );
 }
 
+function protectedRuntimeStartResponse(
+  starts: unknown[],
+  status = 200,
+  serverTime = "2026-08-14T10:08:31.500Z",
+  durable = true,
+): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: { starts, server_time: serverTime, durable },
+          meta: {
+            correlation_id: "correlation.workflow.protected-runtime-start",
+            generated_at: serverTime,
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function protectedRuntimeContextInjectionConsumptionResponse(
   consumptions: unknown[],
   status = 200,
@@ -2476,6 +2511,9 @@ function mockReadResponses(input: {
   protectedRuntimeStartAuthorizations?: unknown[];
   protectedRuntimeStartAuthorizationServerTime?: string;
   protectedRuntimeStartAuthorizationDurable?: boolean;
+  protectedRuntimeStarts?: unknown[];
+  protectedRuntimeStartServerTime?: string;
+  protectedRuntimeStartDurable?: boolean;
   credentialAssignmentSnapshots?: unknown[];
   transportCompatibilityAdmissions?: unknown[];
   pendingTransportAdmissionResponse?: Promise<Response>;
@@ -2507,6 +2545,7 @@ function mockReadResponses(input: {
   pendingProtectedRuntimeContextUseAuthorizationConsumptionResponse?: Promise<Response>;
   pendingProtectedRuntimeContextUseResponse?: Promise<Response>;
   pendingProtectedRuntimeStartAuthorizationResponse?: Promise<Response>;
+  pendingProtectedRuntimeStartResponse?: Promise<Response>;
   pendingCredentialAssignmentSnapshotResponse?: Promise<Response>;
   pendingTransportCompatibilityAdmissionResponse?: Promise<Response>;
   leaseStatus?: number;
@@ -2574,6 +2613,8 @@ function mockReadResponses(input: {
   protectedRuntimeContextUseStatuses?: number[];
   protectedRuntimeStartAuthorizationStatus?: number;
   protectedRuntimeStartAuthorizationStatuses?: number[];
+  protectedRuntimeStartStatus?: number;
+  protectedRuntimeStartStatuses?: number[];
   credentialAssignmentSnapshotStatus?: number;
   credentialAssignmentSnapshotStatuses?: number[];
   transportCompatibilityAdmissionStatus?: number;
@@ -2608,10 +2649,31 @@ function mockReadResponses(input: {
   let protectedRuntimeContextUseAuthorizationConsumptionReadCount = 0;
   let protectedRuntimeContextUseReadCount = 0;
   let protectedRuntimeStartAuthorizationReadCount = 0;
+  let protectedRuntimeStartReadCount = 0;
   let credentialAssignmentSnapshotReadCount = 0;
   let transportCompatibilityAdmissionReadCount = 0;
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (url.endsWith("/api/v1/workflows/protected-runtime-start-consumptions")) {
+      if (input.pendingProtectedRuntimeStartResponse) {
+        return input.pendingProtectedRuntimeStartResponse;
+      }
+      const status =
+        input.protectedRuntimeStartStatuses?.[
+          Math.min(
+            protectedRuntimeStartReadCount++,
+            input.protectedRuntimeStartStatuses.length - 1,
+          )
+        ] ?? input.protectedRuntimeStartStatus ?? 200;
+      return Promise.resolve(
+        protectedRuntimeStartResponse(
+          input.protectedRuntimeStarts ?? [],
+          status,
+          input.protectedRuntimeStartServerTime,
+          input.protectedRuntimeStartDurable,
+        ),
+      );
+    }
     if (url.endsWith("/api/v1/workflows/protected-runtime-start-authorizations")) {
       if (input.pendingProtectedRuntimeStartAuthorizationResponse) {
         return input.pendingProtectedRuntimeStartAuthorizationResponse;
@@ -8820,6 +8882,206 @@ describe("WorkflowPlanningWorkspace", () => {
     expect(section).not.toHaveTextContent(/authorized browser session|MFA|second session/i);
     expect(within(section).queryByRole("button")).toBeNull();
     expect(within(section).queryByRole("link")).toBeNull();
+  });
+
+  it("renders protected runtime starts as minimized read-only outcome evidence", async () => {
+    expect(Object.keys(protectedRuntimeStart).sort()).toEqual(
+      [
+        "start_id",
+        "attempt_state",
+        "result_state",
+        "started_at",
+        "completed_at",
+        "recorded_at",
+        "runtime_started",
+        "policy_reference",
+        "runtime_start_profile_reference",
+        "effective_authority",
+      ].sort(),
+    );
+    const pending: WorkflowProtectedRuntimeStart = {
+      ...protectedRuntimeStart,
+      start_id: "workflow-protected-runtime-start-consumption.2234567890abcdef12345678",
+      result_state: null,
+      started_at: "2026-08-14T10:08:31.200Z",
+      completed_at: null,
+      recorded_at: null,
+      runtime_started: null,
+    };
+    const knownFailure: WorkflowProtectedRuntimeStart = {
+      ...protectedRuntimeStart,
+      start_id: "workflow-protected-runtime-start-consumption.3234567890abcdef12345678",
+      result_state: "runtime_start_failed_without_start",
+      runtime_started: false,
+    };
+    const uncertain: WorkflowProtectedRuntimeStart = {
+      ...protectedRuntimeStart,
+      start_id: "workflow-protected-runtime-start-consumption.4234567890abcdef12345678",
+      result_state: "runtime_start_outcome_uncertain",
+      completed_at: null,
+      runtime_started: null,
+    };
+    mockReadResponses({
+      protectedRuntimeStarts: [pending, protectedRuntimeStart, knownFailure, uncertain],
+    });
+    renderWorkspace();
+
+    const authorizationSection = (await screen.findByRole("heading", {
+      name: "Protected runtime-start authorizations",
+    })).closest("section") as HTMLElement;
+    const section = (await screen.findByRole("heading", {
+      name: "Protected runtime starts",
+    })).closest("section") as HTMLElement;
+    const records = await within(section).findByRole("list", {
+      name: "Protected runtime starts",
+    });
+    expect(
+      authorizationSection.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) => {
+        const requestedUrl = request instanceof Request ? request.url : request.toString();
+        const requestedMethod = request instanceof Request ? request.method : "GET";
+        return (
+          requestedUrl.endsWith(
+            "/api/v1/workflows/protected-runtime-start-consumptions",
+          ) && requestedMethod === "GET"
+        );
+      }),
+    ).toBe(true);
+    expect(records).toHaveTextContent("Pending");
+    expect(records).toHaveTextContent("Started");
+    expect(records).toHaveTextContent("Known failure");
+    expect(records).toHaveTextContent("Outcome uncertain");
+    expect(records).toHaveTextContent(/Runtime started unknown/i);
+    expect(records).toHaveTextContent(/Runtime started true/i);
+    expect(records).toHaveTextContent(/Runtime started false/i);
+    expect(records).toHaveTextContent(/Effective authority false/i);
+    expect(within(section).getAllByTitle(protectedRuntimeStart.policy_reference)[0]).toBeVisible();
+    expect(
+      within(section).getAllByTitle(
+        protectedRuntimeStart.runtime_start_profile_reference,
+      )[0],
+    ).toBeVisible();
+    expect(section).not.toHaveTextContent(/authorized browser session|MFA|second session/i);
+    expect(section).not.toHaveTextContent(/instruction|receipt|nonce|lease|locator/i);
+    expect(within(section).queryByRole("button")).toBeNull();
+    expect(within(section).queryByRole("link")).toBeNull();
+    expect(within(section).queryByRole("textbox")).toBeNull();
+    expect(within(section).queryByRole("combobox")).toBeNull();
+    expect(within(section).queryByRole("checkbox")).toBeNull();
+  });
+
+  it("shows loading, empty, unauthorized, forbidden and fail-closed runtime-start states", async () => {
+    mockReadResponses({
+      pendingProtectedRuntimeStartResponse: new Promise<Response>(() => {}),
+    });
+    const loadingView = renderWorkspace();
+    let section = (await screen.findByRole("heading", {
+      name: "Protected runtime starts",
+    })).closest("section") as HTMLElement;
+    expect(within(section).getByText("Loading protected runtime starts...")).toBeVisible();
+
+    loadingView.unmount();
+    mockReadResponses({ protectedRuntimeStarts: [] });
+    const emptyView = renderWorkspace();
+    section = (await screen.findByRole("heading", {
+      name: "Protected runtime starts",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText(
+        "No protected runtime starts are recorded in this scope.",
+      ),
+    ).toBeVisible();
+
+    emptyView.unmount();
+    mockReadResponses({ protectedRuntimeStartStatus: 401 });
+    const unauthorizedView = renderWorkspace();
+    section = (await screen.findByRole("heading", {
+      name: "Protected runtime starts",
+    })).closest("section") as HTMLElement;
+    expect(await within(section).findByText("Your session has expired")).toBeVisible();
+    expect(within(section).getByText("Sign in again to continue.")).toBeVisible();
+    expect(section).not.toHaveTextContent(/authorized browser session|MFA|second session/i);
+
+    unauthorizedView.unmount();
+    mockReadResponses({ protectedRuntimeStartStatus: 403 });
+    const forbiddenView = renderWorkspace();
+    section = (await screen.findByRole("heading", {
+      name: "Protected runtime starts",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Protected runtime-start permission is missing"),
+    ).toBeVisible();
+
+    forbiddenView.unmount();
+    mockReadResponses({ protectedRuntimeStartStatus: 503 });
+    renderWorkspace();
+    section = (await screen.findByRole("heading", {
+      name: "Protected runtime starts",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Protected runtime starts are unavailable"),
+    ).toBeVisible();
+    expect(section).toHaveTextContent(/repository is unavailable or failed closed/i);
+    expect(within(section).queryByRole("list")).toBeNull();
+    expect(within(section).queryByRole("button")).toBeNull();
+    expect(within(section).queryByRole("link")).toBeNull();
+  });
+
+  it.each([
+    ["a protected instruction", { ...protectedRuntimeStart, instruction: "hidden" }],
+    ["a protected receipt", { ...protectedRuntimeStart, receipt: "hidden" }],
+    ["a nonce", { ...protectedRuntimeStart, nonce: "hidden" }],
+    ["a lease", { ...protectedRuntimeStart, authorization_lease_id: "hidden" }],
+    ["effective authority", { ...protectedRuntimeStart, effective_authority: true }],
+    ["a contradictory outcome", { ...protectedRuntimeStart, runtime_started: false }],
+    [
+      "the obsolete start prefix",
+      {
+        ...protectedRuntimeStart,
+        start_id: "workflow-protected-runtime-start.1234567890abcdef12345678",
+      },
+    ],
+    [
+      "a completed uncertain result",
+      {
+        ...protectedRuntimeStart,
+        result_state: "runtime_start_outcome_uncertain",
+        runtime_started: null,
+      },
+    ],
+    [
+      "an unrecorded uncertain result",
+      {
+        ...protectedRuntimeStart,
+        result_state: "runtime_start_outcome_uncertain",
+        completed_at: null,
+        recorded_at: null,
+        runtime_started: null,
+      },
+    ],
+    [
+      "an uncertain result recorded before its attempt",
+      {
+        ...protectedRuntimeStart,
+        result_state: "runtime_start_outcome_uncertain",
+        completed_at: null,
+        recorded_at: "2026-08-14T10:08:30.700Z",
+        runtime_started: null,
+      },
+    ],
+  ])("fails closed for protected runtime start with %s", async (_case, unsafe) => {
+    mockReadResponses({ protectedRuntimeStarts: [unsafe] });
+    renderWorkspace();
+    const section = (await screen.findByRole("heading", {
+      name: "Protected runtime starts",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Protected runtime starts are unavailable"),
+    ).toBeVisible();
+    expect(within(section).queryByRole("list")).toBeNull();
+    expect(section).not.toHaveTextContent(/hidden/i);
   });
 
   it("renders protected runtime-context injection consumptions as minimized read-only evidence", async () => {
