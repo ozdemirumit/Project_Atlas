@@ -14,6 +14,7 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import CheckConstraint, MetaData, Table, func, insert, select, text
+from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from test_workflow_protected_runtime_start_authorizations_postgres import (
@@ -102,9 +103,6 @@ def _coordination_guard_body(source: str, *, replace: bool) -> str:
 def _authorization_source_at(base: datetime, *, suffix: str | None = None) -> Any:
     source = _authorization_source()
     claim = source.authorization_claim
-    destination_deployment_id = (
-        DESTINATION_DEPLOYMENT_ID if suffix is None else f"{DESTINATION_DEPLOYMENT_ID}.{suffix}"
-    )
     source_ids = (
         {}
         if suffix is None
@@ -129,7 +127,7 @@ def _authorization_source_at(base: datetime, *, suffix: str | None = None) -> An
     claim_payload.update(
         **cast(Any, source_ids),
         **cast(Any, claim_ids),
-        destination_deployment_id=destination_deployment_id,
+        destination_deployment_id=DESTINATION_DEPLOYMENT_ID,
         authorization_audit_digest=audit_digest,
         use_completed_at=(base - timedelta(seconds=3)).isoformat(),
         use_result_recorded_at=(base - timedelta(seconds=2)).isoformat(),
@@ -139,7 +137,7 @@ def _authorization_source_at(base: datetime, *, suffix: str | None = None) -> An
         claim,
         **cast(Any, source_ids),
         **cast(Any, claim_ids),
-        destination_deployment_id=destination_deployment_id,
+        destination_deployment_id=DESTINATION_DEPLOYMENT_ID,
         authorization_audit_digest=audit_digest,
         use_completed_at=base - timedelta(seconds=3),
         use_result_recorded_at=base - timedelta(seconds=2),
@@ -164,7 +162,7 @@ def _authorization_source_at(base: datetime, *, suffix: str | None = None) -> An
     lease_payload.update(
         **cast(Any, source_ids),
         **cast(Any, lease_ids),
-        destination_deployment_id=destination_deployment_id,
+        destination_deployment_id=DESTINATION_DEPLOYMENT_ID,
         claim_id=claim.claim_id,
         claim_digest=claim.canonical_digest,
         use_completed_at=(base - timedelta(seconds=3)).isoformat(),
@@ -179,7 +177,7 @@ def _authorization_source_at(base: datetime, *, suffix: str | None = None) -> An
         lease,
         **cast(Any, source_ids),
         **cast(Any, lease_ids),
-        destination_deployment_id=destination_deployment_id,
+        destination_deployment_id=DESTINATION_DEPLOYMENT_ID,
         claim_id=claim.claim_id,
         claim_digest=claim.canonical_digest,
         use_completed_at=base - timedelta(seconds=3),
@@ -420,10 +418,13 @@ async def _seed_actual_repository_path(
         updated_at=request.candidate_attempt.started_at,
     )
     await connection.execute(text("SET LOCAL session_replication_role = replica"))
+    for shared_model in (destination_model, slot_model):
+        table = cast(Any, type(shared_model).__table__)
+        await connection.execute(
+            postgres_insert(table).values(**_model_values(shared_model)).on_conflict_do_nothing()
+        )
     for model in (
         parent_result,
-        destination_model,
-        slot_model,
         head_model,
         lease_model,
         authorization_claim_model,
@@ -680,20 +681,11 @@ def test_repository_models_round_trip_signed_attempt_evidence() -> None:
     )
 
 
-def test_suffixed_live_source_isolates_destination_lineage() -> None:
-    first = _claim_request(base=NOW, suffix="live-a")
-    second = _claim_request(base=NOW, suffix="live-b")
+def test_suffixed_live_source_keeps_code_owned_destination() -> None:
+    request = _claim_request(base=NOW, suffix="live-a")
 
-    assert first.source.authorization_lease.destination_deployment_id.endswith(".live-a")
-    assert second.source.authorization_lease.destination_deployment_id.endswith(".live-b")
-    assert (
-        first.source.authorization_lease.destination_deployment_id
-        != second.source.authorization_lease.destination_deployment_id
-    )
-    assert (
-        first.source.authorization_claim.destination_deployment_id
-        == first.source.authorization_lease.destination_deployment_id
-    )
+    assert request.source.authorization_lease.destination_deployment_id == DESTINATION_DEPLOYMENT_ID
+    assert request.source.authorization_claim.destination_deployment_id == DESTINATION_DEPLOYMENT_ID
 
 
 def test_persisted_starter_receipt_requires_available_exact_signature_verifier() -> None:
