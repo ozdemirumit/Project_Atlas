@@ -177,22 +177,20 @@ def test_attempt_and_result_outcomes_do_not_inherit_the_start_operation_referenc
     )
 
     for model in models:
+        model_table = cast(Table, model.__table__)
         constraint = next(
             item
-            for item in model.__table__.foreign_key_constraints
+            for item in model_table.foreign_key_constraints
             if item.name in expected_operation_reference_by_constraint
             and item.name.endswith("_outcome")
         )
+        constraint_name = cast(str, constraint.name)
         assert (
             "protected_operation_reference" in constraint.column_keys
-        ) is expected_operation_reference_by_constraint[constraint.name]
+        ) is expected_operation_reference_by_constraint[constraint_name]
 
-    lease_constraint_names = {
-        constraint.name
-        for constraint in (
-            WorkflowProtectedRuntimeReadinessAuthorizationLeaseModel.__table__.constraints
-        )
-    }
+    lease_table = cast(Table, WorkflowProtectedRuntimeReadinessAuthorizationLeaseModel.__table__)
+    lease_constraint_names = {constraint.name for constraint in lease_table.constraints}
     assert "uq_wf_rtready_auth_lease_consume_outcome_projection" in lease_constraint_names
     assert (
         '_lease_outcome_columns(include_operation_reference=prefix == "claim")' in MIGRATION_SOURCE
@@ -445,7 +443,7 @@ async def _seed_authorization(
             authorization_request, issued_at=locked.observed_at
         )
         assert repository._protected_runtime_readiness_evidence_matches(working, locked)
-        audit_payload = {
+        audit_payload: dict[str, object] = {
             "start_result_id": working.candidate.start_result_id,
             "policy_digest": working.candidate.policy_digest,
             "request_fingerprint": working.request_fingerprint,
