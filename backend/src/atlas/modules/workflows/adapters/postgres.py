@@ -10943,8 +10943,12 @@ class PostgreSQLWorkflowPlanRepository:
             site_id=value.scope.site_id,
             authorization_lease_id=value.authorization_lease_id,
             authorization_lease_digest=value.authorization_lease_digest,
-            authorization_claim_id=value.authorization_claim_id,
-            authorization_claim_digest=value.authorization_claim_digest,
+            authorization_claim_id=getattr(
+                value, "authorization_claim_id", source_row.authorization_claim_id
+            ),
+            authorization_claim_digest=getattr(
+                value, "authorization_claim_digest", source_row.authorization_claim_digest
+            ),
             start_consumption_claim_id=getattr(
                 value, "start_claim_id", source_row.start_consumption_claim_id
             ),

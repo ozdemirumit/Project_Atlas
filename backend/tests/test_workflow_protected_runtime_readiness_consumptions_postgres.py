@@ -164,6 +164,15 @@ def test_result_write_resolves_database_acknowledgement_errors_by_exact_read() -
     implementation = _method_source("record_protected_runtime_readiness_consumption_result")
     assert "except SQLAlchemyError" in implementation
     assert implementation.index("await session.commit()") < implementation.index("existing = cast(")
+    model_values = " ".join(
+        _method_source("_protected_runtime_readiness_consumption_model_values").split()
+    )
+    assert "authorization_claim_id=getattr(" in model_values
+    assert 'value, "authorization_claim_id", source_row.authorization_claim_id' in model_values
+    assert "authorization_claim_digest=getattr(" in model_values
+    assert (
+        'value, "authorization_claim_digest", source_row.authorization_claim_digest' in model_values
+    )
 
 
 def test_attempt_and_result_outcomes_do_not_inherit_the_start_operation_reference() -> None:
