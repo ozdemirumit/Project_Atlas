@@ -689,6 +689,19 @@ generic execution or infrastructure mutation. Human GET remains read-only throug
 username/password session without MFA or a second browser prompt; AI remains advisory-only and
 Active Directory remains authentication-only.
 
+ADR-177 permits only one canonical `runtime_ready_in_protected_boundary` result to originate an
+append-only, single-use, non-renewable, non-transferable and non-bearer protected runtime process-
+creation authorization lease. Fresh metadata-only attestation and PostgreSQL revalidation must
+prove that the exact runtime remains started, ready, current, process-free and unscheduled. The
+lease expires within one second and only it may set
+`protected_runtime_process_creation_authority_granted=true`; every existing authority remains
+false. The grant authorizes only one future process-creation request. It creates or schedules no
+process, carries no command/executable/argument/environment or runtime material, and performs no
+model, network, connector/MCP/provider, publication, delivery, dispatch, execution or
+infrastructure-mutation operation. Human GET remains read-only through the normal username/password
+session without MFA or a second browser prompt; AI remains advisory-only and Active Directory
+remains authentication-only.
+
 ### 10.2 Publication State
 
 Outbox records track:
@@ -1098,3 +1111,4 @@ This document is ready to enter Review when:
 | 2.5.0 | 2026-08-17 | Workflow Architecture | Added atomic protected runtime-start consumption and single start-attempt boundary |
 | 2.6.0 | 2026-08-17 | Workflow Architecture | Added bounded single-use protected runtime-readiness authorization lease boundary |
 | 2.7.0 | 2026-08-17 | Workflow Architecture | Added atomic protected runtime-readiness consumption and single assessment attempt |
+| 2.8.0 | 2026-08-18 | Workflow Architecture | Added bounded single-use protected runtime process-creation authorization lease boundary |
