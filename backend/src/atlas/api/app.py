@@ -1578,6 +1578,12 @@ from atlas.modules.workflows.adapters.protected_runtime_context_injectors import
     UnavailableWorkflowProtectedRuntimeContextTrustedInjector,
     UnavailableWorkflowProtectedRuntimeSlotReadinessAttestor,
 )
+from atlas.modules.workflows.adapters.protected_runtime_context_users import (
+    DenyAllWorkflowProtectedRuntimeContextUseEligibilitySignatureVerifier,
+    DenyAllWorkflowProtectedRuntimeContextUseReceiptSignatureVerifier,
+    UnavailableWorkflowProtectedRuntimeContextTrustedUser,
+    UnavailableWorkflowProtectedRuntimeContextUseEligibilityAttestor,
+)
 from atlas.modules.workflows.adapters.protected_runtime_handle_lifecycle_attestors import (
     DeterministicDevelopmentWorkflowProtectedRuntimeHandleLifecycleAttestor,
 )
@@ -1652,6 +1658,8 @@ from atlas.modules.workflows.application import (
     WorkflowProtectedRuntimeContextUseAuthorizationConsumptionService,
     WorkflowProtectedRuntimeContextUseAuthorizationRepository,
     WorkflowProtectedRuntimeContextUseAuthorizationService,
+    WorkflowProtectedRuntimeContextUseRepository,
+    WorkflowProtectedRuntimeContextUseService,
     WorkflowProtectedRuntimeHandleLifecycleAttestation,
     WorkflowProtectedRuntimeHandleLifecycleAttestationRequest,
     WorkflowProtectedRuntimeHandleLifecycleAttestor,
@@ -2039,6 +2047,35 @@ class _UnavailableWorkflowProtectedRuntimeContextUseAuthorizationConsumptionRepo
         self, *_: object, **__: object
     ) -> None:
         raise RuntimeError("runtime-context use-authorization consumption is unavailable")
+
+
+class _UnavailableWorkflowProtectedRuntimeContextUseRepository:
+    """Fail-closed ADR-172 composition placeholder with no memory fallback."""
+
+    @property
+    def durable(self) -> bool:
+        return False
+
+    async def get_authoritative_time(self) -> datetime:
+        raise RuntimeError("protected runtime-context use is unavailable")
+
+    async def lookup_protected_runtime_context_use_replay(self, *_: object, **__: object) -> None:
+        raise RuntimeError("protected runtime-context use is unavailable")
+
+    async def get_protected_runtime_context_use_source(self, *_: object, **__: object) -> None:
+        raise RuntimeError("protected runtime-context use is unavailable")
+
+    async def claim_protected_runtime_context_use(self, *_: object, **__: object) -> None:
+        raise RuntimeError("protected runtime-context use is unavailable")
+
+    async def record_protected_runtime_context_use_result(self, *_: object, **__: object) -> None:
+        raise RuntimeError("protected runtime-context use is unavailable")
+
+    async def list_protected_runtime_context_use_attempts(self, *_: object, **__: object) -> None:
+        raise RuntimeError("protected runtime-context use is unavailable")
+
+    async def get_protected_runtime_context_use_results(self, *_: object, **__: object) -> None:
+        raise RuntimeError("protected runtime-context use is unavailable")
 
 
 class _WorkflowProtectedResidentContextOpeningReceiptSignatureVerifierAdapter:
@@ -2563,6 +2600,9 @@ def create_app(
     ) = None,
     workflow_protected_runtime_context_use_authorization_consumption_service: (
         WorkflowProtectedRuntimeContextUseAuthorizationConsumptionService | None
+    ) = None,
+    workflow_protected_runtime_context_use_service: (
+        WorkflowProtectedRuntimeContextUseService | None
     ) = None,
     workflow_protected_runtime_handle_lifecycle_attestor: (
         WorkflowProtectedRuntimeHandleLifecycleAttestor | None
@@ -8002,6 +8042,46 @@ def create_app(
         resolved_protected_runtime_context_use_authorization_consumption_service = (
             workflow_protected_runtime_context_use_authorization_consumption_service
         )
+    if workflow_protected_runtime_context_use_service is None:
+        runtime_context_use_repository_methods = (
+            "get_authoritative_time",
+            "lookup_protected_runtime_context_use_replay",
+            "get_protected_runtime_context_use_source",
+            "claim_protected_runtime_context_use",
+            "record_protected_runtime_context_use_result",
+            "list_protected_runtime_context_use_attempts",
+            "get_protected_runtime_context_use_results",
+        )
+        if isinstance(workflow_repository, PostgreSQLWorkflowPlanRepository) and all(
+            callable(getattr(workflow_repository, method_name, None))
+            for method_name in runtime_context_use_repository_methods
+        ):
+            runtime_context_use_repository = cast(
+                WorkflowProtectedRuntimeContextUseRepository,
+                workflow_repository,
+            )
+        else:
+            runtime_context_use_repository = cast(
+                WorkflowProtectedRuntimeContextUseRepository,
+                _UnavailableWorkflowProtectedRuntimeContextUseRepository(),
+            )
+        resolved_protected_runtime_context_use_service = WorkflowProtectedRuntimeContextUseService(
+            repository=runtime_context_use_repository,
+            eligibility_attestor=(
+                UnavailableWorkflowProtectedRuntimeContextUseEligibilityAttestor()
+            ),
+            eligibility_signature_verifier=(
+                DenyAllWorkflowProtectedRuntimeContextUseEligibilitySignatureVerifier()
+            ),
+            trusted_user=UnavailableWorkflowProtectedRuntimeContextTrustedUser(),
+            receipt_signature_verifier=(
+                DenyAllWorkflowProtectedRuntimeContextUseReceiptSignatureVerifier()
+            ),
+        )
+    else:
+        resolved_protected_runtime_context_use_service = (
+            workflow_protected_runtime_context_use_service
+        )
     configured_transport_route_selection_heads = (
         _deployment_event_transport_route_selection_heads(
             resolved_settings,
@@ -8485,6 +8565,12 @@ def create_app(
         )
         app.state.workflow_protected_runtime_context_use_authorization_consumption_repository = (
             resolved_protected_runtime_context_use_authorization_consumption_service.repository
+        )
+        app.state.workflow_protected_runtime_context_use_service = (
+            resolved_protected_runtime_context_use_service
+        )
+        app.state.workflow_protected_runtime_context_use_repository = (
+            resolved_protected_runtime_context_use_service.repository
         )
         app.state.workflow_transport_route_selection_heads = (
             configured_transport_route_selection_heads

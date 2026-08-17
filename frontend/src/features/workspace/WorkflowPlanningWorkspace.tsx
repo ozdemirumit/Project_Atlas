@@ -48,6 +48,7 @@ import {
   listWorkflowProtectedRuntimeContextInjectionConsumptions,
   listWorkflowProtectedRuntimeContextUseAuthorizations,
   listWorkflowProtectedRuntimeContextUseAuthorizationConsumptions,
+  listWorkflowProtectedRuntimeContextUses,
   listWorkflowPhysicalTransportTargetContextBindings,
   listWorkflowPhysicalTransportCredentialAssignmentSnapshots,
   listWorkflowPhysicalTransportCredentialAssignmentFreshnessAdmissions,
@@ -366,6 +367,16 @@ export default function WorkflowPlanningWorkspace({
       siteId,
     ],
     queryFn: listWorkflowProtectedRuntimeContextUseAuthorizationConsumptions,
+    retry: false,
+  });
+  const protectedRuntimeContextUseQuery = useQuery({
+    queryKey: [
+      "workflow-protected-runtime-context-uses",
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: listWorkflowProtectedRuntimeContextUses,
     retry: false,
   });
   const targetQuery = useQuery({
@@ -879,6 +890,10 @@ export default function WorkflowPlanningWorkspace({
   const protectedRuntimeContextUseAuthorizationConsumptionErrorStatus =
     protectedRuntimeContextUseAuthorizationConsumptionQuery.error instanceof ApiRequestError
       ? protectedRuntimeContextUseAuthorizationConsumptionQuery.error.status
+      : undefined;
+  const protectedRuntimeContextUseErrorStatus =
+    protectedRuntimeContextUseQuery.error instanceof ApiRequestError
+      ? protectedRuntimeContextUseQuery.error.status
       : undefined;
   const eventEnvelopes = eventEnvelopesForAdmission;
   const transportAdmissions = transportAdmissionsForArtifacts;
@@ -4545,6 +4560,144 @@ export default function WorkflowPlanningWorkspace({
             no protected-context retrieval, reveal, copy, download, activation or use; runtime
             start or resume; network or connector activity; dispatch; execution; or infrastructure
             mutation.
+          </span>
+        </div>
+      </section>
+
+      <section
+        className="workflow-physical-route-binding-band workflow-target-context-opening-band"
+        aria-labelledby="workflow-protected-runtime-context-use-title"
+      >
+        <div className="workflow-section-heading">
+          <div>
+            <p className="eyebrow">PROTECTED-SIDE USE OUTCOME EVIDENCE</p>
+            <h2 id="workflow-protected-runtime-context-use-title">
+              Protected runtime-context uses
+            </h2>
+          </div>
+          <span>Read only</span>
+        </div>
+        {protectedRuntimeContextUseQuery.isLoading && (
+          <div className="workflow-empty-state" role="status">
+            <RefreshCw className="spin" size={18} />
+            <span>Loading protected runtime-context use evidence...</span>
+          </div>
+        )}
+        {protectedRuntimeContextUseQuery.isError && (
+          <div className="workflow-inline-error" role="alert">
+            <AlertTriangle aria-hidden="true" size={18} />
+            <div>
+              <strong>
+                {protectedRuntimeContextUseErrorStatus === 401
+                  ? "Your session has expired"
+                  : protectedRuntimeContextUseErrorStatus === 403
+                    ? "Runtime-context use evidence permission is missing"
+                    : "Runtime-context uses are unavailable"}
+              </strong>
+              <span>
+                {protectedRuntimeContextUseErrorStatus === 401
+                  ? "Sign in again to continue."
+                  : protectedRuntimeContextUseErrorStatus === 403
+                    ? "Your current role or scope cannot inspect protected runtime-context use evidence."
+                    : "No context use, runtime state or downstream effect is inferred from this failed read."}
+              </span>
+            </div>
+          </div>
+        )}
+        {protectedRuntimeContextUseQuery.isSuccess &&
+          protectedRuntimeContextUseQuery.data.uses.length === 0 && (
+            <div className="workflow-empty-state" role="status">
+              <LockKeyhole size={19} />
+              <span>No protected runtime-context uses are recorded in this scope.</span>
+            </div>
+          )}
+        {protectedRuntimeContextUseQuery.isSuccess &&
+          protectedRuntimeContextUseQuery.data.uses.length > 0 && (
+            <ol
+              className="workflow-step-preview workflow-physical-route-binding-list workflow-target-context-opening-list"
+              aria-label="Protected runtime-context uses"
+            >
+              {protectedRuntimeContextUseQuery.data.uses.map((use) => (
+                <li key={use.use_id}>
+                  {use.result_state === "context_used_once_in_protected_boundary" ? (
+                    <CheckCircle2 size={18} />
+                  ) : use.result_state === "context_use_failed_without_use" ? (
+                    <Ban size={18} />
+                  ) : use.result_state === "context_use_outcome_uncertain" ? (
+                    <AlertTriangle size={18} />
+                  ) : (
+                    <RefreshCw size={18} />
+                  )}
+                  <div>
+                    <strong>
+                      <code title={use.use_id}>{safeHolderIdentifier(use.use_id)}</code>
+                      <span className="state-badge neutral">
+                        {use.result_state === "context_used_once_in_protected_boundary"
+                          ? "Context used once"
+                          : use.result_state === "context_use_failed_without_use"
+                            ? "Failed without context use"
+                            : use.result_state === "context_use_outcome_uncertain"
+                              ? "Outcome uncertain"
+                              : "Use pending"}
+                      </span>
+                    </strong>
+                    <div className="workflow-physical-route-binding-grid">
+                      <span>
+                        Attempt {readableKind(use.attempt_state)} | result{" "}
+                        {readableKind(use.result_state)}
+                      </span>
+                      <span>
+                        Started {formatTimestamp(use.started_at)} | completed{" "}
+                        {use.completed_at === null ? "not recorded" : formatTimestamp(use.completed_at)}
+                      </span>
+                      <span>
+                        Context use performed{" "}
+                        {use.context_use_performed === null
+                          ? "unknown"
+                          : String(use.context_use_performed)}
+                      </span>
+                      <span>
+                        Policy{" "}
+                        <code title={use.policy_id}>{safeHolderIdentifier(use.policy_id)}</code> v
+                        {use.policy_version}
+                      </span>
+                      <span>
+                        Use profile{" "}
+                        <code title={use.use_profile_reference}>
+                          {shortDigest(use.use_profile_reference)}
+                        </code>
+                      </span>
+                      <span>
+                        Integrity reference{" "}
+                        <code title={use.integrity_reference}>
+                          {shortDigest(use.integrity_reference)}
+                        </code>
+                      </span>
+                      <span className="workflow-physical-route-binding-authority">
+                        Authority protected runtime-context use false | runtime use false | runtime
+                        start false | runtime resume false | connector activity false | protected
+                        runtime-context injection false | protected resident-context access false |
+                        target-context capsule opening false | target-context capsule handoff false |
+                        endpoint resolution false | route selection false | route binding false |
+                        credential selection false | credential assignment binding false |
+                        credential access false | credential brokerage false | credential resolution
+                        false | protected artifact access false | credential delivery false | network
+                        access false | readiness probe false | publication false | delivery false |
+                        dispatch false | execution false | infrastructure mutation false
+                      </span>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
+        <div className="workflow-safety-boundary" role="note">
+          <LockKeyhole size={18} />
+          <span>
+            Historical protected-side outcome evidence only. It grants no authority and exposes no
+            context, handle, locator, receipt or credential. This view cannot use or retry context;
+            start or resume a runtime; connect, probe or invoke MCP; publish, deliver or dispatch;
+            execute work; or mutate infrastructure.
           </span>
         </div>
       </section>
