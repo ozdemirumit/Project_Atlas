@@ -19,6 +19,7 @@ from atlas.modules.workflows.domain.protected_runtime_start_authorization_domain
     WorkflowProtectedRuntimeStartAuthorizationClaim,
     WorkflowProtectedRuntimeStartAuthorizationLease,
     code_owned_workflow_protected_runtime_start_authorization_policy,
+    workflow_protected_runtime_start_envelope_binding,
 )
 
 
@@ -78,6 +79,9 @@ class WorkflowProtectedRuntimeStartLifecycleAttestationRequest:
     runtime_slot_commitment: str
     runtime_slot_post_generation: int
     use_count_post: int
+    runtime_envelope_id: str
+    runtime_envelope_commitment: str
+    runtime_envelope_generation: int
     use_profile_id: str
     use_profile_version: str
     use_profile_digest: str
@@ -117,6 +121,10 @@ class WorkflowProtectedRuntimeStartLifecycleAttestation:
     runtime_slot_commitment: str
     runtime_slot_post_generation: int
     use_count_post: int
+    runtime_envelope_id: str
+    runtime_envelope_commitment: str
+    runtime_envelope_generation: int
+    runtime_envelope_eligible_until: datetime
     use_profile_id: str
     use_profile_version: str
     use_profile_digest: str
@@ -137,6 +145,13 @@ class WorkflowProtectedRuntimeStartLifecycleAttestation:
     context_terminal_non_reusable: bool
     runtime_envelope_current: bool
     runtime_envelope_inactive: bool
+    runtime_start_attempt_absent: bool
+    runtime_start_attempt_pending: bool
+    runtime_start_attempt_terminal: bool
+    scheduling_absent: bool
+    competing_runtime_start_authorization_absent: bool
+    competing_runtime_start_consumption_absent: bool
+    runtime_start_profile_eligible: bool
     runtime_not_started: bool
     runtime_not_resumed: bool
     process_not_created: bool
@@ -331,6 +346,8 @@ def validate_workflow_protected_runtime_start_authorization_request(
         attestation.dispatch_authorized,
         attestation.execution_authorized,
         attestation.infrastructure_mutation_authorized,
+        attestation.runtime_start_attempt_pending,
+        attestation.runtime_start_attempt_terminal,
     )
     confirmations = (
         attestation.exact_use_result_confirmed,
@@ -338,6 +355,11 @@ def validate_workflow_protected_runtime_start_authorization_request(
         attestation.context_terminal_non_reusable,
         attestation.runtime_envelope_current,
         attestation.runtime_envelope_inactive,
+        attestation.runtime_start_attempt_absent,
+        attestation.scheduling_absent,
+        attestation.competing_runtime_start_authorization_absent,
+        attestation.competing_runtime_start_consumption_absent,
+        attestation.runtime_start_profile_eligible,
         attestation.runtime_not_started,
         attestation.runtime_not_resumed,
         attestation.process_not_created,
@@ -359,6 +381,7 @@ def validate_workflow_protected_runtime_start_authorization_request(
                 request.requested_at,
                 attestation.observed_at,
                 attestation.valid_until,
+                attestation.runtime_envelope_eligible_until,
             )
         )
         or not result.recorded_at
@@ -366,6 +389,7 @@ def validate_workflow_protected_runtime_start_authorization_request(
         <= attestation.observed_at
         <= request.requested_at
         < attestation.valid_until
+        <= attestation.runtime_envelope_eligible_until
         or attestation.attestor_id != policy.required_attestor_id
         or attestation.attestor_version != policy.required_attestor_version
         or attestation.signing_key_id != policy.verification_signing_key_id
@@ -384,10 +408,17 @@ def validate_workflow_protected_runtime_start_authorization_request(
         or candidate.lifecycle_attestation_id != attestation.attestation_id
         or candidate.lifecycle_attestation_digest != attestation.canonical_digest
         or candidate.lifecycle_attestation_valid_until != attestation.valid_until
+        or candidate.runtime_envelope_eligible_until != attestation.runtime_envelope_eligible_until
+        or candidate.runtime_envelope_id != attestation.runtime_envelope_id
+        or candidate.runtime_envelope_commitment != attestation.runtime_envelope_commitment
+        or candidate.runtime_envelope_generation != attestation.runtime_envelope_generation
         or candidate.issued_at != request.requested_at
         or candidate.valid_until > attestation.valid_until
         or claim.use_result_id != result.result_id
         or claim.use_result_digest != result.canonical_digest
+        or claim.runtime_envelope_id != attestation.runtime_envelope_id
+        or claim.runtime_envelope_commitment != attestation.runtime_envelope_commitment
+        or claim.runtime_envelope_generation != attestation.runtime_envelope_generation
         or claim.claimed_at != request.requested_at
         or candidate.claim_id != claim.claim_id
         or candidate.claim_digest != claim.canonical_digest
@@ -405,6 +436,15 @@ def _attestation_matches_source(
     attempt = source.attempt
     claim = source.use_claim
     receipt = source.use_receipt
+    envelope = workflow_protected_runtime_start_envelope_binding(
+        use_result_id=result.result_id,
+        use_result_digest=result.canonical_digest,
+        destination_deployment_id=result.destination_deployment_id,
+        destination_generation=result.destination_generation,
+        destination_fencing_token_digest=result.destination_fencing_token_digest,
+        runtime_slot_commitment=result.runtime_slot_commitment,
+        runtime_slot_post_generation=cast(int, result.runtime_slot_post_generation),
+    )
     return (
         attestation.use_result_id == result.result_id
         and attestation.use_result_digest == result.canonical_digest
@@ -430,6 +470,9 @@ def _attestation_matches_source(
         and attestation.runtime_slot_commitment == result.runtime_slot_commitment
         and attestation.runtime_slot_post_generation == result.runtime_slot_post_generation
         and attestation.use_count_post == result.use_count_post
+        and attestation.runtime_envelope_id == envelope.runtime_envelope_id
+        and attestation.runtime_envelope_commitment == envelope.runtime_envelope_commitment
+        and attestation.runtime_envelope_generation == envelope.runtime_envelope_generation
         and attestation.use_profile_id == result.use_profile_id
         and attestation.use_profile_version == result.use_profile_version
         and attestation.use_profile_digest == result.use_profile_digest

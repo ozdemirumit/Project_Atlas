@@ -39,6 +39,7 @@ from atlas.modules.workflows.domain.protected_runtime_start_authorization_domain
     WorkflowProtectedRuntimeStartAuthorizationLeaseState,
     WorkflowProtectedRuntimeStartAuthorizationPolicy,
     code_owned_workflow_protected_runtime_start_authorization_policy,
+    workflow_protected_runtime_start_envelope_binding,
 )
 
 WORKFLOW_PROTECTED_RUNTIME_START_AUTHORIZATION_PRODUCER = (
@@ -357,6 +358,15 @@ class WorkflowProtectedRuntimeStartAuthorizationService:
         result = source.result
         attempt = source.attempt
         claim = source.use_claim
+        envelope = workflow_protected_runtime_start_envelope_binding(
+            use_result_id=result.result_id,
+            use_result_digest=result.canonical_digest,
+            destination_deployment_id=result.destination_deployment_id,
+            destination_generation=result.destination_generation,
+            destination_fencing_token_digest=result.destination_fencing_token_digest,
+            runtime_slot_commitment=result.runtime_slot_commitment,
+            runtime_slot_post_generation=cast(int, result.runtime_slot_post_generation),
+        )
         return WorkflowProtectedRuntimeStartLifecycleAttestationRequest(
             use_result_id=result.result_id,
             use_result_digest=result.canonical_digest,
@@ -376,6 +386,9 @@ class WorkflowProtectedRuntimeStartAuthorizationService:
             runtime_slot_commitment=result.runtime_slot_commitment,
             runtime_slot_post_generation=cast(int, result.runtime_slot_post_generation),
             use_count_post=cast(int, result.use_count_post),
+            runtime_envelope_id=envelope.runtime_envelope_id,
+            runtime_envelope_commitment=envelope.runtime_envelope_commitment,
+            runtime_envelope_generation=envelope.runtime_envelope_generation,
             use_profile_id=result.use_profile_id,
             use_profile_version=result.use_profile_version,
             use_profile_digest=result.use_profile_digest,
@@ -422,6 +435,8 @@ class WorkflowProtectedRuntimeStartAuthorizationService:
             attestation.dispatch_authorized,
             attestation.execution_authorized,
             attestation.infrastructure_mutation_authorized,
+            attestation.runtime_start_attempt_pending,
+            attestation.runtime_start_attempt_terminal,
         )
         confirmations = (
             attestation.exact_use_result_confirmed,
@@ -429,6 +444,11 @@ class WorkflowProtectedRuntimeStartAuthorizationService:
             attestation.context_terminal_non_reusable,
             attestation.runtime_envelope_current,
             attestation.runtime_envelope_inactive,
+            attestation.runtime_start_attempt_absent,
+            attestation.scheduling_absent,
+            attestation.competing_runtime_start_authorization_absent,
+            attestation.competing_runtime_start_consumption_absent,
+            attestation.runtime_start_profile_eligible,
             attestation.runtime_not_started,
             attestation.runtime_not_resumed,
             attestation.process_not_created,
@@ -444,8 +464,19 @@ class WorkflowProtectedRuntimeStartAuthorizationService:
             or attestation.attestor_id != self._policy.required_attestor_id
             or attestation.attestor_version != self._policy.required_attestor_version
             or attestation.signing_key_id != self._policy.verification_signing_key_id
+            or any(
+                value.tzinfo is None
+                for value in (
+                    request.requested_at,
+                    attestation.observed_at,
+                    attestation.valid_until,
+                    attestation.runtime_envelope_eligible_until,
+                    evaluated_at,
+                )
+            )
             or attestation.observed_at < request.requested_at
             or not attestation.observed_at <= evaluated_at < attestation.valid_until
+            or attestation.valid_until > attestation.runtime_envelope_eligible_until
             or not all(confirmations)
             or any(forbidden)
             or attestation.canonical_digest != canonical_digest(attestation.digest_payload())
@@ -469,6 +500,15 @@ class WorkflowProtectedRuntimeStartAuthorizationService:
     ]:
         result = source.result
         attempt = source.attempt
+        envelope = workflow_protected_runtime_start_envelope_binding(
+            use_result_id=result.result_id,
+            use_result_digest=result.canonical_digest,
+            destination_deployment_id=result.destination_deployment_id,
+            destination_generation=result.destination_generation,
+            destination_fencing_token_digest=result.destination_fencing_token_digest,
+            runtime_slot_commitment=result.runtime_slot_commitment,
+            runtime_slot_post_generation=cast(int, result.runtime_slot_post_generation),
+        )
         if (
             result.completed_at is None
             or result.runtime_slot_post_generation is None
@@ -505,6 +545,9 @@ class WorkflowProtectedRuntimeStartAuthorizationService:
             "runtime_slot_commitment": result.runtime_slot_commitment,
             "runtime_slot_post_generation": result.runtime_slot_post_generation,
             "use_count_post": result.use_count_post,
+            "runtime_envelope_id": envelope.runtime_envelope_id,
+            "runtime_envelope_commitment": envelope.runtime_envelope_commitment,
+            "runtime_envelope_generation": envelope.runtime_envelope_generation,
             "use_profile_id": result.use_profile_id,
             "use_profile_version": result.use_profile_version,
             "use_profile_digest": result.use_profile_digest,
@@ -540,6 +583,7 @@ class WorkflowProtectedRuntimeStartAuthorizationService:
         effective_until = min(
             issued_at + timedelta(seconds=self._policy.maximum_lifetime_seconds),
             attestation.valid_until,
+            attestation.runtime_envelope_eligible_until,
         )
         if effective_until <= issued_at:
             self._raise("workflow_protected_runtime_start_attestation_expired")
@@ -551,6 +595,7 @@ class WorkflowProtectedRuntimeStartAuthorizationService:
             "lifecycle_attestation_id": attestation.attestation_id,
             "lifecycle_attestation_digest": attestation.canonical_digest,
             "lifecycle_attestation_valid_until": attestation.valid_until,
+            "runtime_envelope_eligible_until": attestation.runtime_envelope_eligible_until,
             "runtime_start_profile_id": self._policy.runtime_start_profile_id,
             "runtime_start_profile_version": self._policy.runtime_start_profile_version,
             "runtime_start_profile_digest": self._policy.runtime_start_profile_digest,

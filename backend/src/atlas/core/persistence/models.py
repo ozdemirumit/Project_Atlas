@@ -14495,6 +14495,11 @@ class WorkflowProtectedRuntimeContextUseResultModel(
         UniqueConstraint(
             "result_id",
             "canonical_digest",
+            name="uq_wf_rtctx_use_result_start_identity",
+        ),
+        UniqueConstraint(
+            "result_id",
+            "canonical_digest",
             "use_id",
             "attempt_id",
             "attempt_digest",
@@ -14562,6 +14567,34 @@ class WorkflowProtectedRuntimeContextUseResultModel(
         ),
         UniqueConstraint("use_id", name="uq_wf_rtctx_use_result_use"),
         UniqueConstraint("canonical_digest", name="uq_wf_rtctx_use_result_digest"),
+        UniqueConstraint(
+            "result_id",
+            "executor_receipt_digest",
+            "destination_deployment_id",
+            "destination_generation",
+            "destination_fencing_token_digest",
+            "runtime_slot_commitment",
+            "runtime_slot_pre_generation",
+            "runtime_slot_post_generation",
+            "use_count_pre",
+            "use_count_post",
+            "use_profile_id",
+            "use_profile_version",
+            "use_profile_digest",
+            name="uq_wf_rtctx_use_result_start_runtime",
+        ),
+        UniqueConstraint(
+            "result_id",
+            "state",
+            "completed_at",
+            "recorded_at",
+            "outcome_known",
+            "context_adopted",
+            "protected_runtime_context_use_performed",
+            "context_terminal_non_reusable",
+            "transient_material_zeroized",
+            name="uq_wf_rtctx_use_result_start_outcome",
+        ),
         CheckConstraint(_WF_RTCTX_USE_CONTRACT, name="ck_wf_rtctx_use_result_contract"),
         CheckConstraint(
             "claimed_at <= started_at AND "
@@ -14774,6 +14807,9 @@ _WF_RTSTART_AUTH_SOURCE = (
     "AND runtime_slot_pre_generation >= 1 "
     "AND runtime_slot_post_generation = runtime_slot_pre_generation + 1 "
     "AND use_count_pre = 0 AND use_count_post = 1 "
+    "AND runtime_envelope_generation = runtime_slot_post_generation "
+    "AND runtime_envelope_id LIKE 'runtime-envelope.%' "
+    "AND length(runtime_envelope_commitment) = 64 "
     "AND destination_generation >= 1 "
     "AND length(use_receipt_digest) = 64 "
     "AND length(destination_fencing_token_digest) = 64 "
@@ -14839,6 +14875,9 @@ class _WorkflowProtectedRuntimeStartAuthorizationSourceColumns:
     runtime_slot_post_generation: Mapped[int] = mapped_column(Integer, nullable=False)
     use_count_pre: Mapped[int] = mapped_column(Integer, nullable=False)
     use_count_post: Mapped[int] = mapped_column(Integer, nullable=False)
+    runtime_envelope_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    runtime_envelope_commitment: Mapped[str] = mapped_column(String(64), nullable=False)
+    runtime_envelope_generation: Mapped[int] = mapped_column(Integer, nullable=False)
     use_profile_id: Mapped[str] = mapped_column(String(128), nullable=False)
     use_profile_version: Mapped[str] = mapped_column(String(64), nullable=False)
     use_profile_digest: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -14872,6 +14911,64 @@ def _workflow_protected_runtime_start_source_constraints(
                 "workflow_protected_runtime_context_use_results.authorization_consumption_result_digest",
             ],
             name=f"fk_wf_rtstart_{prefix}_use_result",
+        ),
+        ForeignKeyConstraint(
+            [
+                "use_result_id",
+                "use_receipt_digest",
+                "destination_deployment_id",
+                "destination_generation",
+                "destination_fencing_token_digest",
+                "runtime_slot_commitment",
+                "runtime_slot_pre_generation",
+                "runtime_slot_post_generation",
+                "use_count_pre",
+                "use_count_post",
+                "use_profile_id",
+                "use_profile_version",
+                "use_profile_digest",
+            ],
+            [
+                "workflow_protected_runtime_context_use_results.result_id",
+                "workflow_protected_runtime_context_use_results.executor_receipt_digest",
+                "workflow_protected_runtime_context_use_results.destination_deployment_id",
+                "workflow_protected_runtime_context_use_results.destination_generation",
+                "workflow_protected_runtime_context_use_results.destination_fencing_token_digest",
+                "workflow_protected_runtime_context_use_results.runtime_slot_commitment",
+                "workflow_protected_runtime_context_use_results.runtime_slot_pre_generation",
+                "workflow_protected_runtime_context_use_results.runtime_slot_post_generation",
+                "workflow_protected_runtime_context_use_results.use_count_pre",
+                "workflow_protected_runtime_context_use_results.use_count_post",
+                "workflow_protected_runtime_context_use_results.use_profile_id",
+                "workflow_protected_runtime_context_use_results.use_profile_version",
+                "workflow_protected_runtime_context_use_results.use_profile_digest",
+            ],
+            name=f"fk_wf_rtstart_{prefix}_result_runtime",
+        ),
+        ForeignKeyConstraint(
+            [
+                "use_result_id",
+                "use_result_state",
+                "use_completed_at",
+                "use_result_recorded_at",
+                "use_outcome_known",
+                "context_adopted",
+                "protected_runtime_context_use_performed",
+                "context_terminal_non_reusable",
+                "transient_material_zeroized",
+            ],
+            [
+                "workflow_protected_runtime_context_use_results.result_id",
+                "workflow_protected_runtime_context_use_results.state",
+                "workflow_protected_runtime_context_use_results.completed_at",
+                "workflow_protected_runtime_context_use_results.recorded_at",
+                "workflow_protected_runtime_context_use_results.outcome_known",
+                "workflow_protected_runtime_context_use_results.context_adopted",
+                "workflow_protected_runtime_context_use_results.protected_runtime_context_use_performed",
+                "workflow_protected_runtime_context_use_results.context_terminal_non_reusable",
+                "workflow_protected_runtime_context_use_results.transient_material_zeroized",
+            ],
+            name=f"fk_wf_rtstart_{prefix}_result_outcome",
         ),
         ForeignKeyConstraint(
             [
@@ -14914,6 +15011,119 @@ def _workflow_protected_runtime_start_source_constraints(
     )
 
 
+class WorkflowProtectedRuntimeStartCoordinationHeadModel(Base):
+    __tablename__ = "workflow_event_runtime_start_coordination_heads"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["use_result_id", "use_result_digest"],
+            [
+                "workflow_protected_runtime_context_use_results.result_id",
+                "workflow_protected_runtime_context_use_results.canonical_digest",
+            ],
+            name="fk_wf_rtstart_coord_result",
+        ),
+        ForeignKeyConstraint(
+            ["active_authorization_lease_id"],
+            ["workflow_event_runtime_start_auth_leases.authorization_lease_id"],
+            name="fk_wf_rtstart_coord_active_lease",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
+        UniqueConstraint("runtime_envelope_commitment", name="uq_wf_rtstart_coord_commit"),
+        UniqueConstraint("use_result_id", name="uq_wf_rtstart_coord_result"),
+        UniqueConstraint(
+            "runtime_envelope_id",
+            "runtime_envelope_commitment",
+            "runtime_envelope_generation",
+            "use_result_id",
+            "use_result_digest",
+            "destination_deployment_id",
+            "destination_generation",
+            "destination_fencing_token_digest",
+            "runtime_slot_commitment",
+            "runtime_slot_post_generation",
+            name="uq_wf_rtstart_coord_lineage",
+        ),
+        CheckConstraint(
+            "runtime_envelope_generation = runtime_slot_post_generation "
+            "AND runtime_envelope_generation >= 2 "
+            "AND length(runtime_envelope_commitment) = 64 "
+            "AND length(destination_fencing_token_digest) = 64 "
+            "AND length(runtime_slot_commitment) = 64",
+            name="ck_wf_rtstart_coord_lineage",
+        ),
+        CheckConstraint(
+            "(state = 'inactive_unstarted' AND active_authorization_lease_id IS NULL "
+            "AND consumption_claim_id IS NULL AND runtime_start_attempt_id IS NULL "
+            "AND NOT runtime_start_attempt_pending AND NOT runtime_start_attempt_terminal "
+            "AND NOT runtime_started AND NOT runtime_resumed AND NOT process_created "
+            "AND NOT process_scheduled AND version = 1) OR "
+            "(state = 'authorized_unconsumed' AND active_authorization_lease_id IS NOT NULL "
+            "AND consumption_claim_id IS NULL AND runtime_start_attempt_id IS NULL "
+            "AND NOT runtime_start_attempt_pending AND NOT runtime_start_attempt_terminal "
+            "AND NOT runtime_started AND NOT runtime_resumed AND NOT process_created "
+            "AND NOT process_scheduled AND version = 2) OR "
+            "(state = 'start_attempt_pending' "
+            "AND active_authorization_lease_id IS NOT NULL "
+            "AND consumption_claim_id IS NOT NULL AND runtime_start_attempt_id IS NOT NULL "
+            "AND runtime_start_attempt_pending AND NOT runtime_start_attempt_terminal "
+            "AND NOT runtime_started AND NOT runtime_resumed AND NOT process_created "
+            "AND NOT process_scheduled) OR "
+            "(state = 'start_attempt_terminal' "
+            "AND active_authorization_lease_id IS NOT NULL "
+            "AND consumption_claim_id IS NOT NULL AND runtime_start_attempt_id IS NOT NULL "
+            "AND NOT runtime_start_attempt_pending AND runtime_start_attempt_terminal "
+            "AND NOT runtime_resumed)",
+            name="ck_wf_rtstart_coord_state",
+        ),
+    )
+
+    runtime_envelope_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    runtime_envelope_commitment: Mapped[str] = mapped_column(String(64), nullable=False)
+    runtime_envelope_generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    use_result_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    use_result_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    destination_deployment_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    destination_generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    destination_fencing_token_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    runtime_slot_commitment: Mapped[str] = mapped_column(String(64), nullable=False)
+    runtime_slot_post_generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    state: Mapped[str] = mapped_column(String(64), nullable=False)
+    active_authorization_lease_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    consumption_claim_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    runtime_start_attempt_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    runtime_start_attempt_pending: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    runtime_start_attempt_terminal: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    runtime_started: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    runtime_resumed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    process_created: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    process_scheduled: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+def _workflow_protected_runtime_start_coordination_constraint(
+    *, prefix: str
+) -> ForeignKeyConstraint:
+    columns = [
+        "runtime_envelope_id",
+        "runtime_envelope_commitment",
+        "runtime_envelope_generation",
+        "use_result_id",
+        "use_result_digest",
+        "destination_deployment_id",
+        "destination_generation",
+        "destination_fencing_token_digest",
+        "runtime_slot_commitment",
+        "runtime_slot_post_generation",
+    ]
+    return ForeignKeyConstraint(
+        columns,
+        [f"workflow_event_runtime_start_coordination_heads.{name}" for name in columns],
+        name=f"fk_wf_rtstart_{prefix}_coord",
+    )
+
+
 class WorkflowProtectedRuntimeStartAuthorizationLeaseModel(
     _WorkflowProtectedRuntimeStartAuthorizationSourceColumns,
     _WorkflowProtectedRuntimeStartAuthorizationIdentityColumns,
@@ -14923,6 +15133,7 @@ class WorkflowProtectedRuntimeStartAuthorizationLeaseModel(
     __tablename__ = "workflow_event_runtime_start_auth_leases"
     __table_args__ = (
         *_workflow_protected_runtime_start_source_constraints(prefix="lease"),
+        _workflow_protected_runtime_start_coordination_constraint(prefix="lease"),
         ForeignKeyConstraint(
             ["claim_id", "claim_digest", "authorization_lease_id"],
             [
@@ -14957,6 +15168,7 @@ class WorkflowProtectedRuntimeStartAuthorizationLeaseModel(
             "AND lifecycle_attestation_observed_at <= issued_at "
             "AND issued_at < valid_until AND valid_until <= effective_until "
             "AND effective_until <= lifecycle_attestation_valid_until "
+            "AND effective_until <= runtime_envelope_eligible_until "
             "AND valid_until <= issued_at + INTERVAL '1 second'",
             name="ck_wf_rtstart_auth_lease_window",
         ),
@@ -15001,6 +15213,9 @@ class WorkflowProtectedRuntimeStartAuthorizationLeaseModel(
     lifecycle_attestation_valid_until: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
+    runtime_envelope_eligible_until: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
     runtime_start_profile_id: Mapped[str] = mapped_column(String(128), nullable=False)
     runtime_start_profile_version: Mapped[str] = mapped_column(String(64), nullable=False)
     runtime_start_profile_digest: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -15026,6 +15241,7 @@ class WorkflowProtectedRuntimeStartAuthorizationClaimModel(
     __tablename__ = "workflow_event_runtime_start_auth_claims"
     __table_args__ = (
         *_workflow_protected_runtime_start_source_constraints(prefix="claim"),
+        _workflow_protected_runtime_start_coordination_constraint(prefix="claim"),
         ForeignKeyConstraint(
             [
                 "authorization_lease_id",

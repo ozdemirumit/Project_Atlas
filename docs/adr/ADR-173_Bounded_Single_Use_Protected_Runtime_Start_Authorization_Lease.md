@@ -94,12 +94,18 @@ operation, scheduler call or executor invocation. No protected runtime-start exe
 manager, scheduler, model gateway, connector, MCP, provider or network call occurs during IMP-223
 or while the PostgreSQL transaction is open.
 
+Before that external attestation call, Atlas idempotently creates or verifies one canonical
+PostgreSQL runtime-envelope coordination head while the immutable ADR-172 source, destination and
+slot lineage is locked. The head contains no authority or protected locator. Its immutable identity,
+commitment and generation are supplied to the attestor and are signed into the returned evidence.
+
 The attestation canonically commits to:
 
 - trusted attestor identity, signing-key ID and profile version;
 - exact ADR-172 result, attempt and claim and complete ADR-160 through ADR-172 lineage digests;
 - exact adopted-context and inactive runtime-envelope commitments known only inside the protected
   boundary;
+- exact opaque runtime-envelope identity, commitment, generation and eligibility deadline;
 - exact protected-slot commitment and receipt-bound post-adoption generation;
 - exact consumer subject, audience, contract and code-owned purpose;
 - exact destination boundary and deployment identity, current generation and fencing-token digest;
@@ -182,6 +188,11 @@ connector, MCP, provider or network I/O. The response projects dedicated authori
 authoritative PostgreSQL statement and database timestamp; an expired or future-consumed lease
 therefore replays with zero effective runtime-start-request authority.
 
+That statement joins the immutable lease to its mandatory coordination head and derives consumed,
+pending, terminal and effective authority from the same PostgreSQL snapshot. A missing or mismatched
+head is interpreted as zero effective authority. There is no schema-discovery fallback that treats a
+missing future consumption table as unconsumed.
+
 Changed replay, competing identity, competing source result, digest mismatch, stale scope or a
 prior nonmatching claim fails closed. A visible result ID, lease ID or integrity reference is never
 authority. Replay never renews, transfers, replaces or reissues a lease and never invokes an
@@ -232,17 +243,29 @@ claim and lease may win for the source adoption lineage, exact slot post-generat
 runtime-envelope commitment and scoped idempotency key. Append-only evidence is never repaired,
 replaced or mutated.
 
+Normal replay and insertion-race replay use the same verifier: stored claim and lease digests,
+signed lifecycle attestation, signed ADR-172 receipt, immutable source lineage and coordination-head
+binding must all validate. Replay may return historical evidence after expiry or consumption, but
+its minimized effective projection cannot report the dedicated authority as true.
+
 ### Durable Persistence And Zero Disclosure
 
-Production stores two append-only PostgreSQL tables:
+Production stores two append-only PostgreSQL evidence tables and one guarded coordination table:
 
 - protected runtime-start authorization claims, unique by ADR-172 result, adopted-context/runtime-
   envelope lineage, exact slot post-generation and scoped idempotency key; and
 - protected runtime-start authorization leases, unique by claim, ADR-172 result and protected
   runtime-envelope lineage.
+- `workflow_event_runtime_start_coordination_heads`, unique by ADR-172 result and opaque envelope
+  commitment. Immutable lineage columns cannot change. A database trigger permits only the
+  `inactive_unstarted` to `authorized_unconsumed` transition in IMP-223 and reserves the exact
+  consumption/start-attempt transition contract for IMP-224; deletes and all other transitions
+  fail closed.
 
 Composite foreign keys bind the claim and lease to the exact ADR-172 result, attempt and use claim
-and the complete upstream ADR-160 through ADR-172 lineage. Database CHECK constraints enforce the
+and the complete upstream ADR-160 through ADR-172 lineage. Additional result FKs bind copied
+receipt, destination, fence, slot generation, use-count, outcome and use-profile values to the
+parent result rather than trusting duplicated child columns. Database CHECK constraints enforce the
 code-owned policy, consumer, destination, attestor, runtime-start and exact-slot contracts;
 single-use, non-renewable, non-transferable and non-bearer semantics; the positive at-most-one-
 second effective deadline; all existing 26 false authorities; and the one dedicated lease-only

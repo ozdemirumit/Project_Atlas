@@ -80,6 +80,14 @@ async def test_development_attestor_returns_deterministic_nonce_bound_metadata_o
     assert first.context_terminal_non_reusable is True
     assert first.runtime_envelope_current is True
     assert first.runtime_envelope_inactive is True
+    assert first.runtime_envelope_eligible_until == NOW + timedelta(seconds=2)
+    assert first.runtime_start_attempt_absent is True
+    assert first.runtime_start_attempt_pending is False
+    assert first.runtime_start_attempt_terminal is False
+    assert first.scheduling_absent is True
+    assert first.competing_runtime_start_authorization_absent is True
+    assert first.competing_runtime_start_consumption_absent is True
+    assert first.runtime_start_profile_eligible is True
     assert first.runtime_not_started is True
     assert first.runtime_not_resumed is True
     assert first.process_not_created is True
@@ -122,9 +130,7 @@ async def test_development_attestor_binds_exact_lineage_and_negative_lifecycle_e
 
     assert safe_evidence.integrity_signature != negative_evidence.integrity_signature
     assert negative.verify_runtime_start_lifecycle_attestation(negative_evidence) is True
-    for name in ("runtime_envelope_unstarted", "runtime_unstarted"):
-        if hasattr(negative_evidence, name):
-            assert getattr(negative_evidence, name) is False
+    assert negative_evidence.runtime_not_started is False
     assert negative_evidence.destination_fence_current is False
 
     lineage_digest_fields = [

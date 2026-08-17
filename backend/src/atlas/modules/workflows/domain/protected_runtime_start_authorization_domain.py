@@ -17,6 +17,40 @@ class WorkflowProtectedRuntimeStartAuthorizationLeaseState(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class WorkflowProtectedRuntimeStartEnvelopeBinding:
+    runtime_envelope_id: str
+    runtime_envelope_commitment: str
+    runtime_envelope_generation: int
+
+
+def workflow_protected_runtime_start_envelope_binding(
+    *,
+    use_result_id: str,
+    use_result_digest: str,
+    destination_deployment_id: str,
+    destination_generation: int,
+    destination_fencing_token_digest: str,
+    runtime_slot_commitment: str,
+    runtime_slot_post_generation: int,
+) -> WorkflowProtectedRuntimeStartEnvelopeBinding:
+    payload = {
+        "use_result_id": use_result_id,
+        "use_result_digest": use_result_digest,
+        "destination_deployment_id": destination_deployment_id,
+        "destination_generation": destination_generation,
+        "destination_fencing_token_digest": destination_fencing_token_digest,
+        "runtime_slot_commitment": runtime_slot_commitment,
+        "runtime_slot_post_generation": runtime_slot_post_generation,
+    }
+    commitment = canonical_digest(payload)
+    return WorkflowProtectedRuntimeStartEnvelopeBinding(
+        runtime_envelope_id=f"runtime-envelope.{commitment[:48]}",
+        runtime_envelope_commitment=commitment,
+        runtime_envelope_generation=runtime_slot_post_generation,
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class WorkflowProtectedRuntimeStartAuthorizationAuthority:
     """A non-bearer future-request lease with no runtime-start permission."""
 
@@ -203,6 +237,9 @@ class WorkflowProtectedRuntimeStartAuthorizationClaim:
     runtime_slot_commitment: str
     runtime_slot_post_generation: int
     use_count_post: int
+    runtime_envelope_id: str
+    runtime_envelope_commitment: str
+    runtime_envelope_generation: int
     use_profile_id: str
     use_profile_version: str
     use_profile_digest: str
@@ -267,6 +304,9 @@ class WorkflowProtectedRuntimeStartAuthorizationLease:
     runtime_slot_commitment: str
     runtime_slot_post_generation: int
     use_count_post: int
+    runtime_envelope_id: str
+    runtime_envelope_commitment: str
+    runtime_envelope_generation: int
     use_profile_id: str
     use_profile_version: str
     use_profile_digest: str
@@ -282,6 +322,7 @@ class WorkflowProtectedRuntimeStartAuthorizationLease:
     lifecycle_attestation_id: str
     lifecycle_attestation_digest: str
     lifecycle_attestation_valid_until: datetime
+    runtime_envelope_eligible_until: datetime
     runtime_start_profile_id: str
     runtime_start_profile_version: str
     runtime_start_profile_digest: str
@@ -306,6 +347,7 @@ class WorkflowProtectedRuntimeStartAuthorizationLease:
                 value.tzinfo is None
                 for value in (
                     self.lifecycle_attestation_valid_until,
+                    self.runtime_envelope_eligible_until,
                     self.issued_at,
                     self.valid_until,
                     self.effective_until,
@@ -316,6 +358,7 @@ class WorkflowProtectedRuntimeStartAuthorizationLease:
             > timedelta(seconds=policy.maximum_lifetime_seconds)
             or self.valid_until > self.effective_until
             or self.effective_until > self.lifecycle_attestation_valid_until
+            or self.effective_until > self.runtime_envelope_eligible_until
             or self.runtime_start_profile_id != policy.runtime_start_profile_id
             or self.runtime_start_profile_version != policy.runtime_start_profile_version
             or self.runtime_start_profile_digest != policy.runtime_start_profile_digest
@@ -355,6 +398,7 @@ def _validate_source_snapshot(
         or instance.transient_material_zeroized is not True
         or instance.runtime_slot_post_generation < 2
         or instance.use_count_post != 1
+        or instance.runtime_envelope_generation != instance.runtime_slot_post_generation
         or instance.destination_generation < 1
         or instance.consumer_subject_id != policy.consumer_subject_id
         or instance.consumer_audience != policy.consumer_audience
@@ -379,6 +423,7 @@ _SOURCE_IDENTIFIERS = (
     "use_claim_id",
     "authorization_consumption_result_id",
     "destination_deployment_id",
+    "runtime_envelope_id",
     "use_profile_id",
     "use_profile_version",
     "consumer_subject_id",
@@ -397,6 +442,7 @@ _SOURCE_DIGESTS = (
     "authorization_consumption_result_digest",
     "destination_fencing_token_digest",
     "runtime_slot_commitment",
+    "runtime_envelope_commitment",
     "use_profile_digest",
     "policy_digest",
 )
@@ -481,6 +527,8 @@ __all__ = [
     "WorkflowProtectedRuntimeStartAuthorizationLease",
     "WorkflowProtectedRuntimeStartAuthorizationLeaseState",
     "WorkflowProtectedRuntimeStartAuthorizationPolicy",
+    "WorkflowProtectedRuntimeStartEnvelopeBinding",
     "code_owned_workflow_protected_runtime_start_authorization_policy",
     "code_owned_workflow_protected_runtime_start_authorization_policy_values",
+    "workflow_protected_runtime_start_envelope_binding",
 ]

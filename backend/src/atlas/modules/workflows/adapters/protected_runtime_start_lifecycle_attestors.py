@@ -62,9 +62,13 @@ class DeterministicDevelopmentWorkflowProtectedRuntimeStartLifecycleAttestor:
         destination_fence_current: bool = True,
         runtime_slot_generation_current: bool = True,
         runtime_start_profile_eligible: bool = True,
+        runtime_envelope_eligibility_seconds: int = 2,
     ) -> None:
         self._development_enabled = development_enabled
         self._clock = clock or (lambda: datetime.now(UTC))
+        if runtime_envelope_eligibility_seconds <= 0:
+            raise ValueError("runtime envelope eligibility lifetime must be positive")
+        self._runtime_envelope_eligibility_seconds = runtime_envelope_eligibility_seconds
         self._evidence = {
             "exact_use_result_confirmed": True,
             "context_adoption_confirmed": True,
@@ -112,7 +116,10 @@ class DeterministicDevelopmentWorkflowProtectedRuntimeStartLifecycleAttestor:
         now = self._clock()
         if now.tzinfo is None:
             _raise("workflow_protected_runtime_start_lifecycle_clock_must_be_aware")
-        ceiling = _eligibility_ceiling(request, now=now)
+        ceiling = min(
+            _eligibility_ceiling(request, now=now),
+            now + timedelta(seconds=self._runtime_envelope_eligibility_seconds),
+        )
         if ceiling <= now:
             _raise("workflow_protected_runtime_start_lifecycle_ceiling_expired")
 
@@ -133,6 +140,7 @@ class DeterministicDevelopmentWorkflowProtectedRuntimeStartLifecycleAttestor:
                 "signature_algorithm": "hmac-sha256",
                 "observed_at": now,
                 "valid_until": min(now + timedelta(seconds=2), ceiling),
+                "runtime_envelope_eligible_until": ceiling,
             }
         )
         for field in fields(WorkflowProtectedRuntimeStartLifecycleAttestation):
