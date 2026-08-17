@@ -9229,6 +9229,40 @@ class PostgreSQLWorkflowPlanRepository:
                     claim_model.idempotency_key == idempotency_key,
                 )
             )
+        lease_model = WorkflowProtectedRuntimeReadinessAuthorizationLeaseModel
+        lease_scope = and_(
+            lease_model.organization_id == scope.organization_id,
+            lease_model.environment_id == scope.environment_id,
+            lease_model.site_id == scope.site_id,
+            lease_model.consumer_subject_id == consumer_subject_id,
+            lease_model.consumer_audience == consumer_audience,
+        )
+        lease_filter = and_(lease_model.start_result_id == start_result_id, lease_scope)
+        prior_claim_exists, prior_lease_exists, observed_at = (
+            await session.execute(
+                select(
+                    exists(select(literal(1)).where(or_(*claim_filters))),
+                    exists(select(literal(1)).where(lease_filter)),
+                    func.clock_timestamp(),
+                )
+            )
+        ).one()
+        if not prior_claim_exists and not prior_lease_exists:
+            return _ProtectedRuntimeReadinessAuthorizationLockedSources(
+                start_authorization,
+                start_authorization_claim,
+                start_authorization_lease,
+                start_claim,
+                start_attempt,
+                start_result,
+                destination_head,
+                slot_head,
+                coordination_head,
+                (),
+                (),
+                first_observed_at,
+                cast(datetime, observed_at),
+            )
         existing_claims = tuple(
             (
                 await session.scalars(
@@ -9240,16 +9274,7 @@ class PostgreSQLWorkflowPlanRepository:
                 )
             ).all()
         )
-        lease_model = WorkflowProtectedRuntimeReadinessAuthorizationLeaseModel
         lease_ids = tuple(row.authorization_lease_id for row in existing_claims)
-        lease_scope = and_(
-            lease_model.organization_id == scope.organization_id,
-            lease_model.environment_id == scope.environment_id,
-            lease_model.site_id == scope.site_id,
-            lease_model.consumer_subject_id == consumer_subject_id,
-            lease_model.consumer_audience == consumer_audience,
-        )
-        lease_filter = and_(lease_model.start_result_id == start_result_id, lease_scope)
         if lease_ids:
             lease_filter = or_(
                 lease_filter,

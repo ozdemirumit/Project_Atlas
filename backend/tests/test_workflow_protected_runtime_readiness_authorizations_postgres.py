@@ -110,7 +110,7 @@ def test_preflight_is_durable_replay_first_and_never_attests() -> None:
 def test_lock_loads_complete_source_with_prelock_database_time_in_one_join() -> None:
     lock = _method_source("_lock_protected_runtime_readiness_authorization_rows")
 
-    assert lock.count("clock_timestamp") == 3
+    assert lock.count("clock_timestamp") == 4
     assert '.cte("runtime_readiness_first_observation")' in lock
     assert '.prefix_with("MATERIALIZED")' in lock
     assert ".join(first_observation, true())" in lock
@@ -121,6 +121,13 @@ def test_lock_loads_complete_source_with_prelock_database_time_in_one_join() -> 
     assert "consumer_audience" in lock
     assert "source_statement = (" in lock
     assert "await session.execute(locked(source_statement))" in lock
+    assert "prior_claim_exists, prior_lease_exists, observed_at" in lock
+    assert "exists(select(literal(1)).where(or_(*claim_filters)))" in lock
+    assert "exists(select(literal(1)).where(lease_filter))" in lock
+    assert "if not prior_claim_exists and not prior_lease_exists:" in lock
+    assert lock.index("if not prior_claim_exists and not prior_lease_exists:") < lock.index(
+        "existing_claims ="
+    )
     assert "session.get" not in lock
     for model in (
         "WorkflowProtectedRuntimeContextUseClaimModel",
