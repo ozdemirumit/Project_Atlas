@@ -319,9 +319,20 @@ async def _seed_successful_runtime_start(
         "integrity_signature": "e" * 64,
     }
     receipt = WorkflowProtectedRuntimeStartReceipt(
-        **cast(Any, receipt_values), canonical_digest="0" * 64
+        **cast(Any, receipt_values),
+        canonical_digest=canonical_digest(
+            {
+                name: (
+                    value.isoformat()
+                    if isinstance(value, datetime)
+                    else value.value
+                    if hasattr(value, "value")
+                    else value
+                )
+                for name, value in receipt_values.items()
+            }
+        ),
     )
-    receipt = replace(receipt, canonical_digest=canonical_digest(receipt.digest_payload()))
     service, _, _ = _runtime_start_service()
     result = service._build_receipted_result(
         claim=request.candidate_claim,

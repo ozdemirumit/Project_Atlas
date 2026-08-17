@@ -188,9 +188,7 @@ def _authorization_source_at(base: datetime, *, suffix: str | None = None) -> An
             "lifecycle_attestation_id": f"runtime-start-attestation.{suffix}",
         }
     )
-    issued_at = (
-        base + timedelta(seconds=15) if suffix is not None else base - timedelta(milliseconds=100)
-    )
+    issued_at = base - timedelta(milliseconds=500 if suffix is not None else 100)
     valid_until = issued_at + timedelta(seconds=1)
     attestation_valid_until = valid_until + timedelta(milliseconds=200)
     lease_payload = lease.digest_payload()

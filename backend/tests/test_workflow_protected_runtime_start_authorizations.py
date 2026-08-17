@@ -71,6 +71,7 @@ def _source(
         attempt_id="runtime-use-attempt.imp-222",
         authorization_consumption_result_id="use-auth-consumption-result.imp-221",
         authorization_consumption_result_digest="1" * 64,
+        scope=SCOPE,
         authority=zero,
     )
     attempt = _Evidence(
