@@ -809,6 +809,16 @@ def upgrade() -> None:
                 f"FOR EACH ROW EXECUTE FUNCTION {APPEND_ONLY_FUNCTION}()"
             )
         )
+    for table, trigger in (
+        (LEASE_TABLE, "trg_wf_rtready_auth_lease_no_truncate"),
+        (CLAIM_TABLE, "trg_wf_rtready_auth_claim_no_truncate"),
+    ):
+        op.execute(
+            sa.text(
+                f"CREATE TRIGGER {trigger} BEFORE TRUNCATE ON {table} "
+                f"FOR EACH STATEMENT EXECUTE FUNCTION {APPEND_ONLY_FUNCTION}()"
+            )
+        )
 
 
 def downgrade() -> None:

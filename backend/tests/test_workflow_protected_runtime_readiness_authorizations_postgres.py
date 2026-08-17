@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 import asyncio
 import os
+import subprocess
+import sys
 import time
 from dataclasses import replace
 from datetime import datetime, timedelta
@@ -690,6 +692,30 @@ async def test_live_postgres_readiness_repository_race_replay_scope_guards_and_e
                 with pytest.raises(DBAPIError, match="append-only"):
                     await connection.execute(table.delete().where(table.c[key] == value))
                 await transaction.rollback()
+            async with engine.connect() as connection:
+                transaction = await connection.begin()
+                with pytest.raises(DBAPIError, match="append-only"):
+                    await connection.execute(text(f"TRUNCATE TABLE {table.name} CASCADE"))
+                await transaction.rollback()
+
+        downgrade_environment = os.environ.copy()
+        downgrade_environment["ATLAS_DATABASE_URL"] = database_url
+        downgrade = await asyncio.to_thread(
+            subprocess.run,
+            [sys.executable, "-m", "alembic", "downgrade", "20260817_0147"],
+            cwd=Path(__file__).parents[1],
+            env=downgrade_environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert downgrade.returncode != 0
+        assert "refusing guarded downgrade" in (downgrade.stdout + downgrade.stderr)
+        async with engine.connect() as connection:
+            assert (
+                await connection.scalar(text("SELECT version_num FROM alembic_version"))
+                == "20260817_0148"
+            )
 
         remaining = (
             winner.lease.effective_until - await repository.get_authoritative_time()

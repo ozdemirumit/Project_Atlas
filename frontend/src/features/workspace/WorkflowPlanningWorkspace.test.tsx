@@ -9224,7 +9224,7 @@ describe("WorkflowPlanningWorkspace", () => {
       effective_state: "expired",
       issued_at: "2026-08-14T10:08:30Z",
       valid_until: "2026-08-14T10:08:30.750Z",
-      effective_until: "2026-08-14T10:08:31Z",
+      effective_until: "2026-08-14T10:08:30.750Z",
       authority: {
         ...protectedRuntimeReadinessAuthorization.authority,
         protected_runtime_readiness_authority_granted: false,

@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-225 |
 | Title | Bounded single-use protected runtime-readiness authorization lease |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/protected-runtime-readiness-authorization` |
 | Pull Request | Not opened |
 | Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-175 |
 | Last Updated | 2026-08-17 |
-| Next Action | Define ADR-175, then implement the fail-closed readiness-authorization vertical slice |
+| Next Action | Push the reviewed branch, open the pull request and require exact-head CI |
 
 ### ATLAS-IMP-225 Scope Rationale
 
@@ -50,6 +50,24 @@
 - Production fails closed without PostgreSQL and the trusted runtime-lifecycle attestor. Workload
   POST and normal username/password-session GET are minimized and `no-store`; the read-only UI
   requires no MFA or second browser prompt and exposes no readiness or operation control.
+
+### ATLAS-IMP-225 Verification Evidence
+
+- Ruff format/check passed across `1552` backend source, test and migration files. Full MyPy passed
+  across `1119` source files with no issues, and Alembic reports the single head `20260817_0148`.
+- The integrated ADR-175 backend and relevant IMP-224 regression suite passed `200` tests. Five
+  live PostgreSQL tests were skipped locally only because `ATLAS_TEST_POSTGRES_DSN` is not
+  configured. CI now explicitly runs the IMP-225 PostgreSQL race, replay, scope, expiry,
+  append-only, truncate rejection, final-clock and guarded-downgrade paths against PostgreSQL 17.
+- Frontend ESLint, TypeScript and production Vite build passed. The complete Workflow Planning
+  workspace suite passed `587` tests, including strict deadline equality and fail-closed parsing.
+- Independent security and persistence review found and closed exact receipt-lineage, attestation
+  binding, one-second freshness, SQL tenant scope, final database clock, canonical lock order,
+  dedicated RBAC, live PostgreSQL coverage, truncate protection and populated-downgrade gaps.
+- Live validation at `http://127.0.0.1:5293/#/workspace/workflows` used one normal `atlas-demo` /
+  `local-demo` username/password session. The read-only readiness-authorization region required no
+  MFA or second browser session, exposed zero controls, had no horizontal overflow at `390x844`,
+  and produced no browser console warnings or errors.
 
 ### ATLAS-IMP-224 Scope Rationale
 

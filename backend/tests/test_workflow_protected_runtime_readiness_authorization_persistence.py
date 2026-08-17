@@ -83,8 +83,11 @@ def test_migration_is_linear_append_only_guarded_and_source_complete() -> None:
     assert "INTERVAL '1 second'" in source
     assert "protected_runtime_readiness_authority_granted" in source
     assert "BEFORE UPDATE OR DELETE" in source
+    assert source.count("BEFORE TRUNCATE") == 1
     assert "trg_wf_rtready_auth_lease_append_only" in source
     assert "trg_wf_rtready_auth_claim_append_only" in source
+    assert "trg_wf_rtready_auth_lease_no_truncate" in source
+    assert "trg_wf_rtready_auth_claim_no_truncate" in source
     assert (
         "refusing guarded downgrade: protected runtime-readiness authorization evidence exists"
         in source
