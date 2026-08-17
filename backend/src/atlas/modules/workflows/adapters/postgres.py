@@ -351,6 +351,7 @@ from atlas.modules.workflows.application.protected_runtime_readiness_authorizati
     WorkflowProtectedRuntimeReadinessAuthorizationPresentation,
     WorkflowProtectedRuntimeReadinessAuthorizationPresentationState,
     WorkflowProtectedRuntimeReadinessAuthorizationSource,
+    WorkflowProtectedRuntimeReadinessAuthorizationSourceRequest,
     WorkflowProtectedRuntimeReadinessLifecycleAttestation,
     WorkflowProtectedRuntimeReadinessLifecycleSignatureVerifier,
     validate_workflow_protected_runtime_readiness_authorization_request,
@@ -8841,16 +8842,19 @@ class PostgreSQLWorkflowPlanRepository:
             )
 
     async def get_protected_runtime_readiness_authorization_source(
-        self, *, start_result_id: str
+        self, request: WorkflowProtectedRuntimeReadinessAuthorizationSourceRequest
     ) -> WorkflowProtectedRuntimeReadinessAuthorizationSource | None:
         async with self._sessions() as session:
             locked = await self._lock_protected_runtime_readiness_authorization_rows(
                 session,
-                start_result_id=start_result_id,
-                scope=None,
-                consumer_subject_id=None,
-                consumer_audience=None,
+                start_result_id=request.start_result_id,
+                scope=request.scope,
+                consumer_subject_id=request.consumer_subject_id,
+                consumer_audience=request.consumer_audience,
                 idempotency_key=None,
+                expected_start_result_digest=request.start_result_digest,
+                consumer_contract_id=request.consumer_contract_id,
+                consumer_contract_version=request.consumer_contract_version,
                 for_update=False,
             )
             source = self._protected_runtime_readiness_source_from_locked(
@@ -8905,6 +8909,31 @@ class PostgreSQLWorkflowPlanRepository:
                 await session.rollback()
                 return result_type(statuses.EVIDENCE_CONFLICT, None, locked.observed_at)
             try:
+                final_observed_at = cast(
+                    datetime, await session.scalar(select(func.clock_timestamp()))
+                )
+                working = self._protected_runtime_readiness_retimed_request(
+                    request, issued_at=final_observed_at
+                )
+                if not self._protected_runtime_readiness_final_window_matches(
+                    working,
+                    locked=locked,
+                    final_observed_at=final_observed_at,
+                ):
+                    await session.rollback()
+                    return result_type(statuses.EVIDENCE_CONFLICT, None, final_observed_at)
+                audit_payload = {
+                    "start_result_id": working.candidate.start_result_id,
+                    "policy_digest": working.candidate.policy_digest,
+                    "request_fingerprint": working.request_fingerprint,
+                    "scope": working.scope.canonical_value(),
+                }
+                if (
+                    canonical_digest(audit_payload)
+                    != working.candidate_claim.authorization_audit_digest
+                ):
+                    await session.rollback()
+                    return result_type(statuses.EVIDENCE_CONFLICT, None, final_observed_at)
                 session.add(
                     self._protected_runtime_readiness_lease_model(
                         working.candidate,
@@ -8923,8 +8952,8 @@ class PostgreSQLWorkflowPlanRepository:
                     )
                 )
                 await session.commit()
-                return result_type(statuses.AUTHORIZED, working.candidate, locked.observed_at)
-            except IntegrityError:
+                return result_type(statuses.AUTHORIZED, working.candidate, final_observed_at)
+            except (IntegrityError, TypeError, ValueError):
                 await session.rollback()
 
         async with self._sessions() as session:
@@ -8994,22 +9023,72 @@ class PostgreSQLWorkflowPlanRepository:
         session: AsyncSession,
         *,
         start_result_id: str,
-        scope: WorkflowScope | None,
-        consumer_subject_id: str | None,
-        consumer_audience: str | None,
+        scope: WorkflowScope,
+        consumer_subject_id: str,
+        consumer_audience: str,
         idempotency_key: str | None,
+        expected_start_result_digest: str | None = None,
+        consumer_contract_id: str | None = None,
+        consumer_contract_version: str | None = None,
         for_update: bool = True,
     ) -> _ProtectedRuntimeReadinessAuthorizationLockedSources:
         first_observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
-        seed_result = await session.get(
-            WorkflowProtectedRuntimeStartConsumptionResultModel, start_result_id
+        source_scope = and_(
+            WorkflowProtectedRuntimeStartConsumptionResultModel.organization_id
+            == scope.organization_id,
+            WorkflowProtectedRuntimeStartConsumptionResultModel.environment_id
+            == scope.environment_id,
+            WorkflowProtectedRuntimeStartConsumptionResultModel.site_id == scope.site_id,
+            WorkflowProtectedRuntimeStartConsumptionResultModel.consumer_subject_id
+            == consumer_subject_id,
+            WorkflowProtectedRuntimeStartConsumptionResultModel.consumer_audience
+            == consumer_audience,
+        )
+        if expected_start_result_digest is not None:
+            source_scope = and_(
+                source_scope,
+                WorkflowProtectedRuntimeStartConsumptionResultModel.canonical_digest
+                == expected_start_result_digest,
+            )
+        if consumer_contract_id is not None and consumer_contract_version is not None:
+            source_scope = and_(
+                source_scope,
+                WorkflowProtectedRuntimeStartConsumptionResultModel.consumer_contract_id
+                == consumer_contract_id,
+                WorkflowProtectedRuntimeStartConsumptionResultModel.consumer_contract_version
+                == consumer_contract_version,
+            )
+        seed_result = cast(
+            WorkflowProtectedRuntimeStartConsumptionResultModel | None,
+            await session.scalar(
+                select(WorkflowProtectedRuntimeStartConsumptionResultModel).where(
+                    WorkflowProtectedRuntimeStartConsumptionResultModel.result_id
+                    == start_result_id,
+                    source_scope,
+                )
+            ),
         )
         seed_lease = (
             None
             if seed_result is None
-            else await session.get(
-                WorkflowProtectedRuntimeStartAuthorizationLeaseModel,
-                seed_result.authorization_lease_id,
+            else cast(
+                WorkflowProtectedRuntimeStartAuthorizationLeaseModel | None,
+                await session.scalar(
+                    select(WorkflowProtectedRuntimeStartAuthorizationLeaseModel).where(
+                        WorkflowProtectedRuntimeStartAuthorizationLeaseModel.authorization_lease_id
+                        == seed_result.authorization_lease_id,
+                        WorkflowProtectedRuntimeStartAuthorizationLeaseModel.organization_id
+                        == scope.organization_id,
+                        WorkflowProtectedRuntimeStartAuthorizationLeaseModel.environment_id
+                        == scope.environment_id,
+                        WorkflowProtectedRuntimeStartAuthorizationLeaseModel.site_id
+                        == scope.site_id,
+                        WorkflowProtectedRuntimeStartAuthorizationLeaseModel.consumer_subject_id
+                        == consumer_subject_id,
+                        WorkflowProtectedRuntimeStartAuthorizationLeaseModel.consumer_audience
+                        == consumer_audience,
+                    )
+                ),
             )
         )
         if seed_result is None or seed_lease is None:
@@ -9030,32 +9109,83 @@ class PostgreSQLWorkflowPlanRepository:
             )
 
         def locked(statement: Any) -> Any:
+            statement = statement.execution_options(populate_existing=True)
             return statement.with_for_update() if for_update else statement
 
-        start_authorization = await self._lock_protected_runtime_start_authorization_rows(
-            session,
-            use_result_id=seed_lease.use_result_id,
-            scope=None,
-            consumer_subject_id=None,
-            consumer_audience=None,
-            idempotency_key=None,
-            for_update=for_update,
+        seed_use_result = await session.get(
+            WorkflowProtectedRuntimeContextUseResultModel, seed_lease.use_result_id
         )
-        start_authorization_claim = next(
-            (
-                row
-                for row in start_authorization.existing_claims
-                if row.claim_id == seed_lease.claim_id
+        if seed_use_result is None:
+            return _ProtectedRuntimeReadinessAuthorizationLockedSources(
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                (),
+                (),
+                first_observed_at,
+                first_observed_at,
+            )
+
+        use_claim = cast(
+            WorkflowProtectedRuntimeContextUseClaimModel | None,
+            await session.scalar(
+                locked(
+                    select(WorkflowProtectedRuntimeContextUseClaimModel).where(
+                        WorkflowProtectedRuntimeContextUseClaimModel.claim_id
+                        == seed_use_result.claim_id
+                    )
+                )
             ),
-            None,
         )
-        start_authorization_lease = next(
-            (
-                row
-                for row in start_authorization.existing_leases
-                if row.authorization_lease_id == seed_lease.authorization_lease_id
+        use_attempt = cast(
+            WorkflowProtectedRuntimeContextUseAttemptModel | None,
+            await session.scalar(
+                locked(
+                    select(WorkflowProtectedRuntimeContextUseAttemptModel).where(
+                        WorkflowProtectedRuntimeContextUseAttemptModel.attempt_id
+                        == seed_use_result.attempt_id
+                    )
+                )
             ),
-            None,
+        )
+        use_result = cast(
+            WorkflowProtectedRuntimeContextUseResultModel | None,
+            await session.scalar(
+                locked(
+                    select(WorkflowProtectedRuntimeContextUseResultModel).where(
+                        WorkflowProtectedRuntimeContextUseResultModel.result_id
+                        == seed_lease.use_result_id
+                    )
+                )
+            ),
+        )
+        start_authorization_claim = cast(
+            WorkflowProtectedRuntimeStartAuthorizationClaimModel | None,
+            await session.scalar(
+                locked(
+                    select(WorkflowProtectedRuntimeStartAuthorizationClaimModel).where(
+                        WorkflowProtectedRuntimeStartAuthorizationClaimModel.claim_id
+                        == seed_lease.claim_id
+                    )
+                )
+            ),
+        )
+        start_authorization_lease = cast(
+            WorkflowProtectedRuntimeStartAuthorizationLeaseModel | None,
+            await session.scalar(
+                locked(
+                    select(WorkflowProtectedRuntimeStartAuthorizationLeaseModel).where(
+                        WorkflowProtectedRuntimeStartAuthorizationLeaseModel.authorization_lease_id
+                        == seed_lease.authorization_lease_id
+                    )
+                )
+            ),
         )
         start_claim = cast(
             WorkflowProtectedRuntimeStartConsumptionClaimModel | None,
@@ -9090,16 +9220,68 @@ class PostgreSQLWorkflowPlanRepository:
                 )
             ),
         )
+        destination_head = cast(
+            WorkflowProtectedRuntimeContextInjectionDestinationHeadModel | None,
+            await session.scalar(
+                locked(
+                    select(WorkflowProtectedRuntimeContextInjectionDestinationHeadModel).where(
+                        WorkflowProtectedRuntimeContextInjectionDestinationHeadModel.destination_deployment_id
+                        == seed_result.destination_deployment_id
+                    )
+                )
+            ),
+        )
+        slot_head = cast(
+            WorkflowProtectedRuntimeContextInjectionSlotHeadModel | None,
+            await session.scalar(
+                locked(
+                    select(WorkflowProtectedRuntimeContextInjectionSlotHeadModel).where(
+                        WorkflowProtectedRuntimeContextInjectionSlotHeadModel.destination_deployment_id
+                        == seed_result.destination_deployment_id,
+                        WorkflowProtectedRuntimeContextInjectionSlotHeadModel.runtime_slot_commitment
+                        == seed_lease.runtime_slot_commitment,
+                    )
+                )
+            ),
+        )
+        coordination_head = cast(
+            WorkflowProtectedRuntimeStartCoordinationHeadModel | None,
+            await session.scalar(
+                locked(
+                    select(WorkflowProtectedRuntimeStartCoordinationHeadModel).where(
+                        WorkflowProtectedRuntimeStartCoordinationHeadModel.use_result_id
+                        == seed_lease.use_result_id
+                    )
+                )
+            ),
+        )
+        start_authorization = _ProtectedRuntimeStartAuthorizationLockedSources(
+            use_claim,
+            use_attempt,
+            use_result,
+            destination_head,
+            slot_head,
+            coordination_head,
+            () if start_authorization_claim is None else (start_authorization_claim,),
+            () if start_authorization_lease is None else (start_authorization_lease,),
+            first_observed_at,
+            first_observed_at,
+        )
         claim_model = WorkflowProtectedRuntimeReadinessAuthorizationClaimModel
-        claim_filters: list[Any] = [claim_model.start_result_id == start_result_id]
-        if (
-            scope is not None
-            and consumer_subject_id is not None
-            and consumer_audience is not None
-            and idempotency_key is not None
-        ):
+        claim_scope = and_(
+            claim_model.organization_id == scope.organization_id,
+            claim_model.environment_id == scope.environment_id,
+            claim_model.site_id == scope.site_id,
+            claim_model.consumer_subject_id == consumer_subject_id,
+            claim_model.consumer_audience == consumer_audience,
+        )
+        claim_filters: list[Any] = [
+            and_(claim_model.start_result_id == start_result_id, claim_scope)
+        ]
+        if idempotency_key is not None:
             claim_filters.append(
                 and_(
+                    claim_scope,
                     claim_model.idempotency_scope_id
                     == self._protected_runtime_readiness_idempotency_scope(
                         scope, consumer_subject_id, consumer_audience
@@ -9120,9 +9302,19 @@ class PostgreSQLWorkflowPlanRepository:
         )
         lease_model = WorkflowProtectedRuntimeReadinessAuthorizationLeaseModel
         lease_ids = tuple(row.authorization_lease_id for row in existing_claims)
-        lease_filter = or_(lease_model.start_result_id == start_result_id)
+        lease_scope = and_(
+            lease_model.organization_id == scope.organization_id,
+            lease_model.environment_id == scope.environment_id,
+            lease_model.site_id == scope.site_id,
+            lease_model.consumer_subject_id == consumer_subject_id,
+            lease_model.consumer_audience == consumer_audience,
+        )
+        lease_filter = and_(lease_model.start_result_id == start_result_id, lease_scope)
         if lease_ids:
-            lease_filter = or_(lease_filter, lease_model.authorization_lease_id.in_(lease_ids))
+            lease_filter = or_(
+                lease_filter,
+                and_(lease_scope, lease_model.authorization_lease_id.in_(lease_ids)),
+            )
         existing_leases = tuple(
             (
                 await session.scalars(
@@ -9142,9 +9334,9 @@ class PostgreSQLWorkflowPlanRepository:
             start_claim,
             start_attempt,
             start_result,
-            start_authorization.destination_head,
-            start_authorization.slot_head,
-            start_authorization.coordination_head,
+            destination_head,
+            slot_head,
+            coordination_head,
             existing_claims,
             existing_leases,
             first_observed_at,
@@ -9310,8 +9502,16 @@ class PostgreSQLWorkflowPlanRepository:
             < attestation.valid_until
             and locked.observed_at < attestation.runtime_envelope_eligible_until
             and request.candidate.issued_at == locked.observed_at
-            and request.candidate.valid_until <= attestation.valid_until
-            and request.candidate.effective_until <= attestation.runtime_envelope_eligible_until
+            and request.candidate.lifecycle_attestation_valid_until == attestation.valid_until
+            and request.candidate.runtime_envelope_eligible_until
+            == attestation.runtime_envelope_eligible_until
+            and request.candidate.valid_until == request.candidate.effective_until
+            and request.candidate.effective_until
+            == min(
+                locked.observed_at + timedelta(seconds=1),
+                attestation.valid_until,
+                attestation.runtime_envelope_eligible_until,
+            )
             and not locked.existing_claims
             and not locked.existing_leases
         )
@@ -9321,10 +9521,38 @@ class PostgreSQLWorkflowPlanRepository:
         verifier: WorkflowProtectedRuntimeReadinessLifecycleSignatureVerifier,
         attestation: WorkflowProtectedRuntimeReadinessLifecycleAttestation,
     ) -> bool:
-        verify = getattr(verifier, "verify_runtime_readiness_lifecycle_attestation", None)
-        if not callable(verify):
-            verify = getattr(verifier, "verify_runtime_readiness_eligibility_attestation", None)
-        return bool(callable(verify) and verify(attestation) is True)
+        return bool(verifier.verify_runtime_readiness_lifecycle_attestation(attestation) is True)
+
+    @staticmethod
+    def _protected_runtime_readiness_final_window_matches(
+        request: WorkflowProtectedRuntimeReadinessAuthorizationLeaseRequest,
+        *,
+        locked: _ProtectedRuntimeReadinessAuthorizationLockedSources,
+        final_observed_at: datetime,
+    ) -> bool:
+        attestation = request.lifecycle_attestation
+        candidate = request.candidate
+        expected_until = min(
+            final_observed_at + timedelta(seconds=1),
+            attestation.valid_until,
+            attestation.runtime_envelope_eligible_until,
+        )
+        return bool(
+            locked.observed_at <= final_observed_at < expected_until
+            and request.source.result.recorded_at
+            <= request.pre_attestation_observed_at
+            <= attestation.observed_at
+            <= locked.first_observed_at
+            <= final_observed_at
+            and candidate.issued_at == final_observed_at
+            and candidate.lifecycle_attestation_valid_until == attestation.valid_until
+            and candidate.runtime_envelope_eligible_until
+            == attestation.runtime_envelope_eligible_until
+            and candidate.valid_until == expected_until
+            and candidate.effective_until == expected_until
+            and not locked.existing_claims
+            and not locked.existing_leases
+        )
 
     @staticmethod
     def _protected_runtime_readiness_retimed_request(
