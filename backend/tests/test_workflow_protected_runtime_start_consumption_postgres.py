@@ -463,8 +463,16 @@ async def _seed_actual_repository_path(
     await connection.execute(text("SET LOCAL session_replication_role = replica"))
     for shared_model in (destination_model, slot_model):
         table = cast(Any, type(shared_model).__table__)
+        statement = postgres_insert(table).values(**_model_values(shared_model))
         await connection.execute(
-            postgres_insert(table).values(**_model_values(shared_model)).on_conflict_do_nothing()
+            statement.on_conflict_do_update(
+                index_elements=[column.name for column in table.primary_key.columns],
+                set_={
+                    column.name: getattr(statement.excluded, column.name)
+                    for column in table.columns
+                    if not column.primary_key
+                },
+            )
         )
     for model in (
         parent_result,
