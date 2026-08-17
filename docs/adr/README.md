@@ -53,3 +53,4 @@ ADR numbers are permanent and never reused. Material changes require a new ADR r
 | [ADR-170](ADR-170_Bounded_Single_Use_Protected_Runtime_Context_Use_Authorization_Lease.md) | Bounded single-use protected runtime-context use authorization lease | Accepted |
 | [ADR-171](ADR-171_Atomic_Protected_Runtime_Context_Use_Authorization_Lease_Consumption.md) | Atomic protected runtime-context use-authorization lease consumption without runtime-context use | Accepted |
 | [ADR-172](ADR-172_Single_Use_Protected_Runtime_Context_Adoption.md) | Single-use protected runtime-context adoption after terminal authorization consumption | Accepted |
+| [ADR-173](ADR-173_Bounded_Single_Use_Protected_Runtime_Start_Authorization_Lease.md) | Bounded single-use protected runtime-start authorization lease | Accepted |

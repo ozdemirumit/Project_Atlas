@@ -780,6 +780,23 @@ MVP workflows do not execute C3 through C5 capabilities.
   inference, network, connector/MCP, dispatch, execution and infrastructure-mutation authority.
   AI remains advisory-only, AD remains authentication-only, and normal password-session read-only
   GET requires no MFA or second browser prompt.
+- ADR-173 establishes one append-only, single-use, non-renewable, non-transferable and non-bearer
+  protected runtime-start authorization lease from one canonical ADR-172
+  `context_used_once_in_protected_boundary` result. Only the exact protected consumer workload may
+  request its own lease. Fresh signed, server-nonce-bound metadata-only evidence must prove the
+  adopted context remains terminal and bound to the same inactive runtime envelope; no runtime
+  start/resume, process creation or scheduling attempt exists; destination generation/fence and
+  exact slot post-generation remain current; and the code-owned runtime-start profile remains
+  eligible. PostgreSQL applies full ADR-160 through ADR-172 lineage locks, complete revalidation and
+  two database-time observations before appending one claim and an at-most-one-second lease. All
+  existing 26 authority declarations remain false. Only the lease may set
+  `protected_runtime_start_authority_granted=true`, which permits only submission of one future
+  IMP-224 consumption/start request and is not direct runtime-start authority. IMP-223 calls no
+  executor and performs no runtime/process/scheduler/inference/network/connector/MCP/dispatch/
+  execution/mutation operation. IMP-224 must atomically consume the exact lease and initiate one
+  protected start attempt without an extra consumption-only layer. AI remains advisory-only, AD
+  remains authentication-only, and normal password-session read-only GET requires no MFA or second
+  browser prompt.
 
 ## 39. Assumptions
 
@@ -828,3 +845,4 @@ This document is ready to enter Review when:
 | 2.1.0 | 2026-08-16 | Workflow Architecture | Added bounded protected runtime-context use-authorization lease |
 | 2.2.0 | 2026-08-17 | Workflow Architecture | Added atomic protected runtime-context use-authorization lease consumption without runtime-context use |
 | 2.3.0 | 2026-08-17 | Workflow Architecture | Added single-use protected runtime-context adoption boundary |
+| 2.4.0 | 2026-08-17 | Workflow Architecture | Added bounded single-use protected runtime-start authorization lease boundary |
