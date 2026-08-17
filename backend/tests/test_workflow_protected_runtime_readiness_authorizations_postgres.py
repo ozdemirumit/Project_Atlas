@@ -581,13 +581,8 @@ async def test_live_postgres_readiness_repository_race_replay_scope_guards_and_e
                 repository,
                 suffix=f"imp225-live-{uuid4().hex[:16]}",
             )
-            second_seed, second_receipt = await _seed_successful_runtime_start(
-                connection,
-                repository,
-                suffix=f"imp225-clock-{uuid4().hex[:16]}",
-            )
-            seeded_requests.extend((first_seed, second_seed))
-        del first_receipt, second_receipt
+            seeded_requests.append(first_seed)
+        del first_receipt
 
         first_result_id = (
             "workflow-protected-runtime-start-result."
@@ -743,6 +738,15 @@ async def test_live_postgres_readiness_repository_race_replay_scope_guards_and_e
             is WorkflowProtectedRuntimeReadinessAuthorizationPresentationState.EXPIRED
         )
         assert projection[0].protected_runtime_readiness_authority_granted is False
+
+        async with engine.begin() as connection:
+            second_seed, second_receipt = await _seed_successful_runtime_start(
+                connection,
+                repository,
+                suffix=f"imp225-clock-{uuid4().hex[:16]}",
+            )
+            seeded_requests.append(second_seed)
+        del second_receipt
 
         second_result_id = (
             "workflow-protected-runtime-start-result."
