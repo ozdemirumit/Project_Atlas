@@ -7,7 +7,7 @@ import subprocess
 import sys
 import time
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 from uuid import uuid4
@@ -510,7 +510,7 @@ async def _authorization_request(
         service,
         source,
         requested_at=first_observed_at,
-        observed_at=datetime.now(UTC),
+        observed_at=first_observed_at,
         validity_milliseconds=validity_milliseconds,
     )
     issued_at = attestation.observed_at
