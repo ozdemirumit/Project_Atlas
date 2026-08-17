@@ -25,6 +25,9 @@ from atlas.modules.workflows.application.protected_runtime_context_uses import (
 from atlas.modules.workflows.application.protected_runtime_readiness_authorization_ports import (
     WorkflowProtectedRuntimeReadinessAuthorizationPresentation,
 )
+from atlas.modules.workflows.application.protected_runtime_readiness_consumptions import (
+    WorkflowProtectedRuntimeReadinessConsumptionPresentation,
+)
 from atlas.modules.workflows.application.protected_runtime_start_authorization_ports import (
     WorkflowProtectedRuntimeStartAuthorizationPresentation,
 )
@@ -3746,6 +3749,150 @@ class WorkflowProtectedRuntimeReadinessAuthorizationResponse(BaseModel):
 
 class WorkflowProtectedRuntimeReadinessAuthorizationInventoryResponse(BaseModel):
     data: WorkflowProtectedRuntimeReadinessAuthorizationInventoryData
+    meta: ResponseMeta
+
+
+class CreateWorkflowProtectedRuntimeReadinessConsumptionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    authorization_lease_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    policy_id: Literal["policy.workflow-protected-runtime-readiness-consumption"]
+    policy_version: Literal["1.0"]
+    irreversible_consumption_acknowledged: Literal[True]
+    uncertainty_no_retry_acknowledged: Literal[True]
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class WorkflowProtectedRuntimeReadinessConsumptionData(BaseModel):
+    """Minimized readiness outcome without protected invocation metadata."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    readiness_id: str = Field(min_length=3, max_length=240, pattern=STABLE_ID)
+    attempt_state: Literal["runtime_readiness_attempt_started"]
+    result_state: (
+        Literal[
+            "runtime_ready_in_protected_boundary",
+            "runtime_not_ready_in_protected_boundary",
+            "runtime_readiness_failed_without_assessment",
+            "runtime_readiness_outcome_uncertain",
+        ]
+        | None
+    )
+    started_at: datetime
+    completed_at: datetime | None
+    recorded_at: datetime | None
+    runtime_ready: bool | None
+    policy_reference: str = Field(min_length=1, max_length=240)
+    readiness_profile_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    effective_authority: Literal[False]
+
+    @model_validator(mode="after")
+    def validate_outcome(self) -> WorkflowProtectedRuntimeReadinessConsumptionData:
+        pending = (
+            self.result_state is None
+            and self.completed_at is None
+            and self.recorded_at is None
+            and self.runtime_ready is None
+        )
+        ready = (
+            self.result_state == "runtime_ready_in_protected_boundary"
+            and self.completed_at is not None
+            and self.recorded_at is not None
+            and self.runtime_ready is True
+        )
+        not_ready = (
+            self.result_state == "runtime_not_ready_in_protected_boundary"
+            and self.completed_at is not None
+            and self.recorded_at is not None
+            and self.runtime_ready is False
+        )
+        failed = (
+            self.result_state == "runtime_readiness_failed_without_assessment"
+            and self.completed_at is not None
+            and self.recorded_at is not None
+            and self.runtime_ready is None
+        )
+        uncertain = (
+            self.result_state == "runtime_readiness_outcome_uncertain"
+            and self.completed_at is None
+            and self.recorded_at is not None
+            and self.runtime_ready is None
+        )
+        if not (pending or ready or not_ready or failed or uncertain):
+            raise ValueError("runtime-readiness outcome projection is inconsistent")
+        if self.recorded_at is not None and self.recorded_at < self.started_at:
+            raise ValueError("runtime-readiness outcome predates its attempt")
+        if self.completed_at is not None and (
+            self.completed_at < self.started_at
+            or self.recorded_at is None
+            or self.recorded_at < self.completed_at
+        ):
+            raise ValueError("runtime-readiness completion projection is inconsistent")
+        return self
+
+    @classmethod
+    def from_domain(
+        cls,
+        presentation: WorkflowProtectedRuntimeReadinessConsumptionPresentation,
+        *,
+        evaluated_at: datetime | None = None,
+    ) -> WorkflowProtectedRuntimeReadinessConsumptionData:
+        attempt = presentation.attempt
+        result = presentation.result
+        if result is not None and (
+            result.attempt_id != attempt.attempt_id
+            or result.attempt_digest != attempt.canonical_digest
+            or result.consumption_id != attempt.consumption_id
+            or result.scope != attempt.scope
+        ):
+            raise ValueError("runtime-readiness attempt and outcome do not match")
+        effective_uncertainty = (
+            result is None
+            and evaluated_at is not None
+            and evaluated_at.tzinfo is not None
+            and evaluated_at >= attempt.invocation_deadline
+        )
+        return cls(
+            readiness_id=attempt.consumption_id,
+            attempt_state=attempt.state.value,
+            result_state=(
+                "runtime_readiness_outcome_uncertain"
+                if effective_uncertainty
+                else (None if result is None else result.state.value)
+            ),
+            started_at=attempt.started_at,
+            completed_at=None if result is None else result.completed_at,
+            recorded_at=(
+                evaluated_at
+                if effective_uncertainty
+                else (None if result is None else result.recorded_at)
+            ),
+            runtime_ready=None if result is None else result.runtime_ready,
+            policy_reference=f"{attempt.policy_id}:{attempt.policy_version}",
+            readiness_profile_reference=(
+                "integrity.workflow-protected-runtime-readiness-profile."
+                f"{sha256(attempt.readiness_profile_digest.encode('utf-8')).hexdigest()[:24]}"
+            ),
+            effective_authority=False,
+        )
+
+
+class WorkflowProtectedRuntimeReadinessConsumptionInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    readiness: list[WorkflowProtectedRuntimeReadinessConsumptionData] = Field(max_length=256)
+    server_time: datetime
+    durable: Literal[True]
+
+
+class WorkflowProtectedRuntimeReadinessConsumptionResponse(BaseModel):
+    data: WorkflowProtectedRuntimeReadinessConsumptionData
+    meta: ResponseMeta
+
+
+class WorkflowProtectedRuntimeReadinessConsumptionInventoryResponse(BaseModel):
+    data: WorkflowProtectedRuntimeReadinessConsumptionInventoryData
     meta: ResponseMeta
 
 
