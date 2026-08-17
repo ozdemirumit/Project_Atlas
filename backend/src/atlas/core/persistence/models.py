@@ -14712,4 +14712,6 @@ class WorkflowProtectedRuntimeContextUseResultModel(
     infrastructure_mutation_performed: Mapped[bool] = mapped_column(Boolean, nullable=False)
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    executor_receipt_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    executor_receipt_payload: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True
+    )

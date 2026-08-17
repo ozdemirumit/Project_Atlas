@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Any, cast
 
 import pytest
-from sqlalchemy import MetaData, Table, delete, func, insert, select, text, update
+from sqlalchemy import MetaData, Table, delete, func, insert, null, select, text, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 from test_workflow_protected_runtime_context_uses import (
@@ -360,6 +360,7 @@ async def test_claim_and_attempt_rows_round_trip_and_tampering_fails_closed() ->
     assert repository._protected_runtime_context_use_attempt_from_row(attempt_row) == attempt
     assert result_row.organization_id == attempt.scope.organization_id
     assert result_row.consumer_subject_id == attempt.consumer_subject_id
+    assert result_row.__table__.c.executor_receipt_payload.type.none_as_null is True
 
     claim_row.policy_digest = "0" * 64
     with pytest.raises(
@@ -543,7 +544,11 @@ async def test_live_postgres_append_only_tables_and_triggers_when_configured() -
 
             await connection.execute(insert(claim_table), _model_values(claim_model))
             await connection.execute(insert(attempt_table), _model_values(attempt_model))
-            await connection.execute(insert(result_table), _model_values(result_model))
+            result_values = _model_values(result_model)
+            result_values.pop("executor_receipt_payload")
+            await connection.execute(
+                insert(result_table).values(executor_receipt_payload=null()), result_values
+            )
 
             assert result.recorded_at < result.use_deadline
             assert await connection.scalar(select(result_table.c.state)) == (
