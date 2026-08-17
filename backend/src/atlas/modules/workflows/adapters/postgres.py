@@ -8937,7 +8937,7 @@ class PostgreSQLWorkflowPlanRepository:
                 and receipt is None
                 and result.executor_receipt_digest is None
                 and result.completed_at is None
-                and result.recorded_at >= result.use_deadline
+                and result.recorded_at >= attempt.started_at
             ) or (
                 not uncertain
                 and receipt is not None

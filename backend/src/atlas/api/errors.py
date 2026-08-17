@@ -45,9 +45,14 @@ class AtlasError(Exception):
         self.retryable = retryable
 
 
-def problem_response(problem: ProblemDetails, *, no_store: bool = False) -> JSONResponse:
+def problem_response(
+    problem: ProblemDetails,
+    *,
+    no_store: bool = False,
+    protected_no_store: bool = False,
+) -> JSONResponse:
     headers = {"X-Correlation-ID": problem.correlation_id}
-    if no_store:
+    if protected_no_store:
         headers.update(
             {
                 "Cache-Control": "no-store, max-age=0",
@@ -56,6 +61,8 @@ def problem_response(problem: ProblemDetails, *, no_store: bool = False) -> JSON
                 "Referrer-Policy": "no-referrer",
             }
         )
+    elif no_store:
+        headers["Cache-Control"] = "no-store"
     return JSONResponse(
         status_code=problem.status,
         content=problem.model_dump(mode="json"),
@@ -77,9 +84,12 @@ def _requires_no_store(request: Request) -> bool:
             "/api/v1/workflows/physical-transport-target-context-capsule-openings",
             "/api/v1/workflows/protected-resident-context-access-authorizations",
             "/api/v1/workflows/protected-resident-context-access-consumptions",
-            "/api/v1/workflows/protected-runtime-context-uses",
         )
     )
+
+
+def _requires_protected_no_store(request: Request) -> bool:
+    return request.url.path.startswith("/api/v1/workflows/protected-runtime-context-uses")
 
 
 def _validation_errors(exc: RequestValidationError) -> list[FieldError]:
@@ -110,6 +120,7 @@ def register_error_handlers(app: FastAPI) -> None:
                 retryable=exc.retryable,
             ),
             no_store=_requires_no_store(request),
+            protected_no_store=_requires_protected_no_store(request),
         )
 
     @app.exception_handler(RequestValidationError)
@@ -127,6 +138,7 @@ def register_error_handlers(app: FastAPI) -> None:
                 errors=_validation_errors(exc),
             ),
             no_store=_requires_no_store(request),
+            protected_no_store=_requires_protected_no_store(request),
         )
 
     @app.exception_handler(Exception)
@@ -146,4 +158,5 @@ def register_error_handlers(app: FastAPI) -> None:
                 retryable=False,
             ),
             no_store=_requires_no_store(request),
+            protected_no_store=_requires_protected_no_store(request),
         )

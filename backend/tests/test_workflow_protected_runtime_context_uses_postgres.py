@@ -211,6 +211,8 @@ def test_result_contract_verifies_receipt_and_finalizes_exact_slot_states() -> N
 
     assert "verify_receipt" in result_source
     assert "use_outcome_uncertain" in result_source
+    assert "result.recorded_at >= attempt.started_at" in result_source
+    assert "result.recorded_at >= result.use_deadline" not in result_source
     assert "context_used_terminal" in finalization_source
     assert "inert_context_present" in finalization_source
     assert "CONTEXT_USE_OUTCOME_UNCERTAIN" in finalization_source

@@ -14536,7 +14536,7 @@ class WorkflowProtectedRuntimeContextUseResultModel(
         CheckConstraint(
             "claimed_at <= started_at AND "
             "((state = 'context_use_outcome_uncertain' "
-            "AND completed_at IS NULL AND recorded_at >= use_deadline) "
+            "AND completed_at IS NULL AND recorded_at >= started_at) "
             "OR (completed_at IS NOT NULL AND started_at <= completed_at "
             "AND completed_at <= recorded_at AND completed_at < use_deadline))",
             name="ck_wf_rtctx_use_result_chronology",
