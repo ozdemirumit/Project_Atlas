@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-226 |
 | Title | Atomic protected runtime-readiness consumption and single assessment attempt |
-| Status | In Progress |
+| Status | Validation complete; delivery in progress |
 | Branch | `agent/protected-runtime-readiness-consumption` |
 | Pull Request | Not opened |
 | Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-176 |
 | Last Updated | 2026-08-17 |
-| Next Action | Implement ADR-176 domain, persistence, service, API, read-only UI and verification slices |
+| Next Action | Open the IMP-226 pull request, complete exact-head CI, merge, and verify main CI |
 
 ### ATLAS-IMP-226 Scope Rationale
 
@@ -56,16 +56,22 @@
 - Active Directory remains authentication-only; no Active Directory management capability, route,
   service or MCP is introduced.
 
-### ATLAS-IMP-226 Planned Validation
+### ATLAS-IMP-226 Verification Evidence
 
-- Domain and service tests will prove code-owned policy, derived state, replay-first ordering,
-  commit-before-I/O, at most one assessor call, all terminal outcomes and zero reusable authority.
-- PostgreSQL tests will prove authoritative-time expiry closure, atomic claim/attempt commit, exact
-  composite lineage, one concurrent winner, immutable evidence, derived lease consumption and
-  guarded migration downgrade without a mutable readiness head.
-- API/frontend tests and live browser validation will prove workload-only POST, normal password-
-  session read-only GET, strict minimized schemas, fail-closed composition, no MFA/second session,
-  no browser POST and zero interactive readiness controls on desktop and mobile.
+- Ruff format/check passed across `1563` backend source, test and migration files. Full MyPy passed
+  across `1123` source files with no issues, and Alembic reports the single head `20260817_0149`.
+- The integrated ADR-176 backend and relevant IMP-224/225 regression suite passed `236` tests.
+  Three PostgreSQL tests were skipped locally only when `ATLAS_TEST_POSTGRES_DSN` was absent; CI
+  explicitly runs the IMP-226 PostgreSQL race, replay, tenant-scope, append-only, final-clock and
+  guarded-downgrade paths against PostgreSQL 17.
+- Frontend ESLint, TypeScript and production Vite build passed. The complete Workflow Planning
+  workspace suite passed `606` tests, including all five readiness states, exact-key parsing,
+  forbidden protected-material rejection, contradictory-time rejection and duplicate-ID closure.
+- Live validation at `http://127.0.0.1:5295/#/workspace/workflows` used one normal `atlas-demo` /
+  `local-demo` username/password session with PostgreSQL at migration head. Session creation
+  returned `201`; the minimized readiness inventory returned `200`, `durable=true`, an empty safe
+  state and `Cache-Control: no-store`. No MFA, second browser session or human mutation endpoint was
+  required.
 
 ### ATLAS-IMP-225 Scope Rationale
 
