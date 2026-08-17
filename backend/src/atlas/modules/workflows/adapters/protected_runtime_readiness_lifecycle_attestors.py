@@ -127,7 +127,10 @@ class DeterministicDevelopmentWorkflowProtectedRuntimeReadinessLifecycleAttestor
                 name,
                 policy=policy,
                 observed_at=now,
-                valid_until=min(now + timedelta(seconds=2), ceiling),
+                valid_until=min(
+                    now + timedelta(seconds=policy.maximum_attestation_freshness_seconds),
+                    ceiling,
+                ),
                 eligibility_ceiling=ceiling,
             )
 

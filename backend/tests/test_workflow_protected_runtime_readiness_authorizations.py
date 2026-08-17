@@ -17,6 +17,7 @@ from atlas.modules.workflows.application.protected_runtime_readiness_authorizati
     WorkflowProtectedRuntimeReadinessAuthorizationPreflightResult,
     WorkflowProtectedRuntimeReadinessAuthorizationPreflightStatus,
     WorkflowProtectedRuntimeReadinessAuthorizationSource,
+    WorkflowProtectedRuntimeReadinessAuthorizationSourceRequest,
     WorkflowProtectedRuntimeReadinessLifecycleAttestation,
     WorkflowProtectedRuntimeReadinessLifecycleAttestationRequest,
     validate_workflow_protected_runtime_readiness_authorization_request,
@@ -99,6 +100,7 @@ def _source(
         claim_digest=start_claim.canonical_digest,
         authorization_lease_id=authorization_lease.authorization_lease_id,
         authorization_lease_digest=authorization_lease.canonical_digest,
+        protected_operation_reference="protected-runtime-start.imp-224",
         destination_deployment_id="deployment.imp-224",
         destination_generation=5,
         destination_fencing_token_digest="1" * 64,
@@ -107,19 +109,83 @@ def _source(
         runtime_envelope_id="runtime-envelope.imp-224",
         runtime_envelope_commitment="3" * 64,
         runtime_envelope_generation=9,
+        expected_start_count_pre=0,
+        expected_start_count_post=1,
         runtime_start_profile_id=source_policy.runtime_start_profile_id,
         runtime_start_profile_version=source_policy.runtime_start_profile_version,
         runtime_start_profile_digest=source_policy.runtime_start_profile_digest,
+        starter_contract_id=source_policy.required_starter_contract_id,
+        starter_contract_version=source_policy.required_starter_contract_version,
+        starter_id=source_policy.approved_starter_id,
+        starter_version=source_policy.approved_starter_version,
+        receipt_verification_signing_key_id=(source_policy.receipt_verification_signing_key_id),
+        request_nonce_digest="5" * 64,
         consumer_subject_id=source_policy.consumer_subject_id,
         consumer_audience=source_policy.consumer_audience,
         consumer_contract_id=source_policy.consumer_contract_id,
         consumer_contract_version=source_policy.consumer_contract_version,
+        purpose_id=source_policy.purpose_id,
+        policy_id=source_policy.policy_id,
+        policy_version=source_policy.policy_version,
+        policy_digest=source_policy.canonical_digest,
+        started_at=NOW - timedelta(seconds=3),
+        invocation_deadline=NOW + timedelta(seconds=1),
         scope=SCOPE,
         authority=zero,
+    )
+    instruction_digest = canonical_digest(
+        {
+            "attempt_digest": attempt.canonical_digest,
+            "attempt_id": attempt.attempt_id,
+            "authorization_lease_digest": attempt.authorization_lease_digest,
+            "authorization_lease_id": attempt.authorization_lease_id,
+            "claim_digest": attempt.claim_digest,
+            "claim_id": attempt.claim_id,
+            "consumption_id": attempt.consumption_id,
+            "destination_deployment_id": attempt.destination_deployment_id,
+            "destination_fencing_token_digest": attempt.destination_fencing_token_digest,
+            "destination_generation": attempt.destination_generation,
+            "expected_start_count_post": attempt.expected_start_count_post,
+            "expected_start_count_pre": attempt.expected_start_count_pre,
+            "invocation_deadline": attempt.invocation_deadline.isoformat(),
+            "policy_digest": attempt.policy_digest,
+            "policy_id": attempt.policy_id,
+            "policy_version": attempt.policy_version,
+            "protected_operation_reference": attempt.protected_operation_reference,
+            "request_nonce_digest": attempt.request_nonce_digest,
+            "runtime_envelope_commitment": attempt.runtime_envelope_commitment,
+            "runtime_envelope_generation": attempt.runtime_envelope_generation,
+            "runtime_envelope_id": attempt.runtime_envelope_id,
+            "runtime_slot_commitment": attempt.runtime_slot_commitment,
+            "runtime_slot_generation": attempt.runtime_slot_generation,
+            "runtime_start_profile_digest": attempt.runtime_start_profile_digest,
+            "runtime_start_profile_id": attempt.runtime_start_profile_id,
+            "runtime_start_profile_version": attempt.runtime_start_profile_version,
+            "scope": attempt.scope.canonical_value(),
+            "started_at": attempt.started_at.isoformat(),
+            "starter_contract_id": attempt.starter_contract_id,
+            "starter_contract_version": attempt.starter_contract_version,
+            "starter_id": attempt.starter_id,
+            "starter_version": attempt.starter_version,
+        }
     )
     receipt = _Evidence(
         "start-receipt",
         "imp-224",
+        consumption_id=attempt.consumption_id,
+        attempt_id=attempt.attempt_id,
+        instruction_digest=instruction_digest,
+        protected_operation_reference=attempt.protected_operation_reference,
+        authorization_lease_id=attempt.authorization_lease_id,
+        destination_deployment_id=attempt.destination_deployment_id,
+        destination_generation=attempt.destination_generation,
+        destination_fencing_token_digest=attempt.destination_fencing_token_digest,
+        runtime_slot_commitment=attempt.runtime_slot_commitment,
+        runtime_slot_generation=attempt.runtime_slot_generation,
+        runtime_envelope_id=attempt.runtime_envelope_id,
+        runtime_envelope_commitment=attempt.runtime_envelope_commitment,
+        runtime_envelope_generation=attempt.runtime_envelope_generation,
+        request_nonce_digest=attempt.request_nonce_digest,
         result_state=state,
         runtime_started=(
             state
@@ -143,6 +209,8 @@ def _source(
                 WorkflowProtectedRuntimeStartConsumptionResultState
             ).RUNTIME_STARTED_IN_PROTECTED_BOUNDARY
         ),
+        residual_process_absent=True,
+        residual_task_absent=True,
         scheduling_performed=False,
         runtime_resumed=False,
         generic_process_created=False,
@@ -156,8 +224,14 @@ def _source(
         dispatch_performed=False,
         execution_performed=False,
         infrastructure_mutation_performed=False,
+        starter_contract_id=attempt.starter_contract_id,
+        starter_contract_version=attempt.starter_contract_version,
+        starter_id=attempt.starter_id,
+        starter_version=attempt.starter_version,
         signing_key_id=source_policy.receipt_verification_signing_key_id,
+        signature_algorithm=source_policy.receipt_signature_algorithm,
         completed_at=NOW - timedelta(seconds=2),
+        integrity_signature="6" * 64,
     )
     success = (
         state
@@ -220,6 +294,7 @@ class _Repository:
         self.preflight_status = WorkflowProtectedRuntimeReadinessAuthorizationPreflightStatus.NONE
         self.replay_lease: WorkflowProtectedRuntimeReadinessAuthorizationLease | None = None
         self.requests: list[WorkflowProtectedRuntimeReadinessAuthorizationLeaseRequest] = []
+        self.source_requests: list[WorkflowProtectedRuntimeReadinessAuthorizationSourceRequest] = []
 
     async def preflight_protected_runtime_readiness_authorization(
         self, request: WorkflowProtectedRuntimeReadinessAuthorizationPreflightRequest
@@ -233,10 +308,11 @@ class _Repository:
         )
 
     async def get_protected_runtime_readiness_authorization_source(
-        self, *, start_result_id: str
+        self, request: WorkflowProtectedRuntimeReadinessAuthorizationSourceRequest
     ) -> WorkflowProtectedRuntimeReadinessAuthorizationSource:
         self.events.append("source")
-        assert start_result_id == self.source.result.result_id
+        self.source_requests.append(request)
+        assert request.start_result_id == self.source.result.result_id
         return self.source
 
     async def get_authoritative_time(self) -> datetime:
@@ -259,9 +335,16 @@ class _Repository:
 class _Attestor:
     available = True
 
-    def __init__(self, events: list[str], *, unsafe_probe: bool = False) -> None:
+    def __init__(
+        self,
+        events: list[str],
+        *,
+        unsafe_probe: bool = False,
+        overrides: dict[str, object] | None = None,
+    ) -> None:
         self.events = events
         self.unsafe_probe = unsafe_probe
+        self.overrides = overrides or {}
 
     async def attest_runtime_readiness_lifecycle(
         self, request: WorkflowProtectedRuntimeReadinessLifecycleAttestationRequest
@@ -314,6 +397,7 @@ class _Attestor:
             "command_included": False,
             "integrity_signature": "4" * 64,
         }
+        values.update(self.overrides)
         attestation = WorkflowProtectedRuntimeReadinessLifecycleAttestation(
             **cast(Any, values), canonical_digest="0" * 64
         )
@@ -424,8 +508,9 @@ async def test_replay_first_then_issues_bounded_nonoperational_lease() -> None:
     events: list[str] = []
     repository = _Repository(source, events)
     verifier = _ReceiptVerifier()
+    service = _service(repository, _Attestor(events), verifier)
 
-    lease = await _authorize(_service(repository, _Attestor(events), verifier), source)
+    lease = await _authorize(service, source)
 
     assert events == ["preflight", "source", "attest", "authoritative_time", "authorize"]
     assert lease.valid_until - lease.issued_at <= timedelta(seconds=1)
@@ -441,6 +526,17 @@ async def test_replay_first_then_issues_bounded_nonoperational_lease() -> None:
     assert lease.authority.connector_activity_authorized is False
     assert lease.authority.execution_authorized is False
     assert verifier.calls == 2
+    assert repository.source_requests == [
+        WorkflowProtectedRuntimeReadinessAuthorizationSourceRequest(
+            start_result_id=source.result.result_id,
+            start_result_digest=source.result.canonical_digest,
+            scope=SCOPE,
+            consumer_subject_id=service.policy.consumer_subject_id,
+            consumer_audience=service.policy.consumer_audience,
+            consumer_contract_id=service.policy.consumer_contract_id,
+            consumer_contract_version=service.policy.consumer_contract_version,
+        )
+    ]
 
     replay_events: list[str] = []
     replay_repository = _Repository(source, replay_events)
@@ -511,3 +607,94 @@ async def test_non_consumer_is_denied_before_protected_state_io() -> None:
 
     assert exc_info.value.code == "workflow_protected_runtime_readiness_consumer_identity_required"
     assert events == []
+
+
+@pytest.mark.asyncio
+async def test_cross_lineage_starter_receipt_is_rejected_before_attestation() -> None:
+    source = _source()
+    source.starter_receipt.consumption_id = "runtime-start.other"
+    events: list[str] = []
+    repository = _Repository(source, events)
+
+    with pytest.raises(WorkflowProtectedRuntimeReadinessAuthorizationError) as exc_info:
+        await _authorize(
+            _service(repository, _Attestor(events), _ReceiptVerifier()),
+            source,
+        )
+
+    assert exc_info.value.code == "workflow_protected_runtime_readiness_evidence_conflict"
+    assert events == ["preflight", "source"]
+    assert repository.requests == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("field_name", "wrong_value"),
+    [
+        ("consumer_subject_id", "service.workflow-protected-runtime-other"),
+        ("consumer_audience", "atlas.workflow-protected-runtime-other"),
+        ("consumer_contract_id", "contract.workflow-protected-runtime-other"),
+        ("consumer_contract_version", "2.0"),
+        ("purpose_id", "purpose.workflow-protected-runtime-other"),
+        ("readiness_profile_id", "profile.workflow-protected-runtime-other"),
+        ("readiness_profile_version", "2.0"),
+        ("readiness_profile_digest", "7" * 64),
+    ],
+)
+async def test_attestation_must_bind_exact_consumer_and_readiness_profile(
+    field_name: str,
+    wrong_value: str,
+) -> None:
+    source = _source()
+    events: list[str] = []
+    repository = _Repository(source, events)
+    attestor = _Attestor(events, overrides={field_name: wrong_value})
+
+    with pytest.raises(WorkflowProtectedRuntimeReadinessAuthorizationError) as exc_info:
+        await _authorize(_service(repository, attestor, _ReceiptVerifier()), source)
+
+    assert exc_info.value.code == "workflow_protected_runtime_readiness_attestation_invalid"
+    assert repository.requests == []
+
+
+@pytest.mark.asyncio
+async def test_attestation_exceeding_code_owned_freshness_is_rejected() -> None:
+    source = _source()
+    events: list[str] = []
+    repository = _Repository(source, events)
+    attestor = _Attestor(
+        events,
+        overrides={
+            "valid_until": NOW + timedelta(seconds=2),
+            "runtime_envelope_eligible_until": NOW + timedelta(seconds=3),
+        },
+    )
+
+    with pytest.raises(WorkflowProtectedRuntimeReadinessAuthorizationError) as exc_info:
+        await _authorize(_service(repository, attestor, _ReceiptVerifier()), source)
+
+    assert exc_info.value.code == "workflow_protected_runtime_readiness_attestation_invalid"
+    assert repository.requests == []
+
+
+@pytest.mark.asyncio
+async def test_persisted_attestation_deadline_mismatch_is_rejected() -> None:
+    source = _source()
+    events: list[str] = []
+    repository = _Repository(source, events)
+    await _authorize(_service(repository, _Attestor(events), _ReceiptVerifier()), source)
+    request = repository.requests[0]
+    mismatched = request.candidate
+    object.__setattr__(
+        mismatched,
+        "lifecycle_attestation_valid_until",
+        mismatched.lifecycle_attestation_valid_until + timedelta(milliseconds=1),
+    )
+    object.__setattr__(
+        mismatched,
+        "canonical_digest",
+        canonical_digest(mismatched.digest_payload()),
+    )
+
+    with pytest.raises(ValueError, match="runtime readiness authorization evidence is invalid"):
+        validate_workflow_protected_runtime_readiness_authorization_request(request)

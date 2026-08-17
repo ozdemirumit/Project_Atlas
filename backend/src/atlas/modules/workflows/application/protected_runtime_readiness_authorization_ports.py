@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, fields
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Any, Protocol, cast
 
@@ -23,6 +23,7 @@ from atlas.modules.workflows.domain.protected_runtime_start_consumption_domain i
     WorkflowProtectedRuntimeStartConsumptionClaim,
     WorkflowProtectedRuntimeStartConsumptionResult,
     WorkflowProtectedRuntimeStartReceipt,
+    code_owned_workflow_protected_runtime_start_consumption_policy,
 )
 
 
@@ -229,6 +230,17 @@ class WorkflowProtectedRuntimeReadinessAuthorizationPreflightResult:
 
 
 @dataclass(frozen=True, slots=True)
+class WorkflowProtectedRuntimeReadinessAuthorizationSourceRequest:
+    start_result_id: str
+    start_result_digest: str
+    scope: WorkflowScope
+    consumer_subject_id: str
+    consumer_audience: str
+    consumer_contract_id: str
+    consumer_contract_version: str
+
+
+@dataclass(frozen=True, slots=True)
 class WorkflowProtectedRuntimeReadinessAuthorizationLeaseRequest:
     source: WorkflowProtectedRuntimeReadinessAuthorizationSource
     lifecycle_attestation: WorkflowProtectedRuntimeReadinessLifecycleAttestation
@@ -289,7 +301,7 @@ class WorkflowProtectedRuntimeReadinessAuthorizationRepository(Protocol):
     ) -> WorkflowProtectedRuntimeReadinessAuthorizationPreflightResult: ...
 
     async def get_protected_runtime_readiness_authorization_source(
-        self, *, start_result_id: str
+        self, request: WorkflowProtectedRuntimeReadinessAuthorizationSourceRequest
     ) -> WorkflowProtectedRuntimeReadinessAuthorizationSource | None: ...
 
     async def authorize_protected_runtime_readiness(
@@ -356,6 +368,14 @@ def validate_workflow_protected_runtime_readiness_authorization_request(
         or request.scope != source.result.scope
         or request.consumer_subject_id != policy.consumer_subject_id
         or request.consumer_audience != policy.consumer_audience
+        or attestation.consumer_subject_id != policy.consumer_subject_id
+        or attestation.consumer_audience != policy.consumer_audience
+        or attestation.consumer_contract_id != policy.consumer_contract_id
+        or attestation.consumer_contract_version != policy.consumer_contract_version
+        or attestation.purpose_id != policy.purpose_id
+        or attestation.readiness_profile_id != policy.readiness_profile_id
+        or attestation.readiness_profile_version != policy.readiness_profile_version
+        or attestation.readiness_profile_digest != policy.readiness_profile_digest
         or any(
             value.tzinfo is None
             for value in (
@@ -372,6 +392,8 @@ def validate_workflow_protected_runtime_readiness_authorization_request(
         <= request.requested_at
         < attestation.valid_until
         <= attestation.runtime_envelope_eligible_until
+        or attestation.valid_until - attestation.observed_at
+        > timedelta(seconds=policy.maximum_attestation_freshness_seconds)
         or attestation.attestor_id != policy.required_attestor_id
         or attestation.attestor_version != policy.required_attestor_version
         or attestation.signing_key_id != policy.verification_signing_key_id
@@ -386,11 +408,17 @@ def validate_workflow_protected_runtime_readiness_authorization_request(
         or not request.offline_start_receipt_signature_verifier.verify_receipt(
             source.starter_receipt
         )
+        or not workflow_protected_runtime_readiness_starter_receipt_matches_source(source)
         or not _attestation_matches_source(attestation, source)
         or candidate.start_result_id != source.result.result_id
         or candidate.start_result_digest != source.result.canonical_digest
         or candidate.lifecycle_attestation_id != attestation.attestation_id
         or candidate.lifecycle_attestation_digest != attestation.canonical_digest
+        or candidate.lifecycle_attestation_valid_until != attestation.valid_until
+        or candidate.runtime_envelope_eligible_until != attestation.runtime_envelope_eligible_until
+        or candidate.readiness_profile_id != attestation.readiness_profile_id
+        or candidate.readiness_profile_version != attestation.readiness_profile_version
+        or candidate.readiness_profile_digest != attestation.readiness_profile_digest
         or candidate.issued_at != request.requested_at
         or candidate.valid_until > attestation.valid_until
         or claim.start_result_id != source.result.result_id
@@ -412,6 +440,7 @@ def _attestation_matches_source(
     attempt = source.attempt
     claim = source.start_claim
     lease = source.start_authorization_lease
+    policy = code_owned_workflow_protected_runtime_readiness_authorization_policy()
     return (
         attestation.start_result_id == result.result_id
         and attestation.start_result_digest == result.canonical_digest
@@ -448,6 +477,124 @@ def _attestation_matches_source(
         and attestation.runtime_start_profile_version == result.runtime_start_profile_version
         and attestation.runtime_start_profile_digest == result.runtime_start_profile_digest
         and attestation.scope == result.scope == attempt.scope
+        and attestation.consumer_subject_id
+        == attempt.consumer_subject_id
+        == policy.consumer_subject_id
+        and attestation.consumer_audience == attempt.consumer_audience == policy.consumer_audience
+        and attestation.consumer_contract_id
+        == attempt.consumer_contract_id
+        == policy.consumer_contract_id
+        and attestation.consumer_contract_version
+        == attempt.consumer_contract_version
+        == policy.consumer_contract_version
+        and attestation.purpose_id == policy.purpose_id
+        and attestation.readiness_profile_id == policy.readiness_profile_id
+        and attestation.readiness_profile_version == policy.readiness_profile_version
+        and attestation.readiness_profile_digest == policy.readiness_profile_digest
+    )
+
+
+def workflow_protected_runtime_readiness_starter_receipt_matches_source(
+    source: WorkflowProtectedRuntimeReadinessAuthorizationSource,
+) -> bool:
+    """Bind the signed ADR-174 receipt to the complete locked attempt lineage."""
+
+    receipt = source.starter_receipt
+    attempt = source.attempt
+    result = source.result
+    policy = code_owned_workflow_protected_runtime_readiness_authorization_policy()
+    start_policy = code_owned_workflow_protected_runtime_start_consumption_policy()
+    instruction_payload = {
+        "consumption_id": attempt.consumption_id,
+        "attempt_id": attempt.attempt_id,
+        "attempt_digest": attempt.canonical_digest,
+        "claim_id": attempt.claim_id,
+        "claim_digest": attempt.claim_digest,
+        "authorization_lease_id": attempt.authorization_lease_id,
+        "authorization_lease_digest": attempt.authorization_lease_digest,
+        "protected_operation_reference": attempt.protected_operation_reference,
+        "destination_deployment_id": attempt.destination_deployment_id,
+        "destination_generation": attempt.destination_generation,
+        "destination_fencing_token_digest": attempt.destination_fencing_token_digest,
+        "runtime_slot_commitment": attempt.runtime_slot_commitment,
+        "runtime_slot_generation": attempt.runtime_slot_generation,
+        "runtime_envelope_id": attempt.runtime_envelope_id,
+        "runtime_envelope_commitment": attempt.runtime_envelope_commitment,
+        "runtime_envelope_generation": attempt.runtime_envelope_generation,
+        "expected_start_count_pre": attempt.expected_start_count_pre,
+        "expected_start_count_post": attempt.expected_start_count_post,
+        "runtime_start_profile_id": attempt.runtime_start_profile_id,
+        "runtime_start_profile_version": attempt.runtime_start_profile_version,
+        "runtime_start_profile_digest": attempt.runtime_start_profile_digest,
+        "starter_contract_id": attempt.starter_contract_id,
+        "starter_contract_version": attempt.starter_contract_version,
+        "starter_id": attempt.starter_id,
+        "starter_version": attempt.starter_version,
+        "request_nonce_digest": attempt.request_nonce_digest,
+        "scope": attempt.scope,
+        "policy_id": attempt.policy_id,
+        "policy_version": attempt.policy_version,
+        "policy_digest": attempt.policy_digest,
+        "started_at": attempt.started_at,
+        "invocation_deadline": attempt.invocation_deadline,
+    }
+    instruction_digest = canonical_digest(
+        {name: _canonical_value(value) for name, value in instruction_payload.items()}
+    )
+    return (
+        receipt.consumption_id == result.consumption_id == attempt.consumption_id
+        and receipt.attempt_id == result.attempt_id == attempt.attempt_id
+        and receipt.instruction_digest == instruction_digest
+        and receipt.protected_operation_reference == attempt.protected_operation_reference
+        and receipt.authorization_lease_id
+        == result.authorization_lease_id
+        == attempt.authorization_lease_id
+        and receipt.destination_deployment_id
+        == result.destination_deployment_id
+        == attempt.destination_deployment_id
+        and receipt.destination_generation
+        == result.destination_generation
+        == attempt.destination_generation
+        and receipt.destination_fencing_token_digest == attempt.destination_fencing_token_digest
+        and receipt.runtime_slot_commitment == attempt.runtime_slot_commitment
+        and receipt.runtime_slot_generation == attempt.runtime_slot_generation
+        and receipt.runtime_envelope_id == attempt.runtime_envelope_id
+        and receipt.runtime_envelope_commitment
+        == result.runtime_envelope_commitment
+        == attempt.runtime_envelope_commitment
+        and receipt.runtime_envelope_generation
+        == result.runtime_envelope_generation
+        == attempt.runtime_envelope_generation
+        and receipt.request_nonce_digest == attempt.request_nonce_digest
+        and receipt.result_state is result.state
+        and receipt.runtime_start_count_pre == attempt.expected_start_count_pre == 0
+        and receipt.runtime_start_count_post == attempt.expected_start_count_post == 1
+        and receipt.starter_contract_id
+        == attempt.starter_contract_id
+        == start_policy.required_starter_contract_id
+        and receipt.starter_contract_version
+        == attempt.starter_contract_version
+        == start_policy.required_starter_contract_version
+        and receipt.starter_id == attempt.starter_id == start_policy.approved_starter_id
+        and receipt.starter_version
+        == attempt.starter_version
+        == start_policy.approved_starter_version
+        and receipt.signing_key_id
+        == attempt.receipt_verification_signing_key_id
+        == policy.receipt_verification_signing_key_id
+        and receipt.signature_algorithm == start_policy.receipt_signature_algorithm
+        and receipt.completed_at == result.completed_at
+        and attempt.consumer_subject_id == start_policy.consumer_subject_id
+        and attempt.consumer_audience == start_policy.consumer_audience
+        and attempt.consumer_contract_id == start_policy.consumer_contract_id
+        and attempt.consumer_contract_version == start_policy.consumer_contract_version
+        and attempt.purpose_id == start_policy.purpose_id
+        and attempt.policy_id == start_policy.policy_id
+        and attempt.policy_version == start_policy.policy_version
+        and attempt.policy_digest == start_policy.canonical_digest
+        and bool(receipt.integrity_signature)
+        and not any(character.isspace() for character in receipt.integrity_signature)
+        and receipt.canonical_digest == canonical_digest(receipt.digest_payload())
     )
 
 

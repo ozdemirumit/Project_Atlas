@@ -15,10 +15,12 @@ from atlas.modules.workflows.application.protected_runtime_readiness_authorizati
     WorkflowProtectedRuntimeReadinessAuthorizationPresentation,
     WorkflowProtectedRuntimeReadinessAuthorizationRepository,
     WorkflowProtectedRuntimeReadinessAuthorizationSource,
+    WorkflowProtectedRuntimeReadinessAuthorizationSourceRequest,
     WorkflowProtectedRuntimeReadinessLifecycleAttestation,
     WorkflowProtectedRuntimeReadinessLifecycleAttestationRequest,
     WorkflowProtectedRuntimeReadinessLifecycleAttestor,
     WorkflowProtectedRuntimeReadinessLifecycleSignatureVerifier,
+    workflow_protected_runtime_readiness_starter_receipt_matches_source,
 )
 from atlas.modules.workflows.application.protected_runtime_start_consumption_ports import (
     WorkflowProtectedRuntimeStartReceiptSignatureVerifier,
@@ -156,7 +158,15 @@ class WorkflowProtectedRuntimeReadinessAuthorizationService:
             self._raise("workflow_protected_runtime_readiness_trusted_attestor_unavailable")
         try:
             source = await self._repository.get_protected_runtime_readiness_authorization_source(
-                start_result_id=result_id
+                WorkflowProtectedRuntimeReadinessAuthorizationSourceRequest(
+                    start_result_id=result_id,
+                    start_result_digest=result_digest,
+                    scope=context.scope,
+                    consumer_subject_id=self._policy.consumer_subject_id,
+                    consumer_audience=self._policy.consumer_audience,
+                    consumer_contract_id=self._policy.consumer_contract_id,
+                    consumer_contract_version=self._policy.consumer_contract_version,
+                )
             )
         except WorkflowProtectedRuntimeReadinessAuthorizationError:
             raise
@@ -340,6 +350,7 @@ class WorkflowProtectedRuntimeReadinessAuthorizationService:
             or receipt.completed_at != result.completed_at
             or receipt.signing_key_id != self._policy.receipt_verification_signing_key_id
             or any(receipt_forbidden)
+            or not workflow_protected_runtime_readiness_starter_receipt_matches_source(source)
             or start_grant is not True
             or any(lease_authority.values())
             or any(result.authority.canonical_value().values())
@@ -463,6 +474,8 @@ class WorkflowProtectedRuntimeReadinessAuthorizationService:
             or attestation.observed_at < request.requested_at
             or not attestation.observed_at <= evaluated_at < attestation.valid_until
             or attestation.valid_until > attestation.runtime_envelope_eligible_until
+            or attestation.valid_until - attestation.observed_at
+            > timedelta(seconds=self._policy.maximum_attestation_freshness_seconds)
             or not all(confirmations)
             or any(forbidden)
             or attestation.canonical_digest != canonical_digest(attestation.digest_payload())

@@ -15,6 +15,7 @@ def test_policy_is_code_owned_bounded_single_use_and_non_bearer() -> None:
 
     assert policy.required_source_state == "runtime_started_in_protected_boundary"
     assert policy.maximum_lifetime_seconds == 1
+    assert policy.maximum_attestation_freshness_seconds == 1
     assert policy.single_use_required is True
     assert policy.renewable_allowed is False
     assert policy.transferable_allowed is False

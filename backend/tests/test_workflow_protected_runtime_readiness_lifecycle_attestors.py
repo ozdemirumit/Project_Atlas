@@ -73,7 +73,7 @@ async def test_development_attestor_binds_started_lineage_and_zero_effects() -> 
 
     assert first == second
     assert first.request_nonce_digest == request.request_nonce_digest
-    assert first.valid_until <= NOW + timedelta(seconds=2)
+    assert first.valid_until == NOW + timedelta(seconds=1)
     assert first.runtime_envelope_eligible_until == NOW + timedelta(seconds=2)
     assert first.exact_start_result_confirmed is True
     assert first.runtime_started_confirmed is True

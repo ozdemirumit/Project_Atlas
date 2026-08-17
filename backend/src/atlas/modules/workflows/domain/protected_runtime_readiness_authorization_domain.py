@@ -11,6 +11,8 @@ from .protected_runtime_start_consumption_domain import (
     code_owned_workflow_protected_runtime_start_consumption_policy,
 )
 
+WORKFLOW_PROTECTED_RUNTIME_READINESS_MAXIMUM_ATTESTATION_FRESHNESS_SECONDS = 1
+
 
 class WorkflowProtectedRuntimeReadinessAuthorizationLeaseState(StrEnum):
     AUTHORIZED_UNCONSUMED = "authorized_unconsumed"
@@ -110,6 +112,12 @@ class WorkflowProtectedRuntimeReadinessAuthorizationPolicy:
 
     def digest_payload(self) -> dict[str, object]:
         return _payload(self, exclude=("canonical_digest",))
+
+    @property
+    def maximum_attestation_freshness_seconds(self) -> int:
+        """Code-owned freshness ceiling that does not alter the persisted policy digest."""
+
+        return WORKFLOW_PROTECTED_RUNTIME_READINESS_MAXIMUM_ATTESTATION_FRESHNESS_SECONDS
 
 
 def code_owned_workflow_protected_runtime_readiness_authorization_policy_values() -> dict[
