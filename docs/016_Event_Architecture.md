@@ -597,6 +597,28 @@ advisory-only, Active Directory remains authentication-only, and normal username
 read-only GET requires no MFA or second browser session. Production has no process-memory or
 permissive fallback when durable PostgreSQL is unavailable.
 
+ADR-172 defines the first actual protected runtime-context use as a single-use protected-side
+adoption primitive. The exact protected consumer workload may reference only one canonical ADR-171
+`authorization_consumed_without_runtime_use` result plus code-owned policy and tenant-scoped
+idempotency metadata. That historical result is a precondition, never bearer authority. Fresh
+signed nonce-bound evidence must prove the exact injected context remains present, inert, current
+and unused at use count zero without exposing protected material.
+
+PostgreSQL first classifies durable replay, then locks and revalidates complete canonical lineage,
+current destination/fence and exact slot generation before atomically appending one claim and one
+`use_started` attempt. Commit is the irreversible point of no return. The trusted protected-side
+executor is then called at most once and independently applies an atomic compare-and-swap from
+unused to used, advances the slot generation, marks the context terminal/non-reusable and zeroizes
+transient material. Known success/failure requires a timely verified minimized receipt; every
+crash, timeout, late/invalid receipt, partial transition or persistence ambiguity is permanently
+`context_use_outcome_uncertain` and is never automatically retried.
+
+`protected_runtime_context_use_performed=true` is a verified historical outcome fact only. All 26
+authority declarations remain false. Adoption returns no context, handle, slot locator, derived
+prompt, model input/output or reusable capability and grants no runtime start/resume, inference,
+network, connector/MCP, publication, delivery, dispatch, execution or infrastructure-mutation
+authority. AI remains advisory-only and Active Directory remains authentication-only.
+
 ### 10.2 Publication State
 
 Outbox records track:
@@ -1001,3 +1023,4 @@ This document is ready to enter Review when:
 | 2.0.0 | 2026-08-16 | Workflow Architecture | Added atomic injection-lease consumption and inert protected-slot injection boundary |
 | 2.1.0 | 2026-08-16 | Workflow Architecture | Added bounded protected runtime-context use-authorization lease boundary |
 | 2.2.0 | 2026-08-17 | Workflow Architecture | Added atomic protected runtime-context use-authorization lease consumption without runtime-context use |
+| 2.3.0 | 2026-08-17 | Workflow Architecture | Added single-use protected runtime-context adoption boundary |
