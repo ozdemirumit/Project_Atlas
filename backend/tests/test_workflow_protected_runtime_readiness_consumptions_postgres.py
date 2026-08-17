@@ -6,6 +6,8 @@ import os
 import subprocess
 import sys
 from dataclasses import fields, replace
+from datetime import datetime
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, cast
 from uuid import uuid4
@@ -379,10 +381,21 @@ def _receipt(request: WorkflowProtectedRuntimeReadinessConsumptionClaimRequest) 
         values[field.name] = (
             aliases[field.name] if field.name in aliases else getattr(instruction, field.name)
         )
-    receipt = WorkflowProtectedRuntimeReadinessReceipt(
-        **cast(Any, values), canonical_digest="0" * 64
+    digest_payload = {
+        name: (
+            value.isoformat()
+            if isinstance(value, datetime)
+            else value.value
+            if isinstance(value, StrEnum)
+            else value.canonical_value()
+            if hasattr(value, "canonical_value")
+            else value
+        )
+        for name, value in values.items()
+    }
+    return WorkflowProtectedRuntimeReadinessReceipt(
+        **cast(Any, values), canonical_digest=canonical_digest(digest_payload)
     )
-    return replace(receipt, canonical_digest=canonical_digest(receipt.digest_payload()))
 
 
 async def _seed_authorization(
