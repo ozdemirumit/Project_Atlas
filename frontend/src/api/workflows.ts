@@ -6014,7 +6014,7 @@ function isProtectedRuntimeReadinessAuthorization(
     issuedAt <= evaluatedAt &&
     issuedAt < validUntil &&
     validUntil - issuedAt <= 1_000 &&
-    validUntil <= effectiveUntil &&
+    validUntil === effectiveUntil &&
     value.consumer_contract_id ===
       "contract.workflow-protected-transport-target-context-capsule-consumer" &&
     value.consumer_contract_version === "1.0" &&

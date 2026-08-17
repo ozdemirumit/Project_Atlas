@@ -1540,7 +1540,7 @@ const protectedRuntimeReadinessAuthorization: WorkflowProtectedRuntimeReadinessA
   effective_state: "active",
   issued_at: "2026-08-14T10:08:32Z",
   valid_until: "2026-08-14T10:08:32.750Z",
-  effective_until: "2026-08-14T10:08:33Z",
+  effective_until: "2026-08-14T10:08:32.750Z",
   consumer_contract_id:
     "contract.workflow-protected-transport-target-context-capsule-consumer",
   consumer_contract_version: "1.0",
@@ -9387,6 +9387,10 @@ describe("WorkflowPlanningWorkspace", () => {
     [
       "an overlong lease",
       { ...protectedRuntimeReadinessAuthorization, valid_until: "2026-08-14T10:08:33.500Z" },
+    ],
+    [
+      "a mismatched effective deadline",
+      { ...protectedRuntimeReadinessAuthorization, effective_until: "2026-08-14T10:08:33Z" },
     ],
   ])("fails closed for runtime-readiness authorization with %s", async (_case, unsafe) => {
     mockReadResponses({ protectedRuntimeReadinessAuthorizations: [unsafe] });

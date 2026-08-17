@@ -14493,6 +14493,14 @@ class WorkflowProtectedRuntimeContextUseResultModel(
     __tablename__ = "workflow_protected_runtime_context_use_results"
     __table_args__ = (
         UniqueConstraint(
+            "organization_id",
+            "environment_id",
+            "site_id",
+            "result_id",
+            "canonical_digest",
+            name="uq_wf_rtready_src_use_result_scope",
+        ),
+        UniqueConstraint(
             "result_id",
             "canonical_digest",
             name="uq_wf_rtctx_use_result_start_identity",
@@ -15023,6 +15031,23 @@ class WorkflowProtectedRuntimeStartCoordinationHeadModel(Base):
             name="fk_wf_rtstart_coord_result",
         ),
         ForeignKeyConstraint(
+            [
+                "organization_id",
+                "environment_id",
+                "site_id",
+                "use_result_id",
+                "use_result_digest",
+            ],
+            [
+                "workflow_protected_runtime_context_use_results.organization_id",
+                "workflow_protected_runtime_context_use_results.environment_id",
+                "workflow_protected_runtime_context_use_results.site_id",
+                "workflow_protected_runtime_context_use_results.result_id",
+                "workflow_protected_runtime_context_use_results.canonical_digest",
+            ],
+            name="fk_wf_rtstart_coord_ready_scope",
+        ),
+        ForeignKeyConstraint(
             ["active_authorization_lease_id"],
             ["workflow_event_runtime_start_auth_leases.authorization_lease_id"],
             name="fk_wf_rtstart_coord_active_lease",
@@ -15079,6 +15104,9 @@ class WorkflowProtectedRuntimeStartCoordinationHeadModel(Base):
             name="uq_wf_rtstart_coord_lineage",
         ),
         UniqueConstraint(
+            "organization_id",
+            "environment_id",
+            "site_id",
             "runtime_envelope_id",
             "runtime_envelope_commitment",
             "runtime_envelope_generation",
@@ -15101,7 +15129,7 @@ class WorkflowProtectedRuntimeStartCoordinationHeadModel(Base):
             "runtime_resumed",
             "process_created",
             "process_scheduled",
-            name="uq_wf_rtstart_coord_ready_source",
+            name="uq_wf_rtready_src_started_head",
         ),
         CheckConstraint(
             "runtime_envelope_generation = runtime_slot_post_generation "
@@ -15143,6 +15171,9 @@ class WorkflowProtectedRuntimeStartCoordinationHeadModel(Base):
     )
 
     runtime_envelope_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    site_id: Mapped[str] = mapped_column(String(128), nullable=False)
     runtime_envelope_commitment: Mapped[str] = mapped_column(String(64), nullable=False)
     runtime_envelope_generation: Mapped[int] = mapped_column(Integer, nullable=False)
     use_result_id: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -15244,6 +15275,29 @@ class WorkflowProtectedRuntimeStartAuthorizationLeaseModel(
             "runtime_start_profile_version",
             "runtime_start_profile_digest",
             name="uq_wf_rtstart_auth_lease_consume",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "environment_id",
+            "site_id",
+            "authorization_lease_id",
+            "canonical_digest",
+            "claim_id",
+            "claim_digest",
+            "use_result_id",
+            "use_result_digest",
+            "destination_deployment_id",
+            "destination_generation",
+            "destination_fencing_token_digest",
+            "runtime_slot_commitment",
+            "runtime_slot_post_generation",
+            "runtime_envelope_id",
+            "runtime_envelope_commitment",
+            "runtime_envelope_generation",
+            "runtime_start_profile_id",
+            "runtime_start_profile_version",
+            "runtime_start_profile_digest",
+            name="uq_wf_rtready_src_start_lease",
         ),
         UniqueConstraint(
             "authorization_lease_id",
@@ -15367,6 +15421,15 @@ class WorkflowProtectedRuntimeStartAuthorizationClaimModel(
             "canonical_digest",
             "authorization_lease_id",
             name="uq_wf_rtstart_auth_claim_lineage",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "environment_id",
+            "site_id",
+            "claim_id",
+            "canonical_digest",
+            "authorization_lease_id",
+            name="uq_wf_rtready_src_start_auth_claim",
         ),
         CheckConstraint(_WF_RTSTART_AUTH_CONTRACT, name="ck_wf_rtstart_auth_claim_contract"),
         CheckConstraint(_WF_RTSTART_AUTH_SOURCE, name="ck_wf_rtstart_auth_claim_source"),
@@ -15597,6 +15660,17 @@ class WorkflowProtectedRuntimeStartConsumptionClaimModel(
             "authorization_lease_id",
             name="uq_wf_rtstart_cons_claim_lineage",
         ),
+        UniqueConstraint(
+            "organization_id",
+            "environment_id",
+            "site_id",
+            "claim_id",
+            "canonical_digest",
+            "consumption_id",
+            "attempt_id",
+            "authorization_lease_id",
+            name="uq_wf_rtready_src_start_claim",
+        ),
         CheckConstraint(_WF_RTSTART_CONSUME_CONTRACT, name="ck_wf_rtstart_cons_claim_contract"),
         CheckConstraint(
             "irreversible_consumption_acknowledged "
@@ -15703,6 +15777,30 @@ class WorkflowProtectedRuntimeStartConsumptionAttemptModel(
             "started_at",
             "invocation_deadline",
             name="uq_wf_rtstart_cons_attempt_result_line",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "environment_id",
+            "site_id",
+            "attempt_id",
+            "canonical_digest",
+            "claim_id",
+            "claim_digest",
+            "consumption_id",
+            "authorization_lease_id",
+            "authorization_lease_digest",
+            "destination_deployment_id",
+            "destination_generation",
+            "runtime_envelope_commitment",
+            "runtime_envelope_generation",
+            "runtime_start_profile_id",
+            "runtime_start_profile_version",
+            "runtime_start_profile_digest",
+            "protected_operation_reference",
+            "instruction_digest",
+            "started_at",
+            "invocation_deadline",
+            name="uq_wf_rtready_src_start_attempt",
         ),
         CheckConstraint(_WF_RTSTART_CONSUME_CONTRACT, name="ck_wf_rtstart_cons_attempt_contract"),
         CheckConstraint(
@@ -15842,6 +15940,20 @@ class WorkflowProtectedRuntimeStartConsumptionResultModel(
             name="uq_wf_rtstart_cons_result_coord",
         ),
         UniqueConstraint(
+            "organization_id",
+            "environment_id",
+            "site_id",
+            "result_id",
+            "canonical_digest",
+            "claim_id",
+            "attempt_id",
+            "authorization_lease_id",
+            name="uq_wf_rtready_src_start_result_lineage",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "environment_id",
+            "site_id",
             "result_id",
             "canonical_digest",
             "state",
@@ -15850,7 +15962,7 @@ class WorkflowProtectedRuntimeStartConsumptionResultModel(
             "starter_receipt_digest",
             "completed_at",
             "recorded_at",
-            name="uq_wf_rtstart_cons_result_ready_outcome",
+            name="uq_wf_rtready_src_start_result_outcome",
         ),
         CheckConstraint(_WF_RTSTART_CONSUME_CONTRACT, name="ck_wf_rtstart_cons_result_contract"),
         CheckConstraint(
@@ -15976,6 +16088,7 @@ _WF_RTREADY_AUTH_SOURCE = (
     f"AND runtime_start_profile_digest = '{_WF_RTSTART_AUTH_PROFILE_DIGEST}'"
 )
 _WF_RTREADY_AUTH_ZERO_PRIOR = _WF_RTSTART_AUTH_ZERO_EXISTING
+_WF_RTREADY_SCOPE_COLUMNS = ("organization_id", "environment_id", "site_id")
 
 
 class _WorkflowProtectedRuntimeReadinessAuthorizationAuthorityColumns(
@@ -16043,6 +16156,7 @@ def _workflow_protected_runtime_readiness_source_constraints(
     return (
         ForeignKeyConstraint(
             [
+                *_WF_RTREADY_SCOPE_COLUMNS,
                 "start_result_id",
                 "start_result_digest",
                 "start_consumption_claim_id",
@@ -16050,6 +16164,10 @@ def _workflow_protected_runtime_readiness_source_constraints(
                 "runtime_start_authorization_lease_id",
             ],
             [
+                *(
+                    f"workflow_event_runtime_start_consumption_results.{name}"
+                    for name in _WF_RTREADY_SCOPE_COLUMNS
+                ),
                 "workflow_event_runtime_start_consumption_results.result_id",
                 "workflow_event_runtime_start_consumption_results.canonical_digest",
                 "workflow_event_runtime_start_consumption_results.claim_id",
@@ -16060,6 +16178,7 @@ def _workflow_protected_runtime_readiness_source_constraints(
         ),
         ForeignKeyConstraint(
             [
+                *_WF_RTREADY_SCOPE_COLUMNS,
                 "start_result_id",
                 "start_result_digest",
                 "start_result_state",
@@ -16070,6 +16189,10 @@ def _workflow_protected_runtime_readiness_source_constraints(
                 "start_result_recorded_at",
             ],
             [
+                *(
+                    f"workflow_event_runtime_start_consumption_results.{name}"
+                    for name in _WF_RTREADY_SCOPE_COLUMNS
+                ),
                 "workflow_event_runtime_start_consumption_results.result_id",
                 "workflow_event_runtime_start_consumption_results.canonical_digest",
                 "workflow_event_runtime_start_consumption_results.state",
@@ -16083,6 +16206,7 @@ def _workflow_protected_runtime_readiness_source_constraints(
         ),
         ForeignKeyConstraint(
             [
+                *_WF_RTREADY_SCOPE_COLUMNS,
                 "start_attempt_id",
                 "start_attempt_digest",
                 "start_consumption_claim_id",
@@ -16103,6 +16227,10 @@ def _workflow_protected_runtime_readiness_source_constraints(
                 "start_invocation_deadline",
             ],
             [
+                *(
+                    f"workflow_event_runtime_start_consumption_attempts.{name}"
+                    for name in _WF_RTREADY_SCOPE_COLUMNS
+                ),
                 "workflow_event_runtime_start_consumption_attempts.attempt_id",
                 "workflow_event_runtime_start_consumption_attempts.canonical_digest",
                 "workflow_event_runtime_start_consumption_attempts.claim_id",
@@ -16126,6 +16254,7 @@ def _workflow_protected_runtime_readiness_source_constraints(
         ),
         ForeignKeyConstraint(
             [
+                *_WF_RTREADY_SCOPE_COLUMNS,
                 "start_consumption_claim_id",
                 "start_consumption_claim_digest",
                 "start_consumption_id",
@@ -16133,6 +16262,10 @@ def _workflow_protected_runtime_readiness_source_constraints(
                 "runtime_start_authorization_lease_id",
             ],
             [
+                *(
+                    f"workflow_event_runtime_start_consumption_claims.{name}"
+                    for name in _WF_RTREADY_SCOPE_COLUMNS
+                ),
                 "workflow_event_runtime_start_consumption_claims.claim_id",
                 "workflow_event_runtime_start_consumption_claims.canonical_digest",
                 "workflow_event_runtime_start_consumption_claims.consumption_id",
@@ -16143,6 +16276,7 @@ def _workflow_protected_runtime_readiness_source_constraints(
         ),
         ForeignKeyConstraint(
             [
+                *_WF_RTREADY_SCOPE_COLUMNS,
                 "runtime_start_authorization_lease_id",
                 "runtime_start_authorization_lease_digest",
                 "runtime_start_authorization_claim_id",
@@ -16162,6 +16296,10 @@ def _workflow_protected_runtime_readiness_source_constraints(
                 "runtime_start_profile_digest",
             ],
             [
+                *(
+                    f"workflow_event_runtime_start_auth_leases.{name}"
+                    for name in _WF_RTREADY_SCOPE_COLUMNS
+                ),
                 "workflow_event_runtime_start_auth_leases.authorization_lease_id",
                 "workflow_event_runtime_start_auth_leases.canonical_digest",
                 "workflow_event_runtime_start_auth_leases.claim_id",
@@ -16184,11 +16322,16 @@ def _workflow_protected_runtime_readiness_source_constraints(
         ),
         ForeignKeyConstraint(
             [
+                *_WF_RTREADY_SCOPE_COLUMNS,
                 "runtime_start_authorization_claim_id",
                 "runtime_start_authorization_claim_digest",
                 "runtime_start_authorization_lease_id",
             ],
             [
+                *(
+                    f"workflow_event_runtime_start_auth_claims.{name}"
+                    for name in _WF_RTREADY_SCOPE_COLUMNS
+                ),
                 "workflow_event_runtime_start_auth_claims.claim_id",
                 "workflow_event_runtime_start_auth_claims.canonical_digest",
                 "workflow_event_runtime_start_auth_claims.authorization_lease_id",
@@ -16197,6 +16340,7 @@ def _workflow_protected_runtime_readiness_source_constraints(
         ),
         ForeignKeyConstraint(
             [
+                *_WF_RTREADY_SCOPE_COLUMNS,
                 "runtime_envelope_id",
                 "runtime_envelope_commitment",
                 "runtime_envelope_generation",
@@ -16221,6 +16365,10 @@ def _workflow_protected_runtime_readiness_source_constraints(
                 "process_scheduled",
             ],
             [
+                *(
+                    f"workflow_event_runtime_start_coordination_heads.{name}"
+                    for name in _WF_RTREADY_SCOPE_COLUMNS
+                ),
                 "workflow_event_runtime_start_coordination_heads.runtime_envelope_id",
                 "workflow_event_runtime_start_coordination_heads.runtime_envelope_commitment",
                 "workflow_event_runtime_start_coordination_heads.runtime_envelope_generation",
@@ -16259,8 +16407,17 @@ class WorkflowProtectedRuntimeReadinessAuthorizationLeaseModel(
     __table_args__ = (
         *_workflow_protected_runtime_readiness_source_constraints(prefix="lease"),
         ForeignKeyConstraint(
-            ["claim_id", "claim_digest", "authorization_lease_id"],
             [
+                *_WF_RTREADY_SCOPE_COLUMNS,
+                "claim_id",
+                "claim_digest",
+                "authorization_lease_id",
+            ],
+            [
+                *(
+                    f"workflow_event_runtime_readiness_auth_claims.{name}"
+                    for name in _WF_RTREADY_SCOPE_COLUMNS
+                ),
                 "workflow_event_runtime_readiness_auth_claims.claim_id",
                 "workflow_event_runtime_readiness_auth_claims.canonical_digest",
                 "workflow_event_runtime_readiness_auth_claims.authorization_lease_id",
@@ -16279,6 +16436,7 @@ class WorkflowProtectedRuntimeReadinessAuthorizationLeaseModel(
         ),
         UniqueConstraint("canonical_digest", name="uq_wf_rtready_auth_lease_digest"),
         UniqueConstraint(
+            *_WF_RTREADY_SCOPE_COLUMNS,
             "authorization_lease_id",
             "start_result_id",
             "runtime_slot_commitment",
@@ -16290,7 +16448,10 @@ class WorkflowProtectedRuntimeReadinessAuthorizationLeaseModel(
         CheckConstraint(
             "start_result_recorded_at <= readiness_attestation_observed_at "
             "AND readiness_attestation_observed_at <= issued_at "
-            "AND issued_at < valid_until AND valid_until <= effective_until "
+            "AND readiness_attestation_observed_at < readiness_attestation_valid_until "
+            "AND readiness_attestation_valid_until "
+            "<= readiness_attestation_observed_at + INTERVAL '1 second' "
+            "AND issued_at < valid_until AND valid_until = effective_until "
             "AND effective_until <= readiness_attestation_valid_until "
             "AND effective_until <= runtime_envelope_eligible_until "
             "AND valid_until <= issued_at + INTERVAL '1 second'",
@@ -16368,12 +16529,17 @@ class WorkflowProtectedRuntimeReadinessAuthorizationClaimModel(
         *_workflow_protected_runtime_readiness_source_constraints(prefix="claim"),
         ForeignKeyConstraint(
             [
+                *_WF_RTREADY_SCOPE_COLUMNS,
                 "authorization_lease_id",
                 "start_result_id",
                 "runtime_slot_commitment",
                 "runtime_slot_generation",
             ],
             [
+                *(
+                    f"workflow_event_runtime_readiness_auth_leases.{name}"
+                    for name in _WF_RTREADY_SCOPE_COLUMNS
+                ),
                 "workflow_event_runtime_readiness_auth_leases.authorization_lease_id",
                 "workflow_event_runtime_readiness_auth_leases.start_result_id",
                 "workflow_event_runtime_readiness_auth_leases.runtime_slot_commitment",
@@ -16398,6 +16564,7 @@ class WorkflowProtectedRuntimeReadinessAuthorizationClaimModel(
         ),
         UniqueConstraint("canonical_digest", name="uq_wf_rtready_auth_claim_digest"),
         UniqueConstraint(
+            *_WF_RTREADY_SCOPE_COLUMNS,
             "claim_id",
             "canonical_digest",
             "authorization_lease_id",
