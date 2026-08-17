@@ -508,7 +508,7 @@ async def _authorization_request(
         requested_at=first_observed_at,
         validity_milliseconds=validity_milliseconds,
     )
-    issued_at = await repository.get_authoritative_time()
+    issued_at = attestation.observed_at
     idempotency_digest = canonical_digest(
         {
             "idempotency_key": idempotency_key,

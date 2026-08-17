@@ -512,7 +512,7 @@ async def test_replay_first_then_issues_bounded_nonoperational_lease() -> None:
 
     lease = await _authorize(service, source)
 
-    assert events == ["preflight", "source", "attest", "authoritative_time", "authorize"]
+    assert events == ["preflight", "source", "attest", "authorize"]
     assert lease.valid_until - lease.issued_at <= timedelta(seconds=1)
     assert lease.single_use is True
     assert lease.renewable is False
@@ -585,7 +585,7 @@ async def test_probe_effect_in_attestation_fails_closed_without_authorization() 
         )
 
     assert exc_info.value.code == "workflow_protected_runtime_readiness_attestation_invalid"
-    assert events == ["preflight", "source", "attest", "authoritative_time"]
+    assert events == ["preflight", "source", "attest"]
     assert repository.requests == []
 
 

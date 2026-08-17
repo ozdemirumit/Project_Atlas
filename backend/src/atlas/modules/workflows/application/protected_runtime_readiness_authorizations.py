@@ -189,19 +189,15 @@ class WorkflowProtectedRuntimeReadinessAuthorizationService:
             raise
         except Exception:
             self._raise("workflow_protected_runtime_readiness_evidence_conflict")
-        try:
-            authoritative_now = await self._repository.get_authoritative_time()
-        except Exception:
-            self._raise("workflow_protected_runtime_readiness_repository_unavailable")
         self._validate_attestation(
             attestation,
             request=attestation_request,
-            evaluated_at=authoritative_now,
+            evaluated_at=attestation.observed_at,
         )
         candidate_claim, candidate = self._build_candidates(
             source=source,
             attestation=attestation,
-            issued_at=authoritative_now,
+            issued_at=attestation.observed_at,
             idempotency_digest=idempotency_digest,
             request_fingerprint=fingerprint,
         )
@@ -217,7 +213,7 @@ class WorkflowProtectedRuntimeReadinessAuthorizationService:
             consumer_subject_id=context.subject_id,
             consumer_audience=context.credential_audience,
             pre_attestation_observed_at=preflight.evaluated_at,
-            requested_at=authoritative_now,
+            requested_at=attestation.observed_at,
             candidate_claim=candidate_claim,
             candidate=candidate,
             idempotency_key=normalized_key,
