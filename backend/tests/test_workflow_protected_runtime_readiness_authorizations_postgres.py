@@ -569,9 +569,30 @@ async def _assert_authorization_preconditions(
             idempotency_key=request.idempotency_key,
             expected_source=request.source,
         )
-        working = repository._protected_runtime_readiness_retimed_request(
-            request, issued_at=locked.observed_at
-        )
+        try:
+            working = repository._protected_runtime_readiness_retimed_request(
+                request, issued_at=locked.observed_at
+            )
+        except ValueError as error:
+            pytest.fail(
+                repr(
+                    {
+                        "error": str(error),
+                        "attestation_to_first_lock_ms": (
+                            locked.first_observed_at - request.lifecycle_attestation.observed_at
+                        ).total_seconds()
+                        * 1_000,
+                        "lock_query_ms": (
+                            locked.observed_at - locked.first_observed_at
+                        ).total_seconds()
+                        * 1_000,
+                        "attestation_to_observed_ms": (
+                            locked.observed_at - request.lifecycle_attestation.observed_at
+                        ).total_seconds()
+                        * 1_000,
+                    }
+                )
+            )
         source = repository._protected_runtime_readiness_source_from_locked(
             locked,
             receipt_verifier=request.offline_start_receipt_signature_verifier,
