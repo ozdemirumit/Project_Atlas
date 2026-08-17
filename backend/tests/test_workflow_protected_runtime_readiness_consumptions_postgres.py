@@ -40,6 +40,7 @@ from atlas.modules.workflows.application.protected_runtime_readiness_consumption
     WorkflowProtectedRuntimeReadinessConsumptionReplayStatus,
     WorkflowProtectedRuntimeReadinessConsumptionResultRequest,
     WorkflowProtectedRuntimeReadinessConsumptionResultWriteStatus,
+    WorkflowProtectedRuntimeReadinessConsumptionSource,
     build_workflow_protected_runtime_readiness_instruction,
     build_workflow_protected_runtime_readiness_signed_instruction_envelope,
 )
@@ -234,14 +235,15 @@ async def _consumption_request(
     *,
     authorization_lease_id: str,
     idempotency_key: str,
+    source: WorkflowProtectedRuntimeReadinessConsumptionSource | None = None,
 ) -> WorkflowProtectedRuntimeReadinessConsumptionClaimRequest:
-    source = await repository.get_protected_runtime_readiness_consumption_source(
+    source = source or await repository.get_protected_runtime_readiness_consumption_source(
         authorization_lease_id=authorization_lease_id
     )
     assert source is not None
     service = _service(repository)
     policy = service.policy
-    now = await repository.get_authoritative_time()
+    now = source.authorization_lease.issued_at
     idempotency_digest = canonical_digest(
         {
             "scope": source.authorization_lease.scope.canonical_value(),
@@ -387,7 +389,14 @@ async def _seed_authorization(
     outcome = await repository.authorize_protected_runtime_readiness(authorization_request)
     assert outcome.status is WorkflowProtectedRuntimeReadinessAuthorizationLeaseStatus.AUTHORIZED
     assert outcome.lease is not None
-    return start_request, outcome.lease
+    assert outcome.evaluated_at is not None
+    working = repository._protected_runtime_readiness_retimed_request(
+        authorization_request, issued_at=outcome.evaluated_at
+    )
+    assert working.candidate == outcome.lease
+    return start_request, WorkflowProtectedRuntimeReadinessConsumptionSource(
+        outcome.lease, working.candidate_claim
+    )
 
 
 async def _cleanup(engine: Any, start_requests: tuple[Any, ...]) -> None:
@@ -423,14 +432,15 @@ async def test_live_postgres_readiness_consumption_race_result_and_guards() -> N
     )
     seeded: list[Any] = []
     try:
-        start_request, lease = await _seed_authorization(
+        start_request, source = await _seed_authorization(
             engine, repository, suffix=f"imp226-race-{uuid4().hex[:12]}"
         )
         seeded.append(start_request)
         request = await _consumption_request(
             repository,
-            authorization_lease_id=lease.authorization_lease_id,
+            authorization_lease_id=source.authorization_lease.authorization_lease_id,
             idempotency_key=f"imp-226-consume-{uuid4().hex}",
+            source=source,
         )
         first, second = await asyncio.wait_for(
             asyncio.gather(
@@ -444,19 +454,20 @@ async def test_live_postgres_readiness_consumption_race_result_and_guards() -> N
             WorkflowProtectedRuntimeReadinessConsumptionClaimStatus.REPLAY_PENDING,
         }
 
-        tampered_start_request, tampered_lease = await _seed_authorization(
+        tampered_start_request, tampered_source = await _seed_authorization(
             engine, repository, suffix=f"imp226-tampered-{uuid4().hex[:12]}"
         )
         seeded.append(tampered_start_request)
         tampered_request = await _consumption_request(
             repository,
-            authorization_lease_id=tampered_lease.authorization_lease_id,
+            authorization_lease_id=(tampered_source.authorization_lease.authorization_lease_id),
             idempotency_key=f"imp-226-tampered-{uuid4().hex}",
+            source=tampered_source,
         )
         async with repository._sessions() as session:
             authorization_lease_row = await session.get(
                 WorkflowProtectedRuntimeReadinessAuthorizationLeaseModel,
-                tampered_lease.authorization_lease_id,
+                tampered_source.authorization_lease.authorization_lease_id,
             )
             assert authorization_lease_row is not None
             tampered_model = repository._protected_runtime_readiness_consumption_claim_model(
@@ -546,8 +557,8 @@ async def test_live_postgres_readiness_consumption_race_result_and_guards() -> N
 
         presentations = (
             await repository.list_protected_runtime_readiness_authorization_presentations(
-                scope=lease.scope,
-                authorization_lease_ids=(lease.authorization_lease_id,),
+                scope=source.authorization_lease.scope,
+                authorization_lease_ids=(source.authorization_lease.authorization_lease_id,),
             )
         )
         assert len(presentations) == 1
@@ -633,14 +644,15 @@ async def test_live_postgres_readiness_consumption_expires_while_waiting_for_loc
     )
     seeded: list[Any] = []
     try:
-        start_request, lease = await _seed_authorization(
+        start_request, source = await _seed_authorization(
             engine, repository, suffix=f"imp226-expiry-{uuid4().hex[:12]}"
         )
         seeded.append(start_request)
         request = await _consumption_request(
             repository,
-            authorization_lease_id=lease.authorization_lease_id,
+            authorization_lease_id=source.authorization_lease.authorization_lease_id,
             idempotency_key=f"imp-226-expiry-{uuid4().hex}",
+            source=source,
         )
         async with engine.connect() as blocker:
             transaction = await blocker.begin()
@@ -650,7 +662,7 @@ async def test_live_postgres_readiness_consumption_expires_while_waiting_for_loc
                     "FROM workflow_event_runtime_readiness_auth_leases "
                     "WHERE authorization_lease_id = :lease_id FOR UPDATE"
                 ),
-                {"lease_id": lease.authorization_lease_id},
+                {"lease_id": source.authorization_lease.authorization_lease_id},
             )
             waiting = asyncio.create_task(
                 repository.claim_protected_runtime_readiness_consumption(request)
@@ -666,7 +678,10 @@ async def test_live_postgres_readiness_consumption_expires_while_waiting_for_loc
                 await connection.scalar(
                     select(func.count())
                     .select_from(model)
-                    .where(model.authorization_lease_id == lease.authorization_lease_id)
+                    .where(
+                        model.authorization_lease_id
+                        == source.authorization_lease.authorization_lease_id
+                    )
                 )
                 for model in (
                     WorkflowProtectedRuntimeReadinessConsumptionClaimModel,
