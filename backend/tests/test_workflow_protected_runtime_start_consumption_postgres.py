@@ -648,6 +648,12 @@ def test_repository_locks_lineage_commits_before_return_and_never_calls_starter(
     assert lock_source.index("attempts = tuple") < lock_source.index("results = tuple")
     assert claim_source.index("session.add") < claim_source.index("head.state")
     assert claim_source.index("head.state") < claim_source.index("await session.commit")
+    invalid_branch = claim_source.split(
+        "if not self._protected_runtime_start_consumption_request_is_valid", 1
+    )[1]
+    assert invalid_branch.index("invalid_status =") < invalid_branch.index(
+        "await session.rollback()"
+    )
     assert "start_attempt_pending" in claim_source
     assert "start_attempt_terminal" in result_source
     assert "lease.issued_at <= locked.authorization.first_observed_at" in validity_source

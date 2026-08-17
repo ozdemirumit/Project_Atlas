@@ -7804,10 +7804,11 @@ class PostgreSQLWorkflowPlanRepository:
                 await session.rollback()
                 return replay
             if not self._protected_runtime_start_consumption_request_is_valid(request, locked):
-                await session.rollback()
-                return result_type(
-                    self._protected_runtime_start_consumption_invalid_status(request, locked)
+                invalid_status = self._protected_runtime_start_consumption_invalid_status(
+                    request, locked
                 )
+                await session.rollback()
+                return result_type(invalid_status)
             claim = request.candidate_claim
             attempt = request.candidate_attempt
             try:
