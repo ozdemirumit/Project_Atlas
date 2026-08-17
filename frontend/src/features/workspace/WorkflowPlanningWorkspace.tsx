@@ -49,6 +49,7 @@ import {
   listWorkflowProtectedRuntimeContextUseAuthorizations,
   listWorkflowProtectedRuntimeContextUseAuthorizationConsumptions,
   listWorkflowProtectedRuntimeContextUses,
+  listWorkflowProtectedRuntimeReadiness,
   listWorkflowProtectedRuntimeReadinessAuthorizations,
   listWorkflowProtectedRuntimeStartAuthorizations,
   listWorkflowProtectedRuntimeStarts,
@@ -410,6 +411,16 @@ export default function WorkflowPlanningWorkspace({
       siteId,
     ],
     queryFn: listWorkflowProtectedRuntimeReadinessAuthorizations,
+    retry: false,
+  });
+  const protectedRuntimeReadinessQuery = useQuery({
+    queryKey: [
+      "workflow-protected-runtime-readiness",
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: listWorkflowProtectedRuntimeReadiness,
     retry: false,
   });
   const targetQuery = useQuery({
@@ -939,6 +950,10 @@ export default function WorkflowPlanningWorkspace({
   const protectedRuntimeReadinessAuthorizationErrorStatus =
     protectedRuntimeReadinessAuthorizationQuery.error instanceof ApiRequestError
       ? protectedRuntimeReadinessAuthorizationQuery.error.status
+      : undefined;
+  const protectedRuntimeReadinessErrorStatus =
+    protectedRuntimeReadinessQuery.error instanceof ApiRequestError
+      ? protectedRuntimeReadinessQuery.error.status
       : undefined;
   const eventEnvelopes = eventEnvelopesForAdmission;
   const transportAdmissions = transportAdmissionsForArtifacts;
@@ -5188,6 +5203,157 @@ export default function WorkflowPlanningWorkspace({
             runtime-readiness request. It does not authorize a probe, retry, process or scheduler
             operation, network or connector access, MCP activity, publication, dispatch,
             execution or infrastructure mutation, and this view cannot consume it.
+          </span>
+        </div>
+      </section>
+
+      <section
+        className="workflow-physical-route-binding-band workflow-target-context-opening-band"
+        aria-labelledby="workflow-protected-runtime-readiness-title"
+      >
+        <div className="workflow-section-heading">
+          <div>
+            <p className="eyebrow">PROTECTED READINESS OUTCOME EVIDENCE</p>
+            <h2 id="workflow-protected-runtime-readiness-title">
+              Protected runtime readiness
+            </h2>
+          </div>
+          <span>Read only</span>
+        </div>
+        {protectedRuntimeReadinessQuery.isLoading && (
+          <div className="workflow-empty-state" role="status">
+            <RefreshCw className="spin" size={18} />
+            <span>Loading protected runtime readiness...</span>
+          </div>
+        )}
+        {protectedRuntimeReadinessQuery.isError && (
+          <div className="workflow-inline-error" role="alert">
+            <AlertTriangle aria-hidden="true" size={18} />
+            <div>
+              <strong>
+                {protectedRuntimeReadinessErrorStatus === 401
+                  ? "Your session has expired"
+                  : protectedRuntimeReadinessErrorStatus === 403
+                    ? "Protected runtime-readiness permission is missing"
+                    : "Protected runtime readiness is unavailable"}
+              </strong>
+              <span>
+                {protectedRuntimeReadinessErrorStatus === 401
+                  ? "Sign in again with your username and password to continue."
+                  : protectedRuntimeReadinessErrorStatus === 403
+                    ? "Your current role or scope cannot inspect protected runtime-readiness evidence."
+                    : "The protected runtime-readiness repository is unavailable or failed closed; no readiness outcome or authority is inferred."}
+              </span>
+            </div>
+          </div>
+        )}
+        {protectedRuntimeReadinessQuery.isSuccess &&
+          protectedRuntimeReadinessQuery.data.readiness.length === 0 && (
+            <div className="workflow-empty-state" role="status">
+              <LockKeyhole size={19} />
+              <span>No protected runtime-readiness outcomes are recorded in this scope.</span>
+            </div>
+          )}
+        {protectedRuntimeReadinessQuery.isSuccess &&
+          protectedRuntimeReadinessQuery.data.readiness.length > 0 && (
+            <ol
+              className="workflow-step-preview workflow-physical-route-binding-list workflow-target-context-opening-list"
+              aria-label="Protected runtime readiness"
+            >
+              {protectedRuntimeReadinessQuery.data.readiness.map((readiness) => {
+                const outcome =
+                  readiness.result_state === null
+                    ? "Pending"
+                    : readiness.result_state === "runtime_ready_in_protected_boundary"
+                      ? "Ready"
+                      : readiness.result_state === "runtime_not_ready_in_protected_boundary"
+                        ? "Not ready"
+                        : readiness.result_state ===
+                            "runtime_readiness_failed_without_assessment"
+                          ? "Assessment failed"
+                          : "Outcome uncertain";
+                const outcomeClass =
+                  readiness.result_state === "runtime_ready_in_protected_boundary"
+                    ? "success"
+                    : readiness.result_state === "runtime_not_ready_in_protected_boundary" ||
+                        readiness.result_state === "runtime_readiness_outcome_uncertain"
+                      ? "warning"
+                      : "neutral";
+                const OutcomeIcon =
+                  readiness.result_state === "runtime_ready_in_protected_boundary"
+                    ? CheckCircle2
+                    : readiness.result_state === "runtime_not_ready_in_protected_boundary" ||
+                        readiness.result_state ===
+                          "runtime_readiness_failed_without_assessment"
+                      ? Ban
+                      : readiness.result_state === "runtime_readiness_outcome_uncertain"
+                        ? AlertTriangle
+                        : FileClock;
+                return (
+                  <li key={readiness.readiness_id}>
+                    <OutcomeIcon size={18} />
+                    <div>
+                      <strong>
+                        <code title={readiness.readiness_id}>
+                          {safeHolderIdentifier(readiness.readiness_id)}
+                        </code>
+                        <span className={`state-badge ${outcomeClass}`}>{outcome}</span>
+                      </strong>
+                      <div className="workflow-physical-route-binding-grid">
+                        <span>
+                          Attempt {readableKind(readiness.attempt_state)} | result{" "}
+                          {readiness.result_state === null
+                            ? "pending"
+                            : readableKind(readiness.result_state)}
+                        </span>
+                        <span>
+                          Started {formatTimestamp(readiness.started_at)} | completed{" "}
+                          {readiness.completed_at === null
+                            ? "pending"
+                            : formatTimestamp(readiness.completed_at)}
+                          {" | "}recorded{" "}
+                          {readiness.recorded_at === null
+                            ? "pending"
+                            : formatTimestamp(readiness.recorded_at)}
+                        </span>
+                        <span>
+                          Runtime ready{" "}
+                          {readiness.runtime_ready === null
+                            ? "unknown"
+                            : readiness.runtime_ready
+                              ? "true"
+                              : "false"}
+                        </span>
+                        <span>
+                          Policy{" "}
+                          <code title={readiness.policy_reference}>
+                            {safeHolderIdentifier(readiness.policy_reference)}
+                          </code>
+                        </span>
+                        <span>
+                          Readiness profile{" "}
+                          <code title={readiness.readiness_profile_reference}>
+                            {shortDigest(readiness.readiness_profile_reference)}
+                          </code>
+                        </span>
+                        <span className="workflow-physical-route-binding-authority">
+                          Effective authority false. This record is historical readiness evidence
+                          only.
+                        </span>
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+        <div className="workflow-safety-boundary" role="note">
+          <LockKeyhole size={18} />
+          <span>
+            Read-only evidence. This view cannot consume a lease, assess or retry readiness,
+            inspect runtime material, create a process or schedule, use network, connector or MCP
+            capabilities, dispatch or execute work, or mutate infrastructure. Pending and
+            uncertain outcomes never imply permission to retry.
           </span>
         </div>
       </section>

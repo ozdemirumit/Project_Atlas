@@ -37,6 +37,7 @@ import {
   type WorkflowProtectedRuntimeContextUseAuthorization,
   type WorkflowProtectedRuntimeContextUseAuthorizationConsumption,
   type WorkflowProtectedRuntimeContextUse,
+  type WorkflowProtectedRuntimeReadiness,
   type WorkflowProtectedRuntimeReadinessAuthorization,
   type WorkflowProtectedRuntimeStartAuthorization,
   type WorkflowProtectedRuntimeStart,
@@ -1583,6 +1584,21 @@ const protectedRuntimeReadinessAuthorization: WorkflowProtectedRuntimeReadinessA
     "integrity.workflow-protected-runtime-readiness-authorization.1234567890abcdef",
 };
 
+const protectedRuntimeReadiness: WorkflowProtectedRuntimeReadiness = {
+  readiness_id:
+    "workflow-protected-runtime-readiness-consumption.1234567890abcdef12345678",
+  attempt_state: "runtime_readiness_attempt_started",
+  result_state: "runtime_ready_in_protected_boundary",
+  started_at: "2026-08-14T10:08:32.800Z",
+  completed_at: "2026-08-14T10:08:33Z",
+  recorded_at: "2026-08-14T10:08:33.100Z",
+  runtime_ready: true,
+  policy_reference: "policy.workflow-protected-runtime-readiness-consumption:1.0",
+  readiness_profile_reference:
+    "integrity.workflow-protected-runtime-readiness-profile.1234567890abcdef",
+  effective_authority: false,
+};
+
 const protectedRuntimeContextInjectionConsumption: WorkflowProtectedRuntimeContextInjectionConsumption = {
   injection_id:
     "workflow-protected-runtime-context-injection-consumption.1234567890abcdef12345678",
@@ -2450,6 +2466,26 @@ function protectedRuntimeReadinessAuthorizationResponse(
   );
 }
 
+function protectedRuntimeReadinessResponse(
+  readiness: unknown[],
+  status = 200,
+  serverTime = "2026-08-14T10:08:34Z",
+  durable = true,
+): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: { readiness, server_time: serverTime, durable },
+          meta: {
+            correlation_id: "correlation.workflow.protected-runtime-readiness",
+            generated_at: serverTime,
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function protectedRuntimeContextInjectionConsumptionResponse(
   consumptions: unknown[],
   status = 200,
@@ -2589,6 +2625,9 @@ function mockReadResponses(input: {
   protectedRuntimeReadinessAuthorizations?: unknown[];
   protectedRuntimeReadinessAuthorizationServerTime?: string;
   protectedRuntimeReadinessAuthorizationDurable?: boolean;
+  protectedRuntimeReadiness?: unknown[];
+  protectedRuntimeReadinessServerTime?: string;
+  protectedRuntimeReadinessDurable?: boolean;
   credentialAssignmentSnapshots?: unknown[];
   transportCompatibilityAdmissions?: unknown[];
   pendingTransportAdmissionResponse?: Promise<Response>;
@@ -2622,6 +2661,7 @@ function mockReadResponses(input: {
   pendingProtectedRuntimeStartAuthorizationResponse?: Promise<Response>;
   pendingProtectedRuntimeStartResponse?: Promise<Response>;
   pendingProtectedRuntimeReadinessAuthorizationResponse?: Promise<Response>;
+  pendingProtectedRuntimeReadinessResponse?: Promise<Response>;
   pendingCredentialAssignmentSnapshotResponse?: Promise<Response>;
   pendingTransportCompatibilityAdmissionResponse?: Promise<Response>;
   leaseStatus?: number;
@@ -2693,6 +2733,8 @@ function mockReadResponses(input: {
   protectedRuntimeStartStatuses?: number[];
   protectedRuntimeReadinessAuthorizationStatus?: number;
   protectedRuntimeReadinessAuthorizationStatuses?: number[];
+  protectedRuntimeReadinessStatus?: number;
+  protectedRuntimeReadinessStatuses?: number[];
   credentialAssignmentSnapshotStatus?: number;
   credentialAssignmentSnapshotStatuses?: number[];
   transportCompatibilityAdmissionStatus?: number;
@@ -2729,10 +2771,31 @@ function mockReadResponses(input: {
   let protectedRuntimeStartAuthorizationReadCount = 0;
   let protectedRuntimeStartReadCount = 0;
   let protectedRuntimeReadinessAuthorizationReadCount = 0;
+  let protectedRuntimeReadinessReadCount = 0;
   let credentialAssignmentSnapshotReadCount = 0;
   let transportCompatibilityAdmissionReadCount = 0;
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (url.endsWith("/api/v1/workflows/protected-runtime-readiness-consumptions")) {
+      if (input.pendingProtectedRuntimeReadinessResponse) {
+        return input.pendingProtectedRuntimeReadinessResponse;
+      }
+      const status =
+        input.protectedRuntimeReadinessStatuses?.[
+          Math.min(
+            protectedRuntimeReadinessReadCount++,
+            input.protectedRuntimeReadinessStatuses.length - 1,
+          )
+        ] ?? input.protectedRuntimeReadinessStatus ?? 200;
+      return Promise.resolve(
+        protectedRuntimeReadinessResponse(
+          input.protectedRuntimeReadiness ?? [],
+          status,
+          input.protectedRuntimeReadinessServerTime,
+          input.protectedRuntimeReadinessDurable,
+        ),
+      );
+    }
     if (url.endsWith("/api/v1/workflows/protected-runtime-readiness-authorizations")) {
       if (input.pendingProtectedRuntimeReadinessAuthorizationResponse) {
         return input.pendingProtectedRuntimeReadinessAuthorizationResponse;
@@ -9403,6 +9466,233 @@ describe("WorkflowPlanningWorkspace", () => {
     ).toBeVisible();
     expect(within(section).queryByRole("list")).toBeNull();
     expect(section).not.toHaveTextContent(/runtime\.hidden/i);
+  });
+
+  it("renders protected runtime readiness as minimized read-only evidence", async () => {
+    expect(Object.keys(protectedRuntimeReadiness).sort()).toEqual(
+      [
+        "readiness_id",
+        "attempt_state",
+        "result_state",
+        "started_at",
+        "completed_at",
+        "recorded_at",
+        "runtime_ready",
+        "policy_reference",
+        "readiness_profile_reference",
+        "effective_authority",
+      ].sort(),
+    );
+    const pending: WorkflowProtectedRuntimeReadiness = {
+      ...protectedRuntimeReadiness,
+      readiness_id:
+        "workflow-protected-runtime-readiness-consumption.abcdef1234567890abcdef01",
+      result_state: null,
+      completed_at: null,
+      recorded_at: null,
+      runtime_ready: null,
+    };
+    const notReady: WorkflowProtectedRuntimeReadiness = {
+      ...protectedRuntimeReadiness,
+      readiness_id:
+        "workflow-protected-runtime-readiness-consumption.abcdef1234567890abcdef02",
+      result_state: "runtime_not_ready_in_protected_boundary",
+      runtime_ready: false,
+    };
+    const failed: WorkflowProtectedRuntimeReadiness = {
+      ...protectedRuntimeReadiness,
+      readiness_id:
+        "workflow-protected-runtime-readiness-consumption.abcdef1234567890abcdef03",
+      result_state: "runtime_readiness_failed_without_assessment",
+      runtime_ready: null,
+    };
+    const uncertain: WorkflowProtectedRuntimeReadiness = {
+      ...protectedRuntimeReadiness,
+      readiness_id:
+        "workflow-protected-runtime-readiness-consumption.abcdef1234567890abcdef04",
+      result_state: "runtime_readiness_outcome_uncertain",
+      completed_at: null,
+      runtime_ready: null,
+    };
+    mockReadResponses({
+      protectedRuntimeReadiness: [
+        pending,
+        protectedRuntimeReadiness,
+        notReady,
+        failed,
+        uncertain,
+      ],
+    });
+    renderWorkspace();
+
+    const authorizationSection = (await screen.findByRole("heading", {
+      name: "Protected runtime-readiness authorizations",
+    })).closest("section") as HTMLElement;
+    const section = (await screen.findByRole("heading", {
+      name: "Protected runtime readiness",
+    })).closest("section") as HTMLElement;
+    const records = await within(section).findByRole("list", {
+      name: "Protected runtime readiness",
+    });
+    expect(authorizationSection.nextElementSibling).toBe(section);
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) => {
+        const requestedUrl = request instanceof Request ? request.url : request.toString();
+        const requestedMethod = request instanceof Request ? request.method : "GET";
+        return (
+          requestedUrl.endsWith(
+            "/api/v1/workflows/protected-runtime-readiness-consumptions",
+          ) && requestedMethod === "GET"
+        );
+      }),
+    ).toBe(true);
+    expect(records).toHaveTextContent("Pending");
+    expect(records).toHaveTextContent("Ready");
+    expect(records).toHaveTextContent("Not ready");
+    expect(records).toHaveTextContent("Assessment failed");
+    expect(records).toHaveTextContent("Outcome uncertain");
+    expect(records).toHaveTextContent(/Runtime ready unknown/i);
+    expect(records).toHaveTextContent(/Runtime ready true/i);
+    expect(records).toHaveTextContent(/Runtime ready false/i);
+    expect(records).toHaveTextContent(/Effective authority false/i);
+    expect(
+      within(section).getAllByTitle(protectedRuntimeReadiness.policy_reference)[0],
+    ).toBeVisible();
+    expect(
+      within(section).getAllByTitle(
+        protectedRuntimeReadiness.readiness_profile_reference,
+      )[0],
+    ).toBeVisible();
+    expect(section).toHaveTextContent(/cannot consume a lease, assess or retry readiness/i);
+    expect(section).not.toHaveTextContent(/authorized browser session|MFA|second session/i);
+    expect(within(section).queryByRole("button")).toBeNull();
+    expect(within(section).queryByRole("link")).toBeNull();
+    expect(within(section).queryByRole("textbox")).toBeNull();
+    expect(within(section).queryByRole("combobox")).toBeNull();
+    expect(within(section).queryByRole("checkbox")).toBeNull();
+  });
+
+  it("shows loading, empty, unauthorized, forbidden and unavailable runtime-readiness states", async () => {
+    mockReadResponses({
+      pendingProtectedRuntimeReadinessResponse: new Promise<Response>(() => {}),
+    });
+    const loadingView = renderWorkspace();
+    let section = (await screen.findByRole("heading", {
+      name: "Protected runtime readiness",
+    })).closest("section") as HTMLElement;
+    expect(within(section).getByText("Loading protected runtime readiness...")).toBeVisible();
+
+    loadingView.unmount();
+    mockReadResponses({ protectedRuntimeReadiness: [] });
+    const emptyView = renderWorkspace();
+    section = (await screen.findByRole("heading", {
+      name: "Protected runtime readiness",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText(
+        "No protected runtime-readiness outcomes are recorded in this scope.",
+      ),
+    ).toBeVisible();
+
+    emptyView.unmount();
+    mockReadResponses({ protectedRuntimeReadinessStatus: 401 });
+    const unauthorizedView = renderWorkspace();
+    section = (await screen.findByRole("heading", {
+      name: "Protected runtime readiness",
+    })).closest("section") as HTMLElement;
+    expect(await within(section).findByText("Your session has expired")).toBeVisible();
+    expect(
+      within(section).getByText("Sign in again with your username and password to continue."),
+    ).toBeVisible();
+    expect(section).not.toHaveTextContent(/authorized browser session|MFA|second session/i);
+
+    unauthorizedView.unmount();
+    mockReadResponses({ protectedRuntimeReadinessStatus: 403 });
+    const forbiddenView = renderWorkspace();
+    section = (await screen.findByRole("heading", {
+      name: "Protected runtime readiness",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Protected runtime-readiness permission is missing"),
+    ).toBeVisible();
+
+    forbiddenView.unmount();
+    mockReadResponses({ protectedRuntimeReadinessStatus: 503 });
+    renderWorkspace();
+    section = (await screen.findByRole("heading", {
+      name: "Protected runtime readiness",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Protected runtime readiness is unavailable"),
+    ).toBeVisible();
+    expect(section).toHaveTextContent(/repository is unavailable or failed closed/i);
+    expect(within(section).queryByRole("list")).toBeNull();
+    expect(within(section).queryByRole("button")).toBeNull();
+    expect(within(section).queryByRole("link")).toBeNull();
+  });
+
+  it.each([
+    ["an extra runtime locator", [{ ...protectedRuntimeReadiness, runtime_locator: "hidden" }]],
+    ["an extra process identifier", [{ ...protectedRuntimeReadiness, process_id: "hidden" }]],
+    ["an extra runtime context", [{ ...protectedRuntimeReadiness, runtime_context: "hidden" }]],
+    ["an extra instruction", [{ ...protectedRuntimeReadiness, instruction: "hidden" }]],
+    ["an extra nonce", [{ ...protectedRuntimeReadiness, nonce: "hidden" }]],
+    ["an extra receipt", [{ ...protectedRuntimeReadiness, receipt: "hidden" }]],
+    ["an extra endpoint", [{ ...protectedRuntimeReadiness, endpoint: "hidden" }]],
+    ["extra credential material", [{ ...protectedRuntimeReadiness, credential: "hidden" }]],
+    ["extra authority material", [{ ...protectedRuntimeReadiness, authority: false }]],
+    ["effective authority", [{ ...protectedRuntimeReadiness, effective_authority: true }]],
+    [
+      "a missing policy reference",
+      [
+        Object.fromEntries(
+          Object.entries(protectedRuntimeReadiness).filter(
+            ([field]) => field !== "policy_reference",
+          ),
+        ),
+      ],
+    ],
+    [
+      "duplicate readiness IDs",
+      [protectedRuntimeReadiness, { ...protectedRuntimeReadiness }],
+    ],
+    [
+      "completion before start",
+      [{ ...protectedRuntimeReadiness, completed_at: "2026-08-14T10:08:32Z" }],
+    ],
+    [
+      "recording before completion",
+      [{ ...protectedRuntimeReadiness, recorded_at: "2026-08-14T10:08:32.900Z" }],
+    ],
+    [
+      "a ready state with false readiness",
+      [{ ...protectedRuntimeReadiness, runtime_ready: false }],
+    ],
+    [
+      "a pending state with a completion",
+      [{ ...protectedRuntimeReadiness, result_state: null, runtime_ready: null }],
+    ],
+    [
+      "an uncertain state with a completion",
+      [
+        {
+          ...protectedRuntimeReadiness,
+          result_state: "runtime_readiness_outcome_uncertain",
+          runtime_ready: null,
+        },
+      ],
+    ],
+  ])("fails closed for protected runtime readiness with %s", async (_case, unsafe) => {
+    mockReadResponses({ protectedRuntimeReadiness: unsafe });
+    renderWorkspace();
+    const section = (await screen.findByRole("heading", {
+      name: "Protected runtime readiness",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Protected runtime readiness is unavailable"),
+    ).toBeVisible();
+    expect(within(section).queryByRole("list")).toBeNull();
+    expect(section).not.toHaveTextContent(/hidden/i);
   });
 
   it("renders protected runtime-context injection consumptions as minimized read-only evidence", async () => {

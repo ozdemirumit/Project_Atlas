@@ -7,7 +7,7 @@ import subprocess
 import sys
 import time
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 from uuid import uuid4
@@ -496,6 +496,7 @@ async def _authorization_request(
     idempotency_key: str,
     lifecycle_verifier: Any,
     validity_milliseconds: int = 1_000,
+    first_observed_at: datetime | None = None,
 ) -> WorkflowProtectedRuntimeReadinessAuthorizationLeaseRequest:
     receipt_verifier = _AcceptAllReceiptVerifier()
     service = WorkflowProtectedRuntimeReadinessAuthorizationService(
@@ -505,12 +506,12 @@ async def _authorization_request(
         start_receipt_signature_verifier=cast(Any, receipt_verifier),
         audit_sink=cast(Any, _UnusedAuditSink()),
     )
-    first_observed_at = await repository.get_authoritative_time()
+    first_observed_at = first_observed_at or await repository.get_authoritative_time()
     attestation, nonce = _lifecycle_attestation(
         service,
         source,
         requested_at=first_observed_at,
-        observed_at=datetime.now(UTC),
+        observed_at=first_observed_at,
         validity_milliseconds=validity_milliseconds,
     )
     issued_at = attestation.observed_at
@@ -875,8 +876,19 @@ async def test_live_postgres_readiness_repository_race_replay_scope_guards_and_e
         async with engine.connect() as connection:
             assert (
                 await connection.scalar(text("SELECT version_num FROM alembic_version"))
-                == "20260817_0148"
+                == "20260817_0149"
             )
+            for table_name in (
+                WorkflowProtectedRuntimeReadinessAuthorizationLeaseModel.__tablename__,
+                WorkflowProtectedRuntimeReadinessAuthorizationClaimModel.__tablename__,
+            ):
+                assert (
+                    await connection.scalar(
+                        text("SELECT to_regclass(:table_name)"),
+                        {"table_name": table_name},
+                    )
+                    == table_name
+                )
 
         remaining = (
             winner.lease.effective_until - await repository.get_authoritative_time()
