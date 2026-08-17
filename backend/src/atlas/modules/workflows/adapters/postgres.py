@@ -1136,6 +1136,9 @@ class _ProtectedRuntimeProcessCreationAuthorizationLockedSources:
     destination_head: WorkflowProtectedRuntimeContextInjectionDestinationHeadModel | None
     slot_head: WorkflowProtectedRuntimeContextInjectionSlotHeadModel | None
     start_head: WorkflowProtectedRuntimeStartCoordinationHeadModel | None
+    dispatch_outbox: WorkflowDispatchOutboxEntryModel | None
+    publication_lease: WorkflowOutboxPublicationLeaseModel | None
+    orchestration_lease: WorkflowOrchestrationLeaseModel | None
     existing_claims: tuple[WorkflowProtectedRuntimeProcessCreationAuthorizationClaimModel, ...]
     existing_leases: tuple[WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseModel, ...]
     first_observed_at: datetime
@@ -11514,7 +11517,6 @@ class PostgreSQLWorkflowPlanRepository:
             await session.rollback()
             if (
                 source is None
-                or source.result.canonical_digest != request.readiness_result_digest
                 or source.readiness_authorization_lease.consumer_contract_id
                 != request.consumer_contract_id
                 or source.readiness_authorization_lease.consumer_contract_version
@@ -11592,17 +11594,19 @@ class PostgreSQLWorkflowPlanRepository:
                 await session.rollback()
                 return result_type(statuses.ALREADY_AUTHORIZED, None, locked.observed_at)
             try:
-                authorized_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+                commit_observed_at = cast(
+                    datetime, await session.scalar(select(func.clock_timestamp()))
+                )
                 if (
-                    authorized_at < locked.first_observed_at
-                    or authorized_at > locked.first_observed_at + timedelta(seconds=1)
+                    commit_observed_at < locked.first_observed_at
+                    or commit_observed_at > locked.first_observed_at + timedelta(seconds=1)
                 ):
                     await session.rollback()
-                    return result_type(statuses.EVIDENCE_CONFLICT, None, authorized_at)
+                    return result_type(statuses.EVIDENCE_CONFLICT, None, commit_observed_at)
                 working = self._protected_runtime_process_creation_authorization_retimed_request(
                     request,
                     claimed_at=locked.first_observed_at,
-                    issued_at=authorized_at,
+                    issued_at=locked.first_observed_at,
                 )
                 validate_workflow_protected_runtime_process_creation_authorization_request(working)
                 audit_payload: dict[str, object] = {
@@ -11616,14 +11620,14 @@ class PostgreSQLWorkflowPlanRepository:
                     != working.candidate_claim.authorization_audit_digest
                 ):
                     await session.rollback()
-                    return result_type(statuses.EVIDENCE_CONFLICT, None, authorized_at)
+                    return result_type(statuses.EVIDENCE_CONFLICT, None, commit_observed_at)
                 session.add(
                     self._protected_runtime_process_creation_authorization_lease_model(
                         working.candidate,
                         working.lifecycle_attestation,
                         locked=locked,
                         source_observed_at=locked.first_observed_at,
-                        authorized_at=authorized_at,
+                        authorized_at=locked.first_observed_at,
                     )
                 )
                 await session.flush()
@@ -11638,7 +11642,7 @@ class PostgreSQLWorkflowPlanRepository:
                     )
                 )
                 await session.commit()
-                return result_type(statuses.AUTHORIZED, working.candidate, authorized_at)
+                return result_type(statuses.AUTHORIZED, working.candidate, commit_observed_at)
             except (IntegrityError, TypeError, ValueError):
                 await session.rollback()
 
@@ -11753,6 +11757,18 @@ class PostgreSQLWorkflowPlanRepository:
         destination = WorkflowProtectedRuntimeContextInjectionDestinationHeadModel
         slot = WorkflowProtectedRuntimeContextInjectionSlotHeadModel
         head = WorkflowProtectedRuntimeStartCoordinationHeadModel
+        use_result = WorkflowProtectedRuntimeContextUseResultModel
+        use_consumption = WorkflowProtectedRuntimeContextUseAuthorizationConsumptionResultModel
+        use_lease = WorkflowProtectedRuntimeContextUseAuthorizationLeaseModel
+        injection_result = WorkflowProtectedRuntimeContextInjectionResultModel
+        injection_lease = WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseModel
+        access_result = WorkflowProtectedResidentContextAccessResultModel
+        access_lease = WorkflowProtectedResidentContextAccessAuthorizationLeaseModel
+        opening_result = WorkflowProtectedTransportTargetContextCapsuleOpeningResultModel
+        consumer_binding = WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel
+        dispatch_outbox = WorkflowDispatchOutboxEntryModel
+        publication_lease = WorkflowOutboxPublicationLeaseModel
+        orchestration_lease = WorkflowOrchestrationLeaseModel
         source_statement = (
             select(
                 result,
@@ -11763,6 +11779,9 @@ class PostgreSQLWorkflowPlanRepository:
                 destination,
                 slot,
                 head,
+                dispatch_outbox,
+                publication_lease,
+                orchestration_lease,
             )
             .select_from(result)
             .join(attempt, attempt.attempt_id == result.attempt_id)
@@ -11784,6 +11803,94 @@ class PostgreSQLWorkflowPlanRepository:
                 ),
             )
             .join(head, head.runtime_start_result_id == result.start_result_id)
+            .join(
+                use_result,
+                and_(
+                    use_result.result_id == result.use_result_id,
+                    use_result.canonical_digest == result.use_result_digest,
+                ),
+            )
+            .join(
+                use_consumption,
+                and_(
+                    use_consumption.result_id == use_result.authorization_consumption_result_id,
+                    use_consumption.canonical_digest
+                    == use_result.authorization_consumption_result_digest,
+                ),
+            )
+            .join(
+                use_lease,
+                and_(
+                    use_lease.authorization_lease_id == use_consumption.authorization_lease_id,
+                    use_lease.canonical_digest == use_consumption.authorization_lease_digest,
+                ),
+            )
+            .join(
+                injection_result,
+                and_(
+                    injection_result.result_id == use_lease.injection_result_id,
+                    injection_result.canonical_digest == use_lease.injection_result_digest,
+                ),
+            )
+            .join(
+                injection_lease,
+                and_(
+                    injection_lease.authorization_lease_id
+                    == injection_result.authorization_lease_id,
+                    injection_lease.canonical_digest == injection_result.authorization_lease_digest,
+                ),
+            )
+            .join(
+                access_result,
+                and_(
+                    access_result.access_id == injection_lease.access_result_id,
+                    access_result.canonical_digest == injection_lease.access_result_digest,
+                ),
+            )
+            .join(
+                access_lease,
+                and_(
+                    access_lease.access_authorization_lease_id
+                    == access_result.authorization_lease_id,
+                    access_lease.canonical_digest == access_result.authorization_lease_digest,
+                ),
+            )
+            .join(
+                opening_result,
+                and_(
+                    opening_result.opening_id == access_lease.opening_id,
+                    opening_result.canonical_digest == access_lease.opening_result_digest,
+                ),
+            )
+            .join(
+                consumer_binding,
+                and_(
+                    consumer_binding.binding_id == opening_result.consumer_binding_id,
+                    consumer_binding.canonical_digest == opening_result.consumer_binding_digest,
+                ),
+            )
+            .join(
+                dispatch_outbox,
+                and_(
+                    dispatch_outbox.outbox_entry_id == consumer_binding.outbox_entry_id,
+                    dispatch_outbox.canonical_digest == consumer_binding.outbox_entry_digest,
+                ),
+            )
+            .join(
+                publication_lease,
+                and_(
+                    publication_lease.outbox_entry_id == dispatch_outbox.outbox_entry_id,
+                    publication_lease.outbox_entry_digest == dispatch_outbox.canonical_digest,
+                ),
+            )
+            .join(
+                orchestration_lease,
+                and_(
+                    orchestration_lease.lease_id == publication_lease.orchestration_lease_id,
+                    orchestration_lease.canonical_digest
+                    == publication_lease.orchestration_lease_digest,
+                ),
+            )
             .where(
                 result.result_id == readiness_result_id,
                 result.organization_id == scope.organization_id,
@@ -11814,12 +11921,18 @@ class PostgreSQLWorkflowPlanRepository:
                 head.runtime_resumed.is_(False),
                 head.process_created.is_(False),
                 head.process_scheduled.is_(False),
+                dispatch_outbox.state == "pending_publication",
+                publication_lease.state == "active",
+                orchestration_lease.state == "active",
             )
         )
         source_row = (await session.execute(locked(source_statement))).one_or_none()
         observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
         if source_row is None:
             return _ProtectedRuntimeProcessCreationAuthorizationLockedSources(
+                None,
+                None,
+                None,
                 None,
                 None,
                 None,
@@ -11842,6 +11955,9 @@ class PostgreSQLWorkflowPlanRepository:
             destination_head,
             slot_head,
             start_head,
+            dispatch_outbox_row,
+            publication_lease_row,
+            orchestration_lease_row,
         ) = source_row
         return _ProtectedRuntimeProcessCreationAuthorizationLockedSources(
             readiness_result,
@@ -11852,6 +11968,9 @@ class PostgreSQLWorkflowPlanRepository:
             destination_head,
             slot_head,
             start_head,
+            dispatch_outbox_row,
+            publication_lease_row,
+            orchestration_lease_row,
             existing_claims,
             existing_leases,
             first_observed_at,
@@ -11902,25 +12021,32 @@ class PostgreSQLWorkflowPlanRepository:
         if lease_row is None:
             return result_type(statuses.EVIDENCE_CONFLICT, None, locked.observed_at)
         try:
-            working = cls._protected_runtime_process_creation_authorization_retimed_request(
+            durable_claim = cls._protected_runtime_process_creation_authorization_claim_from_row(
+                claim_row
+            )
+            durable_lease = cls._protected_runtime_process_creation_authorization_lease_from_row(
+                lease_row
+            )
+            durable_attestation = cls._protected_runtime_process_creation_attestation_from_row(
+                lease_row
+            )
+            working = dataclass_replace(
                 request,
-                claimed_at=claim_row.claimed_at,
-                issued_at=lease_row.issued_at,
+                lifecycle_attestation=durable_attestation,
+                expected_request_nonce_digest=durable_attestation.request_nonce_digest,
+                pre_attestation_observed_at=durable_claim.claimed_at,
+                requested_at=durable_lease.issued_at,
+                candidate_claim=durable_claim,
+                candidate=durable_lease,
             )
             validate_workflow_protected_runtime_process_creation_authorization_request(working)
         except (TypeError, ValueError):
             return result_type(statuses.EVIDENCE_CONFLICT, None, locked.observed_at)
-        if (
-            claim_row.canonical_digest != working.candidate_claim.canonical_digest
-            or claim_row.payload != working.candidate_claim.digest_payload()
-            or lease_row.canonical_digest != working.candidate.canonical_digest
-            or lease_row.payload != working.candidate.digest_payload()
-            or not cls._protected_runtime_process_creation_authorization_source_is_eligible(
-                working, locked
-            )
+        if not cls._protected_runtime_process_creation_authorization_source_is_eligible(
+            working, locked
         ):
             return result_type(statuses.EVIDENCE_CONFLICT, None, locked.observed_at)
-        return result_type(statuses.REPLAY, working.candidate, locked.observed_at)
+        return result_type(statuses.REPLAY, durable_lease, locked.observed_at)
 
     @staticmethod
     def _protected_runtime_process_creation_authorization_retimed_request(
@@ -11964,9 +12090,24 @@ class PostgreSQLWorkflowPlanRepository:
         head = locked.start_head
         destination = locked.destination_head
         slot = locked.slot_head
+        outbox = locked.dispatch_outbox
+        publication = locked.publication_lease
+        orchestration = locked.orchestration_lease
         if any(
             row is None
-            for row in (result, attempt, claim, lease, auth_claim, head, destination, slot)
+            for row in (
+                result,
+                attempt,
+                claim,
+                lease,
+                auth_claim,
+                head,
+                destination,
+                slot,
+                outbox,
+                publication,
+                orchestration,
+            )
         ):
             return False
         assert result is not None
@@ -11977,6 +12118,9 @@ class PostgreSQLWorkflowPlanRepository:
         assert head is not None
         assert destination is not None
         assert slot is not None
+        assert outbox is not None
+        assert publication is not None
+        assert orchestration is not None
         candidate = request.candidate
         return bool(
             result.canonical_digest == request.source.result.canonical_digest
@@ -12013,6 +12157,38 @@ class PostgreSQLWorkflowPlanRepository:
             and slot.current
             and slot.slot_state == "context_used_terminal"
             and slot.slot_generation == result.runtime_slot_generation
+            and outbox.state == "pending_publication"
+            and outbox.organization_id == result.organization_id
+            and outbox.environment_id == result.environment_id
+            and outbox.site_id == result.site_id
+            and not outbox.publication_authority_granted
+            and not outbox.delivery_authority_granted
+            and not outbox.dispatch_authority_granted
+            and not outbox.execution_authority_granted
+            and publication.outbox_entry_id == outbox.outbox_entry_id
+            and publication.outbox_entry_digest == outbox.canonical_digest
+            and publication.plan_id == outbox.plan_id
+            and publication.plan_digest == outbox.plan_digest
+            and publication.attempt_id == outbox.attempt_id
+            and publication.attempt_digest == outbox.attempt_digest
+            and publication.organization_id == outbox.organization_id
+            and publication.environment_id == outbox.environment_id
+            and publication.site_id == outbox.site_id
+            and publication.orchestration_lease_id == outbox.lease_id
+            and publication.orchestration_lease_digest == outbox.lease_digest
+            and publication.orchestration_fencing_token == outbox.lease_fencing_token
+            and publication.state == "active"
+            and publication.acquired_at <= locked.observed_at < publication.expires_at
+            and orchestration.lease_id == outbox.lease_id
+            and orchestration.canonical_digest == outbox.lease_digest
+            and orchestration.fencing_token == outbox.lease_fencing_token
+            and orchestration.plan_id == outbox.plan_id
+            and orchestration.plan_digest == outbox.plan_digest
+            and orchestration.organization_id == outbox.organization_id
+            and orchestration.environment_id == outbox.environment_id
+            and orchestration.site_id == outbox.site_id
+            and orchestration.state == "active"
+            and orchestration.acquired_at <= locked.observed_at < orchestration.expires_at
         )
 
     @classmethod
@@ -12234,6 +12410,13 @@ class PostgreSQLWorkflowPlanRepository:
         if (
             canonical_digest(lease.digest_payload()) != row.canonical_digest
             or row.payload != lease.digest_payload()
+            or row.organization_id != lease.scope.organization_id
+            or row.environment_id != lease.scope.environment_id
+            or row.site_id != lease.scope.site_id
+            or row.consumer_subject_id != lease.consumer_subject_id
+            or row.consumer_audience != lease.consumer_audience
+            or row.claim_id != lease.claim_id
+            or row.claim_digest != lease.claim_digest
             or row.policy_digest != lease.policy_digest
             or row.readiness_result_id != lease.readiness_result_id
             or row.readiness_result_digest != lease.readiness_result_digest
@@ -12247,6 +12430,51 @@ class PostgreSQLWorkflowPlanRepository:
         ):
             raise ValueError("runtime process-creation authorization lease mismatch")
         return lease
+
+    @staticmethod
+    def _protected_runtime_process_creation_authorization_claim_from_row(
+        row: WorkflowProtectedRuntimeProcessCreationAuthorizationClaimModel,
+    ) -> WorkflowProtectedRuntimeProcessCreationAuthorizationClaim:
+        payload = dict(row.payload)
+        payload["scope"] = WorkflowScope(**cast(dict[str, str], payload["scope"]))
+        payload["readiness_result_state"] = WorkflowProtectedRuntimeReadinessConsumptionResultState(
+            str(payload["readiness_result_state"])
+        )
+        if payload.get("readiness_failure_class") is not None:
+            payload["readiness_failure_class"] = (
+                WorkflowProtectedRuntimeReadinessConsumptionFailureClass(
+                    str(payload["readiness_failure_class"])
+                )
+            )
+        payload["authority"] = WorkflowProtectedRuntimeProcessCreationAuthorizationAuthority(
+            **cast(Any, payload["authority"])
+        )
+        for name, value in tuple(payload.items()):
+            if isinstance(value, str) and (name.endswith("_at") or name.endswith("_until")):
+                payload[name] = datetime.fromisoformat(value)
+        claim = WorkflowProtectedRuntimeProcessCreationAuthorizationClaim(
+            **cast(Any, payload), canonical_digest=row.canonical_digest
+        )
+        if (
+            canonical_digest(claim.digest_payload()) != row.canonical_digest
+            or row.payload != claim.digest_payload()
+            or row.organization_id != claim.scope.organization_id
+            or row.environment_id != claim.scope.environment_id
+            or row.site_id != claim.scope.site_id
+            or row.consumer_subject_id != claim.consumer_subject_id
+            or row.consumer_audience != claim.consumer_audience
+            or row.claim_id != claim.claim_id
+            or row.claimed_at != claim.claimed_at
+            or row.policy_digest != claim.policy_digest
+            or row.readiness_result_id != claim.readiness_result_id
+            or row.readiness_result_digest != claim.readiness_result_digest
+            or row.idempotency_digest != claim.idempotency_digest
+            or row.request_fingerprint != claim.request_fingerprint
+            or row.authorization_audit_digest != claim.authorization_audit_digest
+            or canonical_digest(row.authorization_audit_payload) != claim.authorization_audit_digest
+        ):
+            raise ValueError("runtime process-creation authorization claim mismatch")
+        return claim
 
     @staticmethod
     def _protected_runtime_process_creation_attestation_from_row(

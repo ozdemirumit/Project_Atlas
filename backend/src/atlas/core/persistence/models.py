@@ -17555,6 +17555,27 @@ class WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseModel(
     __tablename__ = "workflow_event_runtime_process_creation_auth_leases"
     __table_args__ = (
         *_workflow_protected_runtime_process_creation_source_constraints(prefix="lease"),
+        ForeignKeyConstraint(
+            [
+                "organization_id",
+                "environment_id",
+                "site_id",
+                "claim_id",
+                "claim_digest",
+                "authorization_lease_id",
+            ],
+            [
+                "workflow_event_runtime_process_creation_auth_claims.organization_id",
+                "workflow_event_runtime_process_creation_auth_claims.environment_id",
+                "workflow_event_runtime_process_creation_auth_claims.site_id",
+                "workflow_event_runtime_process_creation_auth_claims.claim_id",
+                "workflow_event_runtime_process_creation_auth_claims.canonical_digest",
+                "workflow_event_runtime_process_creation_auth_claims.authorization_lease_id",
+            ],
+            name="fk_wf_rtproc_auth_lease_claim",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
         UniqueConstraint("readiness_result_id", name="uq_wf_rtproc_auth_lease_ready_result"),
         UniqueConstraint("claim_id", name="uq_wf_rtproc_auth_lease_claim"),
         UniqueConstraint(
@@ -17647,10 +17668,21 @@ class WorkflowProtectedRuntimeProcessCreationAuthorizationClaimModel(
                 "workflow_event_runtime_process_creation_auth_leases.claim_digest",
             ],
             name="fk_wf_rtproc_auth_claim_lease",
+            deferrable=True,
+            initially="DEFERRED",
         ),
         UniqueConstraint("readiness_result_id", name="uq_wf_rtproc_auth_claim_ready_result"),
         UniqueConstraint("authorization_lease_id", name="uq_wf_rtproc_auth_claim_lease"),
         UniqueConstraint("canonical_digest", name="uq_wf_rtproc_auth_claim_digest"),
+        UniqueConstraint(
+            "organization_id",
+            "environment_id",
+            "site_id",
+            "claim_id",
+            "canonical_digest",
+            "authorization_lease_id",
+            name="uq_wf_rtproc_auth_claim_lineage",
+        ),
         UniqueConstraint(
             "organization_id",
             "environment_id",

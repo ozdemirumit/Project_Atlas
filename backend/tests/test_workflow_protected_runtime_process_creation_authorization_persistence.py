@@ -170,6 +170,7 @@ def test_uniqueness_is_tenant_idempotent_and_one_per_source_result() -> None:
         "uq_wf_rtproc_auth_scope_idem",
         "uq_wf_rtproc_auth_claim_ready_result",
         "uq_wf_rtproc_auth_claim_lease",
+        "uq_wf_rtproc_auth_claim_lineage",
     } <= _constraint_names(claim)
     assert {
         "uq_wf_rtproc_auth_lease_ready_result",
@@ -182,6 +183,21 @@ def test_uniqueness_is_tenant_idempotent_and_one_per_source_result() -> None:
         for item in table.constraints
         if isinstance(item.name, str) and item.name.startswith("uq_wf_rtproc")
     )
+
+    lease_claim_fk = next(
+        item
+        for item in lease.foreign_key_constraints
+        if item.name == "fk_wf_rtproc_auth_lease_claim"
+    )
+    claim_lease_fk = next(
+        item
+        for item in claim.foreign_key_constraints
+        if item.name == "fk_wf_rtproc_auth_claim_lease"
+    )
+    assert lease_claim_fk.deferrable is True
+    assert lease_claim_fk.initially == "DEFERRED"
+    assert claim_lease_fk.deferrable is True
+    assert claim_lease_fk.initially == "DEFERRED"
 
 
 def test_alembic_graph_has_single_0150_head() -> None:

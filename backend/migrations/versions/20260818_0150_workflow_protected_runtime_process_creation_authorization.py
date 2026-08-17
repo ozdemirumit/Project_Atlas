@@ -544,10 +544,19 @@ def _create_claim() -> None:
             ("authorization_lease_id", "canonical_digest"),
             (f"{LEASE_TABLE}.authorization_lease_id", f"{LEASE_TABLE}.claim_digest"),
             name="fk_wf_rtproc_auth_claim_lease",
+            deferrable=True,
+            initially="DEFERRED",
         ),
         sa.UniqueConstraint("readiness_result_id", name="uq_wf_rtproc_auth_claim_ready_result"),
         sa.UniqueConstraint("authorization_lease_id", name="uq_wf_rtproc_auth_claim_lease"),
         sa.UniqueConstraint("canonical_digest", name="uq_wf_rtproc_auth_claim_digest"),
+        sa.UniqueConstraint(
+            *SCOPE,
+            "claim_id",
+            "canonical_digest",
+            "authorization_lease_id",
+            name="uq_wf_rtproc_auth_claim_lineage",
+        ),
         sa.UniqueConstraint(
             *SCOPE,
             "consumer_subject_id",
@@ -576,6 +585,15 @@ def upgrade() -> None:
     _add_result_projection_uniques()
     _create_lease()
     _create_claim()
+    op.create_foreign_key(
+        "fk_wf_rtproc_auth_lease_claim",
+        LEASE_TABLE,
+        CLAIM_TABLE,
+        [*SCOPE, "claim_id", "claim_digest", "authorization_lease_id"],
+        [*SCOPE, "claim_id", "canonical_digest", "authorization_lease_id"],
+        deferrable=True,
+        initially="DEFERRED",
+    )
     op.execute(
         sa.text(
             f"""
@@ -622,6 +640,7 @@ def downgrade() -> None:
         raise RuntimeError(
             "refusing guarded downgrade: protected runtime process-creation authorization evidence exists"
         )
+    op.drop_constraint("fk_wf_rtproc_auth_lease_claim", LEASE_TABLE, type_="foreignkey")
     op.drop_table(CLAIM_TABLE)
     op.drop_table(LEASE_TABLE)
     op.drop_constraint("uq_wf_rtproc_src_ready_result_outcome", RESULT_TABLE, type_="unique")
