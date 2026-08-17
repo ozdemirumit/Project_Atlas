@@ -19,6 +19,9 @@ from atlas.modules.workflows.application.protected_runtime_context_use_authoriza
 from atlas.modules.workflows.application.protected_runtime_context_use_authorization_ports import (
     WorkflowProtectedRuntimeContextUseAuthorizationPresentation,
 )
+from atlas.modules.workflows.application.protected_runtime_context_uses import (
+    WorkflowProtectedRuntimeContextUsePresentation,
+)
 from atlas.modules.workflows.domain import (
     EventPhysicalTransportCredentialAssignmentSnapshot,
     EventPhysicalTransportProfileSnapshot,
@@ -71,6 +74,13 @@ from atlas.modules.workflows.domain import (
     code_owned_workflow_protected_resident_context_access_authorization_policy,
     code_owned_workflow_protected_runtime_context_injection_authorization_policy,
     code_owned_workflow_protected_runtime_context_use_authorization_policy,
+)
+from atlas.modules.workflows.domain.protected_runtime_context_use_domain import (
+    WorkflowProtectedRuntimeContextUseAttempt,
+    WorkflowProtectedRuntimeContextUseResult,
+)
+from atlas.modules.workflows.domain.protected_runtime_context_use_domain import (
+    WorkflowProtectedRuntimeContextUseResultState as UseResultState,
 )
 
 STABLE_ID = r"^[a-z][a-z0-9_.:-]{2,239}$"
@@ -3504,6 +3514,141 @@ class WorkflowProtectedRuntimeContextUseAuthorizationConsumptionResponse(BaseMod
 
 class WorkflowProtectedRuntimeContextUseAuthorizationConsumptionInventoryResponse(BaseModel):
     data: WorkflowProtectedRuntimeContextUseAuthorizationConsumptionInventoryData
+    meta: ResponseMeta
+
+
+class CreateWorkflowProtectedRuntimeContextUseInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    authorization_consumption_result_id: str = Field(
+        min_length=3, max_length=128, pattern=STABLE_ID
+    )
+    policy_id: Literal["policy.workflow-protected-runtime-context-use"]
+    policy_version: Literal["1.0"]
+    irreversible_use_acknowledged: Literal[True]
+    uncertainty_no_retry_acknowledged: Literal[True]
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class WorkflowProtectedRuntimeContextUseAuthorityData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    protected_runtime_context_use_authority_granted: Literal[False]
+    runtime_use_authorized: Literal[False]
+    runtime_start_authorized: Literal[False]
+    runtime_resume_authorized: Literal[False]
+    connector_activity_authorized: Literal[False]
+    protected_runtime_context_injection_authority_granted: Literal[False]
+    protected_resident_context_access_authority_granted: Literal[False]
+    target_context_capsule_opening_authorized: Literal[False]
+    target_context_capsule_handoff_authorized: Literal[False]
+    endpoint_resolution_authorized: Literal[False]
+    route_selection_authorized: Literal[False]
+    route_binding_authorized: Literal[False]
+    credential_selection_authorized: Literal[False]
+    credential_assignment_binding_authorized: Literal[False]
+    credential_access_authorized: Literal[False]
+    credential_brokerage_authorized: Literal[False]
+    credential_resolution_authorized: Literal[False]
+    protected_artifact_access_authorized: Literal[False]
+    credential_delivery_authorized: Literal[False]
+    network_access_authorized: Literal[False]
+    readiness_probe_authorized: Literal[False]
+    publication_authorized: Literal[False]
+    delivery_authorized: Literal[False]
+    dispatch_authorized: Literal[False]
+    execution_authorized: Literal[False]
+    infrastructure_mutation_authorized: Literal[False]
+
+
+class WorkflowProtectedRuntimeContextUseData(BaseModel):
+    """Minimized protected-side adoption evidence without protected material."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    use_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    attempt_state: Literal["started", "completed"]
+    result_state: Literal[
+        "use_pending",
+        "context_used_once_in_protected_boundary",
+        "context_use_failed_without_use",
+        "context_use_outcome_uncertain",
+    ]
+    started_at: datetime
+    completed_at: datetime | None
+    context_use_performed: bool | None
+    policy_id: Literal["policy.workflow-protected-runtime-context-use"]
+    policy_version: Literal["1.0"]
+    use_profile_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    authority: WorkflowProtectedRuntimeContextUseAuthorityData
+    integrity_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+
+    @classmethod
+    def from_domain(
+        cls,
+        presentation: WorkflowProtectedRuntimeContextUsePresentation,
+        *,
+        evaluated_at: datetime,
+    ) -> WorkflowProtectedRuntimeContextUseData:
+        if evaluated_at.tzinfo is None:
+            raise ValueError("runtime context use presentation time must be timezone-aware")
+        attempt: WorkflowProtectedRuntimeContextUseAttempt = presentation.attempt
+        result: WorkflowProtectedRuntimeContextUseResult | None = presentation.result
+        result_state = (
+            result.state.value
+            if result is not None
+            else "use_pending"
+            if evaluated_at < attempt.use_deadline
+            else "context_use_outcome_uncertain"
+        )
+        context_use_performed: bool | None = None
+        completed_at: datetime | None = None
+        if result is not None:
+            completed_at = result.completed_at or result.recorded_at
+            success_state = UseResultState.CONTEXT_USED_ONCE_IN_PROTECTED_BOUNDARY
+            if result.state is success_state:
+                context_use_performed = True
+            elif result.state is UseResultState.CONTEXT_USE_FAILED_WITHOUT_USE:
+                context_use_performed = False
+        authority = attempt.authority if result is None else result.authority
+        return cls(
+            use_id=attempt.use_id,
+            attempt_state="started" if result is None else "completed",
+            result_state=result_state,
+            started_at=attempt.started_at,
+            completed_at=completed_at,
+            context_use_performed=context_use_performed,
+            policy_id=attempt.policy_id,
+            policy_version=attempt.policy_version,
+            use_profile_reference=(
+                "integrity.workflow-protected-runtime-context-use-profile."
+                f"{sha256(attempt.use_profile_digest.encode('utf-8')).hexdigest()[:24]}"
+            ),
+            authority=WorkflowProtectedRuntimeContextUseAuthorityData.model_validate(
+                authority.canonical_value()
+            ),
+            integrity_reference=(
+                "integrity.workflow-protected-runtime-context-use."
+                f"{sha256(attempt.use_id.encode('utf-8')).hexdigest()[:24]}"
+            ),
+        )
+
+
+class WorkflowProtectedRuntimeContextUseInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    uses: list[WorkflowProtectedRuntimeContextUseData] = Field(max_length=256)
+    server_time: datetime
+    durable: Literal[True]
+
+
+class WorkflowProtectedRuntimeContextUseResponse(BaseModel):
+    data: WorkflowProtectedRuntimeContextUseData
+    meta: ResponseMeta
+
+
+class WorkflowProtectedRuntimeContextUseInventoryResponse(BaseModel):
+    data: WorkflowProtectedRuntimeContextUseInventoryData
     meta: ResponseMeta
 
 
