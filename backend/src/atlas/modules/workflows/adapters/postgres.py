@@ -8622,8 +8622,9 @@ class PostgreSQLWorkflowPlanRepository:
             and name not in {"scope", "state", "failure_class", "canonical_digest", "payload"}
             and name not in authority
         }
+        if hasattr(value, "scope"):
+            values.update(cls._protected_runtime_context_use_identity_model_values(value))
         values.update(
-            cls._protected_runtime_context_use_identity_model_values(value),
             **authority,
             canonical_digest=value.canonical_digest,
             payload=value.digest_payload(),

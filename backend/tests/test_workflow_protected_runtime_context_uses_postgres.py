@@ -340,9 +340,26 @@ async def test_claim_and_attempt_rows_round_trip_and_tampering_fails_closed() ->
     )
     claim_row = repository._protected_runtime_context_adoption_claim_model(request, claim)
     attempt_row = repository._protected_runtime_context_use_attempt_model(request, claim, attempt)
+    result = _uncertain_result(
+        claim_digest=claim.canonical_digest,
+        attempt=attempt,
+        recorded_at=attempt.started_at + timedelta(milliseconds=20),
+    )
+    result_row = repository._protected_runtime_context_use_result_model(
+        WorkflowProtectedRuntimeContextUseResultRequest(
+            result=result,
+            receipt=None,
+            expected_claim_digest=claim.canonical_digest,
+            expected_attempt_digest=attempt.canonical_digest,
+        ),
+        claim_row=claim_row,
+        attempt_row=attempt_row,
+    )
 
     assert repository._protected_runtime_context_adoption_claim_from_row(claim_row) == claim
     assert repository._protected_runtime_context_use_attempt_from_row(attempt_row) == attempt
+    assert result_row.organization_id == attempt.scope.organization_id
+    assert result_row.consumer_subject_id == attempt.consumer_subject_id
 
     claim_row.policy_digest = "0" * 64
     with pytest.raises(
