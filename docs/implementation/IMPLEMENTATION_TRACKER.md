@@ -4,14 +4,51 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-222 |
-| Title | Single-use protected runtime-context adoption after terminal authorization consumption |
-| Status | Verification Complete / Delivery Pending |
-| Branch | `agent/protected-runtime-context-use` |
+| Task ID | ATLAS-IMP-223 |
+| Title | Bounded single-use protected runtime-start authorization lease |
+| Status | In Progress |
+| Branch | `agent/protected-runtime-start-authorization` |
 | Pull Request | Pending |
-| Governing Documents | ATLAS-003, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-172 |
+| Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-173 |
 | Last Updated | 2026-08-17 |
-| Next Action | Push the exact reviewed head, complete PR and PostgreSQL 17 CI, merge, then verify the independent `main` CI run |
+| Next Action | Complete ADR-173, then implement its workload-only issuance, durable PostgreSQL evidence and read-only human projection |
+
+### ATLAS-IMP-223 Scope Rationale
+
+- IMP-222 proves one exact protected-side context adoption and leaves the inactive runtime envelope
+  with terminal, non-reusable context-use evidence, but grants no runtime-start authority.
+- The ADR-172 result is historical evidence rather than a bearer capability. Runtime start therefore
+  requires a new explicit, short-lived authorization lease rooted in fresh protected-runtime state.
+- Model inference belongs to the separate Intelligence Plane and Model Gateway. IMP-223 must not
+  blend connector-runtime start governance with prompt construction or model execution.
+- To avoid needless sequencing, IMP-223 only issues the future-request lease. IMP-224 will consume
+  that lease and initiate at most one protected start attempt in one irreversible protocol rather
+  than inserting another consumption-only boundary.
+
+### ATLAS-IMP-223 Acceptance Criteria
+
+- Only the exact protected consumer workload and audience bound through canonical ADR-160 through
+  ADR-172 lineage may POST. Human sessions, personal tokens, AI agents, MCP tools, connectors and
+  generic workers fail closed before protected-state I/O.
+- Caller input is limited to the ADR-172 result identity/digest, code-owned policy identity and
+  tenant-scoped idempotency metadata. Context, slot, runtime envelope, destination, attestation,
+  timing, authority and lease fields are server-derived.
+- Fresh signed, nonce-bound, metadata-only evidence proves the exact adopted context and inactive
+  runtime envelope remain current, unstarted and bound to the exact destination fence and slot
+  post-generation without revealing protected material.
+- PostgreSQL classifies exact replay first, then locks and revalidates the complete lineage and
+  authoritative database time before atomically appending one claim and one lease.
+- The lease lifetime is at most one second and bounded by every upstream deadline. It is single-use,
+  non-renewable, non-transferable and non-bearer; changed replay and competing lineage fail closed.
+- All pre-existing 26 authority declarations remain false. Only the lease may set the new dedicated
+  `protected_runtime_start_authority_granted=true`, which authorizes one future IMP-224 request and
+  is not authority to start, resume, schedule, create a process or execute anything.
+- IMP-223 invokes no executor and performs no runtime start/resume, process creation, scheduling,
+  prompt/model inference, endpoint or credential access, DNS/TLS/network, readiness, connector/MCP,
+  publication, delivery, dispatch, generic execution, workflow transition or infrastructure mutation.
+- Production fails closed without PostgreSQL and the trusted attestor. Workload POST and normal
+  username/password-session GET are minimized, non-oracle and `no-store`; the read-only UI requires
+  no MFA or second browser prompt and exposes no start, consume, retry, resume or execute control.
 
 ### ATLAS-IMP-222 Scope Rationale
 
@@ -78,6 +115,17 @@
   without a configured durable repository. Its read-only region exposed zero buttons and links,
   `390x844` mobile layout had no horizontal overflow, and the browser console had no errors or
   warnings.
+
+### ATLAS-IMP-222 Delivery Evidence
+
+- Merged through [PR #235](https://github.com/ozdemirumit/Project_Atlas/pull/235) from exact reviewed
+  head `0fcb1eb561a567e90b7d797413fa03e35ec37fbe` to `main` merge
+  `a3bc8e77cde43e302deb380ee0ddb658067a2514`.
+- Exact-head [PR CI run 31987340839](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31987340839)
+  passed frontend in 9m19s and backend in 14m24s, including PostgreSQL 17 integration, migration and
+  migration round-trip validation.
+- Independent [main CI run 31988105687](https://github.com/ozdemirumit/Project_Atlas/actions/runs/31988105687)
+  passed frontend in 5m55s and backend in 15m38s for the exact merge commit.
 
 ### ATLAS-IMP-221 Scope Rationale
 
