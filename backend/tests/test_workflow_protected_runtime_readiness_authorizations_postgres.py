@@ -535,6 +535,86 @@ async def _authorization_request(
     )
 
 
+async def _assert_authorization_preconditions(
+    repository: PostgreSQLWorkflowPlanRepository,
+    request: WorkflowProtectedRuntimeReadinessAuthorizationLeaseRequest,
+) -> None:
+    async with repository._sessions() as session:
+        locked = await repository._lock_protected_runtime_readiness_authorization_rows(
+            session,
+            start_result_id=request.source.result.result_id,
+            scope=request.scope,
+            consumer_subject_id=request.consumer_subject_id,
+            consumer_audience=request.consumer_audience,
+            idempotency_key=request.idempotency_key,
+        )
+        working = repository._protected_runtime_readiness_retimed_request(
+            request, issued_at=locked.observed_at
+        )
+        source = repository._protected_runtime_readiness_source_from_locked(
+            locked,
+            receipt_verifier=request.offline_start_receipt_signature_verifier,
+        )
+        attestation = working.lifecycle_attestation
+        candidate = working.candidate
+        checks = {
+            "source": source == working.source,
+            "signature": repository._protected_runtime_readiness_attestation_signature_valid(
+                working.offline_signature_verifier, attestation
+            ),
+            "result_before_pre_attestation": (
+                working.source.result.recorded_at <= working.pre_attestation_observed_at
+            ),
+            "pre_attestation_before_observed": (
+                working.pre_attestation_observed_at <= attestation.observed_at
+            ),
+            "attestation_before_first_lock": (attestation.observed_at <= locked.first_observed_at),
+            "lock_order": locked.first_observed_at <= locked.observed_at,
+            "attestation_active": locked.observed_at < attestation.valid_until,
+            "envelope_active": (locked.observed_at < attestation.runtime_envelope_eligible_until),
+            "candidate_retimed": candidate.issued_at == locked.observed_at,
+            "candidate_window": candidate.valid_until == candidate.effective_until,
+            "no_prior_evidence": not locked.existing_claims and not locked.existing_leases,
+            "full_evidence": repository._protected_runtime_readiness_evidence_matches(
+                working, locked
+            ),
+        }
+        assert all(checks.values()), checks
+
+        final_observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+        final_working = repository._protected_runtime_readiness_retimed_request(
+            request, issued_at=final_observed_at
+        )
+        assert repository._protected_runtime_readiness_final_window_matches(
+            final_working,
+            locked=locked,
+            final_observed_at=final_observed_at,
+        )
+        audit_payload: dict[str, object] = {
+            "start_result_id": final_working.candidate.start_result_id,
+            "policy_digest": final_working.candidate.policy_digest,
+            "request_fingerprint": final_working.request_fingerprint,
+            "scope": final_working.scope.canonical_value(),
+        }
+        assert (
+            canonical_digest(audit_payload)
+            == final_working.candidate_claim.authorization_audit_digest
+        )
+        repository._protected_runtime_readiness_lease_model(
+            final_working.candidate,
+            final_working.lifecycle_attestation,
+            locked=locked,
+        )
+        repository._protected_runtime_readiness_claim_model(
+            final_working.candidate_claim,
+            authorization_lease_id=final_working.candidate.authorization_lease_id,
+            idempotency_key=final_working.idempotency_key,
+            audit_payload=audit_payload,
+            locked=locked,
+        )
+        await session.rollback()
+
+
 async def _cleanup_runtime_start_sources(engine: Any, requests: tuple[Any, ...]) -> None:
     async with engine.begin() as connection:
         await connection.execute(text("SET LOCAL session_replication_role = replica"))
@@ -647,6 +727,13 @@ async def test_live_postgres_readiness_repository_race_replay_scope_guards_and_e
         )
 
         exact_verifier = _ExactLifecycleVerifier()
+        request = await _authorization_request(
+            repository,
+            source,
+            idempotency_key=f"imp-225-race-{uuid4().hex}",
+            lifecycle_verifier=exact_verifier,
+        )
+        await _assert_authorization_preconditions(repository, request)
         request = await _authorization_request(
             repository,
             source,
