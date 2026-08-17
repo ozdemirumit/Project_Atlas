@@ -7,7 +7,7 @@ import subprocess
 import sys
 import time
 from dataclasses import replace
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 from uuid import uuid4
@@ -417,8 +417,10 @@ def _lifecycle_attestation(
     source: Any,
     *,
     requested_at: datetime,
+    observed_at: datetime | None = None,
     validity_milliseconds: int = 1_000,
 ) -> tuple[WorkflowProtectedRuntimeReadinessLifecycleAttestation, str]:
+    observed_at = observed_at or requested_at
     nonce = canonical_digest({"nonce": uuid4().hex})
     attestation_request = service._attestation_request(
         source,
@@ -430,7 +432,7 @@ def _lifecycle_attestation(
         for name in attestation_request.__slots__
         if name != "requested_at"
     }
-    valid_until = requested_at + timedelta(milliseconds=validity_milliseconds)
+    valid_until = observed_at + timedelta(milliseconds=validity_milliseconds)
     values: dict[str, object] = {
         **request_values,
         "attestation_id": f"runtime-readiness-attestation.{uuid4().hex}",
@@ -438,7 +440,7 @@ def _lifecycle_attestation(
         "attestor_version": service.policy.required_attestor_version,
         "signing_key_id": service.policy.verification_signing_key_id,
         "signature_algorithm": "hmac-sha256",
-        "observed_at": requested_at,
+        "observed_at": observed_at,
         "valid_until": valid_until,
         "runtime_envelope_eligible_until": valid_until,
         "exact_start_result_confirmed": True,
@@ -508,6 +510,7 @@ async def _authorization_request(
         service,
         source,
         requested_at=first_observed_at,
+        observed_at=datetime.now(UTC),
         validity_milliseconds=validity_milliseconds,
     )
     issued_at = attestation.observed_at
