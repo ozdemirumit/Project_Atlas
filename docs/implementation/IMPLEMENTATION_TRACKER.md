@@ -53,8 +53,8 @@
   across `1423` source and test files with no issues, and Alembic reports the single head
   `20260818_0150`.
 - The final IMP-227 domain, persistence, service, API, PostgreSQL-adapter and attestor regression
-  suite passed `108` tests. Two live PostgreSQL tests were skipped locally only because
-  `ATLAS_TEST_POSTGRES_DSN` is not configured; both tests are collected for CI.
+  suite passed `108` tests in the non-database run. The complete PostgreSQL adapter file then passed
+  all `9` tests against a local PostgreSQL 17 database, including both live integration scenarios.
 - Live PostgreSQL coverage proves same-key exact replay, changed-replay rejection, different-key
   single-winner concurrency, both initially-deferred circular foreign keys, lease-only and
   claim-only orphan commit rejection, append-only enforcement, guarded downgrade and publication-
