@@ -12061,12 +12061,26 @@ class PostgreSQLWorkflowPlanRepository:
         claimed_at: datetime,
         issued_at: datetime,
     ) -> WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseRequest:
-        claim = dataclass_replace(request.candidate_claim, claimed_at=claimed_at)
-        claim = dataclass_replace(claim, canonical_digest=canonical_digest(claim.digest_payload()))
         valid_until = min(
             issued_at + timedelta(seconds=1),
             request.lifecycle_attestation.valid_until,
             request.lifecycle_attestation.runtime_envelope_eligible_until,
+        )
+        if valid_until <= issued_at:
+            raise ValueError("runtime process creation authorization window is exhausted")
+        claim_payload = request.candidate_claim.digest_payload()
+        claim_payload["claimed_at"] = claimed_at.isoformat()
+        claim = dataclass_replace(
+            request.candidate_claim,
+            claimed_at=claimed_at,
+            canonical_digest=canonical_digest(claim_payload),
+        )
+        lease_payload = request.candidate.digest_payload()
+        lease_payload.update(
+            claim_digest=claim.canonical_digest,
+            issued_at=issued_at.isoformat(),
+            valid_until=valid_until.isoformat(),
+            effective_until=valid_until.isoformat(),
         )
         lease = dataclass_replace(
             request.candidate,
@@ -12074,8 +12088,8 @@ class PostgreSQLWorkflowPlanRepository:
             issued_at=issued_at,
             valid_until=valid_until,
             effective_until=valid_until,
+            canonical_digest=canonical_digest(lease_payload),
         )
-        lease = dataclass_replace(lease, canonical_digest=canonical_digest(lease.digest_payload()))
         return dataclass_replace(
             request,
             requested_at=issued_at,
