@@ -41,6 +41,8 @@ from atlas.modules.workflows.application.protected_runtime_process_creation_auth
     WORKFLOW_PROTECTED_RUNTIME_PROCESS_CREATION_ATTESTOR_ID,
     WORKFLOW_PROTECTED_RUNTIME_PROCESS_CREATION_ATTESTOR_VERSION,
     WorkflowProtectedRuntimeProcessCreationAuthorizationError,
+    WorkflowProtectedRuntimeProcessCreationAuthorizationPreflightRequest,
+    WorkflowProtectedRuntimeProcessCreationAuthorizationPreflightStatus,
     WorkflowProtectedRuntimeProcessCreationLifecycleAttestation,
     WorkflowProtectedRuntimeProcessCreationLifecycleAttestationRequest,
 )
@@ -173,6 +175,21 @@ def test_process_creation_source_revalidates_exact_active_dispatch_fences() -> N
 class _AuditSink:
     async def record(self, record: object) -> None:
         del record
+
+
+class _CaptureAuthorizationRepository:
+    durable = True
+
+    def __init__(self, repository: PostgreSQLWorkflowPlanRepository) -> None:
+        self._repository = repository
+        self.request: Any | None = None
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._repository, name)
+
+    async def authorize_protected_runtime_process_creation(self, request: Any) -> Any:
+        self.request = request
+        raise RuntimeError("captured before persistence")
 
 
 class _ReadinessReceiptVerifier:
@@ -339,6 +356,78 @@ async def _authorize_process_creation(
     )
 
 
+async def _capture_process_creation_request(
+    repository: PostgreSQLWorkflowPlanRepository,
+    result: Any,
+) -> Any:
+    capturing = _CaptureAuthorizationRepository(repository)
+    service = _process_service(cast(Any, capturing))
+    with pytest.raises(WorkflowProtectedRuntimeProcessCreationAuthorizationError) as exc_info:
+        await _authorize_process_creation(
+            service,
+            result,
+            idempotency_key=f"imp-227-orphan-{uuid4().hex}",
+        )
+    assert exc_info.value.code.endswith("repository_unavailable")
+    assert capturing.request is not None
+    return capturing.request
+
+
+async def _assert_circular_orphan_commit_rejected(
+    repository: PostgreSQLWorkflowPlanRepository,
+    request: Any,
+    *,
+    side: str,
+) -> None:
+    async with repository._sessions() as session:
+        locked = await repository._lock_protected_runtime_process_creation_authorization_rows(
+            session,
+            readiness_result_id=request.source.result.result_id,
+            scope=request.scope,
+            consumer_subject_id=request.consumer_subject_id,
+            consumer_audience=request.consumer_audience,
+            idempotency_key=request.idempotency_key,
+        )
+        working = repository._protected_runtime_process_creation_authorization_retimed_request(
+            request,
+            claimed_at=locked.first_observed_at,
+            issued_at=locked.first_observed_at,
+        )
+        audit_payload: dict[str, object] = {
+            "readiness_result_id": working.candidate.readiness_result_id,
+            "policy_digest": working.candidate.policy_digest,
+            "request_fingerprint": working.request_fingerprint,
+            "scope": working.scope.canonical_value(),
+        }
+        if side == "lease":
+            session.add(
+                repository._protected_runtime_process_creation_authorization_lease_model(
+                    working.candidate,
+                    working.lifecycle_attestation,
+                    locked=locked,
+                    source_observed_at=locked.first_observed_at,
+                    authorized_at=locked.first_observed_at,
+                )
+            )
+            constraint = "fk_wf_rtproc_auth_lease_claim"
+        else:
+            session.add(
+                repository._protected_runtime_process_creation_authorization_claim_model(
+                    working.candidate_claim,
+                    authorization_lease_id=working.candidate.authorization_lease_id,
+                    idempotency_key=working.idempotency_key,
+                    audit_payload=audit_payload,
+                    locked=locked,
+                    source_observed_at=locked.first_observed_at,
+                )
+            )
+            constraint = "fk_wf_rtproc_auth_claim_lease"
+        await session.flush()
+        with pytest.raises(DBAPIError, match=constraint):
+            await session.commit()
+        await session.rollback()
+
+
 async def _cleanup_process_creation(engine: AsyncEngine, *, readiness_result_id: str) -> None:
     async with engine.begin() as connection:
         await connection.execute(text("SET LOCAL session_replication_role = replica"))
@@ -370,7 +459,7 @@ async def test_live_postgres_exact_race_circular_fk_append_only_and_guarded_down
         cast(Any, _AcceptAllReceiptVerifier())
     )
     seeded: list[Any] = []
-    readiness_result: Any | None = None
+    readiness_results: list[Any] = []
     try:
         start_request, readiness_result = await _seed_ready_result(
             engine,
@@ -378,6 +467,7 @@ async def test_live_postgres_exact_race_circular_fk_append_only_and_guarded_down
             suffix=f"imp227-race-{uuid4().hex[:12]}",
         )
         seeded.append(start_request)
+        readiness_results.append(readiness_result)
         idempotency_key = f"imp-227-process-{uuid4().hex}"
         first, second = await asyncio.wait_for(
             asyncio.gather(
@@ -426,22 +516,110 @@ async def test_live_postgres_exact_race_circular_fk_append_only_and_guarded_down
             assert lease_row["claim_id"] == claim_row["claim_id"]
             assert lease_row["claim_digest"] == claim_row["canonical_digest"]
             assert claim_row["authorization_lease_id"] == lease_row["authorization_lease_id"]
-            fk = (
-                (
-                    await connection.execute(
-                        text(
-                            "SELECT condeferrable, condeferred, "
-                            "pg_get_constraintdef(oid) AS definition "
-                            "FROM pg_constraint WHERE conname = 'fk_wf_rtproc_auth_lease_claim'"
+            foreign_keys = {
+                row["conname"]: row
+                for row in (
+                    (
+                        await connection.execute(
+                            text(
+                                "SELECT conname, condeferrable, condeferred, "
+                                "pg_get_constraintdef(oid) AS definition "
+                                "FROM pg_constraint WHERE conname IN "
+                                "('fk_wf_rtproc_auth_lease_claim', "
+                                "'fk_wf_rtproc_auth_claim_lease')"
+                            )
                         )
                     )
+                    .mappings()
+                    .all()
                 )
-                .mappings()
-                .one()
+            }
+            assert set(foreign_keys) == {
+                "fk_wf_rtproc_auth_lease_claim",
+                "fk_wf_rtproc_auth_claim_lease",
+            }
+            for foreign_key in foreign_keys.values():
+                assert foreign_key["condeferrable"] is True
+                assert foreign_key["condeferred"] is True
+                assert "FOREIGN KEY" in foreign_key["definition"]
+
+        policy = _process_service(repository).policy
+        changed_replay = (
+            await repository.preflight_protected_runtime_process_creation_authorization(
+                WorkflowProtectedRuntimeProcessCreationAuthorizationPreflightRequest(
+                    readiness_result_id=readiness_result.result_id,
+                    scope=readiness_result.scope,
+                    consumer_subject_id=policy.consumer_subject_id,
+                    consumer_audience=policy.consumer_audience,
+                    policy_id=policy.policy_id,
+                    policy_version=policy.policy_version,
+                    policy_digest=policy.canonical_digest,
+                    idempotency_key=idempotency_key,
+                    idempotency_digest=cast(str, claim_row["idempotency_digest"]),
+                    request_fingerprint="a" * 64,
+                    offline_signature_verifier=_ProcessLifecycleAttestor(),
+                    offline_readiness_receipt_signature_verifier=(
+                        _ReadinessReceiptVerifier()
+                    ),
+                )
             )
-            assert fk["condeferrable"] is True
-            assert fk["condeferred"] is True
-            assert "FOREIGN KEY" in fk["definition"]
+        )
+        assert (
+            changed_replay.status
+            is (
+                WorkflowProtectedRuntimeProcessCreationAuthorizationPreflightStatus
+            ).IDEMPOTENCY_CONFLICT
+        )
+        assert changed_replay.lease is None
+
+        orphan_start, orphan_result = await _seed_ready_result(
+            engine,
+            repository,
+            suffix=f"imp227-orphan-{uuid4().hex[:12]}",
+        )
+        seeded.append(orphan_start)
+        readiness_results.append(orphan_result)
+        orphan_request = await _capture_process_creation_request(repository, orphan_result)
+        await _assert_circular_orphan_commit_rejected(
+            repository, orphan_request, side="lease"
+        )
+        await _assert_circular_orphan_commit_rejected(
+            repository, orphan_request, side="claim"
+        )
+
+        competing_start, competing_result = await _seed_ready_result(
+            engine,
+            repository,
+            suffix=f"imp227-competing-{uuid4().hex[:12]}",
+        )
+        seeded.append(competing_start)
+        readiness_results.append(competing_result)
+        competing = await asyncio.wait_for(
+            asyncio.gather(
+                _authorize_process_creation(
+                    _process_service(repository),
+                    competing_result,
+                    idempotency_key=f"imp-227-competing-a-{uuid4().hex}",
+                ),
+                _authorize_process_creation(
+                    _process_service(repository),
+                    competing_result,
+                    idempotency_key=f"imp-227-competing-b-{uuid4().hex}",
+                ),
+                return_exceptions=True,
+            ),
+            timeout=20,
+        )
+        competing_leases = [item for item in competing if not isinstance(item, Exception)]
+        competing_errors = [item for item in competing if isinstance(item, Exception)]
+        assert len(competing_leases) == 1
+        assert len(competing_errors) == 1
+        assert isinstance(
+            competing_errors[0], WorkflowProtectedRuntimeProcessCreationAuthorizationError
+        )
+        assert cast(
+            WorkflowProtectedRuntimeProcessCreationAuthorizationError, competing_errors[0]
+        ).code.endswith("already_authorized")
 
         for table, key, value in (
             (lease_table, "authorization_lease_id", first.authorization_lease_id),
@@ -477,8 +655,8 @@ async def test_live_postgres_exact_race_circular_fk_append_only_and_guarded_down
         assert downgrade.returncode != 0
         assert "refusing guarded downgrade" in (downgrade.stdout + downgrade.stderr).lower()
     finally:
-        if readiness_result is not None:
-            await _cleanup_process_creation(engine, readiness_result_id=readiness_result.result_id)
+        for result in readiness_results:
+            await _cleanup_process_creation(engine, readiness_result_id=result.result_id)
         if seeded:
             await _cleanup_readiness(engine, tuple(seeded))
         await engine.dispose()

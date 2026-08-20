@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-227 |
 | Title | Bounded single-use protected runtime process-creation authorization lease |
-| Status | Documentation accepted; implementation pending |
+| Status | Implementation complete; pull request validation pending |
 | Branch | `agent/protected-runtime-process-creation-authorization` |
 | Pull Request | Not opened |
 | Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-177 |
-| Last Updated | 2026-08-18 |
-| Next Action | Implement ADR-177 domain, persistence, service, API and read-only UI boundaries with complete validation |
+| Last Updated | 2026-08-20 |
+| Next Action | Push the completed branch, run PostgreSQL CI, review, merge and verify `main` |
 
 ### ATLAS-IMP-227 Scope Rationale
 
@@ -46,6 +46,28 @@
   sessions receive minimized `no-store` read-only GET/UI without MFA or a second browser session.
 - AI remains advisory-only and cannot request the lease. Active Directory remains authentication-
   only; no Active Directory management capability or MCP is introduced.
+
+### ATLAS-IMP-227 Verification Evidence
+
+- Ruff passed across all backend source, test and migration files. Full MyPy passed across `1127`
+  source files with no issues, and Alembic reports the single head `20260818_0150`.
+- The final IMP-227 domain, persistence, service, API, PostgreSQL-adapter and attestor regression
+  suite passed `108` tests. Two live PostgreSQL tests were skipped locally only because
+  `ATLAS_TEST_POSTGRES_DSN` is not configured; both tests are collected for CI.
+- Live PostgreSQL coverage proves same-key exact replay, changed-replay rejection, different-key
+  single-winner concurrency, both initially-deferred circular foreign keys, lease-only and
+  claim-only orphan commit rejection, append-only enforcement, guarded downgrade and publication-
+  fence drift rejection.
+- Frontend ESLint, TypeScript and production Vite build passed. The complete Workflow Planning
+  workspace suite passed `622` tests, including `16` focused process-creation authorization
+  evidence tests and strict fail-closed parsing of the minimized read-only projection.
+- Local API validation used a normal `atlas-demo` / `local-demo` username/password session. Session
+  creation returned `201`; without a PostgreSQL DSN the protected inventory failed closed with
+  `503` and `Cache-Control: no-store, max-age=0`. No MFA, second browser session or human mutation
+  control was introduced.
+- Independent review confirmed replay-first persistence ordering, exact replay without source or
+  attestor I/O, server-derived readiness digest binding, dual-FK integrity, competing-request
+  behavior and changed-replay rejection. No merge-blocking finding remains.
 
 ### ATLAS-IMP-226 Scope Rationale
 

@@ -404,10 +404,11 @@ class _Repository:
 
 
 class _Attestor:
-    available = True
-
-    def __init__(self, repository: _Repository, **overrides: object) -> None:
+    def __init__(
+        self, repository: _Repository, *, available: bool = True, **overrides: object
+    ) -> None:
         self.repository = repository
+        self.available = available
         self.overrides = overrides
 
     async def attest_runtime_process_creation_lifecycle(
@@ -519,8 +520,14 @@ def _service(
     repository: _Repository,
     audit: _AuditSink | None = None,
     attestation_overrides: dict[str, object] | None = None,
+    *,
+    attestor_available: bool = True,
 ) -> WorkflowProtectedRuntimeProcessCreationAuthorizationService:
-    attestor = _Attestor(repository, **(attestation_overrides or {}))
+    attestor = _Attestor(
+        repository,
+        available=attestor_available,
+        **(attestation_overrides or {}),
+    )
     return WorkflowProtectedRuntimeProcessCreationAuthorizationService(
         authorization_repository=cast(Any, repository),
         lifecycle_attestor=attestor,
@@ -573,22 +580,19 @@ async def test_replay_first_then_issues_bounded_nonoperational_lease() -> None:
     lease = await _authorize(_service(repository), source)
 
     assert repository.events == [
-        "source",
         "preflight",
+        "source",
         "attest",
         "authoritative_time",
         "authorize",
     ]
     assert not hasattr(repository.source_requests[0], "readiness_result_digest")
-    assert repository.preflight_requests[0].readiness_result_digest == (
-        source.result.canonical_digest
-    )
+    assert not hasattr(repository.preflight_requests[0], "readiness_result_digest")
     policy = code_owned_workflow_protected_runtime_process_creation_authorization_policy()
     assert repository.preflight_requests[0].request_fingerprint == canonical_digest(
         {
             "policy_digest": policy.canonical_digest,
             "scope": SCOPE.canonical_value(),
-            "readiness_result_digest": source.result.canonical_digest,
             "readiness_result_id": source.result.result_id,
             "subject_id": WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_SUBJECT,
             "single_use_nonrenewable_nontransferable_future_request_acknowledged": True,
@@ -609,8 +613,11 @@ async def test_replay_first_then_issues_bounded_nonoperational_lease() -> None:
         WorkflowProtectedRuntimeProcessCreationAuthorizationPreflightStatus.REPLAY
     )
     replay_repository.replay_lease = lease
-    assert await _authorize(_service(replay_repository), source) == lease
-    assert replay_repository.events == ["source", "preflight"]
+    assert await _authorize(
+        _service(replay_repository, attestor_available=False), source
+    ) == lease
+    assert replay_repository.events == ["preflight"]
+    assert replay_repository.source_requests == []
 
 
 @pytest.mark.asyncio
@@ -624,7 +631,23 @@ async def test_only_exact_ready_result_is_eligible() -> None:
     with pytest.raises(WorkflowProtectedRuntimeProcessCreationAuthorizationError) as exc_info:
         await _authorize(_service(repository), source)
     assert exc_info.value.code == "workflow_protected_runtime_process_creation_evidence_conflict"
-    assert repository.events == ["source"]
+    assert repository.events == ["preflight", "source"]
+
+
+@pytest.mark.asyncio
+async def test_changed_replay_fails_closed_before_source_or_attestor_io() -> None:
+    source = _source()
+    repository = _Repository(source)
+    repository.preflight_status = (
+        WorkflowProtectedRuntimeProcessCreationAuthorizationPreflightStatus.IDEMPOTENCY_CONFLICT
+    )
+
+    with pytest.raises(WorkflowProtectedRuntimeProcessCreationAuthorizationError) as exc_info:
+        await _authorize(_service(repository, attestor_available=False), source)
+
+    assert exc_info.value.code.endswith("idempotency_conflict")
+    assert repository.events == ["preflight"]
+    assert repository.source_requests == []
 
 
 @pytest.mark.asyncio
@@ -635,7 +658,7 @@ async def test_attestation_fails_closed_if_process_or_schedule_exists(field_name
     with pytest.raises(WorkflowProtectedRuntimeProcessCreationAuthorizationError) as exc_info:
         await _authorize(_service(repository, attestation_overrides={field_name: True}), source)
     assert exc_info.value.code == "workflow_protected_runtime_process_creation_attestation_invalid"
-    assert repository.events == ["source", "preflight", "attest", "authoritative_time"]
+    assert repository.events == ["preflight", "source", "attest", "authoritative_time"]
     assert repository.requests == []
 
 

@@ -147,29 +147,6 @@ class WorkflowProtectedRuntimeProcessCreationAuthorizationService:
             self._raise("workflow_protected_runtime_process_creation_acknowledgement_required")
         if policy_id != self._policy.policy_id or policy_version != self._policy.policy_version:
             self._raise("workflow_protected_runtime_process_creation_policy_conflict")
-        if not self._lifecycle_attestor.available:
-            self._raise("workflow_protected_runtime_process_creation_trusted_attestor_unavailable")
-        try:
-            source = (
-                await self._repository.get_protected_runtime_process_creation_authorization_source(
-                    WorkflowProtectedRuntimeProcessCreationAuthorizationSourceRequest(
-                        readiness_result_id=result_id,
-                        scope=context.scope,
-                        consumer_subject_id=self._policy.consumer_subject_id,
-                        consumer_audience=self._policy.consumer_audience,
-                        consumer_contract_id=self._policy.consumer_contract_id,
-                        consumer_contract_version=self._policy.consumer_contract_version,
-                    )
-                )
-            )
-        except WorkflowProtectedRuntimeProcessCreationAuthorizationError:
-            raise
-        except Exception:
-            self._raise("workflow_protected_runtime_process_creation_repository_unavailable")
-        if source is None:
-            self._raise("workflow_protected_runtime_process_creation_evidence_conflict")
-        result_digest = source.result.canonical_digest
-        self._validate_source(source, expected_digest=result_digest, scope=context.scope)
         idempotency_digest = canonical_digest(
             {
                 "idempotency_key": normalized_key,
@@ -181,7 +158,6 @@ class WorkflowProtectedRuntimeProcessCreationAuthorizationService:
             {
                 "policy_digest": self._policy.canonical_digest,
                 "scope": context.scope.canonical_value(),
-                "readiness_result_digest": result_digest,
                 "readiness_result_id": result_id,
                 "subject_id": context.subject_id,
                 "single_use_nonrenewable_nontransferable_future_request_acknowledged": True,
@@ -190,7 +166,6 @@ class WorkflowProtectedRuntimeProcessCreationAuthorizationService:
         )
         preflight_request = WorkflowProtectedRuntimeProcessCreationAuthorizationPreflightRequest(
             readiness_result_id=result_id,
-            readiness_result_digest=result_digest,
             scope=context.scope,
             consumer_subject_id=context.subject_id,
             consumer_audience=context.credential_audience,
@@ -232,6 +207,29 @@ class WorkflowProtectedRuntimeProcessCreationAuthorizationService:
             self._raise_preflight_status(preflight.status)
         if preflight.lease is not None or preflight.evaluated_at is None:
             self._raise("workflow_protected_runtime_process_creation_repository_contract_violation")
+        if not self._lifecycle_attestor.available:
+            self._raise("workflow_protected_runtime_process_creation_trusted_attestor_unavailable")
+        try:
+            source = (
+                await self._repository.get_protected_runtime_process_creation_authorization_source(
+                    WorkflowProtectedRuntimeProcessCreationAuthorizationSourceRequest(
+                        readiness_result_id=result_id,
+                        scope=context.scope,
+                        consumer_subject_id=self._policy.consumer_subject_id,
+                        consumer_audience=self._policy.consumer_audience,
+                        consumer_contract_id=self._policy.consumer_contract_id,
+                        consumer_contract_version=self._policy.consumer_contract_version,
+                    )
+                )
+            )
+        except WorkflowProtectedRuntimeProcessCreationAuthorizationError:
+            raise
+        except Exception:
+            self._raise("workflow_protected_runtime_process_creation_repository_unavailable")
+        if source is None:
+            self._raise("workflow_protected_runtime_process_creation_evidence_conflict")
+        result_digest = source.result.canonical_digest
+        self._validate_source(source, expected_digest=result_digest, scope=context.scope)
         nonce_digest = canonical_digest({"nonce": uuid4().hex, "fingerprint": fingerprint})
         attestation_request = self._attestation_request(
             source,

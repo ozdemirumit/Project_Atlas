@@ -217,7 +217,6 @@ class WorkflowProtectedRuntimeProcessCreationLifecycleSignatureVerifier(Protocol
 @dataclass(frozen=True, slots=True)
 class WorkflowProtectedRuntimeProcessCreationAuthorizationPreflightRequest:
     readiness_result_id: str
-    readiness_result_digest: str
     scope: WorkflowScope
     consumer_subject_id: str
     consumer_audience: str

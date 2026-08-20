@@ -11435,12 +11435,17 @@ class PostgreSQLWorkflowPlanRepository:
                     locked.observed_at,
                 )
             claim_row = claims[0]
+            locked_result_digest = (
+                None
+                if locked.readiness_result is None
+                else locked.readiness_result.canonical_digest
+            )
             if (
                 len(claims) != 1
                 or claim_row.idempotency_digest != request.idempotency_digest
                 or claim_row.request_fingerprint != request.request_fingerprint
                 or claim_row.readiness_result_id != request.readiness_result_id
-                or claim_row.readiness_result_digest != request.readiness_result_digest
+                or claim_row.readiness_result_digest != locked_result_digest
                 or claim_row.policy_id != request.policy_id
                 or claim_row.policy_version != request.policy_version
                 or claim_row.policy_digest != request.policy_digest
