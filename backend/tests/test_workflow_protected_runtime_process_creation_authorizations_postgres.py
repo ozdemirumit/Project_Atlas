@@ -558,9 +558,7 @@ async def test_live_postgres_exact_race_circular_fk_append_only_and_guarded_down
                     idempotency_digest=cast(str, claim_row["idempotency_digest"]),
                     request_fingerprint="a" * 64,
                     offline_signature_verifier=_ProcessLifecycleAttestor(),
-                    offline_readiness_receipt_signature_verifier=(
-                        _ReadinessReceiptVerifier()
-                    ),
+                    offline_readiness_receipt_signature_verifier=(_ReadinessReceiptVerifier()),
                 )
             )
         )
@@ -580,12 +578,8 @@ async def test_live_postgres_exact_race_circular_fk_append_only_and_guarded_down
         seeded.append(orphan_start)
         readiness_results.append(orphan_result)
         orphan_request = await _capture_process_creation_request(repository, orphan_result)
-        await _assert_circular_orphan_commit_rejected(
-            repository, orphan_request, side="lease"
-        )
-        await _assert_circular_orphan_commit_rejected(
-            repository, orphan_request, side="claim"
-        )
+        await _assert_circular_orphan_commit_rejected(repository, orphan_request, side="lease")
+        await _assert_circular_orphan_commit_rejected(repository, orphan_request, side="claim")
 
         competing_start, competing_result = await _seed_ready_result(
             engine,

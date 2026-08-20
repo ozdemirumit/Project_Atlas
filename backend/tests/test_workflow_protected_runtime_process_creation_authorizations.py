@@ -613,9 +613,7 @@ async def test_replay_first_then_issues_bounded_nonoperational_lease() -> None:
         WorkflowProtectedRuntimeProcessCreationAuthorizationPreflightStatus.REPLAY
     )
     replay_repository.replay_lease = lease
-    assert await _authorize(
-        _service(replay_repository, attestor_available=False), source
-    ) == lease
+    assert await _authorize(_service(replay_repository, attestor_available=False), source) == lease
     assert replay_repository.events == ["preflight"]
     assert replay_repository.source_requests == []
 
