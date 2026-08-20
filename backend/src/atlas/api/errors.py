@@ -89,7 +89,12 @@ def _requires_no_store(request: Request) -> bool:
 
 
 def _requires_protected_no_store(request: Request) -> bool:
-    return request.url.path.startswith("/api/v1/workflows/protected-runtime-context-uses")
+    return request.url.path.startswith(
+        (
+            "/api/v1/workflows/protected-runtime-context-uses",
+            "/api/v1/workflows/protected-runtime-process-creation-consumptions",
+        )
+    )
 
 
 def _validation_errors(exc: RequestValidationError) -> list[FieldError]:

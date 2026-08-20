@@ -1591,6 +1591,16 @@ from atlas.modules.workflows.adapters.protected_runtime_process_creation_lifecyc
     DeterministicDevelopmentWorkflowProtectedRuntimeProcessCreationLifecycleAttestor,
     UnavailableWorkflowProtectedRuntimeProcessCreationLifecycleAttestor,
 )
+from atlas.modules.workflows.adapters.protected_runtime_process_creators import (
+    DenyAllWorkflowProtectedRuntimeProcessCreationInstructionSignatureVerifier,
+    DenyAllWorkflowProtectedRuntimeProcessCreationReceiptSignatureVerifier,
+    DeterministicDevelopmentWorkflowProtectedRuntimeProcessCreationInstructionSignatureVerifier,
+    DeterministicDevelopmentWorkflowProtectedRuntimeProcessCreationInstructionSigner,
+    DeterministicDevelopmentWorkflowProtectedRuntimeProcessCreationReceiptSignatureVerifier,
+    DeterministicDevelopmentWorkflowProtectedRuntimeProcessCreator,
+    UnavailableWorkflowProtectedRuntimeProcessCreationInstructionSigner,
+    UnavailableWorkflowProtectedRuntimeProcessCreator,
+)
 from atlas.modules.workflows.adapters.protected_runtime_readiness_assessors import (
     DenyAllWorkflowProtectedRuntimeReadinessInstructionSignatureVerifier,
     DenyAllWorkflowProtectedRuntimeReadinessReceiptSignatureVerifier,
@@ -1734,6 +1744,16 @@ from atlas.modules.workflows.application.protected_runtime_process_creation_auth
 )
 from atlas.modules.workflows.application.protected_runtime_process_creation_authorizations import (
     WorkflowProtectedRuntimeProcessCreationAuthorizationService,
+)
+from atlas.modules.workflows.application.protected_runtime_process_creation_consumption_ports import (  # noqa: E501
+    WorkflowProtectedRuntimeProcessCreationConsumptionRepository,
+    WorkflowProtectedRuntimeProcessCreationInstructionSignatureVerifier,
+    WorkflowProtectedRuntimeProcessCreationInstructionSigner,
+    WorkflowProtectedRuntimeProcessCreationReceiptSignatureVerifier,
+    WorkflowProtectedRuntimeProcessCreator,
+)
+from atlas.modules.workflows.application.protected_runtime_process_creation_consumptions import (
+    WorkflowProtectedRuntimeProcessCreationConsumptionService,
 )
 from atlas.modules.workflows.application.protected_runtime_readiness_authorization_ports import (
     WorkflowProtectedRuntimeReadinessAuthorizationRepository,
@@ -2319,6 +2339,45 @@ class _UnavailableWorkflowProtectedRuntimeProcessCreationAuthorizationRepository
         raise RuntimeError("protected runtime process-creation authorization is unavailable")
 
 
+class _UnavailableWorkflowProtectedRuntimeProcessCreationConsumptionRepository:
+    """Fail-closed ADR-178 composition placeholder with no memory fallback."""
+
+    @property
+    def durable(self) -> bool:
+        return False
+
+    async def get_authoritative_time(self, *_: object, **__: object) -> None:
+        raise RuntimeError("protected runtime process-creation consumption is unavailable")
+
+    async def lookup_protected_runtime_process_creation_replay(
+        self, *_: object, **__: object
+    ) -> None:
+        raise RuntimeError("protected runtime process-creation consumption is unavailable")
+
+    async def get_protected_runtime_process_creation_consumption_source(
+        self, *_: object, **__: object
+    ) -> None:
+        raise RuntimeError("protected runtime process-creation consumption is unavailable")
+
+    async def claim_protected_runtime_process_creation(self, *_: object, **__: object) -> None:
+        raise RuntimeError("protected runtime process-creation consumption is unavailable")
+
+    async def record_protected_runtime_process_creation_result(
+        self, *_: object, **__: object
+    ) -> None:
+        raise RuntimeError("protected runtime process-creation consumption is unavailable")
+
+    async def list_protected_runtime_process_creation_attempts(
+        self, *_: object, **__: object
+    ) -> None:
+        raise RuntimeError("protected runtime process-creation consumption is unavailable")
+
+    async def get_protected_runtime_process_creation_results(
+        self, *_: object, **__: object
+    ) -> None:
+        raise RuntimeError("protected runtime process-creation consumption is unavailable")
+
+
 class _WorkflowProtectedResidentContextOpeningReceiptSignatureVerifierAdapter:
     """Expose an opener's offline receipt verification through the IMP-216 port."""
 
@@ -2859,6 +2918,9 @@ def create_app(
     ) = None,
     workflow_protected_runtime_process_creation_authorization_service: (
         WorkflowProtectedRuntimeProcessCreationAuthorizationService | None
+    ) = None,
+    workflow_protected_runtime_process_creation_consumption_service: (
+        WorkflowProtectedRuntimeProcessCreationConsumptionService | None
     ) = None,
     workflow_protected_runtime_handle_lifecycle_attestor: (
         WorkflowProtectedRuntimeHandleLifecycleAttestor | None
@@ -8787,6 +8849,100 @@ def create_app(
         resolved_protected_runtime_process_creation_authorization_service = (
             workflow_protected_runtime_process_creation_authorization_service
         )
+    if workflow_protected_runtime_process_creation_consumption_service is None:
+        process_creation_consumption_repository_methods = (
+            "get_authoritative_time",
+            "lookup_protected_runtime_process_creation_replay",
+            "get_protected_runtime_process_creation_consumption_source",
+            "claim_protected_runtime_process_creation",
+            "record_protected_runtime_process_creation_result",
+            "list_protected_runtime_process_creation_attempts",
+            "get_protected_runtime_process_creation_results",
+        )
+        if isinstance(workflow_repository, PostgreSQLWorkflowPlanRepository) and all(
+            callable(getattr(workflow_repository, method_name, None))
+            for method_name in process_creation_consumption_repository_methods
+        ):
+            process_creation_consumption_repository = cast(
+                WorkflowProtectedRuntimeProcessCreationConsumptionRepository,
+                workflow_repository,
+            )
+        else:
+            process_creation_consumption_repository = cast(
+                WorkflowProtectedRuntimeProcessCreationConsumptionRepository,
+                _UnavailableWorkflowProtectedRuntimeProcessCreationConsumptionRepository(),
+            )
+
+        development_process_creation_consumption = (
+            resolved_settings.environment == "development"
+            and resolved_settings.development_identity_enabled
+        )
+        process_creation_instruction_signer: (
+            WorkflowProtectedRuntimeProcessCreationInstructionSigner
+        )
+        process_creation_instruction_verifier: (
+            WorkflowProtectedRuntimeProcessCreationInstructionSignatureVerifier
+        )
+        process_creation_receipt_verifier: (
+            WorkflowProtectedRuntimeProcessCreationReceiptSignatureVerifier
+        )
+        process_creator: WorkflowProtectedRuntimeProcessCreator
+        if development_process_creation_consumption:
+            process_creation_instruction_signer = (
+                DeterministicDevelopmentWorkflowProtectedRuntimeProcessCreationInstructionSigner(
+                    development_enabled=True
+                )
+            )
+            instruction_verifier_type = DeterministicDevelopmentWorkflowProtectedRuntimeProcessCreationInstructionSignatureVerifier  # noqa: E501
+            process_creation_instruction_verifier = instruction_verifier_type(
+                development_enabled=True
+            )
+            receipt_verifier_type = DeterministicDevelopmentWorkflowProtectedRuntimeProcessCreationReceiptSignatureVerifier  # noqa: E501
+            process_creation_receipt_verifier = receipt_verifier_type(development_enabled=True)
+            process_creator = DeterministicDevelopmentWorkflowProtectedRuntimeProcessCreator(
+                development_enabled=True,
+                instruction_signature_verifier=process_creation_instruction_verifier,
+            )
+        else:
+            process_creation_instruction_signer = (
+                UnavailableWorkflowProtectedRuntimeProcessCreationInstructionSigner()
+            )
+            process_creation_instruction_verifier = (
+                DenyAllWorkflowProtectedRuntimeProcessCreationInstructionSignatureVerifier()
+            )
+            process_creation_receipt_verifier = (
+                DenyAllWorkflowProtectedRuntimeProcessCreationReceiptSignatureVerifier()
+            )
+            process_creator = UnavailableWorkflowProtectedRuntimeProcessCreator()
+        bind_process_creation_receipt_verifier = getattr(
+            process_creation_consumption_repository,
+            "bind_protected_runtime_process_creation_receipt_signature_verifier",
+            None,
+        )
+        if callable(bind_process_creation_receipt_verifier):
+            bind_process_creation_receipt_verifier(process_creation_receipt_verifier)
+        resolved_protected_runtime_process_creation_consumption_service = (
+            WorkflowProtectedRuntimeProcessCreationConsumptionService(
+                repository=process_creation_consumption_repository,
+                instruction_signer=process_creation_instruction_signer,
+                instruction_signature_verifier=process_creation_instruction_verifier,
+                receipt_signature_verifier=process_creation_receipt_verifier,
+                creator=process_creator,
+            )
+        )
+        resolved_process_creation_consumption_repository = process_creation_consumption_repository
+    else:
+        resolved_protected_runtime_process_creation_consumption_service = (
+            workflow_protected_runtime_process_creation_consumption_service
+        )
+        resolved_process_creation_consumption_repository = cast(
+            WorkflowProtectedRuntimeProcessCreationConsumptionRepository,
+            getattr(
+                workflow_protected_runtime_process_creation_consumption_service,
+                "repository",
+                _UnavailableWorkflowProtectedRuntimeProcessCreationConsumptionRepository(),
+            ),
+        )
     configured_transport_route_selection_heads = (
         _deployment_event_transport_route_selection_heads(
             resolved_settings,
@@ -9306,6 +9462,12 @@ def create_app(
         )
         app.state.workflow_protected_runtime_process_creation_authorization_repository = (
             resolved_protected_runtime_process_creation_authorization_service.repository
+        )
+        app.state.workflow_protected_runtime_process_creation_consumption_service = (
+            resolved_protected_runtime_process_creation_consumption_service
+        )
+        app.state.workflow_protected_runtime_process_creation_consumption_repository = (
+            resolved_process_creation_consumption_repository
         )
         app.state.workflow_transport_route_selection_heads = (
             configured_transport_route_selection_heads

@@ -843,6 +843,13 @@ MVP workflows do not execute C3 through C5 capabilities.
   model, network, connector/MCP/provider, publication, delivery, dispatch, execution or
   infrastructure mutation. AI remains advisory-only, Active Directory remains authentication-only,
   and normal username/password-session GET requires no MFA or second browser prompt.
+- ADR-178 atomically consumes that exact lease and appends one immutable claim plus one immutable
+  process-creation attempt before at most one protected-boundary creator call. The only permitted
+  code-owned primitive creates one sealed process in a suspended, non-runnable state. Caller-
+  controlled commands, executables, arguments, environments, working directories and runtime or
+  process locators are forbidden. Pending, terminal and uncertain replay performs no creator I/O;
+  no event, scheduler, outbox, DLQ, recovery, AI, MCP or connector path can retry, resume, schedule,
+  dispatch, execute or infer the process. Human UI is read-only and all authority remains false.
 
 ## 39. Assumptions
 

@@ -50,6 +50,7 @@ import {
   listWorkflowProtectedRuntimeContextUseAuthorizationConsumptions,
   listWorkflowProtectedRuntimeContextUses,
   listWorkflowProtectedRuntimeProcessCreationAuthorizations,
+  listWorkflowProtectedRuntimeProcessCreations,
   listWorkflowProtectedRuntimeReadiness,
   listWorkflowProtectedRuntimeReadinessAuthorizations,
   listWorkflowProtectedRuntimeStartAuthorizations,
@@ -432,6 +433,16 @@ export default function WorkflowPlanningWorkspace({
       siteId,
     ],
     queryFn: listWorkflowProtectedRuntimeProcessCreationAuthorizations,
+    retry: false,
+  });
+  const protectedRuntimeProcessCreationQuery = useQuery({
+    queryKey: [
+      "workflow-protected-runtime-process-creations",
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: listWorkflowProtectedRuntimeProcessCreations,
     retry: false,
   });
   const targetQuery = useQuery({
@@ -969,6 +980,10 @@ export default function WorkflowPlanningWorkspace({
   const protectedRuntimeProcessCreationAuthorizationErrorStatus =
     protectedRuntimeProcessCreationAuthorizationQuery.error instanceof ApiRequestError
       ? protectedRuntimeProcessCreationAuthorizationQuery.error.status
+      : undefined;
+  const protectedRuntimeProcessCreationErrorStatus =
+    protectedRuntimeProcessCreationQuery.error instanceof ApiRequestError
+      ? protectedRuntimeProcessCreationQuery.error.status
       : undefined;
   const eventEnvelopes = eventEnvelopesForAdmission;
   const transportAdmissions = transportAdmissionsForArtifacts;
@@ -5527,6 +5542,187 @@ export default function WorkflowPlanningWorkspace({
             process-creation request. It neither creates nor schedules a process and grants no
             runtime-material, network, connector, MCP, publication, dispatch, execution or
             infrastructure-mutation authority. This view cannot consume it.
+          </span>
+        </div>
+      </section>
+
+      <section
+        className="workflow-physical-route-binding-band workflow-target-context-opening-band"
+        aria-labelledby="workflow-protected-runtime-process-creation-title"
+      >
+        <div className="workflow-section-heading">
+          <div>
+            <p className="eyebrow">SEALED PROCESS-CREATION OUTCOME EVIDENCE</p>
+            <h2 id="workflow-protected-runtime-process-creation-title">
+              Protected runtime process creations
+            </h2>
+          </div>
+          <span>Read only</span>
+        </div>
+        {protectedRuntimeProcessCreationQuery.isLoading && (
+          <div className="workflow-empty-state" role="status">
+            <RefreshCw className="spin" size={18} />
+            <span>Loading protected runtime process-creation evidence...</span>
+          </div>
+        )}
+        {protectedRuntimeProcessCreationQuery.isError && (
+          <div className="workflow-inline-error" role="alert">
+            <AlertTriangle aria-hidden="true" size={18} />
+            <div>
+              <strong>
+                {protectedRuntimeProcessCreationErrorStatus === 401
+                  ? "Your session has expired"
+                  : protectedRuntimeProcessCreationErrorStatus === 403
+                    ? "Process-creation evidence permission is missing"
+                    : "Process-creation evidence is unavailable"}
+              </strong>
+              <span>
+                {protectedRuntimeProcessCreationErrorStatus === 401
+                  ? "Sign in again with your username and password to continue."
+                  : protectedRuntimeProcessCreationErrorStatus === 403
+                    ? "Your current role or scope cannot inspect protected runtime process-creation evidence."
+                    : "The durable process-creation repository is unavailable or failed closed; no outcome or authority is inferred."}
+              </span>
+            </div>
+          </div>
+        )}
+        {protectedRuntimeProcessCreationQuery.isSuccess &&
+          protectedRuntimeProcessCreationQuery.data.process_creations.length === 0 && (
+            <div className="workflow-empty-state" role="status">
+              <LockKeyhole size={19} />
+              <span>No protected runtime process-creation attempts are recorded in this scope.</span>
+            </div>
+          )}
+        {protectedRuntimeProcessCreationQuery.isSuccess &&
+          protectedRuntimeProcessCreationQuery.data.process_creations.length > 0 && (
+            <ol
+              className="workflow-step-preview workflow-physical-route-binding-list workflow-target-context-opening-list"
+              aria-label="Protected runtime process creations"
+            >
+              {protectedRuntimeProcessCreationQuery.data.process_creations.map(
+                (processCreation) => {
+                  const outcome =
+                    processCreation.result_state === null
+                      ? "Pending"
+                      : processCreation.result_state ===
+                          "process_created_suspended_in_protected_boundary"
+                        ? "Created suspended"
+                        : processCreation.result_state ===
+                            "process_creation_rejected_without_creation"
+                          ? "Rejected without creation"
+                          : processCreation.result_state ===
+                              "process_creation_failed_without_creation"
+                            ? "Failed without creation"
+                            : "Outcome uncertain";
+                  const outcomeClass =
+                    processCreation.result_state ===
+                    "process_created_suspended_in_protected_boundary"
+                      ? "success"
+                      : processCreation.result_state ===
+                          "process_creation_outcome_uncertain"
+                        ? "warning"
+                        : "neutral";
+                  const OutcomeIcon =
+                    processCreation.result_state ===
+                    "process_created_suspended_in_protected_boundary"
+                      ? CheckCircle2
+                      : processCreation.result_state ===
+                            "process_creation_rejected_without_creation" ||
+                          processCreation.result_state ===
+                            "process_creation_failed_without_creation"
+                        ? Ban
+                        : processCreation.result_state ===
+                            "process_creation_outcome_uncertain"
+                          ? AlertTriangle
+                          : FileClock;
+                  return (
+                    <li key={processCreation.process_creation_id}>
+                      <OutcomeIcon size={18} />
+                      <div>
+                        <strong>
+                          <code title={processCreation.process_creation_id}>
+                            {safeHolderIdentifier(processCreation.process_creation_id)}
+                          </code>
+                          <span className={`state-badge ${outcomeClass}`}>{outcome}</span>
+                        </strong>
+                        <div className="workflow-physical-route-binding-grid">
+                          <span>
+                            Attempt {readableKind(processCreation.attempt_state)} | result{" "}
+                            {processCreation.result_state === null
+                              ? "pending"
+                              : readableKind(processCreation.result_state)}
+                          </span>
+                          <span>
+                            Started {formatTimestamp(processCreation.started_at)} | completed{" "}
+                            {processCreation.completed_at === null
+                              ? "pending"
+                              : formatTimestamp(processCreation.completed_at)}
+                            {" | "}recorded{" "}
+                            {processCreation.recorded_at === null
+                              ? "pending"
+                              : formatTimestamp(processCreation.recorded_at)}
+                          </span>
+                          <span>
+                            Process created{" "}
+                            {processCreation.process_created === null
+                              ? "unknown"
+                              : processCreation.process_created
+                                ? "true"
+                                : "false"}
+                            {" | "}sealed{" "}
+                            {processCreation.process_sealed === null
+                              ? "unknown"
+                              : processCreation.process_sealed
+                                ? "true"
+                                : "false"}
+                            {" | "}suspended{" "}
+                            {processCreation.process_suspended === null
+                              ? "unknown"
+                              : processCreation.process_suspended
+                                ? "true"
+                                : "false"}
+                          </span>
+                          <span>
+                            Policy{" "}
+                            <code title={processCreation.policy_reference}>
+                              {safeHolderIdentifier(processCreation.policy_reference)}
+                            </code>
+                          </span>
+                          <span>
+                            Process profile{" "}
+                            <code title={processCreation.process_creation_profile_reference}>
+                              {shortDigest(processCreation.process_creation_profile_reference)}
+                            </code>
+                            {" | "}primitive{" "}
+                            <code title={processCreation.primitive_reference}>
+                              {shortDigest(processCreation.primitive_reference)}
+                            </code>
+                          </span>
+                          <span>
+                            Integrity reference{" "}
+                            <code title={processCreation.integrity_reference}>
+                              {shortDigest(processCreation.integrity_reference)}
+                            </code>
+                          </span>
+                          <span className="workflow-physical-route-binding-authority">
+                            Effective authority false. This record is immutable historical outcome
+                            evidence only.
+                          </span>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                },
+              )}
+            </ol>
+          )}
+        <div className="workflow-safety-boundary" role="note">
+          <LockKeyhole size={18} />
+          <span>
+            Read-only evidence. This view cannot consume a lease, create or retry a process,
+            schedule, resume, dispatch or execute it, access runtime material, invoke AI,
+            connector or MCP capabilities, use network access, or mutate infrastructure. A
+            successful record proves only sealed suspended creation inside the protected boundary.
           </span>
         </div>
       </section>

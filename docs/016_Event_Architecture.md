@@ -702,6 +702,14 @@ infrastructure-mutation operation. Human GET remains read-only through the norma
 session without MFA or a second browser prompt; AI remains advisory-only and Active Directory
 remains authentication-only.
 
+ADR-178 atomically consumes that exact lease and appends one immutable claim plus one immutable
+process-creation attempt before at most one protected-boundary creator call. The only code-owned
+primitive creates one sealed process in a suspended, non-runnable state; it accepts no caller-
+controlled process material and performs no scheduling, resume, dispatch or execution. Exact replay
+and event recovery perform no creator I/O. Known terminal receipts and permanent uncertainty are
+append-only evidence; no event, outbox, DLQ, scheduler, AI, MCP or connector path may retry or infer
+process creation. Human UI remains minimized and read-only.
+
 ### 10.2 Publication State
 
 Outbox records track:
