@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response
 from atlas.api.errors import AtlasError
 from atlas.api.schemas import ResponseMeta
 from atlas.api.security import (
+    WORKFLOW_PROTECTED_RUNTIME_PROCESS_CREATOR_AUDIENCE,
     authenticated_subject,
     authorize_workflow_definition_read,
     authorize_workflow_physical_transport_credential_access_authorization_lease_read,
@@ -34,6 +35,7 @@ from atlas.api.security import (
     authorize_workflow_protected_runtime_context_use_authorization_read,
     authorize_workflow_protected_runtime_context_use_read,
     authorize_workflow_protected_runtime_process_creation_authorization_read,
+    authorize_workflow_protected_runtime_process_creation_consumption_read,
     authorize_workflow_protected_runtime_readiness_authorization_read,
     authorize_workflow_protected_runtime_readiness_consumption_read,
     authorize_workflow_protected_runtime_start_authorization_read,
@@ -56,6 +58,7 @@ from atlas.api.security import (
     workflow_physical_transport_target_context_accessor_subject,
     workflow_physical_transport_target_context_binder_subject,
     workflow_physical_transport_target_context_capsule_binder_subject,
+    workflow_protected_runtime_process_creator_subject,
     workflow_protected_transport_target_context_capsule_consumer_subject,
     workflow_transport_compatibility_admitter_subject,
     workflow_transport_credential_assignment_registry_subject,
@@ -93,6 +96,7 @@ from atlas.api.workflow_schemas import (
     CreateWorkflowProtectedRuntimeContextUseAuthorizationInput,
     CreateWorkflowProtectedRuntimeContextUseInput,
     CreateWorkflowProtectedRuntimeProcessCreationAuthorizationInput,
+    CreateWorkflowProtectedRuntimeProcessCreationConsumptionInput,
     CreateWorkflowProtectedRuntimeReadinessAuthorizationInput,
     CreateWorkflowProtectedRuntimeReadinessConsumptionInput,
     CreateWorkflowProtectedRuntimeStartAuthorizationInput,
@@ -248,6 +252,10 @@ from atlas.api.workflow_schemas import (
     WorkflowProtectedRuntimeProcessCreationAuthorizationInventoryData,
     WorkflowProtectedRuntimeProcessCreationAuthorizationInventoryResponse,
     WorkflowProtectedRuntimeProcessCreationAuthorizationResponse,
+    WorkflowProtectedRuntimeProcessCreationConsumptionData,
+    WorkflowProtectedRuntimeProcessCreationConsumptionInventoryData,
+    WorkflowProtectedRuntimeProcessCreationConsumptionInventoryResponse,
+    WorkflowProtectedRuntimeProcessCreationConsumptionResponse,
     WorkflowProtectedRuntimeReadinessAuthorizationData,
     WorkflowProtectedRuntimeReadinessAuthorizationInventoryData,
     WorkflowProtectedRuntimeReadinessAuthorizationInventoryResponse,
@@ -421,6 +429,14 @@ from atlas.modules.workflows.application.protected_runtime_process_creation_auth
 from atlas.modules.workflows.application.protected_runtime_process_creation_authorizations import (
     WorkflowProtectedRuntimeProcessCreationAuthorizationService,
 )
+from atlas.modules.workflows.application.protected_runtime_process_creation_consumption_ports import (  # noqa: E501
+    WorkflowProtectedRuntimeProcessCreationConsumptionError,
+    WorkflowProtectedRuntimeProcessCreationConsumptionRepository,
+)
+from atlas.modules.workflows.application.protected_runtime_process_creation_consumptions import (
+    WorkflowProtectedRuntimeProcessCreationConsumptionPresentation,
+    WorkflowProtectedRuntimeProcessCreationConsumptionService,
+)
 from atlas.modules.workflows.application.protected_runtime_readiness_authorization_ports import (
     WorkflowProtectedRuntimeReadinessAuthorizationError,
 )
@@ -513,6 +529,9 @@ from atlas.modules.workflows.domain import (
     WorkflowRunPlan,
     WorkflowScope,
     canonical_digest,
+)
+from atlas.modules.workflows.domain.protected_runtime_process_creation_consumption_domain import (
+    code_owned_workflow_protected_runtime_process_creation_consumption_policy,
 )
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
@@ -7815,6 +7834,167 @@ async def create_workflow_protected_runtime_process_creation_authorization(
             retryable=True,
         ) from error
     return WorkflowProtectedRuntimeProcessCreationAuthorizationResponse(
+        data=data,
+        meta=_meta(request),
+    )
+
+
+@router.get(
+    "/protected-runtime-process-creation-consumptions",
+    response_model=WorkflowProtectedRuntimeProcessCreationConsumptionInventoryResponse,
+)
+async def list_workflow_protected_runtime_process_creation_consumptions(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_workflow_protected_runtime_process_creation_consumption_read),
+    ],
+) -> WorkflowProtectedRuntimeProcessCreationConsumptionInventoryResponse:
+    del decision
+    _no_store(response)
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    try:
+        repository = cast(
+            WorkflowProtectedRuntimeProcessCreationConsumptionRepository,
+            request.app.state.workflow_protected_runtime_process_creation_consumption_repository,
+        )
+        if not repository.durable:
+            raise RuntimeError("durable process-creation repository required")
+        attempts = await repository.list_protected_runtime_process_creation_attempts(
+            scope=scope, limit=256
+        )
+        results = await repository.get_protected_runtime_process_creation_results(
+            scope=scope,
+            consumption_ids=tuple(attempt.consumption_id for attempt in attempts),
+        )
+        by_consumption_id = {result.consumption_id: result for result in results}
+        presentations = tuple(
+            WorkflowProtectedRuntimeProcessCreationConsumptionPresentation(
+                attempt=attempt,
+                result=by_consumption_id.get(attempt.consumption_id),
+            )
+            for attempt in attempts
+        )
+        server_time = await repository.get_authoritative_time()
+        consumption_ids = tuple(
+            presentation.attempt.consumption_id for presentation in presentations
+        )
+        if len(consumption_ids) != len(set(consumption_ids)) or any(
+            presentation.attempt.scope != scope
+            or (presentation.result is not None and presentation.result.scope != scope)
+            for presentation in presentations
+        ):
+            raise RuntimeError("protected process-creation consumption scope mismatch")
+        data = WorkflowProtectedRuntimeProcessCreationConsumptionInventoryData(
+            process_creations=[
+                WorkflowProtectedRuntimeProcessCreationConsumptionData.from_domain(
+                    presentation,
+                    evaluated_at=server_time,
+                )
+                for presentation in presentations
+            ],
+            server_time=server_time,
+            durable=repository.durable,
+        )
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_protected_runtime_process_creation_consumption_service_unavailable",
+            title="Protected process-creation outcomes unavailable",
+            detail="Process-creation outcome metadata is temporarily unavailable.",
+            retryable=True,
+        ) from error
+    return WorkflowProtectedRuntimeProcessCreationConsumptionInventoryResponse(
+        data=data,
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    "/protected-runtime-process-creation-consumptions",
+    response_model=WorkflowProtectedRuntimeProcessCreationConsumptionResponse,
+    status_code=201,
+)
+async def create_workflow_protected_runtime_process_creation_consumption(
+    payload: CreateWorkflowProtectedRuntimeProcessCreationConsumptionInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[
+        AuthenticatedSubject,
+        Depends(workflow_protected_runtime_process_creator_subject),
+    ],
+) -> WorkflowProtectedRuntimeProcessCreationConsumptionResponse:
+    _no_store(response)
+    service = cast(
+        WorkflowProtectedRuntimeProcessCreationConsumptionService,
+        request.app.state.workflow_protected_runtime_process_creation_consumption_service,
+    )
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    try:
+        policy = code_owned_workflow_protected_runtime_process_creation_consumption_policy()
+        presentation = await service.consume(
+            authorization_lease_id=payload.authorization_lease_id,
+            scope=scope,
+            consumer_subject_id=subject.subject_id,
+            consumer_audience=WORKFLOW_PROTECTED_RUNTIME_PROCESS_CREATOR_AUDIENCE,
+            consumer_contract_id=policy.consumer_contract_id,
+            consumer_contract_version=policy.consumer_contract_version,
+            irreversible_consumption_acknowledged=(payload.irreversible_consumption_acknowledged),
+            uncertainty_no_retry_acknowledged=payload.uncertainty_no_retry_acknowledged,
+            idempotency_key=payload.idempotency_key,
+        )
+        data = WorkflowProtectedRuntimeProcessCreationConsumptionData.from_domain(presentation)
+    except WorkflowProtectedRuntimeProcessCreationConsumptionError as error:
+        uncertain = "uncertain" in error.code
+        unavailable = "unavailable" in error.code or error.code.endswith(
+            "durable_repository_required"
+        )
+        raise AtlasError(
+            status=409 if uncertain else (503 if unavailable else 409),
+            code=(
+                "workflow_protected_runtime_process_creation_outcome_uncertain"
+                if uncertain
+                else (
+                    "workflow_protected_runtime_process_creation_consumption_service_unavailable"
+                    if unavailable
+                    else "authorization_denied"
+                )
+            ),
+            title=(
+                "Protected process-creation outcome uncertain"
+                if uncertain
+                else ("Protected process-creation unavailable" if unavailable else "Request denied")
+            ),
+            detail=(
+                "The process-creation outcome is uncertain and this request must not be retried."
+                if uncertain
+                else (
+                    "Process-creation processing is temporarily unavailable."
+                    if unavailable
+                    else "The current identity or evidence is not authorized for this operation."
+                )
+            ),
+            retryable=unavailable and not uncertain,
+        ) from error
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_protected_runtime_process_creation_consumption_service_unavailable",
+            title="Protected process-creation unavailable",
+            detail="Process-creation processing is temporarily unavailable.",
+            retryable=True,
+        ) from error
+    return WorkflowProtectedRuntimeProcessCreationConsumptionResponse(
         data=data,
         meta=_meta(request),
     )

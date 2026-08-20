@@ -275,6 +275,7 @@ from atlas.modules.authorization.application.bootstrap import (
     WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_AUTHORIZATION_READ,
     WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_READ,
     WORKFLOW_PROTECTED_RUNTIME_PROCESS_CREATION_AUTHORIZATION_READ,
+    WORKFLOW_PROTECTED_RUNTIME_PROCESS_CREATION_CONSUMPTION_READ,
     WORKFLOW_PROTECTED_RUNTIME_READINESS_AUTHORIZATION_READ,
     WORKFLOW_PROTECTED_RUNTIME_READINESS_CONSUMPTION_READ,
     WORKFLOW_PROTECTED_RUNTIME_START_AUTHORIZATION_READ,
@@ -409,6 +410,7 @@ from atlas.modules.authorization.application.bootstrap import (
     workflow_protected_runtime_context_use_authorization_scope,
     workflow_protected_runtime_context_use_scope,
     workflow_protected_runtime_process_creation_authorization_scope,
+    workflow_protected_runtime_process_creation_consumption_scope,
     workflow_protected_runtime_readiness_authorization_scope,
     workflow_protected_runtime_readiness_consumption_scope,
     workflow_protected_runtime_start_authorization_scope,
@@ -1445,6 +1447,79 @@ async def workflow_protected_transport_target_context_capsule_consumer_subject(
         subject.kind is not SubjectKind.SERVICE
         or subject.authentication_method is not AuthenticationMethod.WORKLOAD_TOKEN
         or subject.subject_id != WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_SUBJECT
+    ):
+        raise AtlasError(
+            status=401,
+            code="workload_authentication_failed",
+            title="Workload authentication failed",
+            detail="The workload credential is invalid or unavailable for this operation.",
+        )
+    request.state.authenticated_subject = subject
+    return subject
+
+
+WORKFLOW_PROTECTED_RUNTIME_PROCESS_CREATOR_SUBJECT = (
+    "service.workflow-protected-transport-target-context-capsule-consumer"
+)
+WORKFLOW_PROTECTED_RUNTIME_PROCESS_CREATOR_AUDIENCE = (
+    "audience.workflow-protected-transport-target-context-capsule-consumer"
+)
+
+
+async def workflow_protected_runtime_process_creator_subject(
+    request: Request,
+    authorization: Annotated[
+        str | None, Header(alias="Authorization", min_length=1, max_length=8192)
+    ] = None,
+    audience: Annotated[
+        str | None,
+        Header(
+            alias="X-Atlas-Audience",
+            min_length=3,
+            max_length=127,
+            pattern=r"^[a-z][a-z0-9_.:-]{2,126}$",
+        ),
+    ] = None,
+    environment_id: Annotated[
+        str | None,
+        Header(
+            alias="X-Atlas-Environment",
+            min_length=3,
+            max_length=127,
+            pattern=r"^[a-z][a-z0-9_.:-]{2,126}$",
+        ),
+    ] = None,
+) -> AuthenticatedSubject:
+    """Authenticate only the exact ADR-178 protected process-creator workload."""
+
+    expected_environment = f"environment.{request.app.state.settings.environment}"
+    scheme, separator, token = (authorization or "").partition(" ")
+    valid_envelope = (
+        separator == " "
+        and scheme.lower() == "workload"
+        and bool(token)
+        and audience == WORKFLOW_PROTECTED_RUNTIME_PROCESS_CREATOR_AUDIENCE
+        and environment_id == expected_environment
+    )
+    service: WorkloadIdentityService = request.app.state.workload_identity_service
+    try:
+        subject = await service.authenticate(
+            token if valid_envelope else "",
+            audience=WORKFLOW_PROTECTED_RUNTIME_PROCESS_CREATOR_AUDIENCE,
+            environment_id=expected_environment,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except WorkloadIdentityError as exc:
+        raise AtlasError(
+            status=401,
+            code="workload_authentication_failed",
+            title="Workload authentication failed",
+            detail="The workload credential is invalid or unavailable for this operation.",
+        ) from exc
+    if (
+        subject.kind is not SubjectKind.SERVICE
+        or subject.authentication_method is not AuthenticationMethod.WORKLOAD_TOKEN
+        or subject.subject_id != WORKFLOW_PROTECTED_RUNTIME_PROCESS_CREATOR_SUBJECT
     ):
         raise AtlasError(
             status=401,
@@ -4178,6 +4253,44 @@ async def authorize_workflow_protected_runtime_process_creation_authorization_re
             permission_id=WORKFLOW_PROTECTED_RUNTIME_PROCESS_CREATION_AUTHORIZATION_READ,
             resource_type=("resource.workflow.protected-runtime-process-creation-authorization"),
             scope=workflow_protected_runtime_process_creation_authorization_scope(
+                subject.organization_id, settings.environment
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_workflow_protected_runtime_process_creation_consumption_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    """Authorize the ADR-178 minimized inventory for a normal human session."""
+
+    if subject.kind is not SubjectKind.HUMAN:
+        raise AtlasError(
+            status=403,
+            code="human_identity_required",
+            title="Human identity required",
+            detail="This read-only inventory is available only to an authenticated human.",
+        )
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=WORKFLOW_PROTECTED_RUNTIME_PROCESS_CREATION_CONSUMPTION_READ,
+            resource_type="resource.workflow.protected-runtime-process-creation-consumption",
+            scope=workflow_protected_runtime_process_creation_consumption_scope(
                 subject.organization_id, settings.environment
             ),
             correlation_id=str(request.state.correlation_id),

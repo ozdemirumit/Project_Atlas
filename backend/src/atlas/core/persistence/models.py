@@ -17730,3 +17730,448 @@ class WorkflowProtectedRuntimeProcessCreationAuthorizationClaimModel(
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     authorization_audit_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+_WF_RTPROC_CONS_POLICY_DIGEST = "4e9692080e0236eb64a69708499e382bcf3a373aa49b1b42ece990e6c5d6b572"
+_WF_RTPROC_CONS_PRIMITIVE_DIGEST = (
+    "96adb884eeb1554fa4ae7858b728f3db1c204784b2af879e8bfcc37356874222"
+)
+_WF_RTPROC_CONS_CONTRACT = (
+    "consumer_subject_id = "
+    "'service.workflow-protected-transport-target-context-capsule-consumer' "
+    "AND consumer_audience = "
+    "'audience.workflow-protected-transport-target-context-capsule-consumer' "
+    "AND consumer_contract_id = "
+    "'contract.workflow-protected-transport-target-context-capsule-consumer' "
+    "AND consumer_contract_version = '1.0' "
+    "AND purpose_id = "
+    "'purpose.workflow-protected-runtime-create-sealed-suspended-process' "
+    "AND policy_id = 'policy.workflow-protected-runtime-process-creation-consumption' "
+    "AND policy_version = '1.0' "
+    f"AND policy_digest = '{_WF_RTPROC_CONS_POLICY_DIGEST}' "
+    "AND source_policy_id = "
+    "'policy.workflow-protected-runtime-process-creation-authorization' "
+    "AND source_policy_version = '1.0' "
+    f"AND source_policy_digest = '{_WF_RTPROC_AUTH_POLICY_DIGEST}'"
+)
+_WF_RTPROC_CONS_ZERO_AUTHORITY = _WF_RTPROC_AUTH_ZERO_AUTHORITY
+
+
+class _WorkflowProtectedRuntimeProcessCreationConsumptionSourceColumns(
+    _WorkflowProtectedRuntimeProcessCreationAuthorizationSourceColumns
+):
+    authorization_lease_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    authorization_lease_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    authorization_claim_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    authorization_claim_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    process_creation_profile_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    process_creation_profile_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    process_creation_profile_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+_WF_RTPROC_CONS_LEASE_COLUMNS = (
+    "authorization_lease_id",
+    "authorization_lease_digest",
+    "authorization_claim_id",
+    "authorization_claim_digest",
+    "readiness_result_id",
+    "readiness_result_digest",
+    "readiness_consumption_id",
+    "readiness_attempt_id",
+    "readiness_attempt_digest",
+    "readiness_claim_id",
+    "readiness_claim_digest",
+    "destination_deployment_id",
+    "destination_generation",
+    "destination_fencing_token_digest",
+    "runtime_slot_commitment",
+    "runtime_slot_generation",
+    "runtime_envelope_id",
+    "runtime_envelope_commitment",
+    "runtime_envelope_generation",
+    "process_creation_profile_id",
+    "process_creation_profile_version",
+    "process_creation_profile_digest",
+    "coordination_state",
+    "runtime_start_attempt_pending",
+    "runtime_start_attempt_terminal",
+    "runtime_started",
+    "runtime_resumed",
+    "process_created",
+    "process_scheduled",
+)
+
+
+def _workflow_protected_runtime_process_creation_consumption_constraints(
+    *, prefix: str
+) -> tuple[ForeignKeyConstraint, ...]:
+    remote = (
+        "authorization_lease_id",
+        "canonical_digest",
+        "claim_id",
+        "claim_digest",
+        *_WF_RTPROC_CONS_LEASE_COLUMNS[4:],
+    )
+    return (
+        ForeignKeyConstraint(
+            _WF_RTPROC_CONS_LEASE_COLUMNS,
+            [f"workflow_event_runtime_process_creation_auth_leases.{name}" for name in remote],
+            name=f"fk_wf_rtproc_cons_{prefix}_lease",
+        ),
+        ForeignKeyConstraint(
+            [
+                "organization_id",
+                "environment_id",
+                "site_id",
+                "authorization_claim_id",
+                "authorization_claim_digest",
+                "authorization_lease_id",
+            ],
+            [
+                "workflow_event_runtime_process_creation_auth_claims.organization_id",
+                "workflow_event_runtime_process_creation_auth_claims.environment_id",
+                "workflow_event_runtime_process_creation_auth_claims.site_id",
+                "workflow_event_runtime_process_creation_auth_claims.claim_id",
+                "workflow_event_runtime_process_creation_auth_claims.canonical_digest",
+                "workflow_event_runtime_process_creation_auth_claims.authorization_lease_id",
+            ],
+            name=f"fk_wf_rtproc_cons_{prefix}_auth_claim",
+        ),
+    )
+
+
+class WorkflowProtectedRuntimeProcessCreationConsumptionClaimModel(
+    _WorkflowProtectedRuntimeProcessCreationConsumptionSourceColumns,
+    _WorkflowProtectedRuntimeStartAuthorizationIdentityColumns,
+    _WorkflowProtectedRuntimeProcessCreationAuthorizationAuthorityColumns,
+    Base,
+):
+    __tablename__ = "workflow_event_runtime_process_creation_consumption_claims"
+    __table_args__ = (
+        *_workflow_protected_runtime_process_creation_consumption_constraints(prefix="claim"),
+        UniqueConstraint("authorization_lease_id", name="uq_wf_rtproc_cons_claim_lease"),
+        UniqueConstraint("consumption_id", name="uq_wf_rtproc_cons_claim_consumption"),
+        UniqueConstraint("attempt_id", name="uq_wf_rtproc_cons_claim_attempt"),
+        UniqueConstraint("canonical_digest", name="uq_wf_rtproc_cons_claim_digest"),
+        UniqueConstraint(
+            "organization_id",
+            "environment_id",
+            "site_id",
+            "consumer_subject_id",
+            "consumer_audience",
+            "idempotency_digest",
+            name="uq_wf_rtproc_cons_claim_tenant_idem",
+        ),
+        UniqueConstraint(
+            "claim_id",
+            "canonical_digest",
+            "consumption_id",
+            "attempt_id",
+            "authorization_lease_id",
+            name="uq_wf_rtproc_cons_claim_lineage",
+        ),
+        CheckConstraint(_WF_RTPROC_CONS_CONTRACT, name="ck_wf_rtproc_cons_claim_contract"),
+        CheckConstraint(_WF_RTPROC_AUTH_READY_SOURCE, name="ck_wf_rtproc_cons_claim_source"),
+        CheckConstraint(
+            "irreversible_consumption_acknowledged "
+            "AND uncertainty_no_retry_acknowledged "
+            "AND runtime_slot_generation = runtime_envelope_generation "
+            "AND runtime_slot_generation >= 2 "
+            "AND process_creation_profile_id = "
+            "'profile.workflow-protected-runtime-process-creation-request' "
+            "AND process_creation_profile_version = '1.0' "
+            f"AND process_creation_profile_digest = '{_WF_RTPROC_AUTH_PROFILE_DIGEST}' "
+            "AND length(idempotency_scope_id) = 64 "
+            "AND length(idempotency_digest) = 64 "
+            "AND length(request_fingerprint) = 64 "
+            "AND " + _WF_RTPROC_CONS_ZERO_AUTHORITY,
+            name="ck_wf_rtproc_cons_claim_semantics",
+        ),
+        CheckConstraint("jsonb_typeof(payload) = 'object'", name="ck_wf_rtproc_cons_claim_payload"),
+        Index(
+            "ix_wf_rtproc_cons_claim_scope",
+            "organization_id",
+            "environment_id",
+            "site_id",
+            "claimed_at",
+        ),
+    )
+
+    claim_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    consumption_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    attempt_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    idempotency_scope_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    idempotency_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    irreversible_consumption_acknowledged: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    uncertainty_no_retry_acknowledged: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    claimed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class WorkflowProtectedRuntimeProcessCreationAttemptModel(
+    _WorkflowProtectedRuntimeProcessCreationConsumptionSourceColumns,
+    _WorkflowProtectedRuntimeStartAuthorizationIdentityColumns,
+    _WorkflowProtectedRuntimeProcessCreationAuthorizationAuthorityColumns,
+    Base,
+):
+    __tablename__ = "workflow_event_runtime_process_creation_attempts"
+    __table_args__ = (
+        *_workflow_protected_runtime_process_creation_consumption_constraints(prefix="attempt"),
+        ForeignKeyConstraint(
+            [
+                "claim_id",
+                "claim_digest",
+                "consumption_id",
+                "attempt_id",
+                "authorization_lease_id",
+            ],
+            [
+                "workflow_event_runtime_process_creation_consumption_claims.claim_id",
+                "workflow_event_runtime_process_creation_consumption_claims.canonical_digest",
+                "workflow_event_runtime_process_creation_consumption_claims.consumption_id",
+                "workflow_event_runtime_process_creation_consumption_claims.attempt_id",
+                "workflow_event_runtime_process_creation_consumption_claims.authorization_lease_id",
+            ],
+            name="fk_wf_rtproc_cons_attempt_claim",
+        ),
+        UniqueConstraint("claim_id", name="uq_wf_rtproc_cons_attempt_claim"),
+        UniqueConstraint("consumption_id", name="uq_wf_rtproc_cons_attempt_consumption"),
+        UniqueConstraint("authorization_lease_id", name="uq_wf_rtproc_cons_attempt_lease"),
+        UniqueConstraint("instruction_digest", name="uq_wf_rtproc_cons_attempt_instruction"),
+        UniqueConstraint("canonical_digest", name="uq_wf_rtproc_cons_attempt_digest"),
+        UniqueConstraint(
+            "attempt_id",
+            "canonical_digest",
+            "claim_id",
+            "claim_digest",
+            "consumption_id",
+            "authorization_lease_id",
+            "authorization_lease_digest",
+            "runtime_envelope_id",
+            "runtime_envelope_commitment",
+            "runtime_envelope_generation",
+            "process_creation_profile_id",
+            "process_creation_profile_version",
+            "process_creation_profile_digest",
+            "primitive_id",
+            "primitive_version",
+            "primitive_digest",
+            "protected_operation_reference",
+            "instruction_digest",
+            "started_at",
+            "invocation_deadline",
+            name="uq_wf_rtproc_cons_attempt_result",
+        ),
+        CheckConstraint(_WF_RTPROC_CONS_CONTRACT, name="ck_wf_rtproc_cons_attempt_contract"),
+        CheckConstraint(_WF_RTPROC_AUTH_READY_SOURCE, name="ck_wf_rtproc_cons_attempt_source"),
+        CheckConstraint(
+            "state = 'process_creation_attempt_started' "
+            "AND claimed_at <= started_at AND started_at < invocation_deadline "
+            "AND expected_process_count_pre = 0 AND expected_process_count_post = 1",
+            name="ck_wf_rtproc_cons_attempt_state",
+        ),
+        CheckConstraint(
+            "primitive_id = "
+            "'primitive.workflow-protected-runtime-create-sealed-suspended-process' "
+            "AND primitive_version = '1.0' "
+            f"AND primitive_digest = '{_WF_RTPROC_CONS_PRIMITIVE_DIGEST}' "
+            "AND creator_contract_id = "
+            "'contract.workflow-protected-runtime-sealed-process-creator' "
+            "AND creator_contract_version = '1.0' "
+            "AND creator_id = 'creator.workflow-protected-runtime-sealed-process' "
+            "AND creator_version = '1.0' "
+            "AND receipt_verification_signing_key_id = "
+            "'key.workflow-protected-runtime-process-creation-receipt.v1' "
+            "AND instruction_signing_key_id = "
+            "'key.workflow-protected-runtime-process-creation-instruction.v1' "
+            "AND instruction_signature_algorithm = 'hmac-sha256' "
+            "AND length(instruction_digest) = 64 "
+            "AND length(signed_instruction_envelope_digest) = 64 "
+            "AND length(request_nonce_digest) = 64 "
+            "AND " + _WF_RTPROC_CONS_ZERO_AUTHORITY,
+            name="ck_wf_rtproc_cons_attempt_instruction",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(payload) = 'object' "
+            "AND jsonb_typeof(signed_instruction_envelope_payload) = 'object' "
+            "AND signed_instruction_envelope_payload <> '{}'::jsonb",
+            name="ck_wf_rtproc_cons_attempt_payload",
+        ),
+        Index(
+            "ix_wf_rtproc_cons_attempt_scope",
+            "organization_id",
+            "environment_id",
+            "site_id",
+            "started_at",
+        ),
+    )
+
+    attempt_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    consumption_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    claim_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    claim_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    expected_process_count_pre: Mapped[int] = mapped_column(Integer, nullable=False)
+    expected_process_count_post: Mapped[int] = mapped_column(Integer, nullable=False)
+    primitive_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    primitive_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    primitive_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    creator_contract_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    creator_contract_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    creator_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    creator_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    receipt_verification_signing_key_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_nonce_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    claimed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    invocation_deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    state: Mapped[str] = mapped_column(String(64), nullable=False)
+    instruction_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    instruction_signing_key_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    instruction_signature_algorithm: Mapped[str] = mapped_column(String(64), nullable=False)
+    signed_instruction_envelope_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    signed_instruction_envelope_payload: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False
+    )
+
+
+class WorkflowProtectedRuntimeProcessCreationResultModel(
+    _WorkflowProtectedRuntimeProcessCreationConsumptionSourceColumns,
+    _WorkflowProtectedRuntimeStartAuthorizationIdentityColumns,
+    _WorkflowProtectedRuntimeProcessCreationAuthorizationAuthorityColumns,
+    Base,
+):
+    __tablename__ = "workflow_event_runtime_process_creation_results"
+    __table_args__ = (
+        *_workflow_protected_runtime_process_creation_consumption_constraints(prefix="result"),
+        ForeignKeyConstraint(
+            [
+                "attempt_id",
+                "attempt_digest",
+                "claim_id",
+                "claim_digest",
+                "consumption_id",
+                "authorization_lease_id",
+                "authorization_lease_digest",
+                "runtime_envelope_id",
+                "runtime_envelope_commitment",
+                "runtime_envelope_generation",
+                "process_creation_profile_id",
+                "process_creation_profile_version",
+                "process_creation_profile_digest",
+                "primitive_id",
+                "primitive_version",
+                "primitive_digest",
+                "protected_operation_reference",
+                "instruction_digest",
+                "started_at",
+                "invocation_deadline",
+            ],
+            [
+                "workflow_event_runtime_process_creation_attempts.attempt_id",
+                "workflow_event_runtime_process_creation_attempts.canonical_digest",
+                "workflow_event_runtime_process_creation_attempts.claim_id",
+                "workflow_event_runtime_process_creation_attempts.claim_digest",
+                "workflow_event_runtime_process_creation_attempts.consumption_id",
+                "workflow_event_runtime_process_creation_attempts.authorization_lease_id",
+                "workflow_event_runtime_process_creation_attempts.authorization_lease_digest",
+                "workflow_event_runtime_process_creation_attempts.runtime_envelope_id",
+                "workflow_event_runtime_process_creation_attempts.runtime_envelope_commitment",
+                "workflow_event_runtime_process_creation_attempts.runtime_envelope_generation",
+                "workflow_event_runtime_process_creation_attempts.process_creation_profile_id",
+                "workflow_event_runtime_process_creation_attempts.process_creation_profile_version",
+                "workflow_event_runtime_process_creation_attempts.process_creation_profile_digest",
+                "workflow_event_runtime_process_creation_attempts.primitive_id",
+                "workflow_event_runtime_process_creation_attempts.primitive_version",
+                "workflow_event_runtime_process_creation_attempts.primitive_digest",
+                "workflow_event_runtime_process_creation_attempts.protected_operation_reference",
+                "workflow_event_runtime_process_creation_attempts.instruction_digest",
+                "workflow_event_runtime_process_creation_attempts.started_at",
+                "workflow_event_runtime_process_creation_attempts.invocation_deadline",
+            ],
+            name="fk_wf_rtproc_cons_result_attempt",
+        ),
+        UniqueConstraint("attempt_id", name="uq_wf_rtproc_cons_result_attempt"),
+        UniqueConstraint("claim_id", name="uq_wf_rtproc_cons_result_claim"),
+        UniqueConstraint("consumption_id", name="uq_wf_rtproc_cons_result_consumption"),
+        UniqueConstraint("authorization_lease_id", name="uq_wf_rtproc_cons_result_lease"),
+        UniqueConstraint("canonical_digest", name="uq_wf_rtproc_cons_result_digest"),
+        CheckConstraint(_WF_RTPROC_CONS_CONTRACT, name="ck_wf_rtproc_cons_result_contract"),
+        CheckConstraint(_WF_RTPROC_AUTH_READY_SOURCE, name="ck_wf_rtproc_cons_result_source"),
+        CheckConstraint(
+            "recorded_at >= completed_at AND completed_at >= started_at AND "
+            "((state = 'process_created_suspended_in_protected_boundary' "
+            "AND failure_class IS NULL AND outcome_known "
+            "AND result_process_created AND process_sealed AND process_suspended "
+            "AND receipt_digest IS NOT NULL AND completed_at < invocation_deadline) OR "
+            "(state = 'process_creation_rejected_without_creation' "
+            "AND failure_class = 'protected_creator_rejected_without_creation' "
+            "AND outcome_known AND NOT result_process_created "
+            "AND NOT process_sealed AND NOT process_suspended "
+            "AND receipt_digest IS NOT NULL AND completed_at < invocation_deadline) OR "
+            "(state = 'process_creation_failed_without_creation' "
+            "AND failure_class = 'protected_creator_failed_without_creation' "
+            "AND outcome_known AND NOT result_process_created "
+            "AND NOT process_sealed AND NOT process_suspended "
+            "AND receipt_digest IS NOT NULL AND completed_at < invocation_deadline) OR "
+            "(state = 'process_creation_outcome_uncertain' "
+            "AND failure_class = 'process_creation_outcome_uncertain' "
+            "AND NOT outcome_known AND result_process_created IS NULL "
+            "AND process_sealed IS NULL AND process_suspended IS NULL "
+            "AND receipt_digest IS NULL)) "
+            "AND NOT result_process_scheduled AND NOT result_process_resumed "
+            "AND NOT result_process_dispatched AND NOT result_process_executed",
+            name="ck_wf_rtproc_cons_result_outcome",
+        ),
+        CheckConstraint(
+            "runtime_slot_generation = runtime_envelope_generation "
+            "AND runtime_slot_generation >= 2 "
+            "AND " + _WF_RTPROC_CONS_ZERO_AUTHORITY,
+            name="ck_wf_rtproc_cons_result_semantics",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(payload) = 'object' "
+            "AND (receipt_payload IS NULL OR jsonb_typeof(receipt_payload) = 'object')",
+            name="ck_wf_rtproc_cons_result_payload",
+        ),
+        Index(
+            "ix_wf_rtproc_cons_result_scope",
+            "organization_id",
+            "environment_id",
+            "site_id",
+            "recorded_at",
+        ),
+    )
+
+    result_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    consumption_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    attempt_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    attempt_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    claim_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    claim_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    primitive_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    primitive_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    primitive_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    instruction_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    invocation_deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    state: Mapped[str] = mapped_column(String(64), nullable=False)
+    failure_class: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    outcome_known: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    result_process_created: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    process_sealed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    process_suspended: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    result_process_scheduled: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    result_process_resumed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    result_process_dispatched: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    result_process_executed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    receipt_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    receipt_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)

@@ -25,6 +25,9 @@ from atlas.modules.workflows.application.protected_runtime_context_uses import (
 from atlas.modules.workflows.application.protected_runtime_process_creation_authorization_ports import (  # noqa: E501
     WorkflowProtectedRuntimeProcessCreationAuthorizationPresentation,
 )
+from atlas.modules.workflows.application.protected_runtime_process_creation_consumptions import (
+    WorkflowProtectedRuntimeProcessCreationConsumptionPresentation,
+)
 from atlas.modules.workflows.application.protected_runtime_readiness_authorization_ports import (
     WorkflowProtectedRuntimeReadinessAuthorizationPresentation,
 )
@@ -3907,6 +3910,186 @@ class WorkflowProtectedRuntimeProcessCreationAuthorizationResponse(BaseModel):
 
 class WorkflowProtectedRuntimeProcessCreationAuthorizationInventoryResponse(BaseModel):
     data: WorkflowProtectedRuntimeProcessCreationAuthorizationInventoryData
+    meta: ResponseMeta
+
+
+class CreateWorkflowProtectedRuntimeProcessCreationConsumptionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    authorization_lease_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    policy_id: Literal["policy.workflow-protected-runtime-process-creation-consumption"]
+    policy_version: Literal["1.0"]
+    irreversible_consumption_acknowledged: Literal[True]
+    uncertainty_no_retry_acknowledged: Literal[True]
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class WorkflowProtectedRuntimeProcessCreationConsumptionData(BaseModel):
+    """Minimized process-creation outcome without process or runtime material."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    process_creation_id: str = Field(min_length=3, max_length=240, pattern=STABLE_ID)
+    attempt_state: Literal["process_creation_attempt_started"]
+    result_state: (
+        Literal[
+            "process_created_suspended_in_protected_boundary",
+            "process_creation_rejected_without_creation",
+            "process_creation_failed_without_creation",
+            "process_creation_outcome_uncertain",
+        ]
+        | None
+    )
+    started_at: datetime
+    completed_at: datetime | None
+    recorded_at: datetime | None
+    process_created: bool | None
+    process_sealed: bool | None
+    process_suspended: bool | None
+    policy_reference: str = Field(min_length=1, max_length=240)
+    process_creation_profile_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    primitive_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    integrity_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    effective_authority: Literal[False]
+
+    @model_validator(mode="after")
+    def validate_outcome(self) -> WorkflowProtectedRuntimeProcessCreationConsumptionData:
+        pending = (
+            self.result_state is None
+            and self.completed_at is None
+            and self.recorded_at is None
+            and self.process_created is None
+            and self.process_sealed is None
+            and self.process_suspended is None
+        )
+        effective_uncertainty = (
+            self.result_state == "process_creation_outcome_uncertain"
+            and self.completed_at is None
+            and self.recorded_at is not None
+            and self.process_created is None
+            and self.process_sealed is None
+            and self.process_suspended is None
+        )
+        success = (
+            self.result_state == "process_created_suspended_in_protected_boundary"
+            and self.completed_at is not None
+            and self.recorded_at is not None
+            and self.process_created is True
+            and self.process_sealed is True
+            and self.process_suspended is True
+        )
+        known_without_creation = (
+            self.result_state
+            in {
+                "process_creation_rejected_without_creation",
+                "process_creation_failed_without_creation",
+            }
+            and self.completed_at is not None
+            and self.recorded_at is not None
+            and self.process_created is False
+            and self.process_sealed is False
+            and self.process_suspended is False
+        )
+        durable_uncertainty = (
+            self.result_state == "process_creation_outcome_uncertain"
+            and self.completed_at is not None
+            and self.recorded_at is not None
+            and self.process_created is None
+            and self.process_sealed is None
+            and self.process_suspended is None
+        )
+        if not (
+            pending
+            or effective_uncertainty
+            or success
+            or known_without_creation
+            or durable_uncertainty
+        ):
+            raise ValueError("process-creation outcome projection is inconsistent")
+        if self.recorded_at is not None and self.recorded_at < self.started_at:
+            raise ValueError("process-creation outcome predates its attempt")
+        if self.completed_at is not None and (
+            self.completed_at < self.started_at
+            or self.recorded_at is None
+            or self.recorded_at < self.completed_at
+        ):
+            raise ValueError("process-creation completion projection is inconsistent")
+        return self
+
+    @classmethod
+    def from_domain(
+        cls,
+        presentation: WorkflowProtectedRuntimeProcessCreationConsumptionPresentation,
+        *,
+        evaluated_at: datetime | None = None,
+    ) -> WorkflowProtectedRuntimeProcessCreationConsumptionData:
+        attempt = presentation.attempt
+        result = presentation.result
+        if result is not None and (
+            result.attempt_id != attempt.attempt_id
+            or result.attempt_digest != attempt.canonical_digest
+            or result.consumption_id != attempt.consumption_id
+            or result.scope != attempt.scope
+        ):
+            raise ValueError("process-creation attempt and outcome do not match")
+        effective_uncertainty = (
+            result is None
+            and evaluated_at is not None
+            and evaluated_at.tzinfo is not None
+            and evaluated_at >= attempt.invocation_deadline
+        )
+        return cls(
+            process_creation_id=attempt.consumption_id,
+            attempt_state=attempt.state.value,
+            result_state=(
+                "process_creation_outcome_uncertain"
+                if effective_uncertainty
+                else (None if result is None else result.result_state.value)
+            ),
+            started_at=attempt.started_at,
+            completed_at=None if result is None else result.completed_at,
+            recorded_at=(
+                evaluated_at
+                if effective_uncertainty
+                else (None if result is None else result.recorded_at)
+            ),
+            process_created=None if result is None else result.process_created,
+            process_sealed=None if result is None else result.process_sealed,
+            process_suspended=None if result is None else result.process_suspended,
+            policy_reference=f"{attempt.policy_id}:{attempt.policy_version}",
+            process_creation_profile_reference=(
+                "integrity.workflow-protected-runtime-process-creation-profile."
+                f"{sha256(attempt.process_creation_profile_digest.encode('utf-8')).hexdigest()[:24]}"
+            ),
+            primitive_reference=(
+                "integrity.workflow-protected-runtime-process-creation-primitive."
+                f"{sha256(attempt.primitive_digest.encode('utf-8')).hexdigest()[:24]}"
+            ),
+            integrity_reference=(
+                "integrity.workflow-protected-runtime-process-creation-consumption."
+                f"{sha256(attempt.canonical_digest.encode('utf-8')).hexdigest()[:24]}"
+            ),
+            effective_authority=False,
+        )
+
+
+class WorkflowProtectedRuntimeProcessCreationConsumptionInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    process_creations: list[WorkflowProtectedRuntimeProcessCreationConsumptionData] = Field(
+        max_length=256
+    )
+    server_time: datetime
+    durable: Literal[True]
+
+
+class WorkflowProtectedRuntimeProcessCreationConsumptionResponse(BaseModel):
+    data: WorkflowProtectedRuntimeProcessCreationConsumptionData
+    meta: ResponseMeta
+
+
+class WorkflowProtectedRuntimeProcessCreationConsumptionInventoryResponse(BaseModel):
+    data: WorkflowProtectedRuntimeProcessCreationConsumptionInventoryData
     meta: ResponseMeta
 
 

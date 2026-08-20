@@ -38,6 +38,7 @@ import {
   type WorkflowProtectedRuntimeContextUseAuthorizationConsumption,
   type WorkflowProtectedRuntimeContextUse,
   type WorkflowProtectedRuntimeProcessCreationAuthorization,
+  type WorkflowProtectedRuntimeProcessCreation,
   type WorkflowProtectedRuntimeReadiness,
   type WorkflowProtectedRuntimeReadinessAuthorization,
   type WorkflowProtectedRuntimeStartAuthorization,
@@ -1653,6 +1654,27 @@ const protectedRuntimeProcessCreationAuthorization: WorkflowProtectedRuntimeProc
     "integrity.workflow-protected-runtime-process-creation-authorization.1234567890abcdef",
 };
 
+const protectedRuntimeProcessCreation: WorkflowProtectedRuntimeProcessCreation = {
+  process_creation_id: "prpc-consumption-1234567890abcdef12345678",
+  attempt_state: "process_creation_attempt_started",
+  result_state: "process_created_suspended_in_protected_boundary",
+  started_at: "2026-08-14T10:08:34.300Z",
+  completed_at: "2026-08-14T10:08:34.500Z",
+  recorded_at: "2026-08-14T10:08:34.600Z",
+  process_created: true,
+  process_sealed: true,
+  process_suspended: true,
+  policy_reference:
+    "policy.workflow-protected-runtime-process-creation-consumption:1.0",
+  process_creation_profile_reference:
+    "integrity.workflow-protected-runtime-process-creation-profile.1234567890abcdef",
+  primitive_reference:
+    "integrity.workflow-protected-runtime-process-creation-primitive.1234567890abcdef",
+  integrity_reference:
+    "integrity.workflow-protected-runtime-process-creation-consumption.1234567890abcdef",
+  effective_authority: false,
+};
+
 const protectedRuntimeContextInjectionConsumption: WorkflowProtectedRuntimeContextInjectionConsumption = {
   injection_id:
     "workflow-protected-runtime-context-injection-consumption.1234567890abcdef12345678",
@@ -2561,6 +2583,27 @@ function protectedRuntimeProcessCreationAuthorizationResponse(
   );
 }
 
+function protectedRuntimeProcessCreationResponse(
+  processCreations: unknown[],
+  status = 200,
+  serverTime = "2026-08-14T10:08:34.700Z",
+  durable = true,
+): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: { process_creations: processCreations, server_time: serverTime, durable },
+          meta: {
+            correlation_id:
+              "correlation.workflow.protected-runtime-process-creation-consumption",
+            generated_at: serverTime,
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function protectedRuntimeContextInjectionConsumptionResponse(
   consumptions: unknown[],
   status = 200,
@@ -2706,6 +2749,9 @@ function mockReadResponses(input: {
   protectedRuntimeProcessCreationAuthorizations?: unknown[];
   protectedRuntimeProcessCreationAuthorizationServerTime?: string;
   protectedRuntimeProcessCreationAuthorizationDurable?: boolean;
+  protectedRuntimeProcessCreations?: unknown[];
+  protectedRuntimeProcessCreationServerTime?: string;
+  protectedRuntimeProcessCreationDurable?: boolean;
   credentialAssignmentSnapshots?: unknown[];
   transportCompatibilityAdmissions?: unknown[];
   pendingTransportAdmissionResponse?: Promise<Response>;
@@ -2741,6 +2787,7 @@ function mockReadResponses(input: {
   pendingProtectedRuntimeReadinessAuthorizationResponse?: Promise<Response>;
   pendingProtectedRuntimeReadinessResponse?: Promise<Response>;
   pendingProtectedRuntimeProcessCreationAuthorizationResponse?: Promise<Response>;
+  pendingProtectedRuntimeProcessCreationResponse?: Promise<Response>;
   pendingCredentialAssignmentSnapshotResponse?: Promise<Response>;
   pendingTransportCompatibilityAdmissionResponse?: Promise<Response>;
   leaseStatus?: number;
@@ -2816,6 +2863,8 @@ function mockReadResponses(input: {
   protectedRuntimeReadinessStatuses?: number[];
   protectedRuntimeProcessCreationAuthorizationStatus?: number;
   protectedRuntimeProcessCreationAuthorizationStatuses?: number[];
+  protectedRuntimeProcessCreationStatus?: number;
+  protectedRuntimeProcessCreationStatuses?: number[];
   credentialAssignmentSnapshotStatus?: number;
   credentialAssignmentSnapshotStatuses?: number[];
   transportCompatibilityAdmissionStatus?: number;
@@ -2854,10 +2903,35 @@ function mockReadResponses(input: {
   let protectedRuntimeReadinessAuthorizationReadCount = 0;
   let protectedRuntimeReadinessReadCount = 0;
   let protectedRuntimeProcessCreationAuthorizationReadCount = 0;
+  let protectedRuntimeProcessCreationReadCount = 0;
   let credentialAssignmentSnapshotReadCount = 0;
   let transportCompatibilityAdmissionReadCount = 0;
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (
+      url.endsWith(
+        "/api/v1/workflows/protected-runtime-process-creation-consumptions",
+      )
+    ) {
+      if (input.pendingProtectedRuntimeProcessCreationResponse) {
+        return input.pendingProtectedRuntimeProcessCreationResponse;
+      }
+      const status =
+        input.protectedRuntimeProcessCreationStatuses?.[
+          Math.min(
+            protectedRuntimeProcessCreationReadCount++,
+            input.protectedRuntimeProcessCreationStatuses.length - 1,
+          )
+        ] ?? input.protectedRuntimeProcessCreationStatus ?? 200;
+      return Promise.resolve(
+        protectedRuntimeProcessCreationResponse(
+          input.protectedRuntimeProcessCreations ?? [],
+          status,
+          input.protectedRuntimeProcessCreationServerTime,
+          input.protectedRuntimeProcessCreationDurable,
+        ),
+      );
+    }
     if (
       url.endsWith(
         "/api/v1/workflows/protected-runtime-process-creation-authorizations",
@@ -10049,6 +10123,90 @@ describe("WorkflowPlanningWorkspace", () => {
     ).toBeVisible();
     expect(within(section).queryByRole("list")).toBeNull();
     expect(section).not.toHaveTextContent(/hidden/i);
+  });
+
+  it("renders all protected process-creation outcomes as read-only evidence", async () => {
+    const pending: WorkflowProtectedRuntimeProcessCreation = {
+      ...protectedRuntimeProcessCreation,
+      process_creation_id: "prpc-consumption-abcdef1234567890abcdef01",
+      result_state: null,
+      completed_at: null,
+      recorded_at: null,
+      process_created: null,
+      process_sealed: null,
+      process_suspended: null,
+    };
+    const rejected: WorkflowProtectedRuntimeProcessCreation = {
+      ...protectedRuntimeProcessCreation,
+      process_creation_id: "prpc-consumption-abcdef1234567890abcdef02",
+      result_state: "process_creation_rejected_without_creation",
+      process_created: false,
+      process_sealed: false,
+      process_suspended: false,
+    };
+    const failed: WorkflowProtectedRuntimeProcessCreation = {
+      ...rejected,
+      process_creation_id: "prpc-consumption-abcdef1234567890abcdef03",
+      result_state: "process_creation_failed_without_creation",
+    };
+    const uncertain: WorkflowProtectedRuntimeProcessCreation = {
+      ...rejected,
+      process_creation_id: "prpc-consumption-abcdef1234567890abcdef04",
+      result_state: "process_creation_outcome_uncertain",
+      process_created: null,
+      process_sealed: null,
+      process_suspended: null,
+    };
+    mockReadResponses({
+      protectedRuntimeProcessCreationAuthorizations: [
+        protectedRuntimeProcessCreationAuthorization,
+      ],
+      protectedRuntimeProcessCreations: [
+        pending,
+        protectedRuntimeProcessCreation,
+        rejected,
+        failed,
+        uncertain,
+      ],
+    });
+    renderWorkspace();
+
+    const authorizationSection = (await screen.findByRole("heading", {
+      name: "Protected runtime process-creation authorizations",
+    })).closest("section") as HTMLElement;
+    const section = (await screen.findByRole("heading", {
+      name: "Protected runtime process creations",
+    })).closest("section") as HTMLElement;
+    expect(authorizationSection.nextElementSibling).toBe(section);
+    const records = await within(section).findByRole("list", {
+      name: "Protected runtime process creations",
+    });
+    expect(records).toHaveTextContent("Pending");
+    expect(records).toHaveTextContent("Created suspended");
+    expect(records).toHaveTextContent("Rejected without creation");
+    expect(records).toHaveTextContent("Failed without creation");
+    expect(records).toHaveTextContent("Outcome uncertain");
+    expect(records).toHaveTextContent(/Process created unknown/i);
+    expect(records).toHaveTextContent(/Process created true.*sealed true.*suspended true/i);
+    expect(records).toHaveTextContent(/Effective authority false/i);
+    expect(
+      within(section).getAllByTitle(protectedRuntimeProcessCreation.policy_reference)[0],
+    ).toBeVisible();
+    expect(
+      within(section).getAllByTitle(
+        protectedRuntimeProcessCreation.process_creation_profile_reference,
+      )[0],
+    ).toBeVisible();
+    expect(
+      within(section).getAllByTitle(protectedRuntimeProcessCreation.primitive_reference)[0],
+    ).toBeVisible();
+    expect(section).toHaveTextContent(/cannot consume a lease, create or retry a process/i);
+    expect(section).not.toHaveTextContent(/authorized browser session|mfa|second session/i);
+    expect(within(section).queryByRole("button")).toBeNull();
+    expect(within(section).queryByRole("link")).toBeNull();
+    expect(within(section).queryByRole("textbox")).toBeNull();
+    expect(within(section).queryByRole("combobox")).toBeNull();
+    expect(within(section).queryByRole("checkbox")).toBeNull();
   });
 
   it("renders protected runtime-context injection consumptions as minimized read-only evidence", async () => {

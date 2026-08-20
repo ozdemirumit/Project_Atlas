@@ -1833,6 +1833,34 @@ export type WorkflowProtectedRuntimeProcessCreationAuthorizationInventory = {
   durable: true;
 };
 
+export type WorkflowProtectedRuntimeProcessCreation = {
+  process_creation_id: string;
+  attempt_state: "process_creation_attempt_started";
+  result_state:
+    | "process_created_suspended_in_protected_boundary"
+    | "process_creation_rejected_without_creation"
+    | "process_creation_failed_without_creation"
+    | "process_creation_outcome_uncertain"
+    | null;
+  started_at: string;
+  completed_at: string | null;
+  recorded_at: string | null;
+  process_created: boolean | null;
+  process_sealed: boolean | null;
+  process_suspended: boolean | null;
+  policy_reference: "policy.workflow-protected-runtime-process-creation-consumption:1.0";
+  process_creation_profile_reference: string;
+  primitive_reference: string;
+  integrity_reference: string;
+  effective_authority: false;
+};
+
+export type WorkflowProtectedRuntimeProcessCreationInventory = {
+  process_creations: WorkflowProtectedRuntimeProcessCreation[];
+  server_time: string;
+  durable: true;
+};
+
 export type WorkflowProtectedRuntimeContextInjectionConsumption = {
   injection_id: string;
   attempt_state: "started" | "completed";
@@ -3546,6 +3574,27 @@ const protectedRuntimeProcessCreationAuthorizationFields = [
 ] as const;
 const protectedRuntimeProcessCreationAuthorizationInventoryFields = [
   "authorizations",
+  "server_time",
+  "durable",
+] as const;
+const protectedRuntimeProcessCreationFields = [
+  "process_creation_id",
+  "attempt_state",
+  "result_state",
+  "started_at",
+  "completed_at",
+  "recorded_at",
+  "process_created",
+  "process_sealed",
+  "process_suspended",
+  "policy_reference",
+  "process_creation_profile_reference",
+  "primitive_reference",
+  "integrity_reference",
+  "effective_authority",
+] as const;
+const protectedRuntimeProcessCreationInventoryFields = [
+  "process_creations",
   "server_time",
   "durable",
 ] as const;
@@ -6319,6 +6368,87 @@ function isProtectedRuntimeProcessCreationAuthorization(
   );
 }
 
+function isProtectedRuntimeProcessCreation(
+  value: unknown,
+  serverTime: string,
+): value is WorkflowProtectedRuntimeProcessCreation {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, protectedRuntimeProcessCreationFields) ||
+    containsCredentialMaterial(value) ||
+    !isTimezoneAwareTimestamp(value.started_at) ||
+    (value.completed_at !== null && !isTimezoneAwareTimestamp(value.completed_at)) ||
+    (value.recorded_at !== null && !isTimezoneAwareTimestamp(value.recorded_at))
+  ) {
+    return false;
+  }
+  const startedAt = Date.parse(value.started_at);
+  const completedAt = value.completed_at === null ? null : Date.parse(value.completed_at);
+  const recordedAt = value.recorded_at === null ? null : Date.parse(value.recorded_at);
+  const evaluatedAt = Date.parse(serverTime);
+  const pending =
+    value.result_state === null &&
+    completedAt === null &&
+    recordedAt === null &&
+    value.process_created === null &&
+    value.process_sealed === null &&
+    value.process_suspended === null;
+  const projectedUncertainty =
+    value.result_state === "process_creation_outcome_uncertain" &&
+    completedAt === null &&
+    recordedAt !== null &&
+    value.process_created === null &&
+    value.process_sealed === null &&
+    value.process_suspended === null;
+  const success =
+    value.result_state === "process_created_suspended_in_protected_boundary" &&
+    completedAt !== null &&
+    recordedAt !== null &&
+    value.process_created === true &&
+    value.process_sealed === true &&
+    value.process_suspended === true;
+  const knownWithoutCreation =
+    (value.result_state === "process_creation_rejected_without_creation" ||
+      value.result_state === "process_creation_failed_without_creation") &&
+    completedAt !== null &&
+    recordedAt !== null &&
+    value.process_created === false &&
+    value.process_sealed === false &&
+    value.process_suspended === false;
+  const durableUncertainty =
+    value.result_state === "process_creation_outcome_uncertain" &&
+    completedAt !== null &&
+    recordedAt !== null &&
+    value.process_created === null &&
+    value.process_sealed === null &&
+    value.process_suspended === null;
+  return (
+    isStableIdentifier(value.process_creation_id) &&
+    value.process_creation_id.startsWith("prpc-consumption-") &&
+    value.attempt_state === "process_creation_attempt_started" &&
+    startedAt <= evaluatedAt &&
+    (completedAt === null || (completedAt >= startedAt && completedAt <= evaluatedAt)) &&
+    (recordedAt === null ||
+      (recordedAt >= (completedAt ?? startedAt) && recordedAt <= evaluatedAt)) &&
+    (pending || projectedUncertainty || success || knownWithoutCreation || durableUncertainty) &&
+    value.policy_reference ===
+      "policy.workflow-protected-runtime-process-creation-consumption:1.0" &&
+    isStableIdentifier(value.process_creation_profile_reference) &&
+    value.process_creation_profile_reference.startsWith(
+      "integrity.workflow-protected-runtime-process-creation-profile.",
+    ) &&
+    isStableIdentifier(value.primitive_reference) &&
+    value.primitive_reference.startsWith(
+      "integrity.workflow-protected-runtime-process-creation-primitive.",
+    ) &&
+    isStableIdentifier(value.integrity_reference) &&
+    value.integrity_reference.startsWith(
+      "integrity.workflow-protected-runtime-process-creation-consumption.",
+    ) &&
+    value.effective_authority === false
+  );
+}
+
 function isProtectedRuntimeContextInjectionConsumption(
   value: unknown,
   serverTime: string,
@@ -8490,6 +8620,57 @@ export async function listWorkflowProtectedRuntimeProcessCreationAuthorizations(
     authorizationIds.add(authorization.authorization_lease_id);
   }
   return data as WorkflowProtectedRuntimeProcessCreationAuthorizationInventory;
+}
+
+export async function listWorkflowProtectedRuntimeProcessCreations(): Promise<WorkflowProtectedRuntimeProcessCreationInventory> {
+  const response = await apiFetch(
+    "/api/v1/workflows/protected-runtime-process-creation-consumptions",
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(
+    response,
+    "Workflow protected runtime process-creation retrieval failed",
+  );
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, protectedRuntimeProcessCreationInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    !Array.isArray(data.process_creations) ||
+    data.process_creations.length > 256 ||
+    !isTimezoneAwareTimestamp(data.server_time) ||
+    data.durable !== true
+  ) {
+    throw new ApiRequestError(
+      "Workflow protected runtime process-creation response was unsafe",
+      response.status,
+    );
+  }
+  const serverTime = data.server_time;
+  if (
+    !data.process_creations.every((processCreation) =>
+      isProtectedRuntimeProcessCreation(processCreation, serverTime),
+    )
+  ) {
+    throw new ApiRequestError(
+      "Workflow protected runtime process-creation response was unsafe",
+      response.status,
+    );
+  }
+  const processCreationIds = new Set<string>();
+  for (const processCreation of data.process_creations) {
+    if (
+      !isObject(processCreation) ||
+      typeof processCreation.process_creation_id !== "string" ||
+      processCreationIds.has(processCreation.process_creation_id)
+    ) {
+      throw new ApiRequestError(
+        "Workflow protected runtime process-creation response was unsafe",
+        response.status,
+      );
+    }
+    processCreationIds.add(processCreation.process_creation_id);
+  }
+  return data as WorkflowProtectedRuntimeProcessCreationInventory;
 }
 
 export async function listWorkflowProtectedRuntimeContextInjectionConsumptions(): Promise<WorkflowProtectedRuntimeContextInjectionConsumptionInventory> {

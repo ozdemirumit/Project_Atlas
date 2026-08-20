@@ -4,14 +4,73 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-227 |
-| Title | Bounded single-use protected runtime process-creation authorization lease |
-| Status | Implementation complete; pull request CI in progress |
-| Branch | `agent/protected-runtime-process-creation-authorization` |
-| Pull Request | [#240](https://github.com/ozdemirumit/Project_Atlas/pull/240) |
-| Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-177 |
+| Task ID | ATLAS-IMP-228 |
+| Title | Atomic protected runtime process-creation consumption |
+| Status | Review |
+| Branch | `agent/protected-runtime-process-creation-consumption` |
+| Pull Request | [#241](https://github.com/ozdemirumit/Project_Atlas/pull/241) |
+| Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-178 |
 | Last Updated | 2026-08-20 |
-| Next Action | Complete PR #240 CI, merge and verify `main` |
+| Next Action | Complete exact-head CI and merge PR #241 |
+
+### ATLAS-IMP-228 Scope Rationale
+
+- IMP-227 issues only an at-most-one-second, single-use lease for one future process-creation
+  request. It is not direct process-creation, scheduling, resume, dispatch or execution authority.
+- Lease consumption and the single creation attempt must commit atomically before an approved
+  protected-boundary creator is called. No retry may cross the boundary after an ambiguous result.
+- The code-owned primitive creates only one sealed suspended process in the existing protected
+  runtime. It accepts no caller-controlled process material and cannot make the process runnable.
+
+### ATLAS-IMP-228 Acceptance Criteria
+
+- Only the exact protected consumer workload and audience bound through canonical ADR-160 through
+  ADR-177 lineage may POST. Human sessions, AI agents, MCP tools, connectors and recovery workers
+  fail closed before protected-state I/O.
+- Caller input is limited to the ADR-177 lease identity, code-owned policy identity, tenant-scoped
+  idempotency key and explicit irreversible-consumption/uncertainty acknowledgements.
+- PostgreSQL atomically consumes one active lease and appends one immutable claim plus one immutable
+  attempt before any creator I/O; exact replay performs no creator I/O and changed replay fails
+  closed.
+- The approved creator may instantiate only the code-owned sealed process image and manifest in a
+  suspended, non-runnable state inside the exact existing protected runtime.
+- The creator receives no caller-supplied command, executable, arguments, environment, working
+  directory, runtime/process locator, endpoint, credential, prompt, model or provider coordinate.
+- Terminal evidence is limited to suspended creation, rejection without creation, failure without
+  creation or permanent uncertainty. No automatic retry, resume, cleanup or recovery invocation is
+  permitted.
+- The slice performs no scheduling, resume, dispatch, execution, model, network,
+  connector/MCP/provider, publication, delivery or infrastructure mutation.
+- Production authority is PostgreSQL-only. The POST is workload-only; normal username/password
+  sessions receive minimized `no-store` read-only GET/UI without MFA or a second browser session.
+- AI remains advisory-only. Active Directory remains authentication-only; no Active Directory
+  management capability or MCP is introduced.
+
+### ATLAS-IMP-228 Verification Evidence
+
+- The focused domain, service, protected creator, API and persistence-contract suite passed `49`
+  tests with one live-database case intentionally skipped until the PostgreSQL run. Full MyPy passed
+  across `1433` source and test files, and Ruff format/lint passed for every changed backend file.
+- A live PostgreSQL test built the canonical ADR-160 through ADR-177 lineage, issued a real one-
+  second authorization lease and raced two exact IMP-228 requests. Exactly one request crossed the
+  creator boundary; the competitor failed closed without retry, exact terminal replay performed no
+  creator I/O and the creator call count remained one. The final PostgreSQL file passed all `3`
+  tests against the live database.
+- Alembic reports the single head `20260820_0151`. The migration completed a live PostgreSQL
+  `0150 -> 0151 -> 0150 -> 0151` round trip.
+- Frontend TypeScript and focused ESLint passed. The read-only Workflow Planning test passed with
+  `1` focused test and `622` skipped unrelated cases.
+- Live API validation used the normal `atlas-demo` / `local-demo` username/password session. Login
+  returned `201`; the new read-only inventory returned `200`, `durable=true`, an empty inventory and
+  `Cache-Control: no-store, max-age=0` without MFA or a second browser session.
+- Live browser validation rendered the read-only `Protected runtime process creations` section at
+  `1280px` with body width equal to viewport width. The UI exposes no process-creation, retry,
+  schedule, resume, dispatch, execution or mutation control.
+- Independent review findings were resolved by binding the immutable process image and manifest
+  into the signed primitive digest, mapping ambiguous claim commits to permanent non-retryable
+  uncertainty, re-verifying creator receipt signatures in the persistence result-write path, and
+  representing ambiguous process creation, sealing and suspension facts as unknown rather than
+  false.
 
 ### ATLAS-IMP-227 Scope Rationale
 
@@ -69,6 +128,13 @@
 - Independent review confirmed replay-first persistence ordering, exact replay without source or
   attestor I/O, server-derived readiness digest binding, dual-FK integrity, competing-request
   behavior and changed-replay rejection. No merge-blocking finding remains.
+
+### ATLAS-IMP-227 Delivery Evidence
+
+- [PR #240](https://github.com/ozdemirumit/Project_Atlas/pull/240) was squash-merged to `main` as
+  `e37900926117c0961e7a221cc86d2ed0cfcfa368`.
+- Exact-head pull-request CI and independent merge-after-main CI both passed for backend and
+  frontend. Local `main` and `origin/main` were synchronized to the merge commit before IMP-228.
 
 ### ATLAS-IMP-226 Scope Rationale
 
