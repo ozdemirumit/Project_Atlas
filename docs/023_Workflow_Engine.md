@@ -832,6 +832,17 @@ MVP workflows do not execute C3 through C5 capabilities.
   dispatch, generic execution or infrastructure mutation. AI remains advisory-only, Active
   Directory remains authentication-only, and human inventory GET uses the normal username/password
   session without MFA or a second browser prompt.
+- ADR-177 issues one append-only, single-use, non-renewable, non-transferable and non-bearer
+  protected runtime process-creation authorization lease from only one canonical
+  `runtime_ready_in_protected_boundary` result. Fresh signed metadata-only attestation and complete
+  PostgreSQL lineage/fence revalidation must prove that the exact runtime remains started, ready,
+  current, process-free and unscheduled. Only an active, at-most-one-second lease may set
+  `protected_runtime_process_creation_authority_granted=true`; all existing authority declarations
+  remain false. The lease authorizes only one future process-creation request and does not create or
+  schedule a process, carry command/executable/argument/environment or runtime material, or perform
+  model, network, connector/MCP/provider, publication, delivery, dispatch, execution or
+  infrastructure mutation. AI remains advisory-only, Active Directory remains authentication-only,
+  and normal username/password-session GET requires no MFA or second browser prompt.
 
 ## 39. Assumptions
 
@@ -884,3 +895,4 @@ This document is ready to enter Review when:
 | 2.5.0 | 2026-08-17 | Workflow Architecture | Added atomic protected runtime-start consumption and single start attempt |
 | 2.6.0 | 2026-08-17 | Workflow Architecture | Added bounded single-use protected runtime-readiness authorization lease boundary |
 | 2.7.0 | 2026-08-17 | Workflow Architecture | Added atomic protected runtime-readiness consumption and single assessment attempt |
+| 2.8.0 | 2026-08-18 | Workflow Architecture | Added bounded single-use protected runtime process-creation authorization lease boundary |

@@ -33,6 +33,7 @@ from atlas.api.security import (
     authorize_workflow_protected_runtime_context_use_authorization_consumption_read,
     authorize_workflow_protected_runtime_context_use_authorization_read,
     authorize_workflow_protected_runtime_context_use_read,
+    authorize_workflow_protected_runtime_process_creation_authorization_read,
     authorize_workflow_protected_runtime_readiness_authorization_read,
     authorize_workflow_protected_runtime_readiness_consumption_read,
     authorize_workflow_protected_runtime_start_authorization_read,
@@ -91,6 +92,7 @@ from atlas.api.workflow_schemas import (
     CreateWorkflowProtectedRuntimeContextUseAuthorizationConsumptionInput,
     CreateWorkflowProtectedRuntimeContextUseAuthorizationInput,
     CreateWorkflowProtectedRuntimeContextUseInput,
+    CreateWorkflowProtectedRuntimeProcessCreationAuthorizationInput,
     CreateWorkflowProtectedRuntimeReadinessAuthorizationInput,
     CreateWorkflowProtectedRuntimeReadinessConsumptionInput,
     CreateWorkflowProtectedRuntimeStartAuthorizationInput,
@@ -242,6 +244,10 @@ from atlas.api.workflow_schemas import (
     WorkflowProtectedRuntimeContextUseInventoryData,
     WorkflowProtectedRuntimeContextUseInventoryResponse,
     WorkflowProtectedRuntimeContextUseResponse,
+    WorkflowProtectedRuntimeProcessCreationAuthorizationData,
+    WorkflowProtectedRuntimeProcessCreationAuthorizationInventoryData,
+    WorkflowProtectedRuntimeProcessCreationAuthorizationInventoryResponse,
+    WorkflowProtectedRuntimeProcessCreationAuthorizationResponse,
     WorkflowProtectedRuntimeReadinessAuthorizationData,
     WorkflowProtectedRuntimeReadinessAuthorizationInventoryData,
     WorkflowProtectedRuntimeReadinessAuthorizationInventoryResponse,
@@ -408,6 +414,12 @@ from atlas.modules.workflows.application.event_envelopes import (
 )
 from atlas.modules.workflows.application.physical_route_binding_ports import (
     WorkflowEventPhysicalTransportRouteBindingError,
+)
+from atlas.modules.workflows.application.protected_runtime_process_creation_authorization_ports import (  # noqa: E501
+    WorkflowProtectedRuntimeProcessCreationAuthorizationError,
+)
+from atlas.modules.workflows.application.protected_runtime_process_creation_authorizations import (
+    WorkflowProtectedRuntimeProcessCreationAuthorizationService,
 )
 from atlas.modules.workflows.application.protected_runtime_readiness_authorization_ports import (
     WorkflowProtectedRuntimeReadinessAuthorizationError,
@@ -7647,6 +7659,162 @@ async def create_workflow_protected_runtime_readiness_consumption(
             retryable=True,
         ) from error
     return WorkflowProtectedRuntimeReadinessConsumptionResponse(
+        data=data,
+        meta=_meta(request),
+    )
+
+
+@router.get(
+    "/protected-runtime-process-creation-authorizations",
+    response_model=WorkflowProtectedRuntimeProcessCreationAuthorizationInventoryResponse,
+)
+async def list_workflow_protected_runtime_process_creation_authorizations(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_workflow_protected_runtime_process_creation_authorization_read),
+    ],
+) -> WorkflowProtectedRuntimeProcessCreationAuthorizationInventoryResponse:
+    del decision
+    _no_store(response)
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    service = cast(
+        WorkflowProtectedRuntimeProcessCreationAuthorizationService,
+        request.app.state.workflow_protected_runtime_process_creation_authorization_service,
+    )
+    try:
+        inventory = await service.list_presentations(scope=scope, limit=256)
+        if any(presentation.lease.scope != scope for presentation in inventory.presentations):
+            raise RuntimeError("protected process-creation authorization scope mismatch")
+        inventory_data = WorkflowProtectedRuntimeProcessCreationAuthorizationInventoryData(
+            authorizations=[
+                WorkflowProtectedRuntimeProcessCreationAuthorizationData.from_domain(presentation)
+                for presentation in inventory.presentations
+            ],
+            server_time=inventory.server_time,
+            durable=service.durable,
+        )
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code=("workflow_protected_runtime_process_creation_authorization_service_unavailable"),
+            title="Protected process-creation authorization unavailable",
+            detail="Process-creation authorization metadata is temporarily unavailable.",
+            retryable=True,
+        ) from error
+    return WorkflowProtectedRuntimeProcessCreationAuthorizationInventoryResponse(
+        data=inventory_data,
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    "/protected-runtime-process-creation-authorizations",
+    response_model=WorkflowProtectedRuntimeProcessCreationAuthorizationResponse,
+    status_code=201,
+)
+async def create_workflow_protected_runtime_process_creation_authorization(
+    payload: CreateWorkflowProtectedRuntimeProcessCreationAuthorizationInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[
+        AuthenticatedSubject,
+        Depends(workflow_protected_transport_target_context_capsule_consumer_subject),
+    ],
+) -> WorkflowProtectedRuntimeProcessCreationAuthorizationResponse:
+    _no_store(response)
+    service = cast(
+        WorkflowProtectedRuntimeProcessCreationAuthorizationService,
+        request.app.state.workflow_protected_runtime_process_creation_authorization_service,
+    )
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    try:
+        lease = await service.authorize(
+            readiness_result_id=payload.readiness_result_id,
+            policy_id=payload.policy_id,
+            policy_version=payload.policy_version,
+            single_use_nonrenewable_nontransferable_future_request_acknowledged=(
+                payload.single_use_nonrenewable_nontransferable_future_request_acknowledged
+            ),
+            no_process_creation_or_scheduling_authority_acknowledged=(
+                payload.no_process_creation_or_scheduling_authority_acknowledged
+            ),
+            idempotency_key=payload.idempotency_key,
+            context=WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationContext(
+                subject_id=subject.subject_id,
+                actor_type=subject.kind.value,
+                authentication_method=subject.authentication_method.value,
+                credential_audience=WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_AUDIENCE,
+                scope=scope,
+                correlation_id=str(request.state.correlation_id),
+                decision_id=(
+                    "decision.workflow-protected-runtime-process-creation-consumer-authenticated"
+                ),
+                requested_at=datetime.now(UTC),
+            ),
+        )
+        inventory = await service.list_presentations(
+            scope=scope,
+            authorization_lease_ids=(lease.authorization_lease_id,),
+            limit=1,
+        )
+        if len(inventory.presentations) != 1:
+            raise RuntimeError("process-creation authorization projection unavailable")
+        presentation = inventory.presentations[0]
+        if presentation.lease.canonical_digest != lease.canonical_digest:
+            raise RuntimeError("process-creation authorization projection mismatch")
+        data = WorkflowProtectedRuntimeProcessCreationAuthorizationData.from_domain(presentation)
+    except WorkflowProtectedRuntimeProcessCreationAuthorizationError as error:
+        conflict = any(
+            marker in error.code
+            for marker in (
+                "already_authorized",
+                "evidence_conflict",
+                "idempotency_conflict",
+                "not_eligible",
+                "policy_conflict",
+            )
+        )
+        raise AtlasError(
+            status=409 if conflict else 503,
+            code=(
+                "authorization_denied"
+                if conflict
+                else (
+                    "workflow_protected_runtime_process_creation_authorization_service_unavailable"
+                )
+            ),
+            title=(
+                "Request denied"
+                if conflict
+                else "Protected process-creation authorization unavailable"
+            ),
+            detail=(
+                "The current identity or evidence is not authorized for this operation."
+                if conflict
+                else "Process-creation authorization metadata is temporarily unavailable."
+            ),
+            retryable=not conflict,
+        ) from error
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code=("workflow_protected_runtime_process_creation_authorization_service_unavailable"),
+            title="Protected process-creation authorization unavailable",
+            detail="Process-creation authorization metadata is temporarily unavailable.",
+            retryable=True,
+        ) from error
+    return WorkflowProtectedRuntimeProcessCreationAuthorizationResponse(
         data=data,
         meta=_meta(request),
     )

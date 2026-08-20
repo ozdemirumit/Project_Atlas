@@ -4,14 +4,71 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-226 |
-| Title | Atomic protected runtime-readiness consumption and single assessment attempt |
-| Status | CI remediation complete; delivery in progress |
-| Branch | `agent/protected-runtime-readiness-consumption` |
-| Pull Request | [#239](https://github.com/ozdemirumit/Project_Atlas/pull/239) |
-| Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-176 |
-| Last Updated | 2026-08-17 |
-| Next Action | Push the remediated exact head, complete CI, merge PR #239, and verify main CI |
+| Task ID | ATLAS-IMP-227 |
+| Title | Bounded single-use protected runtime process-creation authorization lease |
+| Status | Implementation complete; pull request CI in progress |
+| Branch | `agent/protected-runtime-process-creation-authorization` |
+| Pull Request | [#240](https://github.com/ozdemirumit/Project_Atlas/pull/240) |
+| Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-177 |
+| Last Updated | 2026-08-20 |
+| Next Action | Complete PR #240 CI, merge and verify `main` |
+
+### ATLAS-IMP-227 Scope Rationale
+
+- IMP-226 proves only that the exact already-started runtime was ready at one verified instant. Its
+  terminal result is non-bearer historical evidence and grants no follow-on authority.
+- Process-creation request authorization requires a separate short-lived boundary rooted only in
+  canonical `runtime_ready_in_protected_boundary` evidence plus fresh lifecycle attestation.
+- IMP-227 issues only an at-most-one-second lease for one future IMP-228 request. It creates or
+  schedules no process and performs no model, network, connector, dispatch, execution or mutation.
+
+### ATLAS-IMP-227 Acceptance Criteria
+
+- Only the exact protected consumer workload bound through canonical ADR-160 through ADR-176
+  lineage may POST; humans, AI agents, MCP tools, connectors and recovery workers fail closed.
+- Only a canonical, timely verified `runtime_ready_in_protected_boundary` result is eligible.
+  Not-ready, failed, pending and uncertain results are rejected.
+- Fresh signed metadata-only attestation proves that the runtime remains started, ready, current,
+  process-free and unscheduled before the transaction.
+- PostgreSQL revalidates complete lineage, runtime-start head, destination fence, slot generation,
+  pending outbox and current publication/orchestration fences under authoritative database time.
+- The append-only, non-transferable, non-renewable, single-use, non-bearer lease expires within one
+  second and authorizes only submission of one future process-creation request.
+- Only an active lease may set
+  `protected_runtime_process_creation_authority_granted=true`; all existing authority fields remain
+  false. Exact replay returns the same lease without extending it; changed replay, race, expiry,
+  lineage drift and cancellation fail closed.
+- The lease carries no command, executable, argument, environment, runtime locator/material,
+  credential, endpoint, prompt, model or provider coordinate and performs no process creation,
+  scheduling, network, connector/MCP/provider, publication, delivery, dispatch, execution or
+  infrastructure mutation.
+- Production authority is PostgreSQL-only. The POST is workload-only; normal username/password
+  sessions receive minimized `no-store` read-only GET/UI without MFA or a second browser session.
+- AI remains advisory-only and cannot request the lease. Active Directory remains authentication-
+  only; no Active Directory management capability or MCP is introduced.
+
+### ATLAS-IMP-227 Verification Evidence
+
+- Ruff passed across all backend source, test and migration files. Full CI-equivalent MyPy passed
+  across `1423` source and test files with no issues, and Alembic reports the single head
+  `20260818_0150`.
+- The final IMP-227 domain, persistence, service, API, PostgreSQL-adapter and attestor regression
+  suite passed `108` tests in the non-database run. The complete PostgreSQL adapter file then passed
+  all `9` tests against a local PostgreSQL 17 database, including both live integration scenarios.
+- Live PostgreSQL coverage proves same-key exact replay, changed-replay rejection, different-key
+  single-winner concurrency, both initially-deferred circular foreign keys, lease-only and
+  claim-only orphan commit rejection, append-only enforcement, guarded downgrade and publication-
+  fence drift rejection.
+- Frontend ESLint, TypeScript and production Vite build passed. The complete Workflow Planning
+  workspace suite passed `622` tests, including `16` focused process-creation authorization
+  evidence tests and strict fail-closed parsing of the minimized read-only projection.
+- Local API validation used a normal `atlas-demo` / `local-demo` username/password session. Session
+  creation returned `201`; without a PostgreSQL DSN the protected inventory failed closed with
+  `503` and `Cache-Control: no-store, max-age=0`. No MFA, second browser session or human mutation
+  control was introduced.
+- Independent review confirmed replay-first persistence ordering, exact replay without source or
+  attestor I/O, server-derived readiness digest binding, dual-FK integrity, competing-request
+  behavior and changed-replay rejection. No merge-blocking finding remains.
 
 ### ATLAS-IMP-226 Scope Rationale
 
@@ -80,6 +137,12 @@
   suite passed `49` tests with three live PostgreSQL tests skipped locally only because the local
   non-superuser fixture account cannot set `session_replication_role`; Linux CI runs those paths with
   the required isolated PostgreSQL test privileges.
+
+### ATLAS-IMP-226 Delivery Evidence
+
+- Delivered through [PR #239](https://github.com/ozdemirumit/Project_Atlas/pull/239), merged as
+  `c8b2a356`.
+- Independent `main` CI run `#880` completed successfully.
 
 ### ATLAS-IMP-225 Scope Rationale
 

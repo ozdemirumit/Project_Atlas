@@ -95,6 +95,8 @@ from atlas.core.persistence.models import (
     WorkflowProtectedRuntimeContextUseAuthorizationLeaseModel,
     WorkflowProtectedRuntimeContextUseClaimModel,
     WorkflowProtectedRuntimeContextUseResultModel,
+    WorkflowProtectedRuntimeProcessCreationAuthorizationClaimModel,
+    WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseModel,
     WorkflowProtectedRuntimeReadinessAuthorizationClaimModel,
     WorkflowProtectedRuntimeReadinessAuthorizationLeaseModel,
     WorkflowProtectedRuntimeReadinessConsumptionAttemptModel,
@@ -344,6 +346,20 @@ from atlas.modules.workflows.application.protected_runtime_context_use_ports imp
     WorkflowProtectedRuntimeContextUseSource,
     build_workflow_protected_runtime_context_use_instruction,
     validate_workflow_protected_runtime_context_use_claim_request,
+)
+from atlas.modules.workflows.application.protected_runtime_process_creation_authorization_ports import (  # noqa: E501
+    WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseRequest,
+    WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseResult,
+    WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseStatus,
+    WorkflowProtectedRuntimeProcessCreationAuthorizationPreflightRequest,
+    WorkflowProtectedRuntimeProcessCreationAuthorizationPreflightResult,
+    WorkflowProtectedRuntimeProcessCreationAuthorizationPreflightStatus,
+    WorkflowProtectedRuntimeProcessCreationAuthorizationPresentation,
+    WorkflowProtectedRuntimeProcessCreationAuthorizationPresentationState,
+    WorkflowProtectedRuntimeProcessCreationAuthorizationSource,
+    WorkflowProtectedRuntimeProcessCreationAuthorizationSourceRequest,
+    WorkflowProtectedRuntimeProcessCreationLifecycleAttestation,
+    validate_workflow_protected_runtime_process_creation_authorization_request,
 )
 from atlas.modules.workflows.application.protected_runtime_readiness_authorization_ports import (
     WorkflowProtectedRuntimeReadinessAuthorizationLeaseRequest,
@@ -710,6 +726,13 @@ from atlas.modules.workflows.domain.protected_runtime_context_use_domain import 
     WorkflowProtectedRuntimeContextUseResult,
     WorkflowProtectedRuntimeContextUseResultState,
     code_owned_workflow_protected_runtime_context_use_policy,
+)
+from atlas.modules.workflows.domain.protected_runtime_process_creation_authorization_domain import (
+    WorkflowProtectedRuntimeProcessCreationAuthorizationAuthority,
+    WorkflowProtectedRuntimeProcessCreationAuthorizationClaim,
+    WorkflowProtectedRuntimeProcessCreationAuthorizationLease,
+    WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseState,
+    code_owned_workflow_protected_runtime_process_creation_authorization_policy,
 )
 from atlas.modules.workflows.domain.protected_runtime_readiness_authorization_domain import (
     WorkflowProtectedRuntimeReadinessAuthorizationAuthority,
@@ -1100,6 +1123,25 @@ class _ProtectedRuntimeReadinessConsumptionResultLockedSources:
     claim: WorkflowProtectedRuntimeReadinessConsumptionClaimModel | None
     attempt: WorkflowProtectedRuntimeReadinessConsumptionAttemptModel | None
     result: WorkflowProtectedRuntimeReadinessConsumptionResultModel | None
+    observed_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class _ProtectedRuntimeProcessCreationAuthorizationLockedSources:
+    readiness_result: WorkflowProtectedRuntimeReadinessConsumptionResultModel | None
+    readiness_attempt: WorkflowProtectedRuntimeReadinessConsumptionAttemptModel | None
+    readiness_claim: WorkflowProtectedRuntimeReadinessConsumptionClaimModel | None
+    readiness_authorization_lease: WorkflowProtectedRuntimeReadinessAuthorizationLeaseModel | None
+    readiness_authorization_claim: WorkflowProtectedRuntimeReadinessAuthorizationClaimModel | None
+    destination_head: WorkflowProtectedRuntimeContextInjectionDestinationHeadModel | None
+    slot_head: WorkflowProtectedRuntimeContextInjectionSlotHeadModel | None
+    start_head: WorkflowProtectedRuntimeStartCoordinationHeadModel | None
+    dispatch_outbox: WorkflowDispatchOutboxEntryModel | None
+    publication_lease: WorkflowOutboxPublicationLeaseModel | None
+    orchestration_lease: WorkflowOrchestrationLeaseModel | None
+    existing_claims: tuple[WorkflowProtectedRuntimeProcessCreationAuthorizationClaimModel, ...]
+    existing_leases: tuple[WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseModel, ...]
+    first_observed_at: datetime
     observed_at: datetime
 
 
@@ -6777,6 +6819,9 @@ class PostgreSQLWorkflowPlanRepository:
                 or claim_row.policy_id != request.policy_id
                 or claim_row.policy_version != request.policy_version
                 or claim_row.policy_digest != request.policy_digest
+                or canonical_digest(dict(claim_row.payload)) != claim_row.canonical_digest
+                or canonical_digest(dict(claim_row.authorization_audit_payload))
+                != claim_row.authorization_audit_digest
             ):
                 await session.rollback()
                 return result_type(statuses.IDEMPOTENCY_CONFLICT, None, locked.observed_at)
@@ -11352,6 +11397,1127 @@ class PostgreSQLWorkflowPlanRepository:
     @staticmethod
     def _protected_runtime_readiness_consumption_contract_violation() -> NoReturn:
         raise ValueError("protected runtime-readiness consumption contract violated")
+
+    async def preflight_protected_runtime_process_creation_authorization(
+        self,
+        request: WorkflowProtectedRuntimeProcessCreationAuthorizationPreflightRequest,
+    ) -> WorkflowProtectedRuntimeProcessCreationAuthorizationPreflightResult:
+        statuses = WorkflowProtectedRuntimeProcessCreationAuthorizationPreflightStatus
+        result_type = WorkflowProtectedRuntimeProcessCreationAuthorizationPreflightResult
+        async with self._sessions() as session:
+            locked = await self._lock_protected_runtime_process_creation_authorization_rows(
+                session,
+                readiness_result_id=request.readiness_result_id,
+                scope=request.scope,
+                consumer_subject_id=request.consumer_subject_id,
+                consumer_audience=request.consumer_audience,
+                idempotency_key=request.idempotency_key,
+                for_update=False,
+            )
+            scope_id = canonical_digest(
+                {
+                    "scope": request.scope.canonical_value(),
+                    "subject_id": request.consumer_subject_id,
+                    "audience": request.consumer_audience,
+                }
+            )
+            claims = tuple(
+                row
+                for row in locked.existing_claims
+                if row.idempotency_scope_id == scope_id
+                and row.idempotency_key == request.idempotency_key
+            )
+            if not claims:
+                await session.rollback()
+                return result_type(
+                    statuses.ALREADY_AUTHORIZED if locked.existing_leases else statuses.NONE,
+                    None,
+                    locked.observed_at,
+                )
+            claim_row = claims[0]
+            locked_result_digest = (
+                None
+                if locked.readiness_result is None
+                else locked.readiness_result.canonical_digest
+            )
+            if (
+                len(claims) != 1
+                or claim_row.idempotency_digest != request.idempotency_digest
+                or claim_row.request_fingerprint != request.request_fingerprint
+                or claim_row.readiness_result_id != request.readiness_result_id
+                or claim_row.readiness_result_digest != locked_result_digest
+                or claim_row.policy_id != request.policy_id
+                or claim_row.policy_version != request.policy_version
+                or claim_row.policy_digest != request.policy_digest
+            ):
+                await session.rollback()
+                return result_type(statuses.IDEMPOTENCY_CONFLICT, None, locked.observed_at)
+            lease_row = next(
+                (
+                    row
+                    for row in locked.existing_leases
+                    if row.authorization_lease_id == claim_row.authorization_lease_id
+                ),
+                None,
+            )
+            try:
+                lease = (
+                    None
+                    if lease_row is None
+                    else self._protected_runtime_process_creation_authorization_lease_from_row(
+                        lease_row
+                    )
+                )
+                attestation = (
+                    None
+                    if lease_row is None
+                    else self._protected_runtime_process_creation_attestation_from_row(lease_row)
+                )
+                source = self._protected_runtime_process_creation_source_from_locked(locked)
+                signature_verifier = request.offline_signature_verifier
+                signature_valid = bool(
+                    attestation is not None
+                    and signature_verifier.verify_runtime_process_creation_lifecycle_attestation(
+                        attestation
+                    )
+                )
+                receipt_valid = bool(
+                    source is not None
+                    and request.offline_readiness_receipt_signature_verifier.verify_receipt(
+                        source.readiness_receipt
+                    )
+                )
+                verified = bool(
+                    lease is not None
+                    and attestation is not None
+                    and source is not None
+                    and signature_valid
+                    and receipt_valid
+                )
+            except Exception:
+                lease = None
+                verified = False
+            await session.rollback()
+            return result_type(
+                statuses.REPLAY if verified else statuses.EVIDENCE_CONFLICT,
+                lease if verified else None,
+                locked.observed_at,
+            )
+
+    async def get_protected_runtime_process_creation_authorization_source(
+        self,
+        request: WorkflowProtectedRuntimeProcessCreationAuthorizationSourceRequest,
+    ) -> WorkflowProtectedRuntimeProcessCreationAuthorizationSource | None:
+        async with self._sessions() as session:
+            locked = await self._lock_protected_runtime_process_creation_authorization_rows(
+                session,
+                readiness_result_id=request.readiness_result_id,
+                scope=request.scope,
+                consumer_subject_id=request.consumer_subject_id,
+                consumer_audience=request.consumer_audience,
+                idempotency_key=None,
+                for_update=False,
+            )
+            source = self._protected_runtime_process_creation_source_from_locked(locked)
+            await session.rollback()
+            if (
+                source is None
+                or source.readiness_authorization_lease.consumer_contract_id
+                != request.consumer_contract_id
+                or source.readiness_authorization_lease.consumer_contract_version
+                != request.consumer_contract_version
+            ):
+                return None
+            return source
+
+    async def list_protected_runtime_process_creation_authorization_presentations(
+        self,
+        *,
+        scope: WorkflowScope,
+        evaluated_at: datetime,
+        authorization_lease_ids: tuple[str, ...] | None = None,
+        limit: int = 256,
+    ) -> tuple[WorkflowProtectedRuntimeProcessCreationAuthorizationPresentation, ...]:
+        if authorization_lease_ids == ():
+            return ()
+        model = WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseModel
+        statement = select(model).where(
+            model.organization_id == scope.organization_id,
+            model.environment_id == scope.environment_id,
+            model.site_id == scope.site_id,
+        )
+        if authorization_lease_ids is not None:
+            statement = statement.where(model.authorization_lease_id.in_(authorization_lease_ids))
+        statement = statement.order_by(model.issued_at.desc()).limit(max(1, min(limit, 512)))
+        async with self._sessions() as session:
+            rows = tuple((await session.scalars(statement)).all())
+        presentations: list[WorkflowProtectedRuntimeProcessCreationAuthorizationPresentation] = []
+        for row in rows:
+            lease = self._protected_runtime_process_creation_authorization_lease_from_row(row)
+            active = lease.is_active(evaluated_at=evaluated_at, consumed=False)
+            state = (
+                WorkflowProtectedRuntimeProcessCreationAuthorizationPresentationState.ACTIVE
+                if active
+                else WorkflowProtectedRuntimeProcessCreationAuthorizationPresentationState.EXPIRED
+            )
+            presentations.append(
+                WorkflowProtectedRuntimeProcessCreationAuthorizationPresentation(
+                    lease=lease,
+                    consumed=False,
+                    evaluated_at=evaluated_at,
+                    effective_state=state,
+                    protected_runtime_process_creation_authority_granted=active,
+                )
+            )
+        return tuple(presentations)
+
+    async def authorize_protected_runtime_process_creation(
+        self,
+        request: WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseRequest,
+    ) -> WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseResult:
+        statuses = WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseStatus
+        result_type = WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseResult
+        result_id = request.source.result.result_id
+        async with self._sessions() as session:
+            locked = await self._lock_protected_runtime_process_creation_authorization_rows(
+                session,
+                readiness_result_id=result_id,
+                scope=request.scope,
+                consumer_subject_id=request.consumer_subject_id,
+                consumer_audience=request.consumer_audience,
+                idempotency_key=request.idempotency_key,
+            )
+            replay = self._protected_runtime_process_creation_authorization_replay(request, locked)
+            if replay is not None:
+                await session.rollback()
+                return replay
+            if not self._protected_runtime_process_creation_authorization_source_is_eligible(
+                request, locked
+            ):
+                await session.rollback()
+                return result_type(statuses.EVIDENCE_CONFLICT, None, locked.observed_at)
+            if locked.existing_claims or locked.existing_leases:
+                await session.rollback()
+                return result_type(statuses.ALREADY_AUTHORIZED, None, locked.observed_at)
+            try:
+                commit_observed_at = cast(
+                    datetime, await session.scalar(select(func.clock_timestamp()))
+                )
+                if (
+                    commit_observed_at < locked.first_observed_at
+                    or commit_observed_at > locked.first_observed_at + timedelta(seconds=1)
+                ):
+                    await session.rollback()
+                    return result_type(statuses.EVIDENCE_CONFLICT, None, commit_observed_at)
+                working = self._protected_runtime_process_creation_authorization_retimed_request(
+                    request,
+                    claimed_at=locked.first_observed_at,
+                    issued_at=locked.first_observed_at,
+                )
+                validate_workflow_protected_runtime_process_creation_authorization_request(working)
+                audit_payload: dict[str, object] = {
+                    "readiness_result_id": working.candidate.readiness_result_id,
+                    "policy_digest": working.candidate.policy_digest,
+                    "request_fingerprint": working.request_fingerprint,
+                    "scope": working.scope.canonical_value(),
+                }
+                if (
+                    canonical_digest(audit_payload)
+                    != working.candidate_claim.authorization_audit_digest
+                ):
+                    await session.rollback()
+                    return result_type(statuses.EVIDENCE_CONFLICT, None, commit_observed_at)
+                session.add(
+                    self._protected_runtime_process_creation_authorization_lease_model(
+                        working.candidate,
+                        working.lifecycle_attestation,
+                        locked=locked,
+                        source_observed_at=locked.first_observed_at,
+                        authorized_at=locked.first_observed_at,
+                    )
+                )
+                await session.flush()
+                session.add(
+                    self._protected_runtime_process_creation_authorization_claim_model(
+                        working.candidate_claim,
+                        authorization_lease_id=working.candidate.authorization_lease_id,
+                        idempotency_key=working.idempotency_key,
+                        audit_payload=audit_payload,
+                        locked=locked,
+                        source_observed_at=locked.first_observed_at,
+                    )
+                )
+                await session.commit()
+                return result_type(statuses.AUTHORIZED, working.candidate, commit_observed_at)
+            except (IntegrityError, TypeError, ValueError):
+                await session.rollback()
+
+        async with self._sessions() as session:
+            locked = await self._lock_protected_runtime_process_creation_authorization_rows(
+                session,
+                readiness_result_id=result_id,
+                scope=request.scope,
+                consumer_subject_id=request.consumer_subject_id,
+                consumer_audience=request.consumer_audience,
+                idempotency_key=request.idempotency_key,
+            )
+            replay = self._protected_runtime_process_creation_authorization_replay(request, locked)
+            await session.rollback()
+            if replay is not None:
+                return replay
+            if locked.existing_claims or locked.existing_leases:
+                return result_type(statuses.ALREADY_AUTHORIZED, None, locked.observed_at)
+            return result_type(statuses.EVIDENCE_CONFLICT, None, locked.observed_at)
+
+    async def _lock_protected_runtime_process_creation_authorization_rows(
+        self,
+        session: AsyncSession,
+        *,
+        readiness_result_id: str,
+        scope: WorkflowScope,
+        consumer_subject_id: str,
+        consumer_audience: str,
+        idempotency_key: str | None,
+        for_update: bool = True,
+    ) -> _ProtectedRuntimeProcessCreationAuthorizationLockedSources:
+        claim_model = WorkflowProtectedRuntimeProcessCreationAuthorizationClaimModel
+        lease_model = WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseModel
+
+        def locked(statement: Any) -> Any:
+            statement = statement.execution_options(populate_existing=True)
+            return statement.with_for_update() if for_update else statement
+
+        scope_filter = and_(
+            claim_model.organization_id == scope.organization_id,
+            claim_model.environment_id == scope.environment_id,
+            claim_model.site_id == scope.site_id,
+            claim_model.consumer_subject_id == consumer_subject_id,
+            claim_model.consumer_audience == consumer_audience,
+        )
+        idempotency_scope_id = canonical_digest(
+            {
+                "scope": scope.canonical_value(),
+                "subject_id": consumer_subject_id,
+                "audience": consumer_audience,
+            }
+        )
+        claim_filters = [
+            and_(
+                claim_model.readiness_result_id == readiness_result_id,
+                scope_filter,
+            )
+        ]
+        if idempotency_key is not None:
+            claim_filters.append(
+                and_(
+                    scope_filter,
+                    claim_model.idempotency_scope_id == idempotency_scope_id,
+                    claim_model.idempotency_key == idempotency_key,
+                )
+            )
+        # Replay is locked before source eligibility so a durable exact replay is never
+        # mistaken for a second authority grant.
+        existing_claims = tuple(
+            (
+                await session.scalars(
+                    locked(
+                        select(claim_model)
+                        .where(or_(*claim_filters))
+                        .order_by(claim_model.claim_id)
+                    )
+                )
+            ).all()
+        )
+        lease_ids = tuple(row.authorization_lease_id for row in existing_claims)
+        lease_scope = and_(
+            lease_model.organization_id == scope.organization_id,
+            lease_model.environment_id == scope.environment_id,
+            lease_model.site_id == scope.site_id,
+            lease_model.consumer_subject_id == consumer_subject_id,
+            lease_model.consumer_audience == consumer_audience,
+        )
+        lease_filter = and_(lease_scope, lease_model.readiness_result_id == readiness_result_id)
+        if lease_ids:
+            lease_filter = or_(
+                lease_filter,
+                and_(lease_scope, lease_model.authorization_lease_id.in_(lease_ids)),
+            )
+        existing_leases = tuple(
+            (
+                await session.scalars(
+                    locked(
+                        select(lease_model)
+                        .where(lease_filter)
+                        .order_by(lease_model.authorization_lease_id)
+                    )
+                )
+            ).all()
+        )
+
+        first_observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+        result = WorkflowProtectedRuntimeReadinessConsumptionResultModel
+        attempt = WorkflowProtectedRuntimeReadinessConsumptionAttemptModel
+        source_claim = WorkflowProtectedRuntimeReadinessConsumptionClaimModel
+        source_lease = WorkflowProtectedRuntimeReadinessAuthorizationLeaseModel
+        source_auth_claim = WorkflowProtectedRuntimeReadinessAuthorizationClaimModel
+        destination = WorkflowProtectedRuntimeContextInjectionDestinationHeadModel
+        slot = WorkflowProtectedRuntimeContextInjectionSlotHeadModel
+        head = WorkflowProtectedRuntimeStartCoordinationHeadModel
+        use_result = WorkflowProtectedRuntimeContextUseResultModel
+        use_consumption = WorkflowProtectedRuntimeContextUseAuthorizationConsumptionResultModel
+        use_lease = WorkflowProtectedRuntimeContextUseAuthorizationLeaseModel
+        injection_result = WorkflowProtectedRuntimeContextInjectionResultModel
+        injection_lease = WorkflowProtectedRuntimeContextInjectionAuthorizationLeaseModel
+        access_result = WorkflowProtectedResidentContextAccessResultModel
+        access_lease = WorkflowProtectedResidentContextAccessAuthorizationLeaseModel
+        opening_result = WorkflowProtectedTransportTargetContextCapsuleOpeningResultModel
+        consumer_binding = WorkflowProtectedTransportTargetContextCapsuleConsumerBindingModel
+        dispatch_outbox = WorkflowDispatchOutboxEntryModel
+        publication_lease = WorkflowOutboxPublicationLeaseModel
+        orchestration_lease = WorkflowOrchestrationLeaseModel
+        source_statement = (
+            select(
+                result,
+                attempt,
+                source_claim,
+                source_lease,
+                source_auth_claim,
+                destination,
+                slot,
+                head,
+                dispatch_outbox,
+                publication_lease,
+                orchestration_lease,
+            )
+            .select_from(result)
+            .join(attempt, attempt.attempt_id == result.attempt_id)
+            .join(source_claim, source_claim.claim_id == result.claim_id)
+            .join(
+                source_lease,
+                source_lease.authorization_lease_id == result.authorization_lease_id,
+            )
+            .join(source_auth_claim, source_auth_claim.claim_id == source_lease.claim_id)
+            .join(
+                destination,
+                destination.destination_deployment_id == result.destination_deployment_id,
+            )
+            .join(
+                slot,
+                and_(
+                    slot.destination_deployment_id == result.destination_deployment_id,
+                    slot.runtime_slot_commitment == result.runtime_slot_commitment,
+                ),
+            )
+            .join(head, head.runtime_start_result_id == result.start_result_id)
+            .join(
+                use_result,
+                and_(
+                    use_result.result_id == result.use_result_id,
+                    use_result.canonical_digest == result.use_result_digest,
+                ),
+            )
+            .join(
+                use_consumption,
+                and_(
+                    use_consumption.result_id == use_result.authorization_consumption_result_id,
+                    use_consumption.canonical_digest
+                    == use_result.authorization_consumption_result_digest,
+                ),
+            )
+            .join(
+                use_lease,
+                and_(
+                    use_lease.authorization_lease_id == use_consumption.authorization_lease_id,
+                    use_lease.canonical_digest == use_consumption.authorization_lease_digest,
+                ),
+            )
+            .join(
+                injection_result,
+                and_(
+                    injection_result.result_id == use_lease.injection_result_id,
+                    injection_result.canonical_digest == use_lease.injection_result_digest,
+                ),
+            )
+            .join(
+                injection_lease,
+                and_(
+                    injection_lease.authorization_lease_id
+                    == injection_result.authorization_lease_id,
+                    injection_lease.canonical_digest == injection_result.authorization_lease_digest,
+                ),
+            )
+            .join(
+                access_result,
+                and_(
+                    access_result.access_id == injection_lease.access_result_id,
+                    access_result.canonical_digest == injection_lease.access_result_digest,
+                ),
+            )
+            .join(
+                access_lease,
+                and_(
+                    access_lease.access_authorization_lease_id
+                    == access_result.authorization_lease_id,
+                    access_lease.canonical_digest == access_result.authorization_lease_digest,
+                ),
+            )
+            .join(
+                opening_result,
+                and_(
+                    opening_result.opening_id == access_lease.opening_id,
+                    opening_result.canonical_digest == access_lease.opening_result_digest,
+                ),
+            )
+            .join(
+                consumer_binding,
+                and_(
+                    consumer_binding.binding_id == opening_result.consumer_binding_id,
+                    consumer_binding.canonical_digest == opening_result.consumer_binding_digest,
+                ),
+            )
+            .join(
+                dispatch_outbox,
+                and_(
+                    dispatch_outbox.outbox_entry_id == consumer_binding.outbox_entry_id,
+                    dispatch_outbox.canonical_digest == consumer_binding.outbox_entry_digest,
+                ),
+            )
+            .join(
+                publication_lease,
+                and_(
+                    publication_lease.outbox_entry_id == dispatch_outbox.outbox_entry_id,
+                    publication_lease.outbox_entry_digest == dispatch_outbox.canonical_digest,
+                ),
+            )
+            .join(
+                orchestration_lease,
+                and_(
+                    orchestration_lease.lease_id == publication_lease.orchestration_lease_id,
+                    orchestration_lease.canonical_digest
+                    == publication_lease.orchestration_lease_digest,
+                ),
+            )
+            .where(
+                result.result_id == readiness_result_id,
+                result.organization_id == scope.organization_id,
+                result.environment_id == scope.environment_id,
+                result.site_id == scope.site_id,
+                result.consumer_subject_id == consumer_subject_id,
+                result.consumer_audience == consumer_audience,
+                result.state == "runtime_ready_in_protected_boundary",
+                result.outcome_known.is_(True),
+                result.assessment_performed.is_(True),
+                result.runtime_ready.is_(True),
+                result.completed_at.is_not(None),
+                result.assessor_receipt_digest.is_not(None),
+                destination.current.is_(True),
+                destination.destination_generation == result.destination_generation,
+                destination.destination_fencing_token_digest
+                == result.destination_fencing_token_digest,
+                slot.current.is_(True),
+                slot.slot_state == "context_used_terminal",
+                slot.destination_generation == result.destination_generation,
+                slot.destination_fencing_token_digest == result.destination_fencing_token_digest,
+                slot.slot_generation == result.runtime_slot_generation,
+                head.state == "start_attempt_terminal",
+                head.runtime_start_result_digest == result.start_result_digest,
+                head.runtime_start_attempt_pending.is_(False),
+                head.runtime_start_attempt_terminal.is_(True),
+                head.runtime_started.is_(True),
+                head.runtime_resumed.is_(False),
+                head.process_created.is_(False),
+                head.process_scheduled.is_(False),
+                dispatch_outbox.state == "pending_publication",
+                publication_lease.state == "active",
+                orchestration_lease.state == "active",
+            )
+        )
+        source_row = (await session.execute(locked(source_statement))).one_or_none()
+        observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+        if source_row is None:
+            return _ProtectedRuntimeProcessCreationAuthorizationLockedSources(
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                existing_claims,
+                existing_leases,
+                first_observed_at,
+                observed_at,
+            )
+        (
+            readiness_result,
+            readiness_attempt,
+            readiness_claim,
+            readiness_authorization_lease,
+            readiness_authorization_claim,
+            destination_head,
+            slot_head,
+            start_head,
+            dispatch_outbox_row,
+            publication_lease_row,
+            orchestration_lease_row,
+        ) = source_row
+        return _ProtectedRuntimeProcessCreationAuthorizationLockedSources(
+            readiness_result,
+            readiness_attempt,
+            readiness_claim,
+            readiness_authorization_lease,
+            readiness_authorization_claim,
+            destination_head,
+            slot_head,
+            start_head,
+            dispatch_outbox_row,
+            publication_lease_row,
+            orchestration_lease_row,
+            existing_claims,
+            existing_leases,
+            first_observed_at,
+            observed_at,
+        )
+
+    @classmethod
+    def _protected_runtime_process_creation_authorization_replay(
+        cls,
+        request: WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseRequest,
+        locked: _ProtectedRuntimeProcessCreationAuthorizationLockedSources,
+    ) -> WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseResult | None:
+        statuses = WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseStatus
+        result_type = WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseResult
+        scope_id = canonical_digest(
+            {
+                "scope": request.scope.canonical_value(),
+                "subject_id": request.consumer_subject_id,
+                "audience": request.consumer_audience,
+            }
+        )
+        matches = tuple(
+            row
+            for row in locked.existing_claims
+            if row.idempotency_scope_id == scope_id
+            and row.idempotency_key == request.idempotency_key
+        )
+        if not matches:
+            return None
+        if len(matches) != 1:
+            return result_type(statuses.EVIDENCE_CONFLICT, None, locked.observed_at)
+        claim_row = matches[0]
+        if (
+            claim_row.idempotency_digest != request.idempotency_digest
+            or claim_row.request_fingerprint != request.request_fingerprint
+            or claim_row.readiness_result_id != request.source.result.result_id
+            or claim_row.readiness_result_digest != request.source.result.canonical_digest
+        ):
+            return result_type(statuses.IDEMPOTENCY_CONFLICT, None, locked.observed_at)
+        lease_row = next(
+            (
+                row
+                for row in locked.existing_leases
+                if row.authorization_lease_id == claim_row.authorization_lease_id
+            ),
+            None,
+        )
+        if lease_row is None:
+            return result_type(statuses.EVIDENCE_CONFLICT, None, locked.observed_at)
+        try:
+            durable_claim = cls._protected_runtime_process_creation_authorization_claim_from_row(
+                claim_row
+            )
+            durable_lease = cls._protected_runtime_process_creation_authorization_lease_from_row(
+                lease_row
+            )
+            durable_attestation = cls._protected_runtime_process_creation_attestation_from_row(
+                lease_row
+            )
+            working = dataclass_replace(
+                request,
+                lifecycle_attestation=durable_attestation,
+                expected_request_nonce_digest=durable_attestation.request_nonce_digest,
+                pre_attestation_observed_at=durable_attestation.observed_at,
+                requested_at=durable_lease.issued_at,
+                candidate_claim=durable_claim,
+                candidate=durable_lease,
+            )
+            validate_workflow_protected_runtime_process_creation_authorization_request(working)
+        except (TypeError, ValueError):
+            return result_type(statuses.EVIDENCE_CONFLICT, None, locked.observed_at)
+        if not cls._protected_runtime_process_creation_authorization_source_is_eligible(
+            working, locked
+        ):
+            return result_type(statuses.EVIDENCE_CONFLICT, None, locked.observed_at)
+        return result_type(statuses.REPLAY, durable_lease, locked.observed_at)
+
+    @staticmethod
+    def _protected_runtime_process_creation_authorization_retimed_request(
+        request: WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseRequest,
+        *,
+        claimed_at: datetime,
+        issued_at: datetime,
+    ) -> WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseRequest:
+        valid_until = min(
+            issued_at + timedelta(seconds=1),
+            request.lifecycle_attestation.valid_until,
+            request.lifecycle_attestation.runtime_envelope_eligible_until,
+        )
+        if valid_until <= issued_at:
+            raise ValueError("runtime process creation authorization window is exhausted")
+        claim_payload = request.candidate_claim.digest_payload()
+        claim_payload["claimed_at"] = claimed_at.isoformat()
+        claim = dataclass_replace(
+            request.candidate_claim,
+            claimed_at=claimed_at,
+            canonical_digest=canonical_digest(claim_payload),
+        )
+        lease_payload = request.candidate.digest_payload()
+        lease_payload.update(
+            claim_digest=claim.canonical_digest,
+            issued_at=issued_at.isoformat(),
+            valid_until=valid_until.isoformat(),
+            effective_until=valid_until.isoformat(),
+        )
+        lease = dataclass_replace(
+            request.candidate,
+            claim_digest=claim.canonical_digest,
+            issued_at=issued_at,
+            valid_until=valid_until,
+            effective_until=valid_until,
+            canonical_digest=canonical_digest(lease_payload),
+        )
+        return dataclass_replace(
+            request,
+            requested_at=issued_at,
+            candidate_claim=claim,
+            candidate=lease,
+        )
+
+    @staticmethod
+    def _protected_runtime_process_creation_authorization_source_is_eligible(
+        request: WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseRequest,
+        locked: _ProtectedRuntimeProcessCreationAuthorizationLockedSources,
+    ) -> bool:
+        result = locked.readiness_result
+        attempt = locked.readiness_attempt
+        claim = locked.readiness_claim
+        lease = locked.readiness_authorization_lease
+        auth_claim = locked.readiness_authorization_claim
+        head = locked.start_head
+        destination = locked.destination_head
+        slot = locked.slot_head
+        outbox = locked.dispatch_outbox
+        publication = locked.publication_lease
+        orchestration = locked.orchestration_lease
+        if any(
+            row is None
+            for row in (
+                result,
+                attempt,
+                claim,
+                lease,
+                auth_claim,
+                head,
+                destination,
+                slot,
+                outbox,
+                publication,
+                orchestration,
+            )
+        ):
+            return False
+        assert result is not None
+        assert attempt is not None
+        assert claim is not None
+        assert lease is not None
+        assert auth_claim is not None
+        assert head is not None
+        assert destination is not None
+        assert slot is not None
+        assert outbox is not None
+        assert publication is not None
+        assert orchestration is not None
+        candidate = request.candidate
+        return bool(
+            result.canonical_digest == request.source.result.canonical_digest
+            and result.result_id == candidate.readiness_result_id
+            and result.canonical_digest == candidate.readiness_result_digest
+            and result.state == "runtime_ready_in_protected_boundary"
+            and result.outcome_known
+            and result.assessment_performed is True
+            and result.runtime_ready is True
+            and result.completed_at is not None
+            and result.completed_at < result.invocation_deadline
+            and result.recorded_at <= locked.first_observed_at
+            and attempt.attempt_id == result.attempt_id
+            and attempt.canonical_digest == result.attempt_digest
+            and claim.claim_id == result.claim_id
+            and claim.canonical_digest == result.claim_digest
+            and lease.authorization_lease_id == result.authorization_lease_id
+            and lease.canonical_digest == result.authorization_lease_digest
+            and auth_claim.claim_id == result.authorization_claim_id
+            and auth_claim.canonical_digest == result.authorization_claim_digest
+            and head.runtime_start_result_id == result.start_result_id
+            and head.runtime_start_result_digest == result.start_result_digest
+            and head.state == "start_attempt_terminal"
+            and head.runtime_start_attempt_terminal
+            and not head.runtime_start_attempt_pending
+            and head.runtime_started
+            and not head.runtime_resumed
+            and not head.process_created
+            and not head.process_scheduled
+            and destination.current
+            and destination.destination_generation == result.destination_generation
+            and destination.destination_fencing_token_digest
+            == result.destination_fencing_token_digest
+            and slot.current
+            and slot.slot_state == "context_used_terminal"
+            and slot.slot_generation == result.runtime_slot_generation
+            and outbox.state == "pending_publication"
+            and outbox.organization_id == result.organization_id
+            and outbox.environment_id == result.environment_id
+            and outbox.site_id == result.site_id
+            and not outbox.publication_authority_granted
+            and not outbox.delivery_authority_granted
+            and not outbox.dispatch_authority_granted
+            and not outbox.execution_authority_granted
+            and publication.outbox_entry_id == outbox.outbox_entry_id
+            and publication.outbox_entry_digest == outbox.canonical_digest
+            and publication.plan_id == outbox.plan_id
+            and publication.plan_digest == outbox.plan_digest
+            and publication.attempt_id == outbox.attempt_id
+            and publication.attempt_digest == outbox.attempt_digest
+            and publication.organization_id == outbox.organization_id
+            and publication.environment_id == outbox.environment_id
+            and publication.site_id == outbox.site_id
+            and publication.orchestration_lease_id == outbox.lease_id
+            and publication.orchestration_lease_digest == outbox.lease_digest
+            and publication.orchestration_fencing_token == outbox.lease_fencing_token
+            and publication.state == "active"
+            and publication.acquired_at <= locked.observed_at < publication.expires_at
+            and orchestration.lease_id == outbox.lease_id
+            and orchestration.canonical_digest == outbox.lease_digest
+            and orchestration.fencing_token == outbox.lease_fencing_token
+            and orchestration.plan_id == outbox.plan_id
+            and orchestration.plan_digest == outbox.plan_digest
+            and orchestration.organization_id == outbox.organization_id
+            and orchestration.environment_id == outbox.environment_id
+            and orchestration.site_id == outbox.site_id
+            and orchestration.state == "active"
+            and orchestration.acquired_at <= locked.observed_at < orchestration.expires_at
+        )
+
+    @classmethod
+    def _protected_runtime_process_creation_authorization_model_values(
+        cls,
+        model: type[Any],
+        value: Any,
+        *,
+        locked: _ProtectedRuntimeProcessCreationAuthorizationLockedSources,
+        source_observed_at: datetime,
+    ) -> dict[str, Any]:
+        result = locked.readiness_result
+        attempt = locked.readiness_attempt
+        claim = locked.readiness_claim
+        lease = locked.readiness_authorization_lease
+        auth_claim = locked.readiness_authorization_claim
+        if any(row is None for row in (result, attempt, claim, lease, auth_claim)):
+            raise ValueError("runtime process-creation authorization source is incomplete")
+        assert result is not None
+        assert attempt is not None
+        assert claim is not None
+        assert lease is not None
+        assert auth_claim is not None
+        columns = {column.name for column in model.__table__.columns}
+        values = {name: getattr(value, name) for name in columns if hasattr(value, name)}
+        values.update(
+            organization_id=value.scope.organization_id,
+            environment_id=value.scope.environment_id,
+            site_id=value.scope.site_id,
+            readiness_result_id=result.result_id,
+            readiness_result_digest=result.canonical_digest,
+            readiness_consumption_id=result.consumption_id,
+            readiness_attempt_id=attempt.attempt_id,
+            readiness_attempt_digest=attempt.canonical_digest,
+            readiness_claim_id=claim.claim_id,
+            readiness_claim_digest=claim.canonical_digest,
+            readiness_authorization_lease_id=lease.authorization_lease_id,
+            readiness_authorization_lease_digest=lease.canonical_digest,
+            readiness_authorization_claim_id=auth_claim.claim_id,
+            readiness_authorization_claim_digest=auth_claim.canonical_digest,
+            readiness_started_at=result.started_at,
+            readiness_invocation_deadline=result.invocation_deadline,
+            readiness_result_state=result.state,
+            readiness_failure_class=result.failure_class,
+            readiness_outcome_known=result.outcome_known,
+            readiness_assessment_performed=result.assessment_performed,
+            runtime_ready=result.runtime_ready,
+            assessor_receipt_digest=result.assessor_receipt_digest,
+            readiness_completed_at=result.completed_at,
+            readiness_result_recorded_at=result.recorded_at,
+            source_observed_at=source_observed_at,
+            source_policy_id="policy.workflow-protected-runtime-readiness-consumption",
+            source_policy_version="1.0",
+            source_policy_digest=(
+                code_owned_workflow_protected_runtime_process_creation_authorization_policy().source_policy_digest
+            ),
+            canonical_digest=value.canonical_digest,
+            payload=value.digest_payload(),
+        )
+        for name in columns:
+            if name not in values and hasattr(result, name):
+                values[name] = getattr(result, name)
+        values.update(
+            {
+                name: expected
+                for name, expected in value.authority.canonical_value().items()
+                if name in columns
+            }
+        )
+        return {name: item for name, item in values.items() if name in columns}
+
+    @classmethod
+    def _protected_runtime_process_creation_authorization_lease_model(
+        cls,
+        lease: WorkflowProtectedRuntimeProcessCreationAuthorizationLease,
+        attestation: WorkflowProtectedRuntimeProcessCreationLifecycleAttestation,
+        *,
+        locked: _ProtectedRuntimeProcessCreationAuthorizationLockedSources,
+        source_observed_at: datetime,
+        authorized_at: datetime,
+    ) -> WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseModel:
+        values = cls._protected_runtime_process_creation_authorization_model_values(
+            WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseModel,
+            lease,
+            locked=locked,
+            source_observed_at=source_observed_at,
+        )
+        values.update(
+            claimed_at=source_observed_at,
+            authorized_at=authorized_at,
+            lifecycle_attestation_payload={
+                **attestation.digest_payload(),
+                "canonical_digest": attestation.canonical_digest,
+            },
+        )
+        return WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseModel(**values)
+
+    @classmethod
+    def _protected_runtime_process_creation_authorization_claim_model(
+        cls,
+        claim: WorkflowProtectedRuntimeProcessCreationAuthorizationClaim,
+        *,
+        authorization_lease_id: str,
+        idempotency_key: str,
+        audit_payload: dict[str, object],
+        locked: _ProtectedRuntimeProcessCreationAuthorizationLockedSources,
+        source_observed_at: datetime,
+    ) -> WorkflowProtectedRuntimeProcessCreationAuthorizationClaimModel:
+        values = cls._protected_runtime_process_creation_authorization_model_values(
+            WorkflowProtectedRuntimeProcessCreationAuthorizationClaimModel,
+            claim,
+            locked=locked,
+            source_observed_at=source_observed_at,
+        )
+        values.update(
+            authorization_lease_id=authorization_lease_id,
+            idempotency_scope_id=canonical_digest(
+                {
+                    "scope": claim.scope.canonical_value(),
+                    "subject_id": claim.consumer_subject_id,
+                    "audience": claim.consumer_audience,
+                }
+            ),
+            idempotency_key=idempotency_key,
+            authorization_audit_payload=audit_payload,
+        )
+        return WorkflowProtectedRuntimeProcessCreationAuthorizationClaimModel(**values)
+
+    @classmethod
+    def _protected_runtime_process_creation_source_from_locked(
+        cls,
+        locked: _ProtectedRuntimeProcessCreationAuthorizationLockedSources,
+    ) -> WorkflowProtectedRuntimeProcessCreationAuthorizationSource | None:
+        if any(
+            row is None
+            for row in (
+                locked.readiness_result,
+                locked.readiness_attempt,
+                locked.readiness_claim,
+                locked.readiness_authorization_lease,
+                locked.readiness_authorization_claim,
+            )
+        ):
+            return None
+        assert locked.readiness_result is not None
+        assert locked.readiness_attempt is not None
+        assert locked.readiness_claim is not None
+        assert locked.readiness_authorization_lease is not None
+        assert locked.readiness_authorization_claim is not None
+        try:
+            result = cls._protected_runtime_readiness_consumption_result_from_row(
+                locked.readiness_result
+            )
+            attempt = cls._protected_runtime_readiness_consumption_attempt_from_row(
+                locked.readiness_attempt
+            )
+            claim = cls._protected_runtime_readiness_consumption_claim_from_row(
+                locked.readiness_claim
+            )
+            readiness_lease = cls._protected_runtime_readiness_lease_from_row(
+                locked.readiness_authorization_lease
+            )
+            readiness_claim = cls._protected_runtime_readiness_claim_from_row(
+                locked.readiness_authorization_claim
+            )
+            receipt_payload = locked.readiness_result.assessor_receipt_payload
+            if receipt_payload is None:
+                return None
+            receipt = cls._protected_runtime_readiness_consumption_receipt_from_payload(
+                receipt_payload
+            )
+            if (
+                receipt.canonical_digest != result.assessor_receipt_digest
+                or result.state.value != "runtime_ready_in_protected_boundary"
+                or result.failure_class is not None
+                or result.outcome_known is not True
+                or result.assessment_performed is not True
+                or result.runtime_ready is not True
+            ):
+                return None
+            return WorkflowProtectedRuntimeProcessCreationAuthorizationSource(
+                result=result,
+                attempt=attempt,
+                readiness_claim=claim,
+                readiness_receipt=receipt,
+                readiness_authorization_lease=readiness_lease,
+                readiness_authorization_claim=readiness_claim,
+            )
+        except Exception:
+            return None
+
+    @staticmethod
+    def _protected_runtime_process_creation_authorization_lease_from_row(
+        row: WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseModel,
+    ) -> WorkflowProtectedRuntimeProcessCreationAuthorizationLease:
+        payload = dict(row.payload)
+        payload["scope"] = WorkflowScope(**cast(dict[str, str], payload["scope"]))
+        payload["readiness_result_state"] = WorkflowProtectedRuntimeReadinessConsumptionResultState(
+            str(payload["readiness_result_state"])
+        )
+        if payload.get("readiness_failure_class") is not None:
+            payload["readiness_failure_class"] = (
+                WorkflowProtectedRuntimeReadinessConsumptionFailureClass(
+                    str(payload["readiness_failure_class"])
+                )
+            )
+        payload["state"] = WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseState(
+            str(payload["state"])
+        )
+        payload["authority"] = WorkflowProtectedRuntimeProcessCreationAuthorizationAuthority(
+            **cast(Any, payload["authority"])
+        )
+        for name, value in tuple(payload.items()):
+            if isinstance(value, str) and (name.endswith("_at") or name.endswith("_until")):
+                payload[name] = datetime.fromisoformat(value)
+        lease = WorkflowProtectedRuntimeProcessCreationAuthorizationLease(
+            **cast(Any, payload), canonical_digest=row.canonical_digest
+        )
+        if (
+            canonical_digest(lease.digest_payload()) != row.canonical_digest
+            or row.payload != lease.digest_payload()
+            or row.organization_id != lease.scope.organization_id
+            or row.environment_id != lease.scope.environment_id
+            or row.site_id != lease.scope.site_id
+            or row.consumer_subject_id != lease.consumer_subject_id
+            or row.consumer_audience != lease.consumer_audience
+            or row.claim_id != lease.claim_id
+            or row.claim_digest != lease.claim_digest
+            or row.policy_digest != lease.policy_digest
+            or row.readiness_result_id != lease.readiness_result_id
+            or row.readiness_result_digest != lease.readiness_result_digest
+            or row.readiness_claim_id != lease.readiness_claim_id
+            or row.readiness_claim_digest != lease.readiness_claim_digest
+            or row.readiness_authorization_lease_id != lease.readiness_authorization_lease_id
+            or row.readiness_authorization_lease_digest
+            != lease.readiness_authorization_lease_digest
+            or row.runtime_slot_commitment != lease.protected_slot_commitment
+            or row.runtime_slot_generation != lease.protected_slot_generation
+        ):
+            raise ValueError("runtime process-creation authorization lease mismatch")
+        return lease
+
+    @staticmethod
+    def _protected_runtime_process_creation_authorization_claim_from_row(
+        row: WorkflowProtectedRuntimeProcessCreationAuthorizationClaimModel,
+    ) -> WorkflowProtectedRuntimeProcessCreationAuthorizationClaim:
+        payload = dict(row.payload)
+        payload["scope"] = WorkflowScope(**cast(dict[str, str], payload["scope"]))
+        payload["readiness_result_state"] = WorkflowProtectedRuntimeReadinessConsumptionResultState(
+            str(payload["readiness_result_state"])
+        )
+        if payload.get("readiness_failure_class") is not None:
+            payload["readiness_failure_class"] = (
+                WorkflowProtectedRuntimeReadinessConsumptionFailureClass(
+                    str(payload["readiness_failure_class"])
+                )
+            )
+        payload["authority"] = WorkflowProtectedRuntimeProcessCreationAuthorizationAuthority(
+            **cast(Any, payload["authority"])
+        )
+        for name, value in tuple(payload.items()):
+            if isinstance(value, str) and (name.endswith("_at") or name.endswith("_until")):
+                payload[name] = datetime.fromisoformat(value)
+        claim = WorkflowProtectedRuntimeProcessCreationAuthorizationClaim(
+            **cast(Any, payload), canonical_digest=row.canonical_digest
+        )
+        if (
+            canonical_digest(claim.digest_payload()) != row.canonical_digest
+            or row.payload != claim.digest_payload()
+            or row.organization_id != claim.scope.organization_id
+            or row.environment_id != claim.scope.environment_id
+            or row.site_id != claim.scope.site_id
+            or row.consumer_subject_id != claim.consumer_subject_id
+            or row.consumer_audience != claim.consumer_audience
+            or row.claim_id != claim.claim_id
+            or row.claimed_at != claim.claimed_at
+            or row.policy_digest != claim.policy_digest
+            or row.readiness_result_id != claim.readiness_result_id
+            or row.readiness_result_digest != claim.readiness_result_digest
+            or row.idempotency_digest != claim.idempotency_digest
+            or row.request_fingerprint != claim.request_fingerprint
+            or row.authorization_audit_digest != claim.authorization_audit_digest
+            or canonical_digest(row.authorization_audit_payload) != claim.authorization_audit_digest
+        ):
+            raise ValueError("runtime process-creation authorization claim mismatch")
+        return claim
+
+    @staticmethod
+    def _protected_runtime_process_creation_attestation_from_row(
+        row: WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseModel,
+    ) -> WorkflowProtectedRuntimeProcessCreationLifecycleAttestation:
+        payload = dict(row.lifecycle_attestation_payload)
+        digest = str(payload.pop("canonical_digest"))
+        payload["scope"] = WorkflowScope(**cast(dict[str, str], payload["scope"]))
+        for name, value in tuple(payload.items()):
+            if isinstance(value, str) and (name.endswith("_at") or name.endswith("_until")):
+                payload[name] = datetime.fromisoformat(value)
+        attestation = WorkflowProtectedRuntimeProcessCreationLifecycleAttestation(
+            **cast(Any, payload), canonical_digest=digest
+        )
+        if (
+            digest != row.lifecycle_attestation_digest
+            or attestation.attestation_id != row.lifecycle_attestation_id
+            or attestation.valid_until != row.lifecycle_attestation_valid_until
+            or attestation.runtime_envelope_eligible_until != row.runtime_envelope_eligible_until
+            or canonical_digest(attestation.digest_payload()) != digest
+        ):
+            raise ValueError("runtime process-creation attestation mismatch")
+        return attestation
 
     async def preflight_protected_runtime_context_use_authorization(
         self,

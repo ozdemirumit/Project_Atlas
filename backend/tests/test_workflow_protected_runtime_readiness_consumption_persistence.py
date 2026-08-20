@@ -244,12 +244,12 @@ def test_result_constraints_cover_all_terminal_outcomes_and_receipt_rules() -> N
     assert "assessment_performed IS NULL" in checks
 
 
-def test_alembic_graph_has_single_0149_head_and_round_trip_operations() -> None:
+def test_alembic_graph_keeps_0149_in_single_0150_lineage() -> None:
     config = Config(str(ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(ROOT / "migrations"))
     script = ScriptDirectory.from_config(config)
 
-    assert script.get_heads() == ["20260817_0149"]
+    assert script.get_heads() == ["20260818_0150"]
     revision = script.get_revision("20260817_0149")
     assert revision is not None
     assert revision.down_revision == "20260817_0148"

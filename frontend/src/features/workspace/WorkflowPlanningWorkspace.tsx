@@ -49,6 +49,7 @@ import {
   listWorkflowProtectedRuntimeContextUseAuthorizations,
   listWorkflowProtectedRuntimeContextUseAuthorizationConsumptions,
   listWorkflowProtectedRuntimeContextUses,
+  listWorkflowProtectedRuntimeProcessCreationAuthorizations,
   listWorkflowProtectedRuntimeReadiness,
   listWorkflowProtectedRuntimeReadinessAuthorizations,
   listWorkflowProtectedRuntimeStartAuthorizations,
@@ -421,6 +422,16 @@ export default function WorkflowPlanningWorkspace({
       siteId,
     ],
     queryFn: listWorkflowProtectedRuntimeReadiness,
+    retry: false,
+  });
+  const protectedRuntimeProcessCreationAuthorizationQuery = useQuery({
+    queryKey: [
+      "workflow-protected-runtime-process-creation-authorizations",
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: listWorkflowProtectedRuntimeProcessCreationAuthorizations,
     retry: false,
   });
   const targetQuery = useQuery({
@@ -954,6 +965,10 @@ export default function WorkflowPlanningWorkspace({
   const protectedRuntimeReadinessErrorStatus =
     protectedRuntimeReadinessQuery.error instanceof ApiRequestError
       ? protectedRuntimeReadinessQuery.error.status
+      : undefined;
+  const protectedRuntimeProcessCreationAuthorizationErrorStatus =
+    protectedRuntimeProcessCreationAuthorizationQuery.error instanceof ApiRequestError
+      ? protectedRuntimeProcessCreationAuthorizationQuery.error.status
       : undefined;
   const eventEnvelopes = eventEnvelopesForAdmission;
   const transportAdmissions = transportAdmissionsForArtifacts;
@@ -5354,6 +5369,164 @@ export default function WorkflowPlanningWorkspace({
             inspect runtime material, create a process or schedule, use network, connector or MCP
             capabilities, dispatch or execute work, or mutate infrastructure. Pending and
             uncertain outcomes never imply permission to retry.
+          </span>
+        </div>
+      </section>
+
+      <section
+        className="workflow-physical-route-binding-band workflow-target-context-opening-band"
+        aria-labelledby="workflow-protected-runtime-process-creation-authorization-title"
+      >
+        <div className="workflow-section-heading">
+          <div>
+            <p className="eyebrow">FUTURE PROCESS-CREATION REQUEST EVIDENCE</p>
+            <h2 id="workflow-protected-runtime-process-creation-authorization-title">
+              Protected runtime process-creation authorizations
+            </h2>
+          </div>
+          <span>Read only</span>
+        </div>
+        {protectedRuntimeProcessCreationAuthorizationQuery.isLoading && (
+          <div className="workflow-empty-state" role="status">
+            <RefreshCw className="spin" size={18} />
+            <span>Loading protected runtime process-creation authorizations...</span>
+          </div>
+        )}
+        {protectedRuntimeProcessCreationAuthorizationQuery.isError && (
+          <div className="workflow-inline-error" role="alert">
+            <AlertTriangle aria-hidden="true" size={18} />
+            <div>
+              <strong>
+                {protectedRuntimeProcessCreationAuthorizationErrorStatus === 401
+                  ? "Your session has expired"
+                  : protectedRuntimeProcessCreationAuthorizationErrorStatus === 403
+                    ? "Process-creation authorization permission is missing"
+                    : "Process-creation authorizations are unavailable"}
+              </strong>
+              <span>
+                {protectedRuntimeProcessCreationAuthorizationErrorStatus === 401
+                  ? "Sign in again with your username and password to continue."
+                  : protectedRuntimeProcessCreationAuthorizationErrorStatus === 403
+                    ? "Your current role or scope cannot inspect protected runtime process-creation authorization evidence."
+                    : "The protected authorization repository is unavailable or failed closed; no process-creation request authority is inferred."}
+              </span>
+            </div>
+          </div>
+        )}
+        {protectedRuntimeProcessCreationAuthorizationQuery.isSuccess &&
+          protectedRuntimeProcessCreationAuthorizationQuery.data.authorizations.length === 0 && (
+            <div className="workflow-empty-state" role="status">
+              <LockKeyhole size={19} />
+              <span>
+                No protected runtime process-creation authorizations are recorded in this scope.
+              </span>
+            </div>
+          )}
+        {protectedRuntimeProcessCreationAuthorizationQuery.isSuccess &&
+          protectedRuntimeProcessCreationAuthorizationQuery.data.authorizations.length > 0 && (
+            <ol
+              className="workflow-step-preview workflow-physical-route-binding-list workflow-target-context-opening-list"
+              aria-label="Protected runtime process-creation authorizations"
+            >
+              {protectedRuntimeProcessCreationAuthorizationQuery.data.authorizations.map(
+                (authorization) => (
+                  <li key={authorization.authorization_lease_id}>
+                    {authorization.effective_state === "active" ? (
+                      <ShieldCheck size={18} />
+                    ) : (
+                      <FileClock size={18} />
+                    )}
+                    <div>
+                      <strong>
+                        <code title={authorization.authorization_lease_id}>
+                          {safeHolderIdentifier(authorization.authorization_lease_id)}
+                        </code>
+                        <span
+                          className={`state-badge ${
+                            authorization.effective_state === "active" ? "success" : "neutral"
+                          }`}
+                        >
+                          {authorization.effective_state === "active" ? "Active" : "Expired"}
+                        </span>
+                      </strong>
+                      <div className="workflow-physical-route-binding-grid">
+                        <span>
+                          State {readableKind(authorization.state)} | effective{" "}
+                          {readableKind(authorization.effective_state)}
+                        </span>
+                        <span>
+                          Issued {formatTimestamp(authorization.issued_at)} | valid until{" "}
+                          {formatTimestamp(authorization.valid_until)} | effective until{" "}
+                          {formatTimestamp(authorization.effective_until)}
+                        </span>
+                        <span>
+                          Source readiness{" "}
+                          <code title={authorization.readiness_result_reference}>
+                            {shortDigest(authorization.readiness_result_reference)}
+                          </code>
+                        </span>
+                        <span>
+                          Policy{" "}
+                          <code title={authorization.policy_id}>
+                            {safeHolderIdentifier(authorization.policy_id)}
+                          </code>{" "}
+                          v{authorization.policy_version} | purpose{" "}
+                          <code title={authorization.purpose_id}>
+                            {safeHolderIdentifier(authorization.purpose_id)}
+                          </code>
+                        </span>
+                        <span>
+                          Consumer contract{" "}
+                          <code title={authorization.consumer_contract_id}>
+                            {safeHolderIdentifier(authorization.consumer_contract_id)}
+                          </code>{" "}
+                          v{authorization.consumer_contract_version}
+                        </span>
+                        <span>
+                          Process-creation profile{" "}
+                          <code title={authorization.process_creation_profile_reference}>
+                            {shortDigest(authorization.process_creation_profile_reference)}
+                          </code>
+                        </span>
+                        <span>
+                          Integrity reference{" "}
+                          <code title={authorization.integrity_reference}>
+                            {shortDigest(authorization.integrity_reference)}
+                          </code>
+                        </span>
+                        <span className="workflow-physical-route-binding-authority">
+                          Dedicated future process-creation request authority{" "}
+                          {authorization.authority
+                            .protected_runtime_process_creation_authority_granted
+                            ? "active for one request"
+                            : "inactive"}
+                          . Existing authority protected runtime readiness false | protected runtime
+                          start false | protected runtime-context use false | runtime use false |
+                          runtime start false | runtime resume false | connector activity false |
+                          protected runtime-context injection false | protected resident-context
+                          access false | target-context capsule opening false | target-context
+                          capsule handoff false | endpoint resolution false | route selection false |
+                          route binding false | credential selection false | credential assignment
+                          binding false | credential access false | credential brokerage false |
+                          credential resolution false | protected artifact access false | credential
+                          delivery false | network access false | readiness probe false | publication
+                          false | delivery false | dispatch false | execution false | infrastructure
+                          mutation false
+                        </span>
+                      </div>
+                    </div>
+                  </li>
+                ),
+              )}
+            </ol>
+          )}
+        <div className="workflow-safety-boundary" role="note">
+          <LockKeyhole size={18} />
+          <span>
+            Read-only evidence. An active declaration permits only one future protected
+            process-creation request. It neither creates nor schedules a process and grants no
+            runtime-material, network, connector, MCP, publication, dispatch, execution or
+            infrastructure-mutation authority. This view cannot consume it.
           </span>
         </div>
       </section>

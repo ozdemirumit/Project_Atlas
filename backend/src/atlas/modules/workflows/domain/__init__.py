@@ -265,6 +265,15 @@ from atlas.modules.workflows.domain.protected_runtime_context_use_domain import 
     code_owned_workflow_protected_runtime_context_use_policy,
     code_owned_workflow_protected_runtime_context_use_policy_values,
 )
+from atlas.modules.workflows.domain.protected_runtime_process_creation_authorization_domain import (
+    WorkflowProtectedRuntimeProcessCreationAuthorizationAuthority,
+    WorkflowProtectedRuntimeProcessCreationAuthorizationClaim,
+    WorkflowProtectedRuntimeProcessCreationAuthorizationLease,
+    WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseState,
+    WorkflowProtectedRuntimeProcessCreationAuthorizationPolicy,
+    code_owned_workflow_protected_runtime_process_creation_authorization_policy,
+    code_owned_workflow_protected_runtime_process_creation_authorization_policy_values,
+)
 from atlas.modules.workflows.domain.protected_runtime_readiness_authorization_domain import (
     WorkflowProtectedRuntimeReadinessAuthorizationAuthority,
     WorkflowProtectedRuntimeReadinessAuthorizationClaim,
@@ -494,6 +503,11 @@ __all__ = [
     "WorkflowProtectedRuntimeContextUseReceipt",
     "WorkflowProtectedRuntimeContextUseResult",
     "WorkflowProtectedRuntimeContextUseResultState",
+    "WorkflowProtectedRuntimeProcessCreationAuthorizationAuthority",
+    "WorkflowProtectedRuntimeProcessCreationAuthorizationClaim",
+    "WorkflowProtectedRuntimeProcessCreationAuthorizationLease",
+    "WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseState",
+    "WorkflowProtectedRuntimeProcessCreationAuthorizationPolicy",
     "WorkflowProtectedRuntimeReadinessAttempt",
     "WorkflowProtectedRuntimeReadinessAuthorizationAuthority",
     "WorkflowProtectedRuntimeReadinessAuthorizationClaim",
@@ -601,6 +615,8 @@ __all__ = [
     "code_owned_workflow_protected_runtime_context_use_authorization_policy_values",
     "code_owned_workflow_protected_runtime_context_use_policy",
     "code_owned_workflow_protected_runtime_context_use_policy_values",
+    "code_owned_workflow_protected_runtime_process_creation_authorization_policy",
+    "code_owned_workflow_protected_runtime_process_creation_authorization_policy_values",
     "code_owned_workflow_protected_runtime_readiness_authorization_policy",
     "code_owned_workflow_protected_runtime_readiness_authorization_policy_values",
     "code_owned_workflow_protected_runtime_readiness_consumption_policy",

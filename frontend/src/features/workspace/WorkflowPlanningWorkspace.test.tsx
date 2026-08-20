@@ -37,6 +37,7 @@ import {
   type WorkflowProtectedRuntimeContextUseAuthorization,
   type WorkflowProtectedRuntimeContextUseAuthorizationConsumption,
   type WorkflowProtectedRuntimeContextUse,
+  type WorkflowProtectedRuntimeProcessCreationAuthorization,
   type WorkflowProtectedRuntimeReadiness,
   type WorkflowProtectedRuntimeReadinessAuthorization,
   type WorkflowProtectedRuntimeStartAuthorization,
@@ -1599,6 +1600,59 @@ const protectedRuntimeReadiness: WorkflowProtectedRuntimeReadiness = {
   effective_authority: false,
 };
 
+const protectedRuntimeProcessCreationAuthorization: WorkflowProtectedRuntimeProcessCreationAuthorization = {
+  authorization_lease_id:
+    "workflow-protected-runtime-process-creation-lease.1234567890abcdef12345678",
+  readiness_result_reference:
+    "integrity.workflow-protected-runtime-readiness-result.1234567890abcdef",
+  state: "authorized_unconsumed",
+  effective_state: "active",
+  issued_at: "2026-08-14T10:08:34.200Z",
+  valid_until: "2026-08-14T10:08:34.950Z",
+  effective_until: "2026-08-14T10:08:34.950Z",
+  consumer_contract_id:
+    "contract.workflow-protected-transport-target-context-capsule-consumer",
+  consumer_contract_version: "1.0",
+  purpose_id: "purpose.workflow-protected-runtime-process-creation-request",
+  policy_id: "policy.workflow-protected-runtime-process-creation-authorization",
+  policy_version: "1.0",
+  process_creation_profile_reference:
+    "integrity.workflow-protected-runtime-process-creation-profile.1234567890abcdef",
+  authority: {
+    protected_runtime_process_creation_authority_granted: true,
+    protected_runtime_readiness_authority_granted: false,
+    protected_runtime_start_authority_granted: false,
+    protected_runtime_context_use_authority_granted: false,
+    runtime_use_authorized: false,
+    runtime_start_authorized: false,
+    runtime_resume_authorized: false,
+    connector_activity_authorized: false,
+    protected_runtime_context_injection_authority_granted: false,
+    protected_resident_context_access_authority_granted: false,
+    target_context_capsule_opening_authorized: false,
+    target_context_capsule_handoff_authorized: false,
+    endpoint_resolution_authorized: false,
+    route_selection_authorized: false,
+    route_binding_authorized: false,
+    credential_selection_authorized: false,
+    credential_assignment_binding_authorized: false,
+    credential_access_authorized: false,
+    credential_brokerage_authorized: false,
+    credential_resolution_authorized: false,
+    protected_artifact_access_authorized: false,
+    credential_delivery_authorized: false,
+    network_access_authorized: false,
+    readiness_probe_authorized: false,
+    publication_authorized: false,
+    delivery_authorized: false,
+    dispatch_authorized: false,
+    execution_authorized: false,
+    infrastructure_mutation_authorized: false,
+  },
+  integrity_reference:
+    "integrity.workflow-protected-runtime-process-creation-authorization.1234567890abcdef",
+};
+
 const protectedRuntimeContextInjectionConsumption: WorkflowProtectedRuntimeContextInjectionConsumption = {
   injection_id:
     "workflow-protected-runtime-context-injection-consumption.1234567890abcdef12345678",
@@ -2486,6 +2540,27 @@ function protectedRuntimeReadinessResponse(
   );
 }
 
+function protectedRuntimeProcessCreationAuthorizationResponse(
+  authorizations: unknown[],
+  status = 200,
+  serverTime = "2026-08-14T10:08:34.500Z",
+  durable = true,
+): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: { authorizations, server_time: serverTime, durable },
+          meta: {
+            correlation_id:
+              "correlation.workflow.protected-runtime-process-creation-authorization",
+            generated_at: serverTime,
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function protectedRuntimeContextInjectionConsumptionResponse(
   consumptions: unknown[],
   status = 200,
@@ -2628,6 +2703,9 @@ function mockReadResponses(input: {
   protectedRuntimeReadiness?: unknown[];
   protectedRuntimeReadinessServerTime?: string;
   protectedRuntimeReadinessDurable?: boolean;
+  protectedRuntimeProcessCreationAuthorizations?: unknown[];
+  protectedRuntimeProcessCreationAuthorizationServerTime?: string;
+  protectedRuntimeProcessCreationAuthorizationDurable?: boolean;
   credentialAssignmentSnapshots?: unknown[];
   transportCompatibilityAdmissions?: unknown[];
   pendingTransportAdmissionResponse?: Promise<Response>;
@@ -2662,6 +2740,7 @@ function mockReadResponses(input: {
   pendingProtectedRuntimeStartResponse?: Promise<Response>;
   pendingProtectedRuntimeReadinessAuthorizationResponse?: Promise<Response>;
   pendingProtectedRuntimeReadinessResponse?: Promise<Response>;
+  pendingProtectedRuntimeProcessCreationAuthorizationResponse?: Promise<Response>;
   pendingCredentialAssignmentSnapshotResponse?: Promise<Response>;
   pendingTransportCompatibilityAdmissionResponse?: Promise<Response>;
   leaseStatus?: number;
@@ -2735,6 +2814,8 @@ function mockReadResponses(input: {
   protectedRuntimeReadinessAuthorizationStatuses?: number[];
   protectedRuntimeReadinessStatus?: number;
   protectedRuntimeReadinessStatuses?: number[];
+  protectedRuntimeProcessCreationAuthorizationStatus?: number;
+  protectedRuntimeProcessCreationAuthorizationStatuses?: number[];
   credentialAssignmentSnapshotStatus?: number;
   credentialAssignmentSnapshotStatuses?: number[];
   transportCompatibilityAdmissionStatus?: number;
@@ -2772,10 +2853,35 @@ function mockReadResponses(input: {
   let protectedRuntimeStartReadCount = 0;
   let protectedRuntimeReadinessAuthorizationReadCount = 0;
   let protectedRuntimeReadinessReadCount = 0;
+  let protectedRuntimeProcessCreationAuthorizationReadCount = 0;
   let credentialAssignmentSnapshotReadCount = 0;
   let transportCompatibilityAdmissionReadCount = 0;
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (
+      url.endsWith(
+        "/api/v1/workflows/protected-runtime-process-creation-authorizations",
+      )
+    ) {
+      if (input.pendingProtectedRuntimeProcessCreationAuthorizationResponse) {
+        return input.pendingProtectedRuntimeProcessCreationAuthorizationResponse;
+      }
+      const status =
+        input.protectedRuntimeProcessCreationAuthorizationStatuses?.[
+          Math.min(
+            protectedRuntimeProcessCreationAuthorizationReadCount++,
+            input.protectedRuntimeProcessCreationAuthorizationStatuses.length - 1,
+          )
+        ] ?? input.protectedRuntimeProcessCreationAuthorizationStatus ?? 200;
+      return Promise.resolve(
+        protectedRuntimeProcessCreationAuthorizationResponse(
+          input.protectedRuntimeProcessCreationAuthorizations ?? [],
+          status,
+          input.protectedRuntimeProcessCreationAuthorizationServerTime,
+          input.protectedRuntimeProcessCreationAuthorizationDurable,
+        ),
+      );
+    }
     if (url.endsWith("/api/v1/workflows/protected-runtime-readiness-consumptions")) {
       if (input.pendingProtectedRuntimeReadinessResponse) {
         return input.pendingProtectedRuntimeReadinessResponse;
@@ -9690,6 +9796,256 @@ describe("WorkflowPlanningWorkspace", () => {
     })).closest("section") as HTMLElement;
     expect(
       await within(section).findByText("Protected runtime readiness is unavailable"),
+    ).toBeVisible();
+    expect(within(section).queryByRole("list")).toBeNull();
+    expect(section).not.toHaveTextContent(/hidden/i);
+  });
+
+  it("renders protected runtime process-creation authorizations as minimized read-only evidence", async () => {
+    expect(Object.keys(protectedRuntimeProcessCreationAuthorization).sort()).toEqual(
+      [
+        "authorization_lease_id",
+        "readiness_result_reference",
+        "state",
+        "effective_state",
+        "issued_at",
+        "valid_until",
+        "effective_until",
+        "consumer_contract_id",
+        "consumer_contract_version",
+        "purpose_id",
+        "policy_id",
+        "policy_version",
+        "process_creation_profile_reference",
+        "authority",
+        "integrity_reference",
+      ].sort(),
+    );
+    expect(Object.keys(protectedRuntimeProcessCreationAuthorization.authority)).toHaveLength(29);
+    expect(
+      Object.entries(protectedRuntimeProcessCreationAuthorization.authority).every(
+        ([name, granted]) =>
+          name === "protected_runtime_process_creation_authority_granted"
+            ? granted === true
+            : granted === false,
+      ),
+    ).toBe(true);
+    const expiredAuthorization: WorkflowProtectedRuntimeProcessCreationAuthorization = {
+      ...protectedRuntimeProcessCreationAuthorization,
+      authorization_lease_id:
+        "workflow-protected-runtime-process-creation-lease.abcdef1234567890abcdef12",
+      effective_state: "expired",
+      issued_at: "2026-08-14T10:08:33Z",
+      valid_until: "2026-08-14T10:08:33.750Z",
+      effective_until: "2026-08-14T10:08:33.750Z",
+      authority: {
+        ...protectedRuntimeProcessCreationAuthorization.authority,
+        protected_runtime_process_creation_authority_granted: false,
+      },
+      integrity_reference:
+        "integrity.workflow-protected-runtime-process-creation-authorization.abcdef1234567890",
+    };
+    mockReadResponses({
+      protectedRuntimeReadiness: [protectedRuntimeReadiness],
+      protectedRuntimeProcessCreationAuthorizations: [
+        protectedRuntimeProcessCreationAuthorization,
+        expiredAuthorization,
+      ],
+    });
+    renderWorkspace();
+
+    const readinessSection = (await screen.findByRole("heading", {
+      name: "Protected runtime readiness",
+    })).closest("section") as HTMLElement;
+    const section = (await screen.findByRole("heading", {
+      name: "Protected runtime process-creation authorizations",
+    })).closest("section") as HTMLElement;
+    expect(readinessSection.nextElementSibling).toBe(section);
+    const records = await within(section).findByRole("list", {
+      name: "Protected runtime process-creation authorizations",
+    });
+    expect(
+      vi.mocked(fetch).mock.calls.some(([request]) =>
+        (request instanceof Request ? request.url : request.toString()).endsWith(
+          "/api/v1/workflows/protected-runtime-process-creation-authorizations",
+        ),
+      ),
+    ).toBe(true);
+    expect(within(records).getByText("Active")).toBeVisible();
+    expect(within(records).getByText("Expired")).toBeVisible();
+    expect(
+      within(section).getAllByTitle(
+        protectedRuntimeProcessCreationAuthorization.readiness_result_reference,
+      )[0],
+    ).toBeVisible();
+    expect(
+      within(section).getAllByTitle(
+        protectedRuntimeProcessCreationAuthorization.process_creation_profile_reference,
+      )[0],
+    ).toBeVisible();
+    expect(
+      within(section).getAllByTitle(
+        protectedRuntimeProcessCreationAuthorization.consumer_contract_id,
+      )[0],
+    ).toBeVisible();
+    expect(
+      within(section).getAllByTitle(protectedRuntimeProcessCreationAuthorization.purpose_id)[0],
+    ).toBeVisible();
+    expect(
+      within(section).getAllByTitle(protectedRuntimeProcessCreationAuthorization.policy_id)[0],
+    ).toBeVisible();
+    expect(
+      within(section).getAllByTitle(
+        protectedRuntimeProcessCreationAuthorization.integrity_reference,
+      )[0],
+    ).toBeVisible();
+    expect(section).toHaveTextContent(/active for one request/i);
+    expect(section).toHaveTextContent(/existing authority protected runtime readiness false/i);
+    expect(section).toHaveTextContent(/neither creates nor schedules a process/i);
+    expect(within(section).queryByRole("button")).toBeNull();
+    expect(within(section).queryByRole("link")).toBeNull();
+    expect(within(section).queryByRole("textbox")).toBeNull();
+    expect(within(section).queryByRole("combobox")).toBeNull();
+    expect(section).not.toHaveTextContent(/second browser|mfa/i);
+  });
+
+  it("shows loading, empty, unauthorized, forbidden and unavailable process-creation authorization states", async () => {
+    mockReadResponses({
+      pendingProtectedRuntimeProcessCreationAuthorizationResponse: new Promise<Response>(
+        () => {},
+      ),
+    });
+    const loadingView = renderWorkspace();
+    let section = (await screen.findByRole("heading", {
+      name: "Protected runtime process-creation authorizations",
+    })).closest("section") as HTMLElement;
+    expect(
+      within(section).getByText(
+        "Loading protected runtime process-creation authorizations...",
+      ),
+    ).toBeVisible();
+    loadingView.unmount();
+
+    mockReadResponses({ protectedRuntimeProcessCreationAuthorizations: [] });
+    const emptyView = renderWorkspace();
+    section = (await screen.findByRole("heading", {
+      name: "Protected runtime process-creation authorizations",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText(
+        "No protected runtime process-creation authorizations are recorded in this scope.",
+      ),
+    ).toBeVisible();
+    emptyView.unmount();
+
+    mockReadResponses({ protectedRuntimeProcessCreationAuthorizationStatus: 401 });
+    const unauthorizedView = renderWorkspace();
+    section = (await screen.findByRole("heading", {
+      name: "Protected runtime process-creation authorizations",
+    })).closest("section") as HTMLElement;
+    expect(await within(section).findByText("Your session has expired")).toBeVisible();
+    expect(section).toHaveTextContent(/username and password/i);
+    expect(section).not.toHaveTextContent(/second browser|mfa/i);
+    unauthorizedView.unmount();
+
+    mockReadResponses({ protectedRuntimeProcessCreationAuthorizationStatus: 403 });
+    const forbiddenView = renderWorkspace();
+    section = (await screen.findByRole("heading", {
+      name: "Protected runtime process-creation authorizations",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText(
+        "Process-creation authorization permission is missing",
+      ),
+    ).toBeVisible();
+    expect(within(section).queryByRole("list")).toBeNull();
+    forbiddenView.unmount();
+
+    mockReadResponses({ protectedRuntimeProcessCreationAuthorizationStatus: 503 });
+    renderWorkspace();
+    section = (await screen.findByRole("heading", {
+      name: "Protected runtime process-creation authorizations",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Process-creation authorizations are unavailable"),
+    ).toBeVisible();
+    expect(section).toHaveTextContent(/repository is unavailable or failed closed/i);
+    expect(within(section).queryByRole("list")).toBeNull();
+    expect(within(section).queryByRole("button")).toBeNull();
+    expect(within(section).queryByRole("link")).toBeNull();
+  });
+
+  it.each([
+    [
+      "runtime locator material",
+      { ...protectedRuntimeProcessCreationAuthorization, runtime_locator: "hidden" },
+    ],
+    [
+      "runtime material",
+      { ...protectedRuntimeProcessCreationAuthorization, runtime_material: "hidden" },
+    ],
+    ["a process command", { ...protectedRuntimeProcessCreationAuthorization, command: "hidden" }],
+    [
+      "an executable",
+      { ...protectedRuntimeProcessCreationAuthorization, executable: "hidden" },
+    ],
+    ["process arguments", { ...protectedRuntimeProcessCreationAuthorization, args: ["hidden"] }],
+    [
+      "a process environment",
+      { ...protectedRuntimeProcessCreationAuthorization, env: { TOKEN: "hidden" } },
+    ],
+    ["prompt material", { ...protectedRuntimeProcessCreationAuthorization, prompt: "hidden" }],
+    ["model material", { ...protectedRuntimeProcessCreationAuthorization, model: "hidden" }],
+    ["network material", { ...protectedRuntimeProcessCreationAuthorization, network: "hidden" }],
+    [
+      "connector material",
+      { ...protectedRuntimeProcessCreationAuthorization, connector: "hidden" },
+    ],
+    [
+      "contradictory network authority",
+      {
+        ...protectedRuntimeProcessCreationAuthorization,
+        authority: {
+          ...protectedRuntimeProcessCreationAuthorization.authority,
+          network_access_authorized: true,
+        },
+      },
+    ],
+    [
+      "inactive process authority on an active lease",
+      {
+        ...protectedRuntimeProcessCreationAuthorization,
+        authority: {
+          ...protectedRuntimeProcessCreationAuthorization.authority,
+          protected_runtime_process_creation_authority_granted: false,
+        },
+      },
+    ],
+    [
+      "a duplicate authorization ID",
+      [
+        protectedRuntimeProcessCreationAuthorization,
+        { ...protectedRuntimeProcessCreationAuthorization },
+      ],
+    ],
+    [
+      "a lease longer than one second",
+      {
+        ...protectedRuntimeProcessCreationAuthorization,
+        valid_until: "2026-08-14T10:08:35.300Z",
+        effective_until: "2026-08-14T10:08:35.300Z",
+      },
+    ],
+  ])("fails closed for a process-creation authorization with %s", async (_case, unsafe) => {
+    mockReadResponses({
+      protectedRuntimeProcessCreationAuthorizations: Array.isArray(unsafe) ? unsafe : [unsafe],
+    });
+    renderWorkspace();
+    const section = (await screen.findByRole("heading", {
+      name: "Protected runtime process-creation authorizations",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Process-creation authorizations are unavailable"),
     ).toBeVisible();
     expect(within(section).queryByRole("list")).toBeNull();
     expect(section).not.toHaveTextContent(/hidden/i);
