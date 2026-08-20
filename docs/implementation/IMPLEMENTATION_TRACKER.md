@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-228 |
 | Title | Atomic protected runtime process-creation consumption |
-| Status | Implementation and independent review complete; pull request preparation |
+| Status | Review |
 | Branch | `agent/protected-runtime-process-creation-consumption` |
-| Pull Request | Not opened |
+| Pull Request | [#241](https://github.com/ozdemirumit/Project_Atlas/pull/241) |
 | Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-178 |
 | Last Updated | 2026-08-20 |
-| Next Action | Open the pull request and complete exact-head CI |
+| Next Action | Complete exact-head CI and merge PR #241 |
 
 ### ATLAS-IMP-228 Scope Rationale
 
