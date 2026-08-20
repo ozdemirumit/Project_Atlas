@@ -611,9 +611,7 @@ async def test_live_postgres_exact_race_circular_fk_append_only_and_guarded_down
         assert isinstance(
             competing_errors[0], WorkflowProtectedRuntimeProcessCreationAuthorizationError
         )
-        assert cast(
-            WorkflowProtectedRuntimeProcessCreationAuthorizationError, competing_errors[0]
-        ).code.endswith("already_authorized")
+        assert competing_errors[0].code.endswith("already_authorized")
 
         for table, key, value in (
             (lease_table, "authorization_lease_id", first.authorization_lease_id),
