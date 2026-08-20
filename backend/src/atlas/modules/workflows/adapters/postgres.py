@@ -12040,7 +12040,7 @@ class PostgreSQLWorkflowPlanRepository:
                 request,
                 lifecycle_attestation=durable_attestation,
                 expected_request_nonce_digest=durable_attestation.request_nonce_digest,
-                pre_attestation_observed_at=durable_claim.claimed_at,
+                pre_attestation_observed_at=durable_attestation.observed_at,
                 requested_at=durable_lease.issued_at,
                 candidate_claim=durable_claim,
                 candidate=durable_lease,

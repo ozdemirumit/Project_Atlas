@@ -280,6 +280,7 @@ def test_replay_requires_exact_idempotency_and_source_digest() -> None:
     assert "claim_row.readiness_result_digest" in source
     assert "_protected_runtime_process_creation_authorization_lease_from_row" in source
     assert "_protected_runtime_process_creation_authorization_claim_from_row" in source
+    assert "pre_attestation_observed_at=durable_attestation.observed_at" in source
     assert "validate_workflow_protected_runtime_process_creation_authorization_request" in source
     assert "statuses.IDEMPOTENCY_CONFLICT" in source
     assert "statuses.REPLAY" in source
@@ -767,7 +768,7 @@ async def test_live_postgres_exact_race_circular_fk_append_only_and_guarded_down
         await _assert_circular_orphan_commit_rejected(repository, orphan_request, side="lease")
         await _assert_circular_orphan_commit_rejected(repository, orphan_request, side="claim")
         idempotency_key = f"imp-227-process-{uuid4().hex}"
-        first, second = await asyncio.wait_for(
+        exact_race = await asyncio.wait_for(
             asyncio.gather(
                 _authorize_process_creation(
                     _process_service(repository),
@@ -779,9 +780,17 @@ async def test_live_postgres_exact_race_circular_fk_append_only_and_guarded_down
                     readiness_result,
                     idempotency_key=idempotency_key,
                 ),
+                return_exceptions=True,
             ),
             timeout=20,
         )
+        exact_race_errors = [item for item in exact_race if isinstance(item, BaseException)]
+        assert not exact_race_errors, [
+            getattr(item, "code", repr(item)) for item in exact_race_errors
+        ]
+        first, second = exact_race
+        assert not isinstance(first, BaseException)
+        assert not isinstance(second, BaseException)
         assert first == second
 
         lease_table = cast(
