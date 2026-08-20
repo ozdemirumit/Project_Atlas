@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-227 |
 | Title | Bounded single-use protected runtime process-creation authorization lease |
-| Status | Implementation complete; pull request validation pending |
+| Status | Implementation complete; pull request CI in progress |
 | Branch | `agent/protected-runtime-process-creation-authorization` |
-| Pull Request | Not opened |
+| Pull Request | [#240](https://github.com/ozdemirumit/Project_Atlas/pull/240) |
 | Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-177 |
 | Last Updated | 2026-08-20 |
-| Next Action | Push the completed branch, run PostgreSQL CI, review, merge and verify `main` |
+| Next Action | Complete PR #240 CI, merge and verify `main` |
 
 ### ATLAS-IMP-227 Scope Rationale
 
