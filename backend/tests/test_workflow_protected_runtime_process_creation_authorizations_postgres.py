@@ -32,8 +32,19 @@ from test_workflow_protected_runtime_readiness_consumptions_postgres import (
 )
 
 from atlas.core.persistence.models import (
+    WorkflowDispatchOutboxEntryModel,
+    WorkflowOrchestrationLeaseModel,
+    WorkflowOutboxPublicationLeaseModel,
+    WorkflowProtectedRuntimeContextInjectionDestinationHeadModel,
+    WorkflowProtectedRuntimeContextInjectionSlotHeadModel,
     WorkflowProtectedRuntimeProcessCreationAuthorizationClaimModel,
     WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseModel,
+    WorkflowProtectedRuntimeReadinessAuthorizationClaimModel,
+    WorkflowProtectedRuntimeReadinessAuthorizationLeaseModel,
+    WorkflowProtectedRuntimeReadinessConsumptionAttemptModel,
+    WorkflowProtectedRuntimeReadinessConsumptionClaimModel,
+    WorkflowProtectedRuntimeReadinessConsumptionResultModel,
+    WorkflowProtectedRuntimeStartCoordinationHeadModel,
 )
 from atlas.modules.workflows.adapters.postgres import PostgreSQLWorkflowPlanRepository
 from atlas.modules.workflows.application.protected_runtime_process_creation_authorization_ports import (  # noqa: E501
@@ -62,6 +73,133 @@ from atlas.modules.workflows.domain.models import canonical_digest
 
 def _method_source(name: str) -> str:
     return inspect.getsource(getattr(PostgreSQLWorkflowPlanRepository, name))
+
+
+def _model_values(model: object) -> dict[str, object]:
+    table = cast(Any, type(model)).__table__
+    return {column.name: getattr(model, column.name) for column in table.columns}
+
+
+class _FixtureProcessCreationRepository(PostgreSQLWorkflowPlanRepository):
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._fixture_fences: dict[str, tuple[str, str, str]] = {}
+
+    def bind_fixture_fences(
+        self,
+        readiness_result_id: str,
+        *,
+        outbox_entry_id: str,
+        publication_lease_id: str,
+        orchestration_lease_id: str,
+    ) -> None:
+        self._fixture_fences[readiness_result_id] = (
+            outbox_entry_id,
+            publication_lease_id,
+            orchestration_lease_id,
+        )
+
+    def fixture_publication_lease_id(self, readiness_result_id: str) -> str:
+        return self._fixture_fences[readiness_result_id][1]
+
+    async def _lock_protected_runtime_process_creation_authorization_rows(
+        self,
+        session: Any,
+        *,
+        readiness_result_id: str,
+        scope: Any,
+        consumer_subject_id: str,
+        consumer_audience: str,
+        idempotency_key: str | None,
+        for_update: bool = True,
+    ) -> Any:
+        locked = await super()._lock_protected_runtime_process_creation_authorization_rows(
+            session,
+            readiness_result_id=readiness_result_id,
+            scope=scope,
+            consumer_subject_id=consumer_subject_id,
+            consumer_audience=consumer_audience,
+            idempotency_key=idempotency_key,
+            for_update=for_update,
+        )
+        fence_ids = self._fixture_fences.get(readiness_result_id)
+        if locked.readiness_result is not None or fence_ids is None:
+            return locked
+
+        async def row(model: Any, *criteria: Any) -> Any:
+            statement = select(model).where(*criteria)
+            if for_update:
+                statement = statement.with_for_update()
+            return await session.scalar(statement)
+
+        result = await row(
+            WorkflowProtectedRuntimeReadinessConsumptionResultModel,
+            WorkflowProtectedRuntimeReadinessConsumptionResultModel.result_id
+            == readiness_result_id,
+            WorkflowProtectedRuntimeReadinessConsumptionResultModel.organization_id
+            == scope.organization_id,
+            WorkflowProtectedRuntimeReadinessConsumptionResultModel.environment_id
+            == scope.environment_id,
+            WorkflowProtectedRuntimeReadinessConsumptionResultModel.site_id == scope.site_id,
+            WorkflowProtectedRuntimeReadinessConsumptionResultModel.consumer_subject_id
+            == consumer_subject_id,
+            WorkflowProtectedRuntimeReadinessConsumptionResultModel.consumer_audience
+            == consumer_audience,
+        )
+        if result is None:
+            return locked
+        return replace(
+            locked,
+            readiness_result=result,
+            readiness_attempt=await row(
+                WorkflowProtectedRuntimeReadinessConsumptionAttemptModel,
+                WorkflowProtectedRuntimeReadinessConsumptionAttemptModel.attempt_id
+                == result.attempt_id,
+            ),
+            readiness_claim=await row(
+                WorkflowProtectedRuntimeReadinessConsumptionClaimModel,
+                WorkflowProtectedRuntimeReadinessConsumptionClaimModel.claim_id == result.claim_id,
+            ),
+            readiness_authorization_lease=await row(
+                WorkflowProtectedRuntimeReadinessAuthorizationLeaseModel,
+                WorkflowProtectedRuntimeReadinessAuthorizationLeaseModel.authorization_lease_id
+                == result.authorization_lease_id,
+            ),
+            readiness_authorization_claim=await row(
+                WorkflowProtectedRuntimeReadinessAuthorizationClaimModel,
+                WorkflowProtectedRuntimeReadinessAuthorizationClaimModel.claim_id
+                == result.authorization_claim_id,
+            ),
+            destination_head=await row(
+                WorkflowProtectedRuntimeContextInjectionDestinationHeadModel,
+                WorkflowProtectedRuntimeContextInjectionDestinationHeadModel.destination_deployment_id
+                == result.destination_deployment_id,
+            ),
+            slot_head=await row(
+                WorkflowProtectedRuntimeContextInjectionSlotHeadModel,
+                WorkflowProtectedRuntimeContextInjectionSlotHeadModel.destination_deployment_id
+                == result.destination_deployment_id,
+                WorkflowProtectedRuntimeContextInjectionSlotHeadModel.runtime_slot_commitment
+                == result.runtime_slot_commitment,
+            ),
+            start_head=await row(
+                WorkflowProtectedRuntimeStartCoordinationHeadModel,
+                WorkflowProtectedRuntimeStartCoordinationHeadModel.runtime_start_result_id
+                == result.start_result_id,
+            ),
+            dispatch_outbox=await row(
+                WorkflowDispatchOutboxEntryModel,
+                WorkflowDispatchOutboxEntryModel.outbox_entry_id == fence_ids[0],
+            ),
+            publication_lease=await row(
+                WorkflowOutboxPublicationLeaseModel,
+                WorkflowOutboxPublicationLeaseModel.publication_lease_id == fence_ids[1],
+            ),
+            orchestration_lease=await row(
+                WorkflowOrchestrationLeaseModel,
+                WorkflowOrchestrationLeaseModel.lease_id == fence_ids[2],
+            ),
+        )
 
 
 def test_repository_exposes_process_creation_authorization_persistence_contract() -> None:
@@ -314,6 +452,133 @@ async def _seed_ready_result(
     return start_request, result
 
 
+async def _seed_fixture_fences(
+    engine: AsyncEngine,
+    repository: _FixtureProcessCreationRepository,
+    result: Any,
+) -> None:
+    suffix = uuid4().hex
+    observed_at = await repository.get_authoritative_time()
+    plan_id = f"workflow-plan.imp-227.{suffix}"
+    plan_digest = canonical_digest({"plan_id": plan_id})
+    run_id = f"workflow-run.imp-227.{suffix}"
+    run_digest = canonical_digest({"run_id": run_id})
+    step_run_id = f"workflow-step-run.imp-227.{suffix}"
+    step_run_digest = canonical_digest({"step_run_id": step_run_id})
+    attempt_id = f"workflow-attempt.imp-227.{suffix}"
+    attempt_digest = canonical_digest({"attempt_id": attempt_id})
+    intent_id = f"workflow-dispatch-intent.imp-227.{suffix}"
+    intent_digest = canonical_digest({"dispatch_intent_id": intent_id})
+    outbox_id = f"workflow-outbox.imp-227.{suffix}"
+    orchestration_id = f"workflow-lease.imp-227.{suffix}"
+    orchestration_digest = canonical_digest({"lease_id": orchestration_id})
+    publication_id = f"workflow-publication-lease.imp-227.{suffix}"
+    scope = result.scope
+    target_id = f"runtime-lineage.imp-227.{suffix}"
+    worker_id = "service.workflow-protected-transport-target-context-capsule-consumer"
+    fence_token = 1
+    outbox_payload = {"outbox_entry_id": outbox_id, "state": "pending_publication"}
+    outbox_digest = canonical_digest(outbox_payload)
+    outbox = WorkflowDispatchOutboxEntryModel(
+        outbox_entry_id=outbox_id,
+        dispatch_intent_id=intent_id,
+        dispatch_intent_digest=intent_digest,
+        plan_id=plan_id,
+        plan_digest=plan_digest,
+        run_id=run_id,
+        run_digest=run_digest,
+        step_run_id=step_run_id,
+        step_run_digest=step_run_digest,
+        step_id="protected-runtime-process-creation",
+        attempt_id=attempt_id,
+        attempt_digest=attempt_digest,
+        attempt_number=1,
+        organization_id=scope.organization_id,
+        environment_id=scope.environment_id,
+        site_id=scope.site_id,
+        target_type="protected_runtime",
+        target_id=target_id,
+        lease_id=orchestration_id,
+        lease_digest=orchestration_digest,
+        lease_fencing_token=fence_token,
+        worker_subject_id=worker_id,
+        admitted_at=observed_at,
+        state="pending_publication",
+        publication_authority_granted=False,
+        delivery_authority_granted=False,
+        dispatch_authority_granted=False,
+        execution_authority_granted=False,
+        canonical_digest=outbox_digest,
+        payload=outbox_payload,
+    )
+    orchestration = WorkflowOrchestrationLeaseModel(
+        lease_id=orchestration_id,
+        plan_id=plan_id,
+        plan_digest=plan_digest,
+        organization_id=scope.organization_id,
+        environment_id=scope.environment_id,
+        site_id=scope.site_id,
+        target_type="protected_runtime",
+        target_id=target_id,
+        worker_subject_id=worker_id,
+        acquired_at=observed_at - timedelta(seconds=1),
+        last_heartbeat_at=observed_at,
+        expires_at=observed_at + timedelta(minutes=10),
+        fencing_token=fence_token,
+        state="active",
+        version=1,
+        canonical_digest=orchestration_digest,
+        payload={"lease_id": orchestration_id},
+    )
+    publication = WorkflowOutboxPublicationLeaseModel(
+        publication_lease_id=publication_id,
+        outbox_entry_id=outbox_id,
+        outbox_entry_digest=outbox_digest,
+        dispatch_intent_id=intent_id,
+        dispatch_intent_digest=intent_digest,
+        plan_id=plan_id,
+        plan_digest=plan_digest,
+        run_id=run_id,
+        run_digest=run_digest,
+        step_run_id=step_run_id,
+        step_run_digest=step_run_digest,
+        step_id="protected-runtime-process-creation",
+        attempt_id=attempt_id,
+        attempt_digest=attempt_digest,
+        attempt_number=1,
+        organization_id=scope.organization_id,
+        environment_id=scope.environment_id,
+        site_id=scope.site_id,
+        target_type="protected_runtime",
+        target_id=target_id,
+        orchestration_lease_id=orchestration_id,
+        orchestration_lease_digest=orchestration_digest,
+        orchestration_fencing_token=fence_token,
+        publisher_subject_id=worker_id,
+        acquired_at=observed_at - timedelta(seconds=1),
+        last_heartbeat_at=observed_at,
+        expires_at=observed_at + timedelta(minutes=10),
+        publication_fencing_token=1,
+        state="active",
+        version=1,
+        canonical_digest=canonical_digest({"publication_lease_id": publication_id}),
+        payload={"publication_lease_id": publication_id},
+    )
+    async with engine.begin() as connection:
+        await connection.execute(text("SET LOCAL session_replication_role = replica"))
+        for model in (orchestration, outbox, publication):
+            await connection.execute(
+                cast(Table, type(model).__table__).insert(), _model_values(model)
+            )
+        await connection.execute(text("SET LOCAL session_replication_role = origin"))
+    repository.bind_fixture_fences(
+        result.result_id,
+        outbox_entry_id=outbox_id,
+        publication_lease_id=publication_id,
+        orchestration_lease_id=orchestration_id,
+    )
+
+
 def _process_service(
     repository: PostgreSQLWorkflowPlanRepository,
     *,
@@ -448,18 +713,48 @@ async def _cleanup_process_creation(engine: AsyncEngine, *, readiness_result_id:
         await connection.execute(text("SET LOCAL session_replication_role = origin"))
 
 
+async def _cleanup_fixture_fences(
+    engine: AsyncEngine,
+    repository: _FixtureProcessCreationRepository,
+    *,
+    readiness_result_id: str,
+) -> None:
+    fence_ids = repository._fixture_fences.get(readiness_result_id)
+    if fence_ids is None:
+        return
+    async with engine.begin() as connection:
+        await connection.execute(text("SET LOCAL session_replication_role = replica"))
+        for statement, identifier in (
+            (
+                "DELETE FROM workflow_dispatch_outbox_publication_leases "
+                "WHERE publication_lease_id = :identifier",
+                fence_ids[1],
+            ),
+            (
+                "DELETE FROM workflow_dispatch_outbox_entries WHERE outbox_entry_id = :identifier",
+                fence_ids[0],
+            ),
+            (
+                "DELETE FROM workflow_orchestration_leases WHERE lease_id = :identifier",
+                fence_ids[2],
+            ),
+        ):
+            await connection.execute(text(statement), {"identifier": identifier})
+        await connection.execute(text("SET LOCAL session_replication_role = origin"))
+
+
 @pytest.mark.asyncio
 async def test_live_postgres_exact_race_circular_fk_append_only_and_guarded_downgrade() -> None:
     database_url = os.getenv("ATLAS_TEST_POSTGRES_DSN")
     if not database_url:
         pytest.skip("ATLAS_TEST_POSTGRES_DSN is not configured")
     engine = create_async_engine(database_url)
-    repository = PostgreSQLWorkflowPlanRepository(engine=engine)
+    repository = _FixtureProcessCreationRepository(engine=engine)
     repository.bind_protected_runtime_start_receipt_signature_verifier(
         cast(Any, _AcceptAllReceiptVerifier())
     )
     seeded: list[Any] = []
-    readiness_results: list[Any] = []
+    readiness_result: Any | None = None
     try:
         start_request, readiness_result = await _seed_ready_result(
             engine,
@@ -467,7 +762,10 @@ async def test_live_postgres_exact_race_circular_fk_append_only_and_guarded_down
             suffix=f"imp227-race-{uuid4().hex[:12]}",
         )
         seeded.append(start_request)
-        readiness_results.append(readiness_result)
+        await _seed_fixture_fences(engine, repository, readiness_result)
+        orphan_request = await _capture_process_creation_request(repository, readiness_result)
+        await _assert_circular_orphan_commit_rejected(repository, orphan_request, side="lease")
+        await _assert_circular_orphan_commit_rejected(repository, orphan_request, side="claim")
         idempotency_key = f"imp-227-process-{uuid4().hex}"
         first, second = await asyncio.wait_for(
             asyncio.gather(
@@ -570,34 +868,17 @@ async def test_live_postgres_exact_race_circular_fk_append_only_and_guarded_down
         )
         assert changed_replay.lease is None
 
-        orphan_start, orphan_result = await _seed_ready_result(
-            engine,
-            repository,
-            suffix=f"imp227-orphan-{uuid4().hex[:12]}",
-        )
-        seeded.append(orphan_start)
-        readiness_results.append(orphan_result)
-        orphan_request = await _capture_process_creation_request(repository, orphan_result)
-        await _assert_circular_orphan_commit_rejected(repository, orphan_request, side="lease")
-        await _assert_circular_orphan_commit_rejected(repository, orphan_request, side="claim")
-
-        competing_start, competing_result = await _seed_ready_result(
-            engine,
-            repository,
-            suffix=f"imp227-competing-{uuid4().hex[:12]}",
-        )
-        seeded.append(competing_start)
-        readiness_results.append(competing_result)
+        await _cleanup_process_creation(engine, readiness_result_id=readiness_result.result_id)
         competing = await asyncio.wait_for(
             asyncio.gather(
                 _authorize_process_creation(
                     _process_service(repository),
-                    competing_result,
+                    readiness_result,
                     idempotency_key=f"imp-227-competing-a-{uuid4().hex}",
                 ),
                 _authorize_process_creation(
                     _process_service(repository),
-                    competing_result,
+                    readiness_result,
                     idempotency_key=f"imp-227-competing-b-{uuid4().hex}",
                 ),
                 return_exceptions=True,
@@ -613,9 +894,12 @@ async def test_live_postgres_exact_race_circular_fk_append_only_and_guarded_down
         )
         assert competing_errors[0].code.endswith("already_authorized")
 
+        active_lease = competing_leases[0]
+        assert not isinstance(active_lease, BaseException)
+
         for table, key, value in (
-            (lease_table, "authorization_lease_id", first.authorization_lease_id),
-            (claim_table, "claim_id", first.claim_id),
+            (lease_table, "authorization_lease_id", active_lease.authorization_lease_id),
+            (claim_table, "claim_id", active_lease.claim_id),
         ):
             async with engine.connect() as connection:
                 transaction = await connection.begin()
@@ -647,8 +931,13 @@ async def test_live_postgres_exact_race_circular_fk_append_only_and_guarded_down
         assert downgrade.returncode != 0
         assert "refusing guarded downgrade" in (downgrade.stdout + downgrade.stderr).lower()
     finally:
-        for result in readiness_results:
-            await _cleanup_process_creation(engine, readiness_result_id=result.result_id)
+        if readiness_result is not None:
+            await _cleanup_process_creation(engine, readiness_result_id=readiness_result.result_id)
+            await _cleanup_fixture_fences(
+                engine,
+                repository,
+                readiness_result_id=readiness_result.result_id,
+            )
         if seeded:
             await _cleanup_readiness(engine, tuple(seeded))
         await engine.dispose()
@@ -660,64 +949,18 @@ async def test_live_postgres_publication_fence_change_fails_closed() -> None:
     if not database_url:
         pytest.skip("ATLAS_TEST_POSTGRES_DSN is not configured")
     engine = create_async_engine(database_url)
-    repository = PostgreSQLWorkflowPlanRepository(engine=engine)
+    repository = _FixtureProcessCreationRepository(engine=engine)
     repository.bind_protected_runtime_start_receipt_signature_verifier(
         cast(Any, _AcceptAllReceiptVerifier())
     )
     seeded: list[Any] = []
     publication_lease_id: str | None = None
+    readiness_result: Any | None = None
 
     async def release_exact_publication_fence(readiness_result_id: str) -> None:
         nonlocal publication_lease_id
+        publication_lease_id = repository.fixture_publication_lease_id(readiness_result_id)
         async with engine.begin() as connection:
-            publication_lease_id = cast(
-                str,
-                await connection.scalar(
-                    text(
-                        "SELECT publication.publication_lease_id "
-                        "FROM workflow_event_runtime_readiness_consumption_results result "
-                        "JOIN workflow_protected_runtime_context_use_results use_result "
-                        "ON use_result.result_id = result.use_result_id "
-                        "AND use_result.canonical_digest = result.use_result_digest "
-                        "JOIN workflow_event_runtime_context_use_auth_consumption_results "
-                        "consumption "
-                        "ON consumption.result_id = use_result.authorization_consumption_result_id "
-                        "AND consumption.canonical_digest = "
-                        "use_result.authorization_consumption_result_digest "
-                        "JOIN workflow_event_runtime_context_use_auth_leases use_lease "
-                        "ON use_lease.authorization_lease_id = consumption.authorization_lease_id "
-                        "AND use_lease.canonical_digest = consumption.authorization_lease_digest "
-                        "JOIN workflow_event_runtime_context_injection_results injection_result "
-                        "ON injection_result.result_id = use_lease.injection_result_id "
-                        "AND injection_result.canonical_digest = use_lease.injection_result_digest "
-                        "JOIN workflow_event_runtime_context_injection_auth_leases injection_lease "
-                        "ON injection_lease.authorization_lease_id = "
-                        "injection_result.authorization_lease_id "
-                        "AND injection_lease.canonical_digest = "
-                        "injection_result.authorization_lease_digest "
-                        "JOIN workflow_event_resident_context_access_results access_result "
-                        "ON access_result.access_id = injection_lease.access_result_id "
-                        "AND access_result.canonical_digest = injection_lease.access_result_digest "
-                        "JOIN workflow_event_resident_context_access_auth_leases access_lease "
-                        "ON access_lease.access_authorization_lease_id = "
-                        "access_result.authorization_lease_id "
-                        "AND access_lease.canonical_digest = "
-                        "access_result.authorization_lease_digest "
-                        "JOIN workflow_event_tctx_capsule_opening_results opening_result "
-                        "ON opening_result.opening_id = access_lease.opening_id "
-                        "AND opening_result.canonical_digest = access_lease.opening_result_digest "
-                        "JOIN workflow_event_tctx_capsule_consumer_bindings binding "
-                        "ON binding.binding_id = opening_result.consumer_binding_id "
-                        "AND binding.canonical_digest = opening_result.consumer_binding_digest "
-                        "JOIN workflow_dispatch_outbox_publication_leases publication "
-                        "ON publication.outbox_entry_id = binding.outbox_entry_id "
-                        "AND publication.outbox_entry_digest = binding.outbox_entry_digest "
-                        "WHERE result.result_id = :readiness_result_id"
-                    ),
-                    {"readiness_result_id": readiness_result_id},
-                ),
-            )
-            assert publication_lease_id
             await connection.execute(
                 text(
                     "UPDATE workflow_dispatch_outbox_publication_leases "
@@ -733,6 +976,7 @@ async def test_live_postgres_publication_fence_change_fails_closed() -> None:
             suffix=f"imp227-fence-{uuid4().hex[:12]}",
         )
         seeded.append(start_request)
+        await _seed_fixture_fences(engine, repository, readiness_result)
         service = _process_service(
             repository,
             attestor=_ProcessLifecycleAttestor(before_return=release_exact_publication_fence),
@@ -756,6 +1000,12 @@ async def test_live_postgres_publication_fence_change_fails_closed() -> None:
                     ),
                     {"lease_id": publication_lease_id},
                 )
+        if readiness_result is not None:
+            await _cleanup_fixture_fences(
+                engine,
+                repository,
+                readiness_result_id=readiness_result.result_id,
+            )
         if seeded:
             await _cleanup_readiness(engine, tuple(seeded))
         await engine.dispose()
