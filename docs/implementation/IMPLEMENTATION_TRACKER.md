@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-232 |
 | Title | Advisory-only terminal execution boundary |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/advisory-only-execution-boundary` |
-| Pull Request | Pending |
+| Pull Request | [#245](https://github.com/ozdemirumit/Project_Atlas/pull/245) |
 | Governing Documents | ATLAS-003, ATLAS-014, ATLAS-023, ATLAS-025, ATLAS-032, ATLAS-037, ATLAS-047, ADR-182 |
 | Last Updated | 2026-08-21 |
-| Next Action | Complete focused validation, live UI verification, PR CI, merge and post-main CI |
+| Next Action | Complete exact-head PR CI, squash-merge PR #245 and verify post-main CI |
 
 ### ATLAS-IMP-232 Scope Rationale
 
