@@ -1336,6 +1336,30 @@ describe("Atlas application shell", () => {
           }),
         );
       }
+      if (url.includes("/protected-runtime-process-scheduling-consumptions")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: {
+                process_schedulings: [],
+                server_time: "2026-08-20T10:30:00.500Z",
+                durable: true,
+              },
+              meta: {
+                correlation_id: "test-process-scheduling-consumption-correlation",
+                generated_at: "2026-08-20T10:30:00.500Z",
+              },
+            }),
+            {
+              status: 200,
+              headers: {
+                "Cache-Control": "no-store, max-age=0",
+                "Content-Type": "application/json",
+              },
+            },
+          ),
+        );
+      }
       if (url.includes("/protected-runtime-process-scheduling-authorizations")) {
         return Promise.resolve(
           new Response(JSON.stringify(processSchedulingAuthorizationResponse), {

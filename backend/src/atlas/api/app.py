@@ -1601,6 +1601,16 @@ from atlas.modules.workflows.adapters.protected_runtime_process_creators import 
     UnavailableWorkflowProtectedRuntimeProcessCreationInstructionSigner,
     UnavailableWorkflowProtectedRuntimeProcessCreator,
 )
+from atlas.modules.workflows.adapters.protected_runtime_process_schedulers import (
+    DenyAllWorkflowProtectedRuntimeProcessSchedulingInstructionSignatureVerifier,
+    DenyAllWorkflowProtectedRuntimeProcessSchedulingReceiptSignatureVerifier,
+    DeterministicDevelopmentWorkflowProtectedRuntimeProcessScheduler,
+    DeterministicDevelopmentWorkflowProtectedRuntimeProcessSchedulingInstructionSignatureVerifier,
+    DeterministicDevelopmentWorkflowProtectedRuntimeProcessSchedulingInstructionSigner,
+    DeterministicDevelopmentWorkflowProtectedRuntimeProcessSchedulingReceiptSignatureVerifier,
+    UnavailableWorkflowProtectedRuntimeProcessScheduler,
+    UnavailableWorkflowProtectedRuntimeProcessSchedulingInstructionSigner,
+)
 from atlas.modules.workflows.adapters.protected_runtime_process_scheduling_state_attestors import (
     DeterministicDevelopmentWorkflowProtectedRuntimeProcessSchedulingStateAttestor,
     UnavailableWorkflowProtectedRuntimeProcessSchedulingStateAttestor,
@@ -1766,6 +1776,16 @@ from atlas.modules.workflows.application.protected_runtime_process_scheduling_au
 )
 from atlas.modules.workflows.application.protected_runtime_process_scheduling_authorizations import (  # noqa: E501
     WorkflowProtectedRuntimeProcessSchedulingAuthorizationService,
+)
+from atlas.modules.workflows.application.protected_runtime_process_scheduling_consumption_ports import (  # noqa: E501
+    WorkflowProtectedRuntimeProcessScheduler,
+    WorkflowProtectedRuntimeProcessSchedulingConsumptionRepository,
+    WorkflowProtectedRuntimeProcessSchedulingInstructionSignatureVerifier,
+    WorkflowProtectedRuntimeProcessSchedulingInstructionSigner,
+    WorkflowProtectedRuntimeProcessSchedulingReceiptSignatureVerifier,
+)
+from atlas.modules.workflows.application.protected_runtime_process_scheduling_consumptions import (
+    WorkflowProtectedRuntimeProcessSchedulingConsumptionService,
 )
 from atlas.modules.workflows.application.protected_runtime_readiness_authorization_ports import (
     WorkflowProtectedRuntimeReadinessAuthorizationRepository,
@@ -2423,6 +2443,47 @@ class _UnavailableWorkflowProtectedRuntimeProcessCreationConsumptionRepository:
         raise RuntimeError("protected runtime process-creation consumption is unavailable")
 
 
+class _UnavailableWorkflowProtectedRuntimeProcessSchedulingConsumptionRepository:
+    """Fail-closed ADR-180 composition placeholder with no memory fallback."""
+
+    @property
+    def durable(self) -> bool:
+        return False
+
+    async def get_authoritative_time(self, *_: object, **__: object) -> None:
+        raise RuntimeError("protected runtime process-scheduling consumption is unavailable")
+
+    async def lookup_protected_runtime_process_scheduling_replay(
+        self, *_: object, **__: object
+    ) -> None:
+        raise RuntimeError("protected runtime process-scheduling consumption is unavailable")
+
+    async def get_protected_runtime_process_scheduling_consumption_source(
+        self, *_: object, **__: object
+    ) -> None:
+        raise RuntimeError("protected runtime process-scheduling consumption is unavailable")
+
+    async def claim_protected_runtime_process_scheduling(
+        self, *_: object, **__: object
+    ) -> None:
+        raise RuntimeError("protected runtime process-scheduling consumption is unavailable")
+
+    async def record_protected_runtime_process_scheduling_result(
+        self, *_: object, **__: object
+    ) -> None:
+        raise RuntimeError("protected runtime process-scheduling consumption is unavailable")
+
+    async def list_protected_runtime_process_scheduling_attempts(
+        self, *_: object, **__: object
+    ) -> None:
+        raise RuntimeError("protected runtime process-scheduling consumption is unavailable")
+
+    async def get_protected_runtime_process_scheduling_results(
+        self, *_: object, **__: object
+    ) -> None:
+        raise RuntimeError("protected runtime process-scheduling consumption is unavailable")
+
+
 class _WorkflowProtectedResidentContextOpeningReceiptSignatureVerifierAdapter:
     """Expose an opener's offline receipt verification through the IMP-216 port."""
 
@@ -2975,6 +3036,9 @@ def create_app(
     ) = None,
     workflow_protected_runtime_process_creation_consumption_service: (
         WorkflowProtectedRuntimeProcessCreationConsumptionService | None
+    ) = None,
+    workflow_protected_runtime_process_scheduling_consumption_service: (
+        WorkflowProtectedRuntimeProcessSchedulingConsumptionService | None
     ) = None,
     workflow_protected_runtime_handle_lifecycle_attestor: (
         WorkflowProtectedRuntimeHandleLifecycleAttestor | None
@@ -9064,6 +9128,102 @@ def create_app(
         resolved_protected_runtime_process_scheduling_authorization_service = (
             workflow_protected_runtime_process_scheduling_authorization_service
         )
+    if workflow_protected_runtime_process_scheduling_consumption_service is None:
+        process_scheduling_consumption_repository_methods = (
+            "get_authoritative_time",
+            "lookup_protected_runtime_process_scheduling_replay",
+            "get_protected_runtime_process_scheduling_consumption_source",
+            "claim_protected_runtime_process_scheduling",
+            "record_protected_runtime_process_scheduling_result",
+        )
+        if isinstance(workflow_repository, PostgreSQLWorkflowPlanRepository) and all(
+            callable(getattr(workflow_repository, method_name, None))
+            for method_name in process_scheduling_consumption_repository_methods
+        ):
+            process_scheduling_consumption_repository = cast(
+                WorkflowProtectedRuntimeProcessSchedulingConsumptionRepository,
+                workflow_repository,
+            )
+        else:
+            process_scheduling_consumption_repository = cast(
+                WorkflowProtectedRuntimeProcessSchedulingConsumptionRepository,
+                _UnavailableWorkflowProtectedRuntimeProcessSchedulingConsumptionRepository(),
+            )
+
+        development_process_scheduling_consumption = (
+            resolved_settings.environment == "development"
+            and resolved_settings.development_identity_enabled
+        )
+        process_scheduling_instruction_signer: (
+            WorkflowProtectedRuntimeProcessSchedulingInstructionSigner
+        )
+        process_scheduling_instruction_verifier: (
+            WorkflowProtectedRuntimeProcessSchedulingInstructionSignatureVerifier
+        )
+        process_scheduling_receipt_verifier: (
+            WorkflowProtectedRuntimeProcessSchedulingReceiptSignatureVerifier
+        )
+        process_scheduler: WorkflowProtectedRuntimeProcessScheduler
+        if development_process_scheduling_consumption:
+            process_scheduling_instruction_signer = (
+                DeterministicDevelopmentWorkflowProtectedRuntimeProcessSchedulingInstructionSigner(
+                    development_enabled=True
+                )
+            )
+            scheduling_instruction_verifier_type = DeterministicDevelopmentWorkflowProtectedRuntimeProcessSchedulingInstructionSignatureVerifier  # noqa: E501
+            process_scheduling_instruction_verifier = scheduling_instruction_verifier_type(
+                development_enabled=True
+            )
+            scheduling_receipt_verifier_type = DeterministicDevelopmentWorkflowProtectedRuntimeProcessSchedulingReceiptSignatureVerifier  # noqa: E501
+            process_scheduling_receipt_verifier = scheduling_receipt_verifier_type(
+                development_enabled=True
+            )
+            process_scheduler = DeterministicDevelopmentWorkflowProtectedRuntimeProcessScheduler(
+                development_enabled=True,
+                instruction_signature_verifier=process_scheduling_instruction_verifier,
+            )
+        else:
+            process_scheduling_instruction_signer = (
+                UnavailableWorkflowProtectedRuntimeProcessSchedulingInstructionSigner()
+            )
+            process_scheduling_instruction_verifier = (
+                DenyAllWorkflowProtectedRuntimeProcessSchedulingInstructionSignatureVerifier()
+            )
+            process_scheduling_receipt_verifier = (
+                DenyAllWorkflowProtectedRuntimeProcessSchedulingReceiptSignatureVerifier()
+            )
+            process_scheduler = UnavailableWorkflowProtectedRuntimeProcessScheduler()
+        bind_process_scheduling_receipt_verifier = getattr(
+            process_scheduling_consumption_repository,
+            "bind_protected_runtime_process_scheduling_receipt_signature_verifier",
+            None,
+        )
+        if callable(bind_process_scheduling_receipt_verifier):
+            bind_process_scheduling_receipt_verifier(process_scheduling_receipt_verifier)
+        resolved_protected_runtime_process_scheduling_consumption_service = (
+            WorkflowProtectedRuntimeProcessSchedulingConsumptionService(
+                repository=process_scheduling_consumption_repository,
+                instruction_signer=process_scheduling_instruction_signer,
+                instruction_signature_verifier=process_scheduling_instruction_verifier,
+                receipt_signature_verifier=process_scheduling_receipt_verifier,
+                scheduler=process_scheduler,
+            )
+        )
+        resolved_process_scheduling_consumption_repository = (
+            process_scheduling_consumption_repository
+        )
+    else:
+        resolved_protected_runtime_process_scheduling_consumption_service = (
+            workflow_protected_runtime_process_scheduling_consumption_service
+        )
+        resolved_process_scheduling_consumption_repository = cast(
+            WorkflowProtectedRuntimeProcessSchedulingConsumptionRepository,
+            getattr(
+                workflow_protected_runtime_process_scheduling_consumption_service,
+                "repository",
+                _UnavailableWorkflowProtectedRuntimeProcessSchedulingConsumptionRepository(),
+            ),
+        )
     configured_transport_route_selection_heads = (
         _deployment_event_transport_route_selection_heads(
             resolved_settings,
@@ -9595,6 +9755,12 @@ def create_app(
         )
         app.state.workflow_protected_runtime_process_creation_consumption_repository = (
             resolved_process_creation_consumption_repository
+        )
+        app.state.workflow_protected_runtime_process_scheduling_consumption_service = (
+            resolved_protected_runtime_process_scheduling_consumption_service
+        )
+        app.state.workflow_protected_runtime_process_scheduling_consumption_repository = (
+            resolved_process_scheduling_consumption_repository
         )
         app.state.workflow_transport_route_selection_heads = (
             configured_transport_route_selection_heads

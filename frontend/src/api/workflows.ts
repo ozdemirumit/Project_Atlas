@@ -1861,6 +1861,35 @@ export type WorkflowProtectedRuntimeProcessCreationInventory = {
   durable: true;
 };
 
+export type WorkflowProtectedRuntimeProcessScheduling = {
+  process_scheduling_id: string;
+  attempt_state: "process_scheduling_attempt_started";
+  result_state:
+    | "process_scheduled_suspended_in_protected_boundary"
+    | "process_scheduling_rejected_without_scheduling"
+    | "process_scheduling_failed_without_scheduling"
+    | "process_scheduling_outcome_uncertain"
+    | null;
+  started_at: string;
+  completed_at: string | null;
+  recorded_at: string | null;
+  process_scheduled: boolean | null;
+  process_sealed: boolean | null;
+  process_suspended: boolean | null;
+  process_runnable: boolean | null;
+  policy_reference: "policy.workflow-protected-runtime-process-scheduling-consumption:1.0";
+  scheduling_profile_reference: string;
+  primitive_reference: string;
+  integrity_reference: string;
+  effective_authority: false;
+};
+
+export type WorkflowProtectedRuntimeProcessSchedulingInventory = {
+  process_schedulings: WorkflowProtectedRuntimeProcessScheduling[];
+  server_time: string;
+  durable: true;
+};
+
 export type WorkflowProtectedRuntimeContextInjectionConsumption = {
   injection_id: string;
   attempt_state: "started" | "completed";
@@ -3595,6 +3624,28 @@ const protectedRuntimeProcessCreationFields = [
 ] as const;
 const protectedRuntimeProcessCreationInventoryFields = [
   "process_creations",
+  "server_time",
+  "durable",
+] as const;
+const protectedRuntimeProcessSchedulingFields = [
+  "process_scheduling_id",
+  "attempt_state",
+  "result_state",
+  "started_at",
+  "completed_at",
+  "recorded_at",
+  "process_scheduled",
+  "process_sealed",
+  "process_suspended",
+  "process_runnable",
+  "policy_reference",
+  "scheduling_profile_reference",
+  "primitive_reference",
+  "integrity_reference",
+  "effective_authority",
+] as const;
+const protectedRuntimeProcessSchedulingInventoryFields = [
+  "process_schedulings",
   "server_time",
   "durable",
 ] as const;
@@ -6449,6 +6500,92 @@ function isProtectedRuntimeProcessCreation(
   );
 }
 
+function isProtectedRuntimeProcessScheduling(
+  value: unknown,
+  serverTime: string,
+): value is WorkflowProtectedRuntimeProcessScheduling {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, protectedRuntimeProcessSchedulingFields) ||
+    containsCredentialMaterial(value) ||
+    !isTimezoneAwareTimestamp(value.started_at) ||
+    (value.completed_at !== null && !isTimezoneAwareTimestamp(value.completed_at)) ||
+    (value.recorded_at !== null && !isTimezoneAwareTimestamp(value.recorded_at))
+  ) {
+    return false;
+  }
+  const startedAt = Date.parse(value.started_at);
+  const completedAt = value.completed_at === null ? null : Date.parse(value.completed_at);
+  const recordedAt = value.recorded_at === null ? null : Date.parse(value.recorded_at);
+  const evaluatedAt = Date.parse(serverTime);
+  const pending =
+    value.result_state === null &&
+    completedAt === null &&
+    recordedAt === null &&
+    value.process_scheduled === null &&
+    value.process_sealed === null &&
+    value.process_suspended === null &&
+    value.process_runnable === null;
+  const projectedUncertainty =
+    value.result_state === "process_scheduling_outcome_uncertain" &&
+    completedAt === null &&
+    recordedAt !== null &&
+    value.process_scheduled === null &&
+    value.process_sealed === null &&
+    value.process_suspended === null &&
+    value.process_runnable === null;
+  const success =
+    value.result_state === "process_scheduled_suspended_in_protected_boundary" &&
+    completedAt !== null &&
+    recordedAt !== null &&
+    value.process_scheduled === true &&
+    value.process_sealed === true &&
+    value.process_suspended === true &&
+    value.process_runnable === false;
+  const knownWithoutScheduling =
+    (value.result_state === "process_scheduling_rejected_without_scheduling" ||
+      value.result_state === "process_scheduling_failed_without_scheduling") &&
+    completedAt !== null &&
+    recordedAt !== null &&
+    value.process_scheduled === false &&
+    value.process_sealed === true &&
+    value.process_suspended === true &&
+    value.process_runnable === false;
+  const durableUncertainty =
+    value.result_state === "process_scheduling_outcome_uncertain" &&
+    completedAt !== null &&
+    recordedAt !== null &&
+    value.process_scheduled === null &&
+    value.process_sealed === null &&
+    value.process_suspended === null &&
+    value.process_runnable === null;
+  return (
+    isStableIdentifier(value.process_scheduling_id) &&
+    value.process_scheduling_id.startsWith("prpsc-consumption-") &&
+    value.attempt_state === "process_scheduling_attempt_started" &&
+    startedAt <= evaluatedAt &&
+    (completedAt === null || (completedAt >= startedAt && completedAt <= evaluatedAt)) &&
+    (recordedAt === null ||
+      (recordedAt >= (completedAt ?? startedAt) && recordedAt <= evaluatedAt)) &&
+    (pending || projectedUncertainty || success || knownWithoutScheduling || durableUncertainty) &&
+    value.policy_reference ===
+      "policy.workflow-protected-runtime-process-scheduling-consumption:1.0" &&
+    isStableIdentifier(value.scheduling_profile_reference) &&
+    value.scheduling_profile_reference.startsWith(
+      "integrity.workflow-protected-runtime-process-scheduling-profile.",
+    ) &&
+    isStableIdentifier(value.primitive_reference) &&
+    value.primitive_reference.startsWith(
+      "integrity.workflow-protected-runtime-process-scheduling-primitive.",
+    ) &&
+    isStableIdentifier(value.integrity_reference) &&
+    value.integrity_reference.startsWith(
+      "integrity.workflow-protected-runtime-process-scheduling-consumption.",
+    ) &&
+    value.effective_authority === false
+  );
+}
+
 function isProtectedRuntimeContextInjectionConsumption(
   value: unknown,
   serverTime: string,
@@ -8671,6 +8808,57 @@ export async function listWorkflowProtectedRuntimeProcessCreations(): Promise<Wo
     processCreationIds.add(processCreation.process_creation_id);
   }
   return data as WorkflowProtectedRuntimeProcessCreationInventory;
+}
+
+export async function listWorkflowProtectedRuntimeProcessSchedulingConsumptions(): Promise<WorkflowProtectedRuntimeProcessSchedulingInventory> {
+  const response = await apiFetch(
+    "/api/v1/workflows/protected-runtime-process-scheduling-consumptions",
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(
+    response,
+    "Workflow protected runtime process-scheduling retrieval failed",
+  );
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, protectedRuntimeProcessSchedulingInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    !Array.isArray(data.process_schedulings) ||
+    data.process_schedulings.length > 256 ||
+    !isTimezoneAwareTimestamp(data.server_time) ||
+    data.durable !== true
+  ) {
+    throw new ApiRequestError(
+      "Workflow protected runtime process-scheduling response was unsafe",
+      response.status,
+    );
+  }
+  const serverTime = data.server_time;
+  if (
+    !data.process_schedulings.every((consumption) =>
+      isProtectedRuntimeProcessScheduling(consumption, serverTime),
+    )
+  ) {
+    throw new ApiRequestError(
+      "Workflow protected runtime process-scheduling response was unsafe",
+      response.status,
+    );
+  }
+  const processSchedulingIds = new Set<string>();
+  for (const consumption of data.process_schedulings) {
+    if (
+      !isObject(consumption) ||
+      typeof consumption.process_scheduling_id !== "string" ||
+      processSchedulingIds.has(consumption.process_scheduling_id)
+    ) {
+      throw new ApiRequestError(
+        "Workflow protected runtime process-scheduling response was unsafe",
+        response.status,
+      );
+    }
+    processSchedulingIds.add(consumption.process_scheduling_id);
+  }
+  return data as WorkflowProtectedRuntimeProcessSchedulingInventory;
 }
 
 export async function listWorkflowProtectedRuntimeContextInjectionConsumptions(): Promise<WorkflowProtectedRuntimeContextInjectionConsumptionInventory> {

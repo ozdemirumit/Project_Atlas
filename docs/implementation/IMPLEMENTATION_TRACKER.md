@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-230 |
 | Title | Atomic protected runtime process-scheduling authorization consumption |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/protected-runtime-process-scheduling-consumption` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-180 |
 | Last Updated | 2026-08-21 |
-| Next Action | Implement and validate the ADR-180 atomic scheduling-consumption vertical slice |
+| Next Action | Publish the pull request, pass exact-head CI, squash-merge, and verify post-main CI |
 
 ### ATLAS-IMP-230 Scope Rationale
 
@@ -47,6 +47,26 @@
   sessions receive minimized `no-store` read-only GET/UI without MFA or a second browser session.
 - AI remains advisory-only. Active Directory remains authentication-only; no Active Directory
   management capability or MCP is introduced.
+
+### ATLAS-IMP-230 Verification Evidence
+
+- The integrated focused backend pass covered the new domain, service, protected scheduler,
+  persistence mapping, API and DSN-gated PostgreSQL boundary: `49` tests passed and the single live
+  PostgreSQL catalog case skipped because `ATLAS_TEST_POSTGRES_DSN` is not configured locally.
+- Targeted Ruff passed and targeted MyPy reported no issues across the `12` changed backend source
+  files. Alembic reports the single head `20260821_0153`; offline PostgreSQL migration generation
+  and focused model/migration nullability checks passed.
+- Frontend TypeScript passed. The seven focused process-scheduling consumption parsing, safe-state,
+  normal password-session and read-only rendering tests passed; the unrelated Vitest suite was not
+  duplicated locally and remains assigned to pull-request CI.
+- A current-code API at `127.0.0.1:8053` reported healthy. An unauthorised read failed closed with
+  `403` and protected `Cache-Control: no-store, max-age=0`, `Pragma: no-cache` and
+  `Referrer-Policy: no-referrer` headers; the focused API test also proved the authorized normal
+  username/password inventory and exact workload-only POST boundaries.
+- Live browser validation at `http://127.0.0.1:5214/#/workspace/workflows` rendered the read-only
+  `Protected runtime process-scheduling consumptions` region with zero links, buttons, inputs,
+  selects, textareas, switches or checkboxes and no browser console errors. The stale browser
+  session failed closed without MFA or a second-session prompt.
 
 ### ATLAS-IMP-229 Scope Rationale
 
