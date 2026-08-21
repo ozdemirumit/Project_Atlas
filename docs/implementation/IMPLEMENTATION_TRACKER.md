@@ -36,7 +36,8 @@
 - PostgreSQL revalidates the complete immutable lineage and current coordination heads under
   authoritative database time before committing the append-only claim and lease.
 - The non-transferable, non-renewable, single-use, non-bearer lease expires within one second and
-  authorizes only submission of one future process-resume request.
+  authorizes only submission of one future process-resume request. The final PostgreSQL observation
+  requires at least 100 milliseconds of code-owned remaining safety margin.
 - Only an active lease may set `protected_runtime_process_resume_authority_granted=true`; all other
   authority fields remain false. Exact replay returns the same lease without extending it; changed
   replay, race, expiry, lineage drift and cancellation fail closed.

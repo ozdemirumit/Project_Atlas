@@ -54,6 +54,7 @@ import {
   listWorkflowProtectedRuntimeContextUses,
   listWorkflowProtectedRuntimeProcessCreationAuthorizations,
   listWorkflowProtectedRuntimeProcessCreations,
+  listWorkflowProtectedRuntimeProcessResumeAuthorizations,
   listWorkflowProtectedRuntimeProcessSchedulingConsumptions,
   listWorkflowProtectedRuntimeReadiness,
   listWorkflowProtectedRuntimeReadinessAuthorizations,
@@ -467,6 +468,16 @@ export default function WorkflowPlanningWorkspace({
       siteId,
     ],
     queryFn: listWorkflowProtectedRuntimeProcessSchedulingConsumptions,
+    retry: false,
+  });
+  const protectedRuntimeProcessResumeAuthorizationQuery = useQuery({
+    queryKey: [
+      "workflow-protected-runtime-process-resume-authorizations",
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: listWorkflowProtectedRuntimeProcessResumeAuthorizations,
     retry: false,
   });
   const targetQuery = useQuery({
@@ -1016,6 +1027,10 @@ export default function WorkflowPlanningWorkspace({
   const protectedRuntimeProcessSchedulingErrorStatus =
     protectedRuntimeProcessSchedulingQuery.error instanceof ApiRequestError
       ? protectedRuntimeProcessSchedulingQuery.error.status
+      : undefined;
+  const protectedRuntimeProcessResumeAuthorizationErrorStatus =
+    protectedRuntimeProcessResumeAuthorizationQuery.error instanceof ApiRequestError
+      ? protectedRuntimeProcessResumeAuthorizationQuery.error.status
       : undefined;
   const eventEnvelopes = eventEnvelopesForAdmission;
   const transportAdmissions = transportAdmissionsForArtifacts;
@@ -6097,6 +6112,159 @@ export default function WorkflowPlanningWorkspace({
             priority or resource; invoke AI, connector or MCP capabilities; use network access; or
             mutate infrastructure. A successful record proves only scheduler registration while
             the sealed process remained suspended and non-runnable.
+          </span>
+        </div>
+      </section>
+
+      <section
+        className="workflow-physical-route-binding-band workflow-target-context-opening-band"
+        aria-labelledby="workflow-protected-runtime-process-resume-authorization-title"
+      >
+        <div className="workflow-section-heading">
+          <div>
+            <p className="eyebrow">FUTURE PROCESS-RESUME REQUEST EVIDENCE</p>
+            <h2 id="workflow-protected-runtime-process-resume-authorization-title">
+              Protected runtime process-resume authorizations
+            </h2>
+          </div>
+          <span>Read only</span>
+        </div>
+        {protectedRuntimeProcessResumeAuthorizationQuery.isLoading && (
+          <div className="workflow-empty-state" role="status">
+            <RefreshCw className="spin" size={18} />
+            <span>Loading protected runtime process-resume authorizations...</span>
+          </div>
+        )}
+        {protectedRuntimeProcessResumeAuthorizationQuery.isError && (
+          <div className="workflow-inline-error" role="alert">
+            <AlertTriangle aria-hidden="true" size={18} />
+            <div>
+              <strong>
+                {protectedRuntimeProcessResumeAuthorizationErrorStatus === 401
+                  ? "Your session has expired"
+                  : protectedRuntimeProcessResumeAuthorizationErrorStatus === 403
+                    ? "Process-resume authorization permission is missing"
+                    : "Process-resume authorizations are unavailable"}
+              </strong>
+              <span>
+                {protectedRuntimeProcessResumeAuthorizationErrorStatus === 401
+                  ? "Sign in again with your username and password to continue."
+                  : protectedRuntimeProcessResumeAuthorizationErrorStatus === 403
+                    ? "Your current role or scope cannot inspect protected runtime process-resume authorization evidence."
+                    : "The protected authorization repository is unavailable or failed closed; no process-resume request authority is inferred."}
+              </span>
+            </div>
+          </div>
+        )}
+        {protectedRuntimeProcessResumeAuthorizationQuery.isSuccess &&
+          protectedRuntimeProcessResumeAuthorizationQuery.data.authorizations.length === 0 && (
+            <div className="workflow-empty-state" role="status">
+              <LockKeyhole size={19} />
+              <span>
+                No protected runtime process-resume authorizations are recorded in this scope.
+              </span>
+            </div>
+          )}
+        {protectedRuntimeProcessResumeAuthorizationQuery.isSuccess &&
+          protectedRuntimeProcessResumeAuthorizationQuery.data.authorizations.length > 0 && (
+            <ol
+              className="workflow-step-preview workflow-physical-route-binding-list workflow-target-context-opening-list"
+              aria-label="Protected runtime process-resume authorizations"
+            >
+              {protectedRuntimeProcessResumeAuthorizationQuery.data.authorizations.map(
+                (authorization) => (
+                  <li key={authorization.authorization_lease_id}>
+                    {authorization.effective_state === "active" ? (
+                      <ShieldCheck size={18} />
+                    ) : (
+                      <FileClock size={18} />
+                    )}
+                    <div>
+                      <strong>
+                        <code title={authorization.authorization_lease_id}>
+                          {safeHolderIdentifier(authorization.authorization_lease_id)}
+                        </code>
+                        <span
+                          className={`state-badge ${
+                            authorization.effective_state === "active" ? "success" : "neutral"
+                          }`}
+                        >
+                          {authorization.effective_state === "active" ? "Active" : "Expired"}
+                        </span>
+                      </strong>
+                      <div className="workflow-physical-route-binding-grid">
+                        <span>
+                          State {readableKind(authorization.state)} | effective{" "}
+                          {readableKind(authorization.effective_state)}
+                        </span>
+                        <span>
+                          Issued {formatTimestamp(authorization.issued_at)} | valid until{" "}
+                          {formatTimestamp(authorization.valid_until)} | effective until{" "}
+                          {formatTimestamp(authorization.effective_until)}
+                        </span>
+                        <span>
+                          Source scheduling result{" "}
+                          <code title={authorization.process_scheduling_result_reference}>
+                            {shortDigest(authorization.process_scheduling_result_reference)}
+                          </code>
+                        </span>
+                        <span>
+                          Policy{" "}
+                          <code title={authorization.policy_id}>
+                            {safeHolderIdentifier(authorization.policy_id)}
+                          </code>{" "}
+                          v{authorization.policy_version} | purpose{" "}
+                          <code title={authorization.purpose_id}>
+                            {safeHolderIdentifier(authorization.purpose_id)}
+                          </code>
+                        </span>
+                        <span>
+                          Consumer contract{" "}
+                          <code title={authorization.consumer_contract_id}>
+                            {safeHolderIdentifier(authorization.consumer_contract_id)}
+                          </code>{" "}
+                          v{authorization.consumer_contract_version}
+                        </span>
+                        <span>
+                          Integrity reference{" "}
+                          <code title={authorization.integrity_reference}>
+                            {shortDigest(authorization.integrity_reference)}
+                          </code>
+                        </span>
+                        <span className="workflow-physical-route-binding-authority">
+                          Dedicated future process-resume request submission authority{" "}
+                          {authorization.authority.protected_runtime_process_resume_authority_granted
+                            ? "active for one request"
+                            : "inactive"}
+                          . Actual runtime resume false | process scheduling false | process
+                          creation false | protected runtime readiness false | protected runtime
+                          start false | protected runtime-context use false | runtime use false |
+                          runtime start false | connector activity false | protected
+                          runtime-context injection false | protected resident-context access false |
+                          target-context capsule opening false | target-context capsule handoff false |
+                          endpoint resolution false | route selection false | route binding false |
+                          credential selection false | credential assignment binding false |
+                          credential access false | credential brokerage false | credential
+                          resolution false | protected artifact access false | credential delivery
+                          false | network access false | readiness probe false | publication false |
+                          delivery false | dispatch false | execution false | infrastructure mutation
+                          false
+                        </span>
+                      </div>
+                    </div>
+                  </li>
+                ),
+              )}
+            </ol>
+          )}
+        <div className="workflow-safety-boundary" role="note">
+          <LockKeyhole size={18} />
+          <span>
+            Read-only evidence. An active declaration permits only submission of one future
+            process-resume consumption request. Actual runtime resume remains unauthorized. This
+            view cannot authorize, consume, resume, retry, renew, transfer, dispatch, execute,
+            stop, clean up, invoke AI, connector or MCP capabilities, use network access, or mutate
+            infrastructure.
           </span>
         </div>
       </section>

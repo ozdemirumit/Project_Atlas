@@ -1311,6 +1311,18 @@ const processSchedulingAuthorizationResponse = {
   },
 };
 
+const processResumeAuthorizationResponse = {
+  data: {
+    authorizations: [],
+    server_time: "2026-08-21T06:00:00.500Z",
+    durable: true,
+  },
+  meta: {
+    correlation_id: "test-process-resume-authorization-correlation",
+    generated_at: "2026-08-21T06:00:00.500Z",
+  },
+};
+
 beforeEach(() => {
   window.history.replaceState({}, "", "/#/health/overview");
 });
@@ -1363,6 +1375,17 @@ describe("Atlas application shell", () => {
       if (url.includes("/protected-runtime-process-scheduling-authorizations")) {
         return Promise.resolve(
           new Response(JSON.stringify(processSchedulingAuthorizationResponse), {
+            status: 200,
+            headers: {
+              "Cache-Control": "no-store, max-age=0",
+              "Content-Type": "application/json",
+            },
+          }),
+        );
+      }
+      if (url.includes("/protected-runtime-process-resume-authorizations")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(processResumeAuthorizationResponse), {
             status: 200,
             headers: {
               "Cache-Control": "no-store, max-age=0",

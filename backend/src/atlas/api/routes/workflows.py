@@ -36,6 +36,7 @@ from atlas.api.security import (
     authorize_workflow_protected_runtime_context_use_read,
     authorize_workflow_protected_runtime_process_creation_authorization_read,
     authorize_workflow_protected_runtime_process_creation_consumption_read,
+    authorize_workflow_protected_runtime_process_resume_authorization_read,
     authorize_workflow_protected_runtime_process_scheduling_consumption_read,
     authorize_workflow_protected_runtime_readiness_authorization_read,
     authorize_workflow_protected_runtime_readiness_consumption_read,
@@ -99,6 +100,7 @@ from atlas.api.workflow_schemas import (
     CreateWorkflowProtectedRuntimeContextUseInput,
     CreateWorkflowProtectedRuntimeProcessCreationAuthorizationInput,
     CreateWorkflowProtectedRuntimeProcessCreationConsumptionInput,
+    CreateWorkflowProtectedRuntimeProcessResumeAuthorizationInput,
     CreateWorkflowProtectedRuntimeProcessSchedulingAuthorizationInput,
     CreateWorkflowProtectedRuntimeProcessSchedulingConsumptionInput,
     CreateWorkflowProtectedRuntimeReadinessAuthorizationInput,
@@ -260,6 +262,10 @@ from atlas.api.workflow_schemas import (
     WorkflowProtectedRuntimeProcessCreationConsumptionInventoryData,
     WorkflowProtectedRuntimeProcessCreationConsumptionInventoryResponse,
     WorkflowProtectedRuntimeProcessCreationConsumptionResponse,
+    WorkflowProtectedRuntimeProcessResumeAuthorizationData,
+    WorkflowProtectedRuntimeProcessResumeAuthorizationInventoryData,
+    WorkflowProtectedRuntimeProcessResumeAuthorizationInventoryResponse,
+    WorkflowProtectedRuntimeProcessResumeAuthorizationResponse,
     WorkflowProtectedRuntimeProcessSchedulingAuthorizationData,
     WorkflowProtectedRuntimeProcessSchedulingAuthorizationInventoryData,
     WorkflowProtectedRuntimeProcessSchedulingAuthorizationInventoryResponse,
@@ -453,6 +459,9 @@ from atlas.modules.workflows.application.protected_runtime_process_creation_cons
 from atlas.modules.workflows.application.protected_runtime_process_creation_consumptions import (
     WorkflowProtectedRuntimeProcessCreationConsumptionPresentation,
     WorkflowProtectedRuntimeProcessCreationConsumptionService,
+)
+from atlas.modules.workflows.application.protected_runtime_process_resume_authorization_ports import (  # noqa: E501
+    WorkflowProtectedRuntimeProcessResumeAuthorizationError,
 )
 from atlas.modules.workflows.application.protected_runtime_process_scheduling_authorization_ports import (  # noqa: E501
     WorkflowProtectedRuntimeProcessSchedulingAuthorizationError,
@@ -8058,6 +8067,154 @@ async def create_workflow_protected_runtime_process_scheduling_authorization(
             retryable=True,
         ) from error
     return WorkflowProtectedRuntimeProcessSchedulingAuthorizationResponse(
+        data=data,
+        meta=_meta(request),
+    )
+
+
+@router.get(
+    "/protected-runtime-process-resume-authorizations",
+    response_model=WorkflowProtectedRuntimeProcessResumeAuthorizationInventoryResponse,
+)
+async def list_workflow_protected_runtime_process_resume_authorizations(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_workflow_protected_runtime_process_resume_authorization_read),
+    ],
+) -> WorkflowProtectedRuntimeProcessResumeAuthorizationInventoryResponse:
+    del decision
+    _no_store(response)
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    service = request.app.state.workflow_protected_runtime_process_resume_authorization_service
+    try:
+        inventory = await service.list_presentations(scope=scope, limit=256)
+        if any(presentation.lease.scope != scope for presentation in inventory.presentations):
+            raise RuntimeError("protected process-resume authorization scope mismatch")
+        inventory_data = WorkflowProtectedRuntimeProcessResumeAuthorizationInventoryData(
+            authorizations=[
+                WorkflowProtectedRuntimeProcessResumeAuthorizationData.from_domain(presentation)
+                for presentation in inventory.presentations
+            ],
+            server_time=inventory.server_time,
+            durable=service.durable,
+        )
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_protected_runtime_process_resume_authorization_service_unavailable",
+            title="Protected process-resume authorization unavailable",
+            detail="Process-resume authorization metadata is temporarily unavailable.",
+            retryable=True,
+        ) from error
+    return WorkflowProtectedRuntimeProcessResumeAuthorizationInventoryResponse(
+        data=inventory_data,
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    "/protected-runtime-process-resume-authorizations",
+    response_model=WorkflowProtectedRuntimeProcessResumeAuthorizationResponse,
+    status_code=201,
+)
+async def create_workflow_protected_runtime_process_resume_authorization(
+    payload: CreateWorkflowProtectedRuntimeProcessResumeAuthorizationInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[
+        AuthenticatedSubject,
+        Depends(workflow_protected_transport_target_context_capsule_consumer_subject),
+    ],
+) -> WorkflowProtectedRuntimeProcessResumeAuthorizationResponse:
+    _no_store(response)
+    service = request.app.state.workflow_protected_runtime_process_resume_authorization_service
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    try:
+        lease = await service.authorize(
+            process_scheduling_result_id=payload.process_scheduling_result_id,
+            policy_id=payload.policy_id,
+            policy_version=payload.policy_version,
+            single_use_nonrenewable_nontransferable_future_request_acknowledged=(
+                payload.single_use_nonrenewable_nontransferable_future_request_acknowledged
+            ),
+            single_use_future_request_only_acknowledged=(
+                payload.single_use_future_request_only_acknowledged
+            ),
+            idempotency_key=payload.idempotency_key,
+            context=WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationContext(
+                subject_id=subject.subject_id,
+                actor_type=subject.kind.value,
+                authentication_method=subject.authentication_method.value,
+                credential_audience=WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_AUDIENCE,
+                scope=scope,
+                correlation_id=str(request.state.correlation_id),
+                decision_id=(
+                    "decision.workflow-protected-runtime-process-resume-consumer-authenticated"
+                ),
+                requested_at=datetime.now(UTC),
+            ),
+        )
+        inventory = await service.list_presentations(
+            scope=scope,
+            authorization_lease_ids=(lease.authorization_lease_id,),
+            limit=1,
+        )
+        if len(inventory.presentations) != 1:
+            raise RuntimeError("process-resume authorization projection unavailable")
+        presentation = inventory.presentations[0]
+        if presentation.lease.canonical_digest != lease.canonical_digest:
+            raise RuntimeError("process-resume authorization projection mismatch")
+        data = WorkflowProtectedRuntimeProcessResumeAuthorizationData.from_domain(presentation)
+    except WorkflowProtectedRuntimeProcessResumeAuthorizationError as error:
+        conflict = any(
+            marker in error.code
+            for marker in (
+                "already_authorized",
+                "evidence_conflict",
+                "idempotency_conflict",
+                "not_eligible",
+                "policy_conflict",
+            )
+        )
+        raise AtlasError(
+            status=409 if conflict else 503,
+            code=(
+                "authorization_denied"
+                if conflict
+                else "workflow_protected_runtime_process_resume_authorization_service_unavailable"
+            ),
+            title=(
+                "Request denied"
+                if conflict
+                else "Protected process-resume authorization unavailable"
+            ),
+            detail=(
+                "The current identity or evidence is not authorized for this operation."
+                if conflict
+                else "Process-resume authorization metadata is temporarily unavailable."
+            ),
+            retryable=not conflict,
+        ) from error
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_protected_runtime_process_resume_authorization_service_unavailable",
+            title="Protected process-resume authorization unavailable",
+            detail="Process-resume authorization metadata is temporarily unavailable.",
+            retryable=True,
+        ) from error
+    return WorkflowProtectedRuntimeProcessResumeAuthorizationResponse(
         data=data,
         meta=_meta(request),
     )

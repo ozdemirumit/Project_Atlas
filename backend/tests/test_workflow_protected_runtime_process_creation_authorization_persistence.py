@@ -205,7 +205,7 @@ def test_alembic_graph_has_single_0150_head() -> None:
     config.set_main_option("script_location", str(ROOT / "migrations"))
     script = ScriptDirectory.from_config(config)
 
-    assert script.get_heads() == ["20260821_0153"]
+    assert script.get_heads() == ["20260821_0154"]
     revision = script.get_revision("20260818_0150")
     assert revision is not None
     assert revision.down_revision == "20260817_0149"

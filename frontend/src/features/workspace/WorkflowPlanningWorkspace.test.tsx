@@ -39,6 +39,7 @@ import {
   type WorkflowProtectedRuntimeContextUse,
   type WorkflowProtectedRuntimeProcessCreationAuthorization,
   type WorkflowProtectedRuntimeProcessCreation,
+  type WorkflowProtectedRuntimeProcessResumeAuthorization,
   type WorkflowProtectedRuntimeProcessScheduling,
   type WorkflowProtectedRuntimeReadiness,
   type WorkflowProtectedRuntimeReadinessAuthorization,
@@ -1655,6 +1656,59 @@ const protectedRuntimeProcessCreationAuthorization: WorkflowProtectedRuntimeProc
     "integrity.workflow-protected-runtime-process-creation-authorization.1234567890abcdef",
 };
 
+const protectedRuntimeProcessResumeAuthorization: WorkflowProtectedRuntimeProcessResumeAuthorization = {
+  authorization_lease_id:
+    "workflow-protected-runtime-process-resume-authorization-lease.1234567890abcdef12345678",
+  process_scheduling_result_reference:
+    "integrity.workflow-protected-runtime-process-scheduling-result.1234567890abcdef",
+  state: "authorized_unconsumed",
+  effective_state: "active",
+  issued_at: "2026-08-21T06:00:00Z",
+  valid_until: "2026-08-21T06:00:01Z",
+  effective_until: "2026-08-21T06:00:01Z",
+  consumer_contract_id:
+    "contract.workflow-protected-transport-target-context-capsule-consumer",
+  consumer_contract_version: "1.0",
+  purpose_id: "purpose.workflow-protected-runtime-process-resume-request",
+  policy_id: "policy.workflow-protected-runtime-process-resume-authorization",
+  policy_version: "1.0",
+  authority: {
+    protected_runtime_process_resume_authority_granted: true,
+    protected_runtime_process_scheduling_authority_granted: false,
+    protected_runtime_process_creation_authority_granted: false,
+    protected_runtime_readiness_authority_granted: false,
+    protected_runtime_start_authority_granted: false,
+    protected_runtime_context_use_authority_granted: false,
+    runtime_use_authorized: false,
+    runtime_start_authorized: false,
+    runtime_resume_authorized: false,
+    connector_activity_authorized: false,
+    protected_runtime_context_injection_authority_granted: false,
+    protected_resident_context_access_authority_granted: false,
+    target_context_capsule_opening_authorized: false,
+    target_context_capsule_handoff_authorized: false,
+    endpoint_resolution_authorized: false,
+    route_selection_authorized: false,
+    route_binding_authorized: false,
+    credential_selection_authorized: false,
+    credential_assignment_binding_authorized: false,
+    credential_access_authorized: false,
+    credential_brokerage_authorized: false,
+    credential_resolution_authorized: false,
+    protected_artifact_access_authorized: false,
+    credential_delivery_authorized: false,
+    network_access_authorized: false,
+    readiness_probe_authorized: false,
+    publication_authorized: false,
+    delivery_authorized: false,
+    dispatch_authorized: false,
+    execution_authorized: false,
+    infrastructure_mutation_authorized: false,
+  },
+  integrity_reference:
+    "integrity.workflow-protected-runtime-process-resume-authorization.1234567890abcdef",
+};
+
 const protectedRuntimeProcessCreation: WorkflowProtectedRuntimeProcessCreation = {
   process_creation_id: "prpc-consumption-1234567890abcdef12345678",
   attempt_state: "process_creation_attempt_started",
@@ -2621,6 +2675,27 @@ function protectedRuntimeProcessSchedulingAuthorizationResponse(): Response {
   );
 }
 
+function protectedRuntimeProcessResumeAuthorizationResponse(
+  authorizations: unknown[],
+  status = 200,
+  serverTime = "2026-08-21T06:00:00.500Z",
+  durable = true,
+): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: { authorizations, server_time: serverTime, durable },
+          meta: {
+            correlation_id:
+              "correlation.workflow.protected-runtime-process-resume-authorization",
+            generated_at: serverTime,
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function protectedRuntimeProcessCreationResponse(
   processCreations: unknown[],
   status = 200,
@@ -2818,6 +2893,10 @@ function mockReadResponses(input: {
   protectedRuntimeProcessSchedulings?: unknown[];
   protectedRuntimeProcessSchedulingServerTime?: string;
   protectedRuntimeProcessSchedulingDurable?: boolean;
+  protectedRuntimeProcessResumeAuthorizations?: unknown[];
+  protectedRuntimeProcessResumeAuthorizationServerTime?: string;
+  protectedRuntimeProcessResumeAuthorizationDurable?: boolean;
+  protectedRuntimeProcessResumeAuthorizationStatus?: number;
   credentialAssignmentSnapshots?: unknown[];
   transportCompatibilityAdmissions?: unknown[];
   pendingTransportAdmissionResponse?: Promise<Response>;
@@ -2978,6 +3057,20 @@ function mockReadResponses(input: {
   let transportCompatibilityAdmissionReadCount = 0;
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (
+      url.endsWith(
+        "/api/v1/workflows/protected-runtime-process-resume-authorizations",
+      )
+    ) {
+      return Promise.resolve(
+        protectedRuntimeProcessResumeAuthorizationResponse(
+          input.protectedRuntimeProcessResumeAuthorizations ?? [],
+          input.protectedRuntimeProcessResumeAuthorizationStatus ?? 200,
+          input.protectedRuntimeProcessResumeAuthorizationServerTime,
+          input.protectedRuntimeProcessResumeAuthorizationDurable,
+        ),
+      );
+    }
     if (
       url.endsWith(
         "/api/v1/workflows/protected-runtime-process-scheduling-consumptions",
@@ -3892,6 +3985,59 @@ describe("WorkflowPlanningWorkspace", () => {
         name: /register|update|remove|select|bind|probe|publish|deliver|dispatch|execute/i,
       }),
     ).toBeNull();
+  });
+
+  it("renders process-resume authorization as minimized password-session read-only evidence", async () => {
+    mockReadResponses({
+      protectedRuntimeProcessResumeAuthorizations: [
+        protectedRuntimeProcessResumeAuthorization,
+      ],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Protected runtime process-resume authorizations",
+    })).closest("section") as HTMLElement;
+    await within(section).findByText(/active for one request/i);
+    expect(section).toHaveTextContent(/Actual runtime resume false/i);
+    expect(section).toHaveTextContent(/permits only submission of one future/i);
+    expect(section).not.toHaveTextContent(/authorized browser session|mfa|second session/i);
+    expect(
+      section.querySelector(
+        "button, a, input, select, textarea, [role='button'], [role='switch'], [role='checkbox']",
+      ),
+    ).toBeNull();
+    const call = vi.mocked(fetch).mock.calls.find(([request]) =>
+      (request instanceof Request ? request.url : request.toString()).endsWith(
+        "/api/v1/workflows/protected-runtime-process-resume-authorizations",
+      ),
+    );
+    expect(call).toBeDefined();
+    expect(call?.[1]?.method ?? "GET").toBe("GET");
+    expect(call?.[1]?.credentials).toBe("same-origin");
+  });
+
+  it("fails closed when process-resume evidence grants actual runtime resume", async () => {
+    mockReadResponses({
+      protectedRuntimeProcessResumeAuthorizations: [
+        {
+          ...protectedRuntimeProcessResumeAuthorization,
+          authority: {
+            ...protectedRuntimeProcessResumeAuthorization.authority,
+            runtime_resume_authorized: true,
+          },
+        },
+      ],
+    });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Protected runtime process-resume authorizations",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Process-resume authorizations are unavailable"),
+    ).toBeVisible();
+    expect(within(section).queryByRole("list")).toBeNull();
   });
 
   it.each([

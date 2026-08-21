@@ -1601,6 +1601,10 @@ from atlas.modules.workflows.adapters.protected_runtime_process_creators import 
     UnavailableWorkflowProtectedRuntimeProcessCreationInstructionSigner,
     UnavailableWorkflowProtectedRuntimeProcessCreator,
 )
+from atlas.modules.workflows.adapters.protected_runtime_process_resume_state_attestors import (
+    DeterministicDevelopmentWorkflowProtectedRuntimeProcessResumeStateAttestor,
+    UnavailableWorkflowProtectedRuntimeProcessResumeStateAttestor,
+)
 from atlas.modules.workflows.adapters.protected_runtime_process_schedulers import (
     DenyAllWorkflowProtectedRuntimeProcessSchedulingInstructionSignatureVerifier,
     DenyAllWorkflowProtectedRuntimeProcessSchedulingReceiptSignatureVerifier,
@@ -1769,6 +1773,14 @@ from atlas.modules.workflows.application.protected_runtime_process_creation_cons
 from atlas.modules.workflows.application.protected_runtime_process_creation_consumptions import (
     WorkflowProtectedRuntimeProcessCreationConsumptionService,
 )
+from atlas.modules.workflows.application.protected_runtime_process_resume_authorization_ports import (  # noqa: E501
+    WorkflowProtectedRuntimeProcessResumeAuthorizationRepository,
+    WorkflowProtectedRuntimeProcessResumeStateAttestor,
+    WorkflowProtectedRuntimeProcessResumeStateSignatureVerifier,
+)
+from atlas.modules.workflows.application.protected_runtime_process_resume_authorizations import (
+    WorkflowProtectedRuntimeProcessResumeAuthorizationService,
+)
 from atlas.modules.workflows.application.protected_runtime_process_scheduling_authorization_ports import (  # noqa: E501
     WorkflowProtectedRuntimeProcessSchedulingAuthorizationRepository,
     WorkflowProtectedRuntimeProcessSchedulingStateAttestor,
@@ -1876,6 +1888,7 @@ class _WorkflowCredentialAccessAuthorizationNoStoreMiddleware(BaseHTTPMiddleware
             "/api/v1/workflows/protected-runtime-readiness-consumptions",
             "/api/v1/workflows/protected-runtime-process-creation-authorizations",
             "/api/v1/workflows/protected-runtime-process-scheduling-authorizations",
+            "/api/v1/workflows/protected-runtime-process-resume-authorizations",
             "/api/v1/workflows/protected-runtime-start-authorizations",
             "/api/v1/workflows/protected-runtime-start-consumptions",
         }
@@ -2402,6 +2415,35 @@ class _UnavailableWorkflowProtectedRuntimeProcessSchedulingAuthorizationReposito
         self, *_: object, **__: object
     ) -> None:
         raise RuntimeError("protected runtime process-scheduling authorization is unavailable")
+
+
+class _UnavailableWorkflowProtectedRuntimeProcessResumeAuthorizationRepository:
+    """Fail-closed ADR-181 repository with no process-local authority."""
+
+    @property
+    def durable(self) -> bool:
+        return False
+
+    async def get_authoritative_time(self) -> None:
+        raise RuntimeError("protected runtime process-resume authorization is unavailable")
+
+    async def preflight_protected_runtime_process_resume_authorization(
+        self, *_: object, **__: object
+    ) -> None:
+        raise RuntimeError("protected runtime process-resume authorization is unavailable")
+
+    async def get_protected_runtime_process_resume_authorization_source(
+        self, *_: object, **__: object
+    ) -> None:
+        raise RuntimeError("protected runtime process-resume authorization is unavailable")
+
+    async def authorize_protected_runtime_process_resume(self, *_: object, **__: object) -> None:
+        raise RuntimeError("protected runtime process-resume authorization is unavailable")
+
+    async def list_protected_runtime_process_resume_authorization_presentations(
+        self, *_: object, **__: object
+    ) -> None:
+        raise RuntimeError("protected runtime process-resume authorization is unavailable")
 
 
 class _UnavailableWorkflowProtectedRuntimeProcessCreationConsumptionRepository:
@@ -3031,6 +3073,15 @@ def create_app(
     ) = None,
     workflow_protected_runtime_process_scheduling_state_signature_verifier: (
         WorkflowProtectedRuntimeProcessSchedulingStateSignatureVerifier | None
+    ) = None,
+    workflow_protected_runtime_process_resume_authorization_service: (
+        WorkflowProtectedRuntimeProcessResumeAuthorizationService | None
+    ) = None,
+    workflow_protected_runtime_process_resume_state_attestor: (
+        WorkflowProtectedRuntimeProcessResumeStateAttestor | None
+    ) = None,
+    workflow_protected_runtime_process_resume_state_signature_verifier: (
+        WorkflowProtectedRuntimeProcessResumeStateSignatureVerifier | None
     ) = None,
     workflow_protected_runtime_process_creation_consumption_service: (
         WorkflowProtectedRuntimeProcessCreationConsumptionService | None
@@ -9222,6 +9273,73 @@ def create_app(
                 _UnavailableWorkflowProtectedRuntimeProcessSchedulingConsumptionRepository(),
             ),
         )
+    if workflow_protected_runtime_process_resume_authorization_service is None:
+        process_resume_authorization_repository_methods = (
+            "get_authoritative_time",
+            "preflight_protected_runtime_process_resume_authorization",
+            "get_protected_runtime_process_resume_authorization_source",
+            "authorize_protected_runtime_process_resume",
+            "list_protected_runtime_process_resume_authorization_presentations",
+        )
+        if isinstance(workflow_repository, PostgreSQLWorkflowPlanRepository) and all(
+            callable(getattr(workflow_repository, method_name, None))
+            for method_name in process_resume_authorization_repository_methods
+        ):
+            process_resume_authorization_repository = cast(
+                WorkflowProtectedRuntimeProcessResumeAuthorizationRepository,
+                workflow_repository,
+            )
+        else:
+            process_resume_authorization_repository = cast(
+                WorkflowProtectedRuntimeProcessResumeAuthorizationRepository,
+                _UnavailableWorkflowProtectedRuntimeProcessResumeAuthorizationRepository(),
+            )
+        development_process_resume_authorization = (
+            resolved_settings.environment == "development"
+            and resolved_settings.development_identity_enabled
+        )
+        unavailable_process_resume_state_attestor = (
+            UnavailableWorkflowProtectedRuntimeProcessResumeStateAttestor()
+        )
+        default_process_resume_state_attestor = (
+            DeterministicDevelopmentWorkflowProtectedRuntimeProcessResumeStateAttestor(
+                development_enabled=True
+            )
+            if development_process_resume_authorization
+            else unavailable_process_resume_state_attestor
+        )
+        process_resume_state_attestor = (
+            workflow_protected_runtime_process_resume_state_attestor
+            or default_process_resume_state_attestor
+        )
+        process_resume_state_signature_verifier = cast(
+            WorkflowProtectedRuntimeProcessResumeStateSignatureVerifier,
+            workflow_protected_runtime_process_resume_state_signature_verifier
+            or process_resume_state_attestor,
+        )
+        resume_process_scheduling_receipt_verifier = cast(
+            WorkflowProtectedRuntimeProcessSchedulingReceiptSignatureVerifier,
+            getattr(
+                resolved_protected_runtime_process_scheduling_consumption_service,
+                "_receipt_signature_verifier",
+                DenyAllWorkflowProtectedRuntimeProcessSchedulingReceiptSignatureVerifier(),
+            ),
+        )
+        resolved_protected_runtime_process_resume_authorization_service = (
+            WorkflowProtectedRuntimeProcessResumeAuthorizationService(
+                authorization_repository=process_resume_authorization_repository,
+                process_state_attestor=process_resume_state_attestor,
+                process_state_signature_verifier=process_resume_state_signature_verifier,
+                process_scheduling_receipt_signature_verifier=(
+                    resume_process_scheduling_receipt_verifier
+                ),
+                audit_sink=resolved_audit_sink,
+            )
+        )
+    else:
+        resolved_protected_runtime_process_resume_authorization_service = (
+            workflow_protected_runtime_process_resume_authorization_service
+        )
     configured_transport_route_selection_heads = (
         _deployment_event_transport_route_selection_heads(
             resolved_settings,
@@ -9747,6 +9865,12 @@ def create_app(
         )
         app.state.workflow_protected_runtime_process_scheduling_authorization_repository = (
             resolved_protected_runtime_process_scheduling_authorization_service.repository
+        )
+        app.state.workflow_protected_runtime_process_resume_authorization_service = (
+            resolved_protected_runtime_process_resume_authorization_service
+        )
+        app.state.workflow_protected_runtime_process_resume_authorization_repository = (
+            resolved_protected_runtime_process_resume_authorization_service.repository
         )
         app.state.workflow_protected_runtime_process_creation_consumption_service = (
             resolved_protected_runtime_process_creation_consumption_service

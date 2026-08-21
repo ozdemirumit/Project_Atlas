@@ -114,7 +114,8 @@ operation. The repository then locks and revalidates in canonical order:
 The transaction observes authoritative database time before and after locking. At the final
 observation, the source result and fresh attestation must remain timely, every generation and fence
 must remain current, no later process-state evidence may conflict and the deadline must retain the
-code-owned safety margin while remaining no more than one second after issuance. Atlas then
+code-owned safety margin of at least 100 milliseconds while remaining no more than one second after
+issuance. Atlas then
 atomically appends the claim and lease without external I/O.
 
 Append-only triggers, exact composite foreign keys and unique constraints enforce one grant for the

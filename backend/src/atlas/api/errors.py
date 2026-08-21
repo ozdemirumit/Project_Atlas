@@ -94,6 +94,7 @@ def _requires_protected_no_store(request: Request) -> bool:
             "/api/v1/workflows/protected-runtime-context-uses",
             "/api/v1/workflows/protected-runtime-process-creation-consumptions",
             "/api/v1/workflows/protected-runtime-process-scheduling-consumptions",
+            "/api/v1/workflows/protected-runtime-process-resume-authorizations",
         )
     )
 

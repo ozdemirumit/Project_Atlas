@@ -290,6 +290,15 @@ from atlas.modules.workflows.domain.protected_runtime_process_creation_consumpti
     code_owned_workflow_protected_runtime_process_creation_consumption_policy,
     code_owned_workflow_protected_runtime_process_creation_consumption_policy_values,
 )
+from atlas.modules.workflows.domain.protected_runtime_process_resume_authorization_domain import (
+    WorkflowProtectedRuntimeProcessResumeAuthorizationAuthority,
+    WorkflowProtectedRuntimeProcessResumeAuthorizationClaim,
+    WorkflowProtectedRuntimeProcessResumeAuthorizationLease,
+    WorkflowProtectedRuntimeProcessResumeAuthorizationLeaseState,
+    WorkflowProtectedRuntimeProcessResumeAuthorizationPolicy,
+    code_owned_workflow_protected_runtime_process_resume_authorization_policy,
+    code_owned_workflow_protected_runtime_process_resume_authorization_policy_values,
+)
 from atlas.modules.workflows.domain.protected_runtime_process_scheduling_authorization_domain import (  # noqa: E501
     WorkflowProtectedRuntimeProcessSchedulingAuthorizationAuthority,
     WorkflowProtectedRuntimeProcessSchedulingAuthorizationClaim,
@@ -565,6 +574,11 @@ __all__ = [
     "WorkflowProtectedRuntimeProcessCreationReceipt",
     "WorkflowProtectedRuntimeProcessCreationResult",
     "WorkflowProtectedRuntimeProcessCreationSignedInstructionEnvelope",
+    "WorkflowProtectedRuntimeProcessResumeAuthorizationAuthority",
+    "WorkflowProtectedRuntimeProcessResumeAuthorizationClaim",
+    "WorkflowProtectedRuntimeProcessResumeAuthorizationLease",
+    "WorkflowProtectedRuntimeProcessResumeAuthorizationLeaseState",
+    "WorkflowProtectedRuntimeProcessResumeAuthorizationPolicy",
     "WorkflowProtectedRuntimeProcessSchedulingAttempt",
     "WorkflowProtectedRuntimeProcessSchedulingAuthorizationAuthority",
     "WorkflowProtectedRuntimeProcessSchedulingAuthorizationClaim",
@@ -693,6 +707,8 @@ __all__ = [
     "code_owned_workflow_protected_runtime_process_creation_authorization_policy_values",
     "code_owned_workflow_protected_runtime_process_creation_consumption_policy",
     "code_owned_workflow_protected_runtime_process_creation_consumption_policy_values",
+    "code_owned_workflow_protected_runtime_process_resume_authorization_policy",
+    "code_owned_workflow_protected_runtime_process_resume_authorization_policy_values",
     "code_owned_workflow_protected_runtime_process_scheduling_authorization_policy",
     "code_owned_workflow_protected_runtime_process_scheduling_authorization_policy_values",
     "code_owned_workflow_protected_runtime_process_scheduling_consumption_policy",
