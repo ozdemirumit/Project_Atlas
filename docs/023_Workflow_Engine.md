@@ -850,6 +850,20 @@ MVP workflows do not execute C3 through C5 capabilities.
   process locators are forbidden. Pending, terminal and uncertain replay performs no creator I/O;
   no event, scheduler, outbox, DLQ, recovery, AI, MCP or connector path can retry, resume, schedule,
   dispatch, execute or infer the process. Human UI is read-only and all authority remains false.
+- ADR-179 issues one append-only, single-use, non-renewable, non-transferable, non-replaceable,
+  non-reissuable and non-bearer process-scheduling authorization lease from only one canonical
+  ADR-178 `process_created_suspended_in_protected_boundary` result. Fresh signed, server-nonce-bound,
+  metadata-only process-state attestation must prove the exact process remains created, sealed,
+  suspended, non-runnable, unscheduled, current and unexecuted, with no pending or conflicting
+  scheduling state. PostgreSQL applies complete lineage, process-primitive, destination-fence and
+  protected-slot locks plus two database-time observations before atomically appending one claim and
+  an at-most-one-second lease. Exact replay returns the same lease without extension; expiry or
+  consumption permits no renewal, transfer, replacement or reissue. Only the active lease may set
+  `protected_runtime_process_scheduling_authority_granted=true`, and it permits only one future
+  scheduling-consumption request. IMP-229 performs no scheduling, resume, dispatch, execution,
+  model/network/connector/MCP/provider operation or infrastructure mutation. AI remains advisory-
+  only, Active Directory remains authentication-only, and normal password-session read-only GET/UI
+  requires no MFA or second browser prompt.
 
 ## 39. Assumptions
 
@@ -903,3 +917,5 @@ This document is ready to enter Review when:
 | 2.6.0 | 2026-08-17 | Workflow Architecture | Added bounded single-use protected runtime-readiness authorization lease boundary |
 | 2.7.0 | 2026-08-17 | Workflow Architecture | Added atomic protected runtime-readiness consumption and single assessment attempt |
 | 2.8.0 | 2026-08-18 | Workflow Architecture | Added bounded single-use protected runtime process-creation authorization lease boundary |
+| 2.9.0 | 2026-08-20 | Workflow Architecture | Added atomic protected runtime process-creation consumption and single suspended-process attempt |
+| 3.0.0 | 2026-08-20 | Workflow Architecture | Added bounded single-use protected runtime process-scheduling authorization lease boundary |

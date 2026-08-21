@@ -18175,3 +18175,479 @@ class WorkflowProtectedRuntimeProcessCreationResultModel(
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     receipt_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+
+
+_WF_RTPSCHED_AUTH_CONTRACT = (
+    "consumer_subject_id = "
+    "'service.workflow-protected-transport-target-context-capsule-consumer' "
+    "AND consumer_audience = "
+    "'audience.workflow-protected-transport-target-context-capsule-consumer' "
+    "AND consumer_contract_id = "
+    "'contract.workflow-protected-transport-target-context-capsule-consumer' "
+    "AND consumer_contract_version = '1.0' "
+    "AND purpose_id = 'purpose.workflow-protected-runtime-process-scheduling-request' "
+    "AND policy_id = 'policy.workflow-protected-runtime-process-scheduling-authorization' "
+    "AND policy_version = '1.0' "
+    "AND source_policy_id = 'policy.workflow-protected-runtime-process-creation-consumption' "
+    "AND source_policy_version = '1.0' "
+    "AND length(policy_digest) = 64 "
+    f"AND source_policy_digest = '{_WF_RTPROC_CONS_POLICY_DIGEST}'"
+)
+_WF_RTPSCHED_AUTH_SOURCE = (
+    "process_creation_result_state = "
+    "'process_created_suspended_in_protected_boundary' "
+    "AND process_creation_outcome_known "
+    "AND process_created AND process_sealed AND process_suspended "
+    "AND NOT process_scheduled AND NOT process_resumed "
+    "AND NOT process_dispatched AND NOT process_executed "
+    "AND process_creation_failure_class IS NULL "
+    "AND process_creation_receipt_digest IS NOT NULL "
+    "AND process_creation_completed_at <= process_creation_result_recorded_at "
+    "AND runtime_slot_generation = runtime_envelope_generation "
+    "AND runtime_slot_generation >= 2"
+)
+_WF_RTPSCHED_AUTH_ZERO_AUTHORITY = (
+    _WF_RTPROC_AUTH_ZERO_AUTHORITY
+    + " AND NOT protected_runtime_process_scheduling_authority_granted"
+)
+
+
+class _WorkflowProtectedRuntimeProcessSchedulingAuthorizationAuthorityColumns(
+    _WorkflowProtectedRuntimeProcessCreationAuthorizationAuthorityColumns
+):
+    protected_runtime_process_scheduling_authority_granted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False
+    )
+
+
+class _WorkflowProtectedRuntimeProcessSchedulingAuthorizationSourceColumns:
+    process_creation_result_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    process_creation_result_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    process_creation_consumption_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    process_creation_attempt_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    process_creation_attempt_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    process_creation_claim_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    process_creation_claim_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    process_creation_authorization_lease_id: Mapped[str] = mapped_column(
+        String(128), nullable=False
+    )
+    process_creation_authorization_lease_digest: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    process_creation_authorization_claim_id: Mapped[str] = mapped_column(
+        String(128), nullable=False
+    )
+    process_creation_authorization_claim_digest: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    runtime_envelope_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    runtime_envelope_commitment: Mapped[str] = mapped_column(String(64), nullable=False)
+    runtime_envelope_generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    destination_deployment_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    destination_generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    destination_fencing_token_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    runtime_slot_commitment: Mapped[str] = mapped_column(String(64), nullable=False)
+    runtime_slot_generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    process_creation_profile_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    process_creation_profile_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    process_creation_profile_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    primitive_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    primitive_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    primitive_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    process_creation_result_state: Mapped[str] = mapped_column(String(64), nullable=False)
+    process_creation_failure_class: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    process_creation_outcome_known: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    process_created: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    process_sealed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    process_suspended: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    process_scheduled: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    process_resumed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    process_dispatched: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    process_executed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    process_creation_receipt_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    process_creation_completed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    process_creation_result_recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    source_observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+_WF_RTPSCHED_RESULT_LOCAL = (
+    "organization_id",
+    "environment_id",
+    "site_id",
+    "process_creation_result_id",
+    "process_creation_result_digest",
+    "process_creation_consumption_id",
+    "process_creation_attempt_id",
+    "process_creation_attempt_digest",
+    "process_creation_claim_id",
+    "process_creation_claim_digest",
+    "process_creation_authorization_lease_id",
+    "process_creation_authorization_lease_digest",
+    "process_creation_result_state",
+    "process_creation_outcome_known",
+    "process_created",
+    "process_sealed",
+    "process_suspended",
+    "process_scheduled",
+    "process_resumed",
+    "process_dispatched",
+    "process_executed",
+    "process_creation_receipt_digest",
+    "process_creation_completed_at",
+    "process_creation_result_recorded_at",
+)
+_WF_RTPSCHED_RESULT_REMOTE = (
+    "organization_id",
+    "environment_id",
+    "site_id",
+    "result_id",
+    "canonical_digest",
+    "consumption_id",
+    "attempt_id",
+    "attempt_digest",
+    "claim_id",
+    "claim_digest",
+    "authorization_lease_id",
+    "authorization_lease_digest",
+    "state",
+    "outcome_known",
+    "result_process_created",
+    "process_sealed",
+    "process_suspended",
+    "result_process_scheduled",
+    "result_process_resumed",
+    "result_process_dispatched",
+    "result_process_executed",
+    "receipt_digest",
+    "completed_at",
+    "recorded_at",
+)
+
+
+def _workflow_protected_runtime_process_scheduling_authorization_source_constraints(
+    *, prefix: str
+) -> tuple[ForeignKeyConstraint, ...]:
+    return (
+        ForeignKeyConstraint(
+            _WF_RTPSCHED_RESULT_LOCAL,
+            [
+                f"workflow_event_runtime_process_creation_results.{name}"
+                for name in _WF_RTPSCHED_RESULT_REMOTE
+            ],
+            name=f"fk_wf_rtpsched_{prefix}_result",
+        ),
+        ForeignKeyConstraint(
+            [
+                "organization_id",
+                "environment_id",
+                "site_id",
+                "process_creation_attempt_id",
+                "process_creation_attempt_digest",
+                "process_creation_claim_id",
+                "process_creation_claim_digest",
+                "process_creation_consumption_id",
+                "process_creation_authorization_lease_id",
+                "process_creation_authorization_lease_digest",
+                "runtime_envelope_id",
+                "runtime_envelope_commitment",
+                "runtime_envelope_generation",
+                "process_creation_profile_id",
+                "process_creation_profile_version",
+                "process_creation_profile_digest",
+                "primitive_id",
+                "primitive_version",
+                "primitive_digest",
+            ],
+            [
+                "workflow_event_runtime_process_creation_attempts.organization_id",
+                "workflow_event_runtime_process_creation_attempts.environment_id",
+                "workflow_event_runtime_process_creation_attempts.site_id",
+                "workflow_event_runtime_process_creation_attempts.attempt_id",
+                "workflow_event_runtime_process_creation_attempts.canonical_digest",
+                "workflow_event_runtime_process_creation_attempts.claim_id",
+                "workflow_event_runtime_process_creation_attempts.claim_digest",
+                "workflow_event_runtime_process_creation_attempts.consumption_id",
+                "workflow_event_runtime_process_creation_attempts.authorization_lease_id",
+                "workflow_event_runtime_process_creation_attempts.authorization_lease_digest",
+                "workflow_event_runtime_process_creation_attempts.runtime_envelope_id",
+                "workflow_event_runtime_process_creation_attempts.runtime_envelope_commitment",
+                "workflow_event_runtime_process_creation_attempts.runtime_envelope_generation",
+                "workflow_event_runtime_process_creation_attempts.process_creation_profile_id",
+                "workflow_event_runtime_process_creation_attempts.process_creation_profile_version",
+                "workflow_event_runtime_process_creation_attempts.process_creation_profile_digest",
+                "workflow_event_runtime_process_creation_attempts.primitive_id",
+                "workflow_event_runtime_process_creation_attempts.primitive_version",
+                "workflow_event_runtime_process_creation_attempts.primitive_digest",
+            ],
+            name=f"fk_wf_rtpsched_{prefix}_attempt",
+        ),
+        ForeignKeyConstraint(
+            [
+                "organization_id",
+                "environment_id",
+                "site_id",
+                "process_creation_claim_id",
+                "process_creation_claim_digest",
+                "process_creation_consumption_id",
+                "process_creation_attempt_id",
+                "process_creation_authorization_lease_id",
+                "process_creation_authorization_lease_digest",
+                "process_creation_authorization_claim_id",
+                "process_creation_authorization_claim_digest",
+            ],
+            [
+                "workflow_event_runtime_process_creation_consumption_claims.organization_id",
+                "workflow_event_runtime_process_creation_consumption_claims.environment_id",
+                "workflow_event_runtime_process_creation_consumption_claims.site_id",
+                "workflow_event_runtime_process_creation_consumption_claims.claim_id",
+                "workflow_event_runtime_process_creation_consumption_claims.canonical_digest",
+                "workflow_event_runtime_process_creation_consumption_claims.consumption_id",
+                "workflow_event_runtime_process_creation_consumption_claims.attempt_id",
+                "workflow_event_runtime_process_creation_consumption_claims.authorization_lease_id",
+                "workflow_event_runtime_process_creation_consumption_claims.authorization_lease_digest",
+                "workflow_event_runtime_process_creation_consumption_claims.authorization_claim_id",
+                "workflow_event_runtime_process_creation_consumption_claims.authorization_claim_digest",
+            ],
+            name=f"fk_wf_rtpsched_{prefix}_claim",
+        ),
+        ForeignKeyConstraint(
+            [
+                "organization_id",
+                "environment_id",
+                "site_id",
+                "process_creation_authorization_lease_id",
+                "process_creation_authorization_lease_digest",
+                "process_creation_authorization_claim_id",
+                "process_creation_authorization_claim_digest",
+            ],
+            [
+                "workflow_event_runtime_process_creation_auth_leases.organization_id",
+                "workflow_event_runtime_process_creation_auth_leases.environment_id",
+                "workflow_event_runtime_process_creation_auth_leases.site_id",
+                "workflow_event_runtime_process_creation_auth_leases.authorization_lease_id",
+                "workflow_event_runtime_process_creation_auth_leases.canonical_digest",
+                "workflow_event_runtime_process_creation_auth_leases.claim_id",
+                "workflow_event_runtime_process_creation_auth_leases.claim_digest",
+            ],
+            name=f"fk_wf_rtpsched_{prefix}_src_lease",
+        ),
+        ForeignKeyConstraint(
+            [
+                "organization_id",
+                "environment_id",
+                "site_id",
+                "process_creation_authorization_claim_id",
+                "process_creation_authorization_claim_digest",
+                "process_creation_authorization_lease_id",
+            ],
+            [
+                "workflow_event_runtime_process_creation_auth_claims.organization_id",
+                "workflow_event_runtime_process_creation_auth_claims.environment_id",
+                "workflow_event_runtime_process_creation_auth_claims.site_id",
+                "workflow_event_runtime_process_creation_auth_claims.claim_id",
+                "workflow_event_runtime_process_creation_auth_claims.canonical_digest",
+                "workflow_event_runtime_process_creation_auth_claims.authorization_lease_id",
+            ],
+            name=f"fk_wf_rtpsched_{prefix}_src_auth_claim",
+        ),
+    )
+
+
+class WorkflowProtectedRuntimeProcessSchedulingAuthorizationLeaseModel(
+    _WorkflowProtectedRuntimeProcessSchedulingAuthorizationSourceColumns,
+    _WorkflowProtectedRuntimeStartAuthorizationIdentityColumns,
+    _WorkflowProtectedRuntimeProcessSchedulingAuthorizationAuthorityColumns,
+    Base,
+):
+    __tablename__ = "workflow_event_runtime_process_scheduling_auth_leases"
+    __table_args__ = (
+        *_workflow_protected_runtime_process_scheduling_authorization_source_constraints(
+            prefix="lease"
+        ),
+        ForeignKeyConstraint(
+            [
+                "organization_id",
+                "environment_id",
+                "site_id",
+                "claim_id",
+                "claim_digest",
+                "authorization_lease_id",
+            ],
+            [
+                "workflow_event_runtime_process_scheduling_auth_claims.organization_id",
+                "workflow_event_runtime_process_scheduling_auth_claims.environment_id",
+                "workflow_event_runtime_process_scheduling_auth_claims.site_id",
+                "workflow_event_runtime_process_scheduling_auth_claims.claim_id",
+                "workflow_event_runtime_process_scheduling_auth_claims.canonical_digest",
+                "workflow_event_runtime_process_scheduling_auth_claims.authorization_lease_id",
+            ],
+            name="fk_wf_rtpsched_lease_auth_claim",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
+        UniqueConstraint("process_creation_result_id", name="uq_wf_rtpsched_lease_result"),
+        UniqueConstraint("claim_id", name="uq_wf_rtpsched_lease_claim"),
+        UniqueConstraint(
+            "organization_id",
+            "environment_id",
+            "site_id",
+            "authorization_lease_id",
+            "claim_digest",
+            "claim_id",
+            name="uq_wf_rtpsched_lease_lineage",
+        ),
+        CheckConstraint(_WF_RTPSCHED_AUTH_CONTRACT, name="ck_wf_rtpsched_lease_contract"),
+        CheckConstraint(_WF_RTPSCHED_AUTH_SOURCE, name="ck_wf_rtpsched_lease_source"),
+        CheckConstraint(
+            "state = 'authorized_unconsumed' "
+            "AND issued_at = effective_from AND effective_from < effective_until "
+            "AND effective_until <= issued_at + INTERVAL '1 second' "
+            "AND valid_until = effective_until "
+            "AND source_observed_at <= issued_at "
+            "AND process_creation_result_recorded_at <= source_observed_at "
+            "AND process_state_attestation_observed_at <= issued_at "
+            "AND issued_at < process_state_attestation_valid_until "
+            "AND effective_until <= process_state_attestation_valid_until "
+            "AND single_use AND NOT renewable AND NOT transferable "
+            "AND NOT replaceable AND NOT reissuable "
+            "AND NOT lease_is_bearer_capability "
+            "AND protected_runtime_process_scheduling_authority_granted "
+            "AND " + _WF_RTPROC_AUTH_ZERO_AUTHORITY,
+            name="ck_wf_rtpsched_lease_semantics",
+        ),
+        CheckConstraint(
+            "length(process_state_attestation_digest) = 64 "
+            "AND jsonb_typeof(payload) = 'object' "
+            "AND jsonb_typeof(process_state_attestation_payload) = 'object' "
+            "AND process_state_attestation_payload <> '{}'::jsonb",
+            name="ck_wf_rtpsched_lease_payload",
+        ),
+        Index(
+            "ix_wf_rtpsched_lease_scope",
+            "organization_id",
+            "environment_id",
+            "site_id",
+            "issued_at",
+        ),
+    )
+
+    authorization_lease_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    claim_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    claim_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    state: Mapped[str] = mapped_column(String(64), nullable=False)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    effective_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    effective_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    single_use: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    renewable: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    transferable: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    replaceable: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    reissuable: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    lease_is_bearer_capability: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    process_state_attestation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    process_state_attestation_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    process_state_attestation_observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    process_state_attestation_valid_until: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    process_state_attestation_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class WorkflowProtectedRuntimeProcessSchedulingAuthorizationClaimModel(
+    _WorkflowProtectedRuntimeProcessSchedulingAuthorizationSourceColumns,
+    _WorkflowProtectedRuntimeStartAuthorizationIdentityColumns,
+    _WorkflowProtectedRuntimeProcessSchedulingAuthorizationAuthorityColumns,
+    Base,
+):
+    __tablename__ = "workflow_event_runtime_process_scheduling_auth_claims"
+    __table_args__ = (
+        *_workflow_protected_runtime_process_scheduling_authorization_source_constraints(
+            prefix="claim"
+        ),
+        ForeignKeyConstraint(
+            [
+                "organization_id",
+                "environment_id",
+                "site_id",
+                "authorization_lease_id",
+                "canonical_digest",
+                "claim_id",
+            ],
+            [
+                "workflow_event_runtime_process_scheduling_auth_leases.organization_id",
+                "workflow_event_runtime_process_scheduling_auth_leases.environment_id",
+                "workflow_event_runtime_process_scheduling_auth_leases.site_id",
+                "workflow_event_runtime_process_scheduling_auth_leases.authorization_lease_id",
+                "workflow_event_runtime_process_scheduling_auth_leases.claim_digest",
+                "workflow_event_runtime_process_scheduling_auth_leases.claim_id",
+            ],
+            name="fk_wf_rtpsched_claim_auth_lease",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "environment_id",
+            "site_id",
+            "consumer_subject_id",
+            "consumer_audience",
+            "idempotency_key",
+            name="uq_wf_rtpsched_scope_idem",
+        ),
+        UniqueConstraint("process_creation_result_id", name="uq_wf_rtpsched_claim_result"),
+        UniqueConstraint("authorization_lease_id", name="uq_wf_rtpsched_claim_lease"),
+        UniqueConstraint(
+            "organization_id",
+            "environment_id",
+            "site_id",
+            "claim_id",
+            "canonical_digest",
+            "authorization_lease_id",
+            name="uq_wf_rtpsched_claim_lineage",
+        ),
+        CheckConstraint(_WF_RTPSCHED_AUTH_CONTRACT, name="ck_wf_rtpsched_claim_contract"),
+        CheckConstraint(_WF_RTPSCHED_AUTH_SOURCE, name="ck_wf_rtpsched_claim_source"),
+        CheckConstraint(
+            "source_observed_at = claimed_at "
+            "AND process_creation_result_recorded_at <= claimed_at "
+            "AND length(idempotency_scope_id) = 64 "
+            "AND length(idempotency_digest) = 64 "
+            "AND length(request_fingerprint) = 64 "
+            "AND length(authorization_audit_digest) = 64 "
+            "AND " + _WF_RTPSCHED_AUTH_ZERO_AUTHORITY,
+            name="ck_wf_rtpsched_claim_semantics",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(payload) = 'object' "
+            "AND jsonb_typeof(authorization_audit_payload) = 'object'",
+            name="ck_wf_rtpsched_claim_payload",
+        ),
+        Index(
+            "ix_wf_rtpsched_claim_scope",
+            "organization_id",
+            "environment_id",
+            "site_id",
+            "claimed_at",
+        ),
+    )
+
+    claim_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    authorization_lease_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    idempotency_scope_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    idempotency_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    authorization_audit_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    claimed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    authorization_audit_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

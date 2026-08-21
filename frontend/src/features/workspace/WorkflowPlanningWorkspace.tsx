@@ -20,7 +20,10 @@ import {
   X,
 } from "lucide-react";
 
-import { ApiRequestError } from "../../api/client";
+import {
+  ApiRequestError,
+  listWorkflowProtectedRuntimeProcessSchedulingAuthorizations,
+} from "../../api/client";
 import { listOperationalConversations } from "../../api/conversations";
 import {
   cancelWorkflowPlan,
@@ -443,6 +446,16 @@ export default function WorkflowPlanningWorkspace({
       siteId,
     ],
     queryFn: listWorkflowProtectedRuntimeProcessCreations,
+    retry: false,
+  });
+  const protectedRuntimeProcessSchedulingAuthorizationQuery = useQuery({
+    queryKey: [
+      "workflow-protected-runtime-process-scheduling-authorizations",
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: listWorkflowProtectedRuntimeProcessSchedulingAuthorizations,
     retry: false,
   });
   const targetQuery = useQuery({
@@ -984,6 +997,10 @@ export default function WorkflowPlanningWorkspace({
   const protectedRuntimeProcessCreationErrorStatus =
     protectedRuntimeProcessCreationQuery.error instanceof ApiRequestError
       ? protectedRuntimeProcessCreationQuery.error.status
+      : undefined;
+  const protectedRuntimeProcessSchedulingAuthorizationErrorStatus =
+    protectedRuntimeProcessSchedulingAuthorizationQuery.error instanceof ApiRequestError
+      ? protectedRuntimeProcessSchedulingAuthorizationQuery.error.status
       : undefined;
   const eventEnvelopes = eventEnvelopesForAdmission;
   const transportAdmissions = transportAdmissionsForArtifacts;
@@ -5723,6 +5740,158 @@ export default function WorkflowPlanningWorkspace({
             schedule, resume, dispatch or execute it, access runtime material, invoke AI,
             connector or MCP capabilities, use network access, or mutate infrastructure. A
             successful record proves only sealed suspended creation inside the protected boundary.
+          </span>
+        </div>
+      </section>
+
+      <section
+        className="workflow-physical-route-binding-band workflow-target-context-opening-band workflow-process-scheduling-authorization-band"
+        aria-labelledby="workflow-protected-runtime-process-scheduling-authorization-title"
+      >
+        <div className="workflow-section-heading">
+          <div>
+            <p className="eyebrow">FUTURE PROCESS-SCHEDULING REQUEST EVIDENCE</p>
+            <h2 id="workflow-protected-runtime-process-scheduling-authorization-title">
+              Protected runtime process-scheduling authorizations
+            </h2>
+          </div>
+          <span>Read only</span>
+        </div>
+        {protectedRuntimeProcessSchedulingAuthorizationQuery.isLoading && (
+          <div className="workflow-empty-state" role="status">
+            <RefreshCw className="spin" size={18} />
+            <span>Loading protected runtime process-scheduling authorizations...</span>
+          </div>
+        )}
+        {protectedRuntimeProcessSchedulingAuthorizationQuery.isError && (
+          <div className="workflow-inline-error" role="alert">
+            <AlertTriangle aria-hidden="true" size={18} />
+            <div>
+              <strong>
+                {protectedRuntimeProcessSchedulingAuthorizationErrorStatus === 401
+                  ? "Your session has expired"
+                  : protectedRuntimeProcessSchedulingAuthorizationErrorStatus === 403
+                    ? "Process-scheduling authorization permission is missing"
+                    : "Process-scheduling authorizations are unavailable"}
+              </strong>
+              <span>
+                {protectedRuntimeProcessSchedulingAuthorizationErrorStatus === 401
+                  ? "Sign in again with your username and password to continue."
+                  : protectedRuntimeProcessSchedulingAuthorizationErrorStatus === 403
+                    ? "Your current role or scope cannot inspect protected runtime process-scheduling authorization evidence."
+                    : "The protected authorization repository is unavailable or failed closed; no process-scheduling request authority is inferred."}
+              </span>
+            </div>
+          </div>
+        )}
+        {protectedRuntimeProcessSchedulingAuthorizationQuery.isSuccess &&
+          protectedRuntimeProcessSchedulingAuthorizationQuery.data.authorizations.length === 0 && (
+            <div className="workflow-empty-state" role="status">
+              <LockKeyhole size={19} />
+              <span>
+                No protected runtime process-scheduling authorizations are recorded in this scope.
+              </span>
+            </div>
+          )}
+        {protectedRuntimeProcessSchedulingAuthorizationQuery.isSuccess &&
+          protectedRuntimeProcessSchedulingAuthorizationQuery.data.authorizations.length > 0 && (
+            <ol
+              className="workflow-step-preview workflow-physical-route-binding-list workflow-target-context-opening-list"
+              aria-label="Protected runtime process-scheduling authorizations"
+            >
+              {protectedRuntimeProcessSchedulingAuthorizationQuery.data.authorizations.map(
+                (authorization) => (
+                  <li key={authorization.authorization_lease_id}>
+                    {authorization.effective_state === "active" ? (
+                      <ShieldCheck size={18} />
+                    ) : (
+                      <FileClock size={18} />
+                    )}
+                    <div>
+                      <strong>
+                        <code title={authorization.authorization_lease_id}>
+                          {safeHolderIdentifier(authorization.authorization_lease_id)}
+                        </code>
+                        <span
+                          className={`state-badge ${
+                            authorization.effective_state === "active" ? "success" : "neutral"
+                          }`}
+                        >
+                          {authorization.effective_state === "active" ? "Active" : "Expired"}
+                        </span>
+                      </strong>
+                      <div className="workflow-physical-route-binding-grid">
+                        <span>
+                          State {readableKind(authorization.state)} | effective{" "}
+                          {readableKind(authorization.effective_state)}
+                        </span>
+                        <span>
+                          Issued {formatTimestamp(authorization.issued_at)} | valid until{" "}
+                          {formatTimestamp(authorization.valid_until)} | effective until{" "}
+                          {formatTimestamp(authorization.effective_until)}
+                        </span>
+                        <span>
+                          Source process creation{" "}
+                          <code title={authorization.process_creation_result_reference}>
+                            {shortDigest(authorization.process_creation_result_reference)}
+                          </code>
+                        </span>
+                        <span>
+                          Policy{" "}
+                          <code title={authorization.policy_id}>
+                            {safeHolderIdentifier(authorization.policy_id)}
+                          </code>{" "}
+                          v{authorization.policy_version} | purpose{" "}
+                          <code title={authorization.purpose_id}>
+                            {safeHolderIdentifier(authorization.purpose_id)}
+                          </code>
+                        </span>
+                        <span>
+                          Consumer contract{" "}
+                          <code title={authorization.consumer_contract_id}>
+                            {safeHolderIdentifier(authorization.consumer_contract_id)}
+                          </code>{" "}
+                          v{authorization.consumer_contract_version}
+                        </span>
+                        <span>
+                          Integrity reference{" "}
+                          <code title={authorization.integrity_reference}>
+                            {shortDigest(authorization.integrity_reference)}
+                          </code>
+                        </span>
+                        <span className="workflow-physical-route-binding-authority">
+                          Dedicated future process-scheduling request authority{" "}
+                          {authorization.authority
+                            .protected_runtime_process_scheduling_authority_granted
+                            ? "active for one request"
+                            : "inactive"}
+                          . Process creation false | protected runtime readiness false | protected
+                          runtime start false | protected runtime-context use false | runtime use
+                          false | runtime start false | runtime resume false | connector activity
+                          false | protected runtime-context injection false | protected
+                          resident-context access false | target-context capsule opening false |
+                          target-context capsule handoff false | endpoint resolution false | route
+                          selection false | route binding false | credential selection false |
+                          credential assignment binding false | credential access false | credential
+                          brokerage false | credential resolution false | protected artifact access
+                          false | credential delivery false | network access false | readiness probe
+                          false | publication false | delivery false | dispatch false | execution
+                          false | infrastructure mutation false
+                        </span>
+                      </div>
+                    </div>
+                  </li>
+                ),
+              )}
+            </ol>
+          )}
+        <div className="workflow-safety-boundary" role="note">
+          <LockKeyhole size={18} />
+          <span>
+            Read-only evidence. An active declaration permits only one future protected
+            process-scheduling request. It does not schedule, queue, reserve, resume, dispatch or
+            execute a process and grants no runtime material, network, connector, MCP, provider or
+            infrastructure-mutation authority. This view cannot consume, renew or replace it.
           </span>
         </div>
       </section>

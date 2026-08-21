@@ -97,6 +97,7 @@ from atlas.api.workflow_schemas import (
     CreateWorkflowProtectedRuntimeContextUseInput,
     CreateWorkflowProtectedRuntimeProcessCreationAuthorizationInput,
     CreateWorkflowProtectedRuntimeProcessCreationConsumptionInput,
+    CreateWorkflowProtectedRuntimeProcessSchedulingAuthorizationInput,
     CreateWorkflowProtectedRuntimeReadinessAuthorizationInput,
     CreateWorkflowProtectedRuntimeReadinessConsumptionInput,
     CreateWorkflowProtectedRuntimeStartAuthorizationInput,
@@ -256,6 +257,10 @@ from atlas.api.workflow_schemas import (
     WorkflowProtectedRuntimeProcessCreationConsumptionInventoryData,
     WorkflowProtectedRuntimeProcessCreationConsumptionInventoryResponse,
     WorkflowProtectedRuntimeProcessCreationConsumptionResponse,
+    WorkflowProtectedRuntimeProcessSchedulingAuthorizationData,
+    WorkflowProtectedRuntimeProcessSchedulingAuthorizationInventoryData,
+    WorkflowProtectedRuntimeProcessSchedulingAuthorizationInventoryResponse,
+    WorkflowProtectedRuntimeProcessSchedulingAuthorizationResponse,
     WorkflowProtectedRuntimeReadinessAuthorizationData,
     WorkflowProtectedRuntimeReadinessAuthorizationInventoryData,
     WorkflowProtectedRuntimeReadinessAuthorizationInventoryResponse,
@@ -296,13 +301,18 @@ from atlas.api.workflow_schemas import (
     WorkflowRunPlanData,
     WorkflowRunPlanResponse,
 )
-from atlas.modules.authorization.domain.models import AuthorizationDecision
+from atlas.modules.authorization.application.bootstrap import (
+    WORKFLOW_PROTECTED_RUNTIME_PROCESS_SCHEDULING_AUTHORIZATION_READ,
+    workflow_protected_runtime_process_scheduling_authorization_scope,
+)
+from atlas.modules.authorization.application.service import AuthorizationService
+from atlas.modules.authorization.domain.models import AuthorizationDecision, AuthorizationRequest
 from atlas.modules.conversations.application.ports import (
     ConversationTargetAccessRequest,
     ConversationTargetAccessSource,
 )
 from atlas.modules.conversations.domain.models import ConversationScope
-from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.identity.domain.models import AuthenticatedSubject, SubjectKind
 from atlas.modules.workflows.application import (
     WORKFLOW_OUTBOX_PUBLISHER_AUDIENCE,
     WORKFLOW_PHYSICAL_TRANSPORT_CREDENTIAL_ACCESSOR_AUDIENCE,
@@ -436,6 +446,9 @@ from atlas.modules.workflows.application.protected_runtime_process_creation_cons
 from atlas.modules.workflows.application.protected_runtime_process_creation_consumptions import (
     WorkflowProtectedRuntimeProcessCreationConsumptionPresentation,
     WorkflowProtectedRuntimeProcessCreationConsumptionService,
+)
+from atlas.modules.workflows.application.protected_runtime_process_scheduling_authorization_ports import (  # noqa: E501
+    WorkflowProtectedRuntimeProcessSchedulingAuthorizationError,
 )
 from atlas.modules.workflows.application.protected_runtime_readiness_authorization_ports import (
     WorkflowProtectedRuntimeReadinessAuthorizationError,
@@ -7834,6 +7847,199 @@ async def create_workflow_protected_runtime_process_creation_authorization(
             retryable=True,
         ) from error
     return WorkflowProtectedRuntimeProcessCreationAuthorizationResponse(
+        data=data,
+        meta=_meta(request),
+    )
+
+
+async def authorize_workflow_protected_runtime_process_scheduling_authorization_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    """Authorize the ADR-179 minimized inventory for a normal password session."""
+
+    if subject.kind is not SubjectKind.HUMAN:
+        raise AtlasError(
+            status=403,
+            code="human_identity_required",
+            title="Human identity required",
+            detail="This read-only inventory is available only to an authenticated human.",
+        )
+    service = cast(AuthorizationService, request.app.state.authorization_service)
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=WORKFLOW_PROTECTED_RUNTIME_PROCESS_SCHEDULING_AUTHORIZATION_READ,
+            resource_type=("resource.workflow.protected-runtime-process-scheduling-authorization"),
+            scope=workflow_protected_runtime_process_scheduling_authorization_scope(
+                subject.organization_id,
+                settings.environment,
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+@router.get(
+    "/protected-runtime-process-scheduling-authorizations",
+    response_model=WorkflowProtectedRuntimeProcessSchedulingAuthorizationInventoryResponse,
+)
+async def list_workflow_protected_runtime_process_scheduling_authorizations(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_workflow_protected_runtime_process_scheduling_authorization_read),
+    ],
+) -> WorkflowProtectedRuntimeProcessSchedulingAuthorizationInventoryResponse:
+    del decision
+    _no_store(response)
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    service = request.app.state.workflow_protected_runtime_process_scheduling_authorization_service
+    try:
+        inventory = await service.list_presentations(scope=scope, limit=256)
+        if any(presentation.lease.scope != scope for presentation in inventory.presentations):
+            raise RuntimeError("protected process-scheduling authorization scope mismatch")
+        inventory_data = WorkflowProtectedRuntimeProcessSchedulingAuthorizationInventoryData(
+            authorizations=[
+                WorkflowProtectedRuntimeProcessSchedulingAuthorizationData.from_domain(presentation)
+                for presentation in inventory.presentations
+            ],
+            server_time=inventory.server_time,
+            durable=service.durable,
+        )
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code=(
+                "workflow_protected_runtime_process_scheduling_authorization_service_unavailable"
+            ),
+            title="Protected process-scheduling authorization unavailable",
+            detail="Process-scheduling authorization metadata is temporarily unavailable.",
+            retryable=True,
+        ) from error
+    return WorkflowProtectedRuntimeProcessSchedulingAuthorizationInventoryResponse(
+        data=inventory_data,
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    "/protected-runtime-process-scheduling-authorizations",
+    response_model=WorkflowProtectedRuntimeProcessSchedulingAuthorizationResponse,
+    status_code=201,
+)
+async def create_workflow_protected_runtime_process_scheduling_authorization(
+    payload: CreateWorkflowProtectedRuntimeProcessSchedulingAuthorizationInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[
+        AuthenticatedSubject,
+        Depends(workflow_protected_transport_target_context_capsule_consumer_subject),
+    ],
+) -> WorkflowProtectedRuntimeProcessSchedulingAuthorizationResponse:
+    _no_store(response)
+    service = request.app.state.workflow_protected_runtime_process_scheduling_authorization_service
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    try:
+        lease = await service.authorize(
+            process_creation_result_id=payload.process_creation_result_id,
+            policy_id=payload.policy_id,
+            policy_version=payload.policy_version,
+            single_use_nonrenewable_nontransferable_future_request_acknowledged=(
+                payload.single_use_nonrenewable_nontransferable_future_request_acknowledged
+            ),
+            no_scheduling_resume_dispatch_or_execution_authority_acknowledged=(
+                payload.no_scheduling_resume_dispatch_or_execution_authority_acknowledged
+            ),
+            idempotency_key=payload.idempotency_key,
+            context=WorkflowProtectedTransportTargetContextCapsuleHandoffAuthorizationContext(
+                subject_id=subject.subject_id,
+                actor_type=subject.kind.value,
+                authentication_method=subject.authentication_method.value,
+                credential_audience=WORKFLOW_PROTECTED_TARGET_CONTEXT_CAPSULE_CONSUMER_AUDIENCE,
+                scope=scope,
+                correlation_id=str(request.state.correlation_id),
+                decision_id=(
+                    "decision.workflow-protected-runtime-process-scheduling-consumer-authenticated"
+                ),
+                requested_at=datetime.now(UTC),
+            ),
+        )
+        inventory = await service.list_presentations(
+            scope=scope,
+            authorization_lease_ids=(lease.authorization_lease_id,),
+            limit=1,
+        )
+        if len(inventory.presentations) != 1:
+            raise RuntimeError("process-scheduling authorization projection unavailable")
+        presentation = inventory.presentations[0]
+        if presentation.lease.canonical_digest != lease.canonical_digest:
+            raise RuntimeError("process-scheduling authorization projection mismatch")
+        data = WorkflowProtectedRuntimeProcessSchedulingAuthorizationData.from_domain(presentation)
+    except WorkflowProtectedRuntimeProcessSchedulingAuthorizationError as error:
+        conflict = any(
+            marker in error.code
+            for marker in (
+                "already_authorized",
+                "evidence_conflict",
+                "idempotency_conflict",
+                "not_eligible",
+                "policy_conflict",
+            )
+        )
+        raise AtlasError(
+            status=409 if conflict else 503,
+            code=(
+                "authorization_denied"
+                if conflict
+                else (
+                    "workflow_protected_runtime_process_scheduling_authorization_service_unavailable"
+                )
+            ),
+            title=(
+                "Request denied"
+                if conflict
+                else "Protected process-scheduling authorization unavailable"
+            ),
+            detail=(
+                "The current identity or evidence is not authorized for this operation."
+                if conflict
+                else "Process-scheduling authorization metadata is temporarily unavailable."
+            ),
+            retryable=not conflict,
+        ) from error
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code=(
+                "workflow_protected_runtime_process_scheduling_authorization_service_unavailable"
+            ),
+            title="Protected process-scheduling authorization unavailable",
+            detail="Process-scheduling authorization metadata is temporarily unavailable.",
+            retryable=True,
+        ) from error
+    return WorkflowProtectedRuntimeProcessSchedulingAuthorizationResponse(
         data=data,
         meta=_meta(request),
     )

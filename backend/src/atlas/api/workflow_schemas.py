@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from hashlib import sha256
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -3910,6 +3910,146 @@ class WorkflowProtectedRuntimeProcessCreationAuthorizationResponse(BaseModel):
 
 class WorkflowProtectedRuntimeProcessCreationAuthorizationInventoryResponse(BaseModel):
     data: WorkflowProtectedRuntimeProcessCreationAuthorizationInventoryData
+    meta: ResponseMeta
+
+
+class CreateWorkflowProtectedRuntimeProcessSchedulingAuthorizationInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    process_creation_result_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    policy_id: Literal["policy.workflow-protected-runtime-process-scheduling-authorization"]
+    policy_version: Literal["1.0"]
+    single_use_nonrenewable_nontransferable_future_request_acknowledged: Literal[True]
+    no_scheduling_resume_dispatch_or_execution_authority_acknowledged: Literal[True]
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class WorkflowProtectedRuntimeProcessSchedulingAuthorizationAuthorityData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    protected_runtime_process_scheduling_authority_granted: bool
+    protected_runtime_process_creation_authority_granted: Literal[False]
+    protected_runtime_readiness_authority_granted: Literal[False]
+    protected_runtime_start_authority_granted: Literal[False]
+    protected_runtime_context_use_authority_granted: Literal[False]
+    runtime_use_authorized: Literal[False]
+    runtime_start_authorized: Literal[False]
+    runtime_resume_authorized: Literal[False]
+    connector_activity_authorized: Literal[False]
+    protected_runtime_context_injection_authority_granted: Literal[False]
+    protected_resident_context_access_authority_granted: Literal[False]
+    target_context_capsule_opening_authorized: Literal[False]
+    target_context_capsule_handoff_authorized: Literal[False]
+    endpoint_resolution_authorized: Literal[False]
+    route_selection_authorized: Literal[False]
+    route_binding_authorized: Literal[False]
+    credential_selection_authorized: Literal[False]
+    credential_assignment_binding_authorized: Literal[False]
+    credential_access_authorized: Literal[False]
+    credential_brokerage_authorized: Literal[False]
+    credential_resolution_authorized: Literal[False]
+    protected_artifact_access_authorized: Literal[False]
+    credential_delivery_authorized: Literal[False]
+    network_access_authorized: Literal[False]
+    readiness_probe_authorized: Literal[False]
+    publication_authorized: Literal[False]
+    delivery_authorized: Literal[False]
+    dispatch_authorized: Literal[False]
+    execution_authorized: Literal[False]
+    infrastructure_mutation_authorized: Literal[False]
+
+
+class WorkflowProtectedRuntimeProcessSchedulingAuthorizationData(BaseModel):
+    """Minimized future scheduling-request authority without protected process material."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    authorization_lease_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    process_creation_result_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    state: Literal["authorized_unconsumed"]
+    effective_state: Literal["active", "expired"]
+    issued_at: datetime
+    valid_until: datetime
+    effective_until: datetime
+    consumer_contract_id: Literal[
+        "contract.workflow-protected-transport-target-context-capsule-consumer"
+    ]
+    consumer_contract_version: Literal["1.0"]
+    purpose_id: Literal["purpose.workflow-protected-runtime-process-scheduling-request"]
+    policy_id: Literal["policy.workflow-protected-runtime-process-scheduling-authorization"]
+    policy_version: Literal["1.0"]
+    authority: WorkflowProtectedRuntimeProcessSchedulingAuthorizationAuthorityData
+    integrity_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+
+    @model_validator(mode="after")
+    def validate_effective_authority(
+        self,
+    ) -> WorkflowProtectedRuntimeProcessSchedulingAuthorizationData:
+        if self.authority.protected_runtime_process_scheduling_authority_granted != (
+            self.effective_state == "active"
+        ):
+            raise ValueError("runtime process-scheduling authorization projection is inconsistent")
+        return self
+
+    @classmethod
+    def from_domain(
+        cls,
+        presentation: Any,
+    ) -> WorkflowProtectedRuntimeProcessSchedulingAuthorizationData:
+        lease = presentation.lease
+        authority = lease.authority
+        state = getattr(lease.state, "value", lease.state)
+        effective_state = getattr(
+            presentation.effective_state, "value", presentation.effective_state
+        )
+        return cls(
+            authorization_lease_id=lease.authorization_lease_id,
+            process_creation_result_reference=(
+                "integrity.workflow-protected-runtime-process-creation-result."
+                f"{sha256(lease.process_creation_result_id.encode('utf-8')).hexdigest()[:24]}"
+            ),
+            state=state,
+            effective_state=effective_state,
+            issued_at=lease.issued_at,
+            valid_until=lease.valid_until,
+            effective_until=lease.effective_until,
+            consumer_contract_id=lease.consumer_contract_id,
+            consumer_contract_version=lease.consumer_contract_version,
+            purpose_id=lease.purpose_id,
+            policy_id=lease.policy_id,
+            policy_version=lease.policy_version,
+            authority=WorkflowProtectedRuntimeProcessSchedulingAuthorizationAuthorityData(
+                **{
+                    **authority.canonical_value(),
+                    "protected_runtime_process_scheduling_authority_granted": (
+                        presentation.protected_runtime_process_scheduling_authority_granted
+                    ),
+                }
+            ),
+            integrity_reference=(
+                "integrity.workflow-protected-runtime-process-scheduling-authorization."
+                f"{sha256(lease.authorization_lease_id.encode('utf-8')).hexdigest()[:24]}"
+            ),
+        )
+
+
+class WorkflowProtectedRuntimeProcessSchedulingAuthorizationInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    authorizations: list[WorkflowProtectedRuntimeProcessSchedulingAuthorizationData] = Field(
+        max_length=256
+    )
+    server_time: datetime
+    durable: Literal[True]
+
+
+class WorkflowProtectedRuntimeProcessSchedulingAuthorizationResponse(BaseModel):
+    data: WorkflowProtectedRuntimeProcessSchedulingAuthorizationData
+    meta: ResponseMeta
+
+
+class WorkflowProtectedRuntimeProcessSchedulingAuthorizationInventoryResponse(BaseModel):
+    data: WorkflowProtectedRuntimeProcessSchedulingAuthorizationInventoryData
     meta: ResponseMeta
 
 
