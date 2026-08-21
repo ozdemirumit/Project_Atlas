@@ -47,6 +47,10 @@ import {
   type ConnectorUpgradeReadiness,
 } from "../../api/connectorUpgradeReadiness";
 import { getConnectorPackageInstallations } from "../../api/packageInstallations";
+import {
+  getConnectorTargetConfigurations,
+  type ConnectorTargetConfigurationBinding,
+} from "../../api/targetConfigurations";
 import InstalledMcpManagementWorkspace from "./InstalledMcpManagementWorkspace";
 import { connectorInstanceRecord as instance } from "./testInstanceFixture";
 import { installationReceipt as installation } from "./testInstallationFixture";
@@ -66,6 +70,51 @@ const policy: ConnectorInstanceCreationPolicy = {
   expires_at: "2030-01-01T00:00:00Z",
   canonical_digest: "f".repeat(64),
 };
+
+const configuredBinding = {
+  binding_id: "connector-target-configuration-binding.test",
+  schema_version: "atlas.connector-target-configuration-binding.v1",
+  version: 1,
+  source_instance_record_id: instance.record_id,
+  source_instance_record_digest: instance.canonical_digest,
+  organization_id: instance.organization_id,
+  environment_id: instance.environment_id,
+  package_digest: instance.package_digest,
+  connector_id: instance.connector_id,
+  release_version: instance.release_version,
+  manifest_digest: instance.manifest_digest,
+  instance_id: instance.instance_id,
+  instance_key: instance.instance_key,
+  display_name: instance.display_name,
+  owner_id: instance.owner_id,
+  target_profile_id: "connector-target-profile.development-storage",
+  target_profile_digest: "a".repeat(64),
+  site_id: "site.development-primary",
+  target_type: "storage-array",
+  target_product: "Synthetic Storage",
+  target_version: "version.1.0",
+  configuration_policy_id: "connector-target-configuration-policy.development",
+  configuration_policy_digest: "b".repeat(64),
+  configuration_policy_version: "version.1.0",
+  configuration_version: 1,
+  instance_state: "disabled_target_configured",
+  bound_by: "subject.connector-independent-target-configurator",
+  purpose: "Bind signed target configuration without runtime authority.",
+  bound_at: "2026-08-20T12:00:00Z",
+  canonical_digest: "c".repeat(64),
+  package_installed: true,
+  instance_created: true,
+  target_configured: true,
+  eligible_for_credential_governance: true,
+  promotion_blocked: false,
+  credentials_resolved: false,
+  connector_enabled: false,
+  runtime_trust_granted: false,
+  execution_authorized: false,
+  deployment_approved: false,
+  infrastructure_mutation_performed: false,
+  reused: false,
+} satisfies ConnectorTargetConfigurationBinding;
 
 const signingKeyTrustInventory: ConnectorUpgradeEvidenceSigningKeyTrustInventory = {
   schema_version: "atlas.connector-upgrade-signing-key-trust-inventory.v1",
@@ -724,6 +773,11 @@ vi.mock("../../api/packageInstallations", async (importOriginal) => {
   return { ...original, getConnectorPackageInstallations: vi.fn() };
 });
 
+vi.mock("../../api/targetConfigurations", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../api/targetConfigurations")>();
+  return { ...original, getConnectorTargetConfigurations: vi.fn() };
+});
+
 vi.mock("../../api/connectorUpgradeReadiness", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/connectorUpgradeReadiness")>();
   return {
@@ -773,6 +827,7 @@ beforeEach(() => {
   vi.mocked(getConnectorPackageInstallations).mockResolvedValue([installation]);
   vi.mocked(getConnectorInstanceCreationPolicies).mockResolvedValue([policy]);
   vi.mocked(getConnectorInstances).mockResolvedValue([instance]);
+  vi.mocked(getConnectorTargetConfigurations).mockResolvedValue([]);
   vi.mocked(getConnectorUpgradeReadiness).mockResolvedValue(upgradeReadiness);
   vi.mocked(getConnectorUpgradePlan).mockResolvedValue(upgradePlan);
   vi.mocked(getConnectorUpgradeApprovalRecord).mockResolvedValue(null);
@@ -864,6 +919,23 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(screen.queryByRole("button", { name: /rotate|revoke|disable|export key/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /configure provider|approve provider/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /upload|trust key|sign policy/i })).toBeNull();
+  });
+
+  it("restores configured target state and hides retirement for the bound MCP", async () => {
+    vi.mocked(getConnectorTargetConfigurations).mockResolvedValue([configuredBinding]);
+    renderWorkspace();
+
+    expect(await screen.findByText("Disabled / target configured")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Remove Storage East" })).toBeNull();
+    const viewTarget = screen.getByRole("button", { name: "View target for Storage East" });
+    expect(viewTarget).toBeVisible();
+    fireEvent.click(viewTarget);
+
+    expect(
+      screen.getByRole("dialog", { name: "Manage target for Storage East" }),
+    ).toBeVisible();
+    expect(screen.getByText(configuredBinding.binding_id)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Bind governed target" })).toBeNull();
   });
 
   it("runs a bounded provider assessment without exposing signing or key controls", async () => {

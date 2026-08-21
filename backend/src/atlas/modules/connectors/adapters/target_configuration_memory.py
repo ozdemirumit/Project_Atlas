@@ -33,6 +33,21 @@ class InMemoryConnectorTargetConfigurationRepository:
             None,
         )
 
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorTargetConfigurationBinding, ...]:
+        return tuple(
+            sorted(
+                (
+                    item
+                    for item in self._bindings.values()
+                    if item.organization_id == organization_id
+                    and item.environment_id == environment_id
+                ),
+                key=lambda item: item.binding_id,
+            )
+        )
+
     async def get_by_create_key(
         self, *, bound_by: str, idempotency_key: str
     ) -> ConnectorTargetConfigurationBinding | None:
@@ -72,6 +87,21 @@ class InMemoryConnectorTargetProfileSource:
     async def get_by_id(self, *, profile_id: str) -> ConnectorTargetProfileSnapshot | None:
         return self._profiles.get(profile_id)
 
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorTargetProfileSnapshot, ...]:
+        return tuple(
+            sorted(
+                (
+                    item
+                    for item in self._profiles.values()
+                    if item.organization_id == organization_id
+                    and item.environment_id == environment_id
+                ),
+                key=lambda item: item.profile_id,
+            )
+        )
+
 
 class InMemoryConnectorTargetConfigurationPolicySource:
     def __init__(self, policies: tuple[ConnectorTargetConfigurationPolicySnapshot, ...]) -> None:
@@ -81,3 +111,18 @@ class InMemoryConnectorTargetConfigurationPolicySource:
         self, *, policy_id: str
     ) -> ConnectorTargetConfigurationPolicySnapshot | None:
         return self._policies.get(policy_id)
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorTargetConfigurationPolicySnapshot, ...]:
+        return tuple(
+            sorted(
+                (
+                    item
+                    for item in self._policies.values()
+                    if item.organization_id == organization_id
+                    and item.environment_id == environment_id
+                ),
+                key=lambda item: item.policy_id,
+            )
+        )

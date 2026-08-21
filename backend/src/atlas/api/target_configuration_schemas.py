@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from atlas.api.schemas import ResponseMeta
+from atlas.modules.connectors.application.target_configuration import (
+    ConnectorTargetConfigurationOption,
+)
 from atlas.modules.connectors.domain.target_configuration import (
     ConnectorTargetConfigurationBinding,
 )
@@ -87,4 +91,71 @@ class ConnectorTargetConfigurationResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     data: ConnectorTargetConfigurationData
+    meta: ResponseMeta
+
+
+class ConnectorTargetConfigurationInventoryResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: tuple[ConnectorTargetConfigurationData, ...]
+    meta: ResponseMeta
+
+
+class ConnectorTargetConfigurationOptionData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_instance_record_id: str
+    target_profile_id: str
+    target_profile_digest: str
+    site_id: str
+    target_type: str
+    target_product: str
+    target_version: str
+    target_profile_expires_at: datetime
+    configuration_policy_id: str
+    configuration_policy_digest: str
+    configuration_policy_version: str
+    configuration_policy_expires_at: datetime
+    required_assurance_level: str
+    resulting_instance_state: Literal["disabled_target_configured"]
+    resulting_target_configured: Literal[True]
+    credentials_resolved: Literal[False]
+    connector_enabled: Literal[False]
+    runtime_trust_granted: Literal[False]
+    execution_authorized: Literal[False]
+    infrastructure_mutation_performed: Literal[False]
+
+    @classmethod
+    def from_application(
+        cls, option: ConnectorTargetConfigurationOption
+    ) -> ConnectorTargetConfigurationOptionData:
+        return cls(
+            **{
+                field: getattr(option, field)
+                for field in cls.model_fields
+                if field
+                not in {
+                    "required_assurance_level",
+                    "resulting_target_configured",
+                    "credentials_resolved",
+                    "connector_enabled",
+                    "runtime_trust_granted",
+                    "execution_authorized",
+                    "infrastructure_mutation_performed",
+                }
+            },
+            required_assurance_level=option.required_assurance_level.value,
+            resulting_target_configured=True,
+            credentials_resolved=False,
+            connector_enabled=False,
+            runtime_trust_granted=False,
+            execution_authorized=False,
+            infrastructure_mutation_performed=False,
+        )
+
+
+class ConnectorTargetConfigurationOptionsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: tuple[ConnectorTargetConfigurationOptionData, ...]
     meta: ResponseMeta

@@ -34,11 +34,19 @@ class ConnectorTargetInstanceSource(Protocol):
 class ConnectorTargetProfileSource(Protocol):
     async def get_by_id(self, *, profile_id: str) -> ConnectorTargetProfileSnapshot | None: ...
 
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorTargetProfileSnapshot, ...]: ...
+
 
 class ConnectorTargetConfigurationPolicySource(Protocol):
     async def get_by_id(
         self, *, policy_id: str
     ) -> ConnectorTargetConfigurationPolicySnapshot | None: ...
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorTargetConfigurationPolicySnapshot, ...]: ...
 
 
 class ConnectorTargetConfigurationRepository(Protocol):
@@ -50,6 +58,10 @@ class ConnectorTargetConfigurationRepository(Protocol):
     async def get_by_instance(
         self, *, source_instance_record_id: str
     ) -> ConnectorTargetConfigurationBinding | None: ...
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorTargetConfigurationBinding, ...]: ...
 
     async def get_by_create_key(
         self, *, bound_by: str, idempotency_key: str

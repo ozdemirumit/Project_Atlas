@@ -183,6 +183,41 @@ async def test_target_binding_default_policy_accepts_development_password_human(
 
 
 @pytest.mark.asyncio
+async def test_target_options_and_inventory_are_scope_bound_and_reloadable() -> None:
+    service, _, _, _, instance, profile, policy = await target_configuration_fixture()
+    actor = target_binder()
+
+    options = await service.list_options(
+        actor=actor,
+        source_instance_record_id=instance.record_id,
+        correlation_id="cor_target_options",
+    )
+
+    assert len(options) == 1
+    option = options[0]
+    assert option.target_profile_id == profile.profile_id
+    assert option.target_profile_digest == profile.canonical_digest
+    assert option.configuration_policy_id == policy.policy_id
+    assert option.configuration_policy_digest == policy.canonical_digest
+    assert option.resulting_instance_state == "disabled_target_configured"
+
+    binding = await bind_target(service, instance, profile, policy, actor=actor)
+    inventory = await service.list_bindings(
+        actor=actor,
+        source_instance_record_id=instance.record_id,
+        correlation_id="cor_target_inventory",
+    )
+    exhausted = await service.list_options(
+        actor=actor,
+        source_instance_record_id=instance.record_id,
+        correlation_id="cor_target_options_after_binding",
+    )
+
+    assert inventory == (binding,)
+    assert exhausted == ()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "required_assurance_level",
     (AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED),
@@ -327,6 +362,10 @@ def test_target_binding_api_rejects_raw_endpoint_and_minimizes_response(tmp_path
     ) as client:
         login_response = login(client)
         endpoint = "/api/v1/connectors/target-configuration-bindings"
+        options = client.get(
+            f"{endpoint}/options",
+            params={"source_instance_record_id": instance.record_id},
+        )
         denied = client.post(endpoint, json=payload, headers={"Idempotency-Key": "target-api-001"})
         forbidden = client.post(
             endpoint,
@@ -347,14 +386,27 @@ def test_target_binding_api_rejects_raw_endpoint_and_minimizes_response(tmp_path
         assert created.status_code == 201, created.text
         binding_id = created.json()["data"]["binding_id"]
         read = client.get(f"{endpoint}/{binding_id}")
+        inventory = client.get(
+            endpoint,
+            params={"source_instance_record_id": instance.record_id},
+        )
 
     assert denied.status_code == 403 and forbidden.status_code == 422
-    assert read.status_code == 200
-    assert created.headers["Cache-Control"] == read.headers["Cache-Control"] == "no-store"
+    assert options.status_code == read.status_code == inventory.status_code == 200
+    assert len(options.json()["data"]) == len(inventory.json()["data"]) == 1
+    assert options.json()["data"][0]["target_profile_id"] == profile.profile_id
+    assert inventory.json()["data"][0]["binding_id"] == binding_id
+    assert (
+        created.headers["Cache-Control"]
+        == read.headers["Cache-Control"]
+        == inventory.headers["Cache-Control"]
+        == options.headers["Cache-Control"]
+        == "no-store"
+    )
     data = created.json()["data"]
     assert data["target_configured"] is True and data["connector_enabled"] is False
     assert data["instance_state"] == "disabled_target_configured"
-    rendered = created.text.lower()
+    rendered = (created.text + options.text + inventory.text).lower()
     for hidden in (
         "endpoint_origin",
         "storage-api.atlas.internal",

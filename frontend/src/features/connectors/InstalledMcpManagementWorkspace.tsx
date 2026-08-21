@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Download,
   FileCheck2,
+  Link2,
   LogIn,
   PackagePlus,
   RefreshCw,
@@ -65,6 +66,11 @@ import {
   getConnectorPackageInstallations,
   type ConnectorPackageInstallationReceipt,
 } from "../../api/packageInstallations";
+import {
+  getConnectorTargetConfigurations,
+  type ConnectorTargetConfigurationBinding,
+} from "../../api/targetConfigurations";
+import { TargetConfigurationPanel } from "./TargetConfigurationPanel";
 
 type LifecycleFilter = "active" | "retired" | "all";
 
@@ -247,6 +253,61 @@ function RetireMcpDialog({
           <button type="submit" className="installed-mcp-retire" disabled={!valid || pending}>{pending ? <RefreshCw className="spin" size={16} /> : <Archive size={16} />}Confirm retirement</button>
         </footer>
       </form>
+    </div>
+  );
+}
+
+function TargetConfigurationDialog({
+  binding,
+  instance,
+  onBindingCreated,
+  onCancel,
+  onRequestEnterpriseLogin,
+}: {
+  binding?: ConnectorTargetConfigurationBinding;
+  instance: ConnectorInstanceRecord;
+  onBindingCreated: (binding: ConnectorTargetConfigurationBinding) => void;
+  onCancel: () => void;
+  onRequestEnterpriseLogin?: () => void;
+}) {
+  return (
+    <div className="installed-mcp-dialog-backdrop" role="presentation">
+      <section
+        className="installed-mcp-dialog target-configuration-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="target-mcp-title"
+      >
+        <header>
+          <div>
+            <p className="eyebrow">GOVERNED TARGET METADATA</p>
+            <h3 id="target-mcp-title">Manage target for {instance.display_name}</h3>
+          </div>
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Close target configuration"
+            onClick={onCancel}
+          >
+            <X size={17} />
+          </button>
+        </header>
+        <p className="muted-copy">
+          This boundary binds only signed target metadata. It does not expose endpoints, assign
+          credentials, test connectivity, enable the connector, or contact infrastructure.
+        </p>
+        <TargetConfigurationPanel
+          existingBinding={binding}
+          instance={instance}
+          onBindingCreated={onBindingCreated}
+          onRequestEnterpriseLogin={onRequestEnterpriseLogin}
+        />
+        <footer>
+          <button type="button" className="secondary-button" onClick={onCancel}>
+            Close
+          </button>
+        </footer>
+      </section>
     </div>
   );
 }
@@ -824,6 +885,7 @@ export default function InstalledMcpManagementWorkspace({
   const [adding, setAdding] = useState(false);
   const [retiring, setRetiring] = useState<ConnectorInstanceRecord | null>(null);
   const [reviewing, setReviewing] = useState<ConnectorInstanceRecord | null>(null);
+  const [targeting, setTargeting] = useState<ConnectorInstanceRecord | null>(null);
   const packageQuery = useQuery({
     queryKey: ["connector-package-installations", subjectId],
     queryFn: getConnectorPackageInstallations,
@@ -837,6 +899,11 @@ export default function InstalledMcpManagementWorkspace({
   const instanceQuery = useQuery({
     queryKey: ["connector-instances", subjectId, lifecycle, search],
     queryFn: () => getConnectorInstances({ lifecycle, query: search }),
+    enabled: Boolean(subjectId),
+  });
+  const bindingQuery = useQuery({
+    queryKey: ["connector-target-bindings", subjectId],
+    queryFn: () => getConnectorTargetConfigurations(),
     enabled: Boolean(subjectId),
   });
   const signingTrustQuery = useQuery({
@@ -887,6 +954,10 @@ export default function InstalledMcpManagementWorkspace({
     },
   });
   const instances = instanceQuery.data ?? [];
+  const targetBindings = bindingQuery.data ?? [];
+  const bindingByInstance = new Map(
+    targetBindings.map((binding) => [binding.source_instance_record_id, binding]),
+  );
   const packages = packageQuery.data ?? [];
   const policies = policyQuery.data ?? [];
   const activeCount = instances.filter(
@@ -894,6 +965,7 @@ export default function InstalledMcpManagementWorkspace({
   ).length;
   const lifecycleQueryErrors = [
     instanceQuery.error,
+    bindingQuery.error,
     packageQuery.error,
     policyQuery.error,
   ].filter((error) => error !== null);
@@ -920,6 +992,7 @@ export default function InstalledMcpManagementWorkspace({
     void packageQuery.refetch();
     void policyQuery.refetch();
     void instanceQuery.refetch();
+    void bindingQuery.refetch();
     void signingTrustQuery.refetch();
     void signingConformanceQuery.refetch();
     void signingOnboardingQuery.refetch();
@@ -1235,29 +1308,82 @@ export default function InstalledMcpManagementWorkspace({
           <table className="installed-mcp-table">
             <thead><tr><th>MCP</th><th>Package</th><th>State</th><th>Owner</th><th>Lifecycle event</th><th>Actions</th></tr></thead>
             <tbody>
-              {instances.map((instance) => (
-                <tr key={instance.record_id}>
-                  <td><strong>{instance.display_name}</strong><code>{instance.instance_key}</code></td>
-                  <td><strong>{instance.connector_id}</strong><span>{instance.release_version}</span></td>
-                  <td><span className={`state-badge ${instance.instance_state === "retired" ? "neutral" : "pending"}`}>{instance.instance_state === "retired" ? "Retired" : "Disabled"}</span></td>
-                  <td>{instance.owner_id}</td>
-                  <td>
-                    <span className="installed-mcp-event-label">
-                      {instance.instance_state === "retired" ? "Retired" : "Created"}
-                    </span>
-                    {new Date(instance.retired_at ?? instance.created_at).toLocaleString()}
-                  </td>
-                  <td>{instance.instance_state === "disabled_unconfigured" && <div className="installed-mcp-row-actions"><button className="secondary-button installed-mcp-row-action" type="button" title="Review governed update evidence" aria-label={`Review update for ${instance.display_name}`} onClick={() => setReviewing(instance)}><ArrowUpCircle size={15} /><span>Review update</span></button><button className="secondary-button installed-mcp-row-action danger" type="button" title="Remove from active management and preserve history" aria-label={`Remove ${instance.display_name}`} onClick={() => { retireMutation.reset(); setRetiring(instance); }}><Archive size={15} /><span>Remove</span></button></div>}</td>
-                </tr>
-              ))}
+              {instances.map((instance) => {
+                const binding = bindingByInstance.get(instance.record_id);
+                const configured = Boolean(binding);
+                return (
+                  <tr key={instance.record_id}>
+                    <td><strong>{instance.display_name}</strong><code>{instance.instance_key}</code></td>
+                    <td><strong>{instance.connector_id}</strong><span>{instance.release_version}</span></td>
+                    <td>
+                      <span className={`state-badge ${instance.instance_state === "retired" ? "neutral" : "pending"}`}>
+                        {instance.instance_state === "retired"
+                          ? "Retired"
+                          : configured
+                            ? "Disabled / target configured"
+                            : "Disabled / unconfigured"}
+                      </span>
+                    </td>
+                    <td>{instance.owner_id}</td>
+                    <td>
+                      <span className="installed-mcp-event-label">
+                        {instance.instance_state === "retired"
+                          ? "Retired"
+                          : binding
+                            ? "Target bound"
+                            : "Created"}
+                      </span>
+                      {new Date(binding?.bound_at ?? instance.retired_at ?? instance.created_at).toLocaleString()}
+                    </td>
+                    <td>
+                      {instance.instance_state === "disabled_unconfigured" && bindingQuery.isSuccess && (
+                        <div className="installed-mcp-row-actions">
+                          <button
+                            className="secondary-button installed-mcp-row-action"
+                            type="button"
+                            title={configured ? "View governed target metadata" : "Bind governed target metadata"}
+                            aria-label={`${configured ? "View" : "Manage"} target for ${instance.display_name}`}
+                            onClick={() => setTargeting(instance)}
+                          >
+                            <Link2 size={15} /><span>{configured ? "View target" : "Manage target"}</span>
+                          </button>
+                          <button className="secondary-button installed-mcp-row-action" type="button" title="Review governed update evidence" aria-label={`Review update for ${instance.display_name}`} onClick={() => setReviewing(instance)}><ArrowUpCircle size={15} /><span>Review update</span></button>
+                          {!configured && (
+                            <button className="secondary-button installed-mcp-row-action danger" type="button" title="Remove from active management and preserve history" aria-label={`Remove ${instance.display_name}`} onClick={() => { retireMutation.reset(); setRetiring(instance); }}><Archive size={15} /><span>Remove</span></button>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       ) : null}
-      <div className="installed-mcp-footnote"><span>{activeCount} active in this result</span><span>Remove preserves history. Updates remain review-only.</span></div>
+      <div className="installed-mcp-footnote"><span>{activeCount} active in this result</span><span>Target bindings remain disabled metadata. Remove preserves history. Updates remain review-only.</span></div>
       {adding && <AddMcpDialog packages={packages} policies={policies} pending={createMutation.isPending} onCancel={() => setAdding(false)} onOpenBuilder={openBuilder} onSubmit={(input) => createMutation.mutate(input)} />}
       {retiring && <RetireMcpDialog instance={retiring} pending={retireMutation.isPending} onCancel={() => setRetiring(null)} onSubmit={(reason) => retireMutation.mutate({ instance: retiring, reason })} />}
       {reviewing && <UpgradeReadinessDialog instance={reviewing} subjectId={subjectId} onCancel={() => setReviewing(null)} />}
+      {targeting && (
+        <TargetConfigurationDialog
+          instance={targeting}
+          binding={bindingByInstance.get(targeting.record_id)}
+          onBindingCreated={(binding) => {
+            queryClient.setQueryData<ConnectorTargetConfigurationBinding[]>(
+              ["connector-target-bindings", subjectId],
+              (current = []) => [
+                ...current.filter(
+                  (item) => item.source_instance_record_id !== binding.source_instance_record_id,
+                ),
+                binding,
+              ],
+            );
+          }}
+          onCancel={() => setTargeting(null)}
+          onRequestEnterpriseLogin={onRequestEnterpriseLogin}
+        />
+      )}
     </section>
   );
 }
