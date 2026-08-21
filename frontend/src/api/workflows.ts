@@ -1833,6 +1833,63 @@ export type WorkflowProtectedRuntimeProcessCreationAuthorizationInventory = {
   durable: true;
 };
 
+export type WorkflowProtectedRuntimeProcessResumeAuthorizationAuthority = {
+  protected_runtime_process_resume_authority_granted: boolean;
+  protected_runtime_process_scheduling_authority_granted: false;
+  protected_runtime_process_creation_authority_granted: false;
+  protected_runtime_readiness_authority_granted: false;
+  protected_runtime_start_authority_granted: false;
+  protected_runtime_context_use_authority_granted: false;
+  runtime_use_authorized: false;
+  runtime_start_authorized: false;
+  runtime_resume_authorized: false;
+  connector_activity_authorized: false;
+  protected_runtime_context_injection_authority_granted: false;
+  protected_resident_context_access_authority_granted: false;
+  target_context_capsule_opening_authorized: false;
+  target_context_capsule_handoff_authorized: false;
+  endpoint_resolution_authorized: false;
+  route_selection_authorized: false;
+  route_binding_authorized: false;
+  credential_selection_authorized: false;
+  credential_assignment_binding_authorized: false;
+  credential_access_authorized: false;
+  credential_brokerage_authorized: false;
+  credential_resolution_authorized: false;
+  protected_artifact_access_authorized: false;
+  credential_delivery_authorized: false;
+  network_access_authorized: false;
+  readiness_probe_authorized: false;
+  publication_authorized: false;
+  delivery_authorized: false;
+  dispatch_authorized: false;
+  execution_authorized: false;
+  infrastructure_mutation_authorized: false;
+};
+
+export type WorkflowProtectedRuntimeProcessResumeAuthorization = {
+  authorization_lease_id: string;
+  process_scheduling_result_reference: string;
+  state: "authorized_unconsumed";
+  effective_state: "active" | "expired";
+  issued_at: string;
+  valid_until: string;
+  effective_until: string;
+  consumer_contract_id: "contract.workflow-protected-transport-target-context-capsule-consumer";
+  consumer_contract_version: "1.0";
+  purpose_id: "purpose.workflow-protected-runtime-process-resume-request";
+  policy_id: "policy.workflow-protected-runtime-process-resume-authorization";
+  policy_version: "1.0";
+  authority: WorkflowProtectedRuntimeProcessResumeAuthorizationAuthority;
+  integrity_reference: string;
+};
+
+export type WorkflowProtectedRuntimeProcessResumeAuthorizationInventory = {
+  authorizations: WorkflowProtectedRuntimeProcessResumeAuthorization[];
+  server_time: string;
+  durable: true;
+};
+
 export type WorkflowProtectedRuntimeProcessCreation = {
   process_creation_id: string;
   attempt_state: "process_creation_attempt_started";
@@ -3602,6 +3659,60 @@ const protectedRuntimeProcessCreationAuthorizationFields = [
   "integrity_reference",
 ] as const;
 const protectedRuntimeProcessCreationAuthorizationInventoryFields = [
+  "authorizations",
+  "server_time",
+  "durable",
+] as const;
+const protectedRuntimeProcessResumeAuthorizationAuthorityFields = [
+  "protected_runtime_process_resume_authority_granted",
+  "protected_runtime_process_scheduling_authority_granted",
+  "protected_runtime_process_creation_authority_granted",
+  "protected_runtime_readiness_authority_granted",
+  "protected_runtime_start_authority_granted",
+  "protected_runtime_context_use_authority_granted",
+  "runtime_use_authorized",
+  "runtime_start_authorized",
+  "runtime_resume_authorized",
+  "connector_activity_authorized",
+  "protected_runtime_context_injection_authority_granted",
+  "protected_resident_context_access_authority_granted",
+  "target_context_capsule_opening_authorized",
+  "target_context_capsule_handoff_authorized",
+  "endpoint_resolution_authorized",
+  "route_selection_authorized",
+  "route_binding_authorized",
+  "credential_selection_authorized",
+  "credential_assignment_binding_authorized",
+  "credential_access_authorized",
+  "credential_brokerage_authorized",
+  "credential_resolution_authorized",
+  "protected_artifact_access_authorized",
+  "credential_delivery_authorized",
+  "network_access_authorized",
+  "readiness_probe_authorized",
+  "publication_authorized",
+  "delivery_authorized",
+  "dispatch_authorized",
+  "execution_authorized",
+  "infrastructure_mutation_authorized",
+] as const;
+const protectedRuntimeProcessResumeAuthorizationFields = [
+  "authorization_lease_id",
+  "process_scheduling_result_reference",
+  "state",
+  "effective_state",
+  "issued_at",
+  "valid_until",
+  "effective_until",
+  "consumer_contract_id",
+  "consumer_contract_version",
+  "purpose_id",
+  "policy_id",
+  "policy_version",
+  "authority",
+  "integrity_reference",
+] as const;
+const protectedRuntimeProcessResumeAuthorizationInventoryFields = [
   "authorizations",
   "server_time",
   "durable",
@@ -6419,6 +6530,73 @@ function isProtectedRuntimeProcessCreationAuthorization(
   );
 }
 
+function hasProtectedRuntimeProcessResumeRequestOnlyAuthority(
+  value: unknown,
+  processResumeAuthorityGranted: boolean,
+): value is WorkflowProtectedRuntimeProcessResumeAuthorizationAuthority {
+  return (
+    isObject(value) &&
+    hasExactKeys(value, protectedRuntimeProcessResumeAuthorizationAuthorityFields) &&
+    protectedRuntimeProcessResumeAuthorizationAuthorityFields.every((field) =>
+      field === "protected_runtime_process_resume_authority_granted"
+        ? value[field] === processResumeAuthorityGranted
+        : value[field] === false,
+    )
+  );
+}
+
+function isProtectedRuntimeProcessResumeAuthorization(
+  value: unknown,
+  serverTime: string,
+): value is WorkflowProtectedRuntimeProcessResumeAuthorization {
+  if (
+    !isObject(value) ||
+    !hasExactKeys(value, protectedRuntimeProcessResumeAuthorizationFields) ||
+    containsCredentialMaterial(value) ||
+    !isTimezoneAwareTimestamp(value.issued_at) ||
+    !isTimezoneAwareTimestamp(value.valid_until) ||
+    !isTimezoneAwareTimestamp(value.effective_until)
+  ) {
+    return false;
+  }
+  const issuedAt = Date.parse(value.issued_at);
+  const validUntil = Date.parse(value.valid_until);
+  const effectiveUntil = Date.parse(value.effective_until);
+  const evaluatedAt = Date.parse(serverTime);
+  const expectedEffectiveState = evaluatedAt >= effectiveUntil ? "expired" : "active";
+  return (
+    isStableIdentifier(value.authorization_lease_id) &&
+    value.authorization_lease_id.startsWith(
+      "workflow-protected-runtime-process-resume-authorization-lease.",
+    ) &&
+    isStableIdentifier(value.process_scheduling_result_reference) &&
+    value.process_scheduling_result_reference.startsWith(
+      "integrity.workflow-protected-runtime-process-scheduling-result.",
+    ) &&
+    value.state === "authorized_unconsumed" &&
+    value.effective_state === expectedEffectiveState &&
+    issuedAt <= evaluatedAt &&
+    issuedAt < validUntil &&
+    validUntil - issuedAt <= 1_000 &&
+    effectiveUntil === validUntil &&
+    value.consumer_contract_id ===
+      "contract.workflow-protected-transport-target-context-capsule-consumer" &&
+    value.consumer_contract_version === "1.0" &&
+    value.purpose_id === "purpose.workflow-protected-runtime-process-resume-request" &&
+    value.policy_id === "policy.workflow-protected-runtime-process-resume-authorization" &&
+    value.policy_version === "1.0" &&
+    hasProtectedRuntimeProcessResumeRequestOnlyAuthority(
+      value.authority,
+      expectedEffectiveState === "active",
+    ) &&
+    value.authority.runtime_resume_authorized === false &&
+    isStableIdentifier(value.integrity_reference) &&
+    value.integrity_reference.startsWith(
+      "integrity.workflow-protected-runtime-process-resume-authorization.",
+    )
+  );
+}
+
 function isProtectedRuntimeProcessCreation(
   value: unknown,
   serverTime: string,
@@ -8757,6 +8935,57 @@ export async function listWorkflowProtectedRuntimeProcessCreationAuthorizations(
     authorizationIds.add(authorization.authorization_lease_id);
   }
   return data as WorkflowProtectedRuntimeProcessCreationAuthorizationInventory;
+}
+
+export async function listWorkflowProtectedRuntimeProcessResumeAuthorizations(): Promise<WorkflowProtectedRuntimeProcessResumeAuthorizationInventory> {
+  const response = await apiFetch(
+    "/api/v1/workflows/protected-runtime-process-resume-authorizations",
+    { headers: { Accept: "application/json" } },
+  );
+  const data = await readData(
+    response,
+    "Workflow protected runtime process-resume authorization retrieval failed",
+  );
+  if (
+    !isObject(data) ||
+    !hasExactKeys(data, protectedRuntimeProcessResumeAuthorizationInventoryFields) ||
+    containsCredentialMaterial(data) ||
+    !Array.isArray(data.authorizations) ||
+    data.authorizations.length > 256 ||
+    !isTimezoneAwareTimestamp(data.server_time) ||
+    data.durable !== true
+  ) {
+    throw new ApiRequestError(
+      "Workflow protected runtime process-resume authorization response was unsafe",
+      response.status,
+    );
+  }
+  const serverTime = data.server_time;
+  if (
+    !data.authorizations.every((authorization) =>
+      isProtectedRuntimeProcessResumeAuthorization(authorization, serverTime),
+    )
+  ) {
+    throw new ApiRequestError(
+      "Workflow protected runtime process-resume authorization response was unsafe",
+      response.status,
+    );
+  }
+  const authorizationIds = new Set<string>();
+  for (const authorization of data.authorizations) {
+    if (
+      !isObject(authorization) ||
+      typeof authorization.authorization_lease_id !== "string" ||
+      authorizationIds.has(authorization.authorization_lease_id)
+    ) {
+      throw new ApiRequestError(
+        "Workflow protected runtime process-resume authorization response was unsafe",
+        response.status,
+      );
+    }
+    authorizationIds.add(authorization.authorization_lease_id);
+  }
+  return data as WorkflowProtectedRuntimeProcessResumeAuthorizationInventory;
 }
 
 export async function listWorkflowProtectedRuntimeProcessCreations(): Promise<WorkflowProtectedRuntimeProcessCreationInventory> {

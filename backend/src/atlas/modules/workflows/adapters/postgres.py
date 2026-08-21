@@ -100,6 +100,8 @@ from atlas.core.persistence.models import (
     WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseModel,
     WorkflowProtectedRuntimeProcessCreationConsumptionClaimModel,
     WorkflowProtectedRuntimeProcessCreationResultModel,
+    WorkflowProtectedRuntimeProcessResumeAuthorizationClaimModel,
+    WorkflowProtectedRuntimeProcessResumeAuthorizationLeaseModel,
     WorkflowProtectedRuntimeProcessSchedulingAttemptModel,
     WorkflowProtectedRuntimeProcessSchedulingAuthorizationClaimModel,
     WorkflowProtectedRuntimeProcessSchedulingAuthorizationLeaseModel,
@@ -383,6 +385,21 @@ from atlas.modules.workflows.application.protected_runtime_process_creation_cons
     WorkflowProtectedRuntimeProcessCreationResultWriteStatus,
     build_workflow_protected_runtime_process_creation_instruction,
     validate_workflow_protected_runtime_process_creation_claim_request,
+)
+from atlas.modules.workflows.application.protected_runtime_process_resume_authorization_ports import (  # noqa: E501
+    WorkflowProtectedRuntimeProcessResumeAuthorizationLeaseRequest,
+    WorkflowProtectedRuntimeProcessResumeAuthorizationLeaseResult,
+    WorkflowProtectedRuntimeProcessResumeAuthorizationLeaseStatus,
+    WorkflowProtectedRuntimeProcessResumeAuthorizationPreflightRequest,
+    WorkflowProtectedRuntimeProcessResumeAuthorizationPreflightResult,
+    WorkflowProtectedRuntimeProcessResumeAuthorizationPreflightStatus,
+    WorkflowProtectedRuntimeProcessResumeAuthorizationPresentation,
+    WorkflowProtectedRuntimeProcessResumeAuthorizationPresentationState,
+    WorkflowProtectedRuntimeProcessResumeAuthorizationSource,
+    WorkflowProtectedRuntimeProcessResumeAuthorizationSourceRequest,
+    WorkflowProtectedRuntimeProcessResumeStateAttestation,
+    validate_workflow_protected_runtime_process_resume_authorization_request,
+    workflow_protected_runtime_process_resume_receipt_matches_source,
 )
 from atlas.modules.workflows.application.protected_runtime_process_scheduling_authorization_ports import (  # noqa: E501
     WorkflowProtectedRuntimeProcessSchedulingAuthorizationLeaseRequest,
@@ -783,6 +800,13 @@ from atlas.modules.workflows.domain.protected_runtime_process_creation_consumpti
     WorkflowProtectedRuntimeProcessCreationResult,
     WorkflowProtectedRuntimeProcessCreationSignedInstructionEnvelope,
     code_owned_workflow_protected_runtime_process_creation_consumption_policy,
+)
+from atlas.modules.workflows.domain.protected_runtime_process_resume_authorization_domain import (
+    WorkflowProtectedRuntimeProcessResumeAuthorizationAuthority,
+    WorkflowProtectedRuntimeProcessResumeAuthorizationClaim,
+    WorkflowProtectedRuntimeProcessResumeAuthorizationLease,
+    WorkflowProtectedRuntimeProcessResumeAuthorizationLeaseState,
+    code_owned_workflow_protected_runtime_process_resume_authorization_policy,
 )
 from atlas.modules.workflows.domain.protected_runtime_process_scheduling_authorization_domain import (  # noqa: E501
     WorkflowProtectedRuntimeProcessSchedulingAuthorizationAuthority,
@@ -1256,6 +1280,24 @@ class _ProtectedRuntimeProcessSchedulingResultLockedSources:
     claim: WorkflowProtectedRuntimeProcessSchedulingConsumptionClaimModel | None
     attempt: WorkflowProtectedRuntimeProcessSchedulingAttemptModel | None
     result: WorkflowProtectedRuntimeProcessSchedulingResultModel | None
+    observed_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class _ProtectedRuntimeProcessResumeAuthorizationLockedSources:
+    scheduling_result: WorkflowProtectedRuntimeProcessSchedulingResultModel | None
+    scheduling_attempt: WorkflowProtectedRuntimeProcessSchedulingAttemptModel | None
+    scheduling_claim: WorkflowProtectedRuntimeProcessSchedulingConsumptionClaimModel | None
+    scheduling_authorization_lease: (
+        WorkflowProtectedRuntimeProcessSchedulingAuthorizationLeaseModel | None
+    )
+    scheduling_authorization_claim: (
+        WorkflowProtectedRuntimeProcessSchedulingAuthorizationClaimModel | None
+    )
+    scheduling_source_current: bool
+    existing_claims: tuple[WorkflowProtectedRuntimeProcessResumeAuthorizationClaimModel, ...]
+    existing_leases: tuple[WorkflowProtectedRuntimeProcessResumeAuthorizationLeaseModel, ...]
+    first_observed_at: datetime
     observed_at: datetime
 
 
@@ -42261,14 +42303,14 @@ class PostgreSQLWorkflowPlanRepository:
                 return result_type(status)
             assert locked.authorization_lease is not None
             try:
-                session.add_all(
-                    (
-                        self._protected_runtime_process_scheduling_consumption_claim_model(
-                            request, authorization_lease_row=locked.authorization_lease
-                        ),
-                        self._protected_runtime_process_scheduling_consumption_attempt_model(
-                            request, authorization_lease_row=locked.authorization_lease
-                        ),
+                claim_model = self._protected_runtime_process_scheduling_consumption_claim_model(
+                    request, authorization_lease_row=locked.authorization_lease
+                )
+                session.add(claim_model)
+                await session.flush()
+                session.add(
+                    self._protected_runtime_process_scheduling_consumption_attempt_model(
+                        request, authorization_lease_row=locked.authorization_lease
                     )
                 )
                 await session.flush()
@@ -43139,6 +43181,929 @@ class PostgreSQLWorkflowPlanRepository:
     @staticmethod
     def _protected_runtime_process_scheduling_consumption_contract_violation() -> NoReturn:
         raise ValueError("protected runtime process-scheduling consumption contract violated")
+
+    async def preflight_protected_runtime_process_resume_authorization(
+        self,
+        request: WorkflowProtectedRuntimeProcessResumeAuthorizationPreflightRequest,
+    ) -> WorkflowProtectedRuntimeProcessResumeAuthorizationPreflightResult:
+        statuses = WorkflowProtectedRuntimeProcessResumeAuthorizationPreflightStatus
+        result_type = WorkflowProtectedRuntimeProcessResumeAuthorizationPreflightResult
+        async with self._sessions() as session:
+            locked = await self._lock_protected_runtime_process_resume_authorization_rows(
+                session,
+                process_scheduling_result_id=request.process_scheduling_result_id,
+                scope=request.scope,
+                consumer_subject_id=request.consumer_subject_id,
+                consumer_audience=request.consumer_audience,
+                idempotency_key=request.idempotency_key,
+            )
+            matching = self._protected_runtime_process_resume_idempotency_claims(
+                locked,
+                scope=request.scope,
+                consumer_subject_id=request.consumer_subject_id,
+                consumer_audience=request.consumer_audience,
+                idempotency_key=request.idempotency_key,
+            )
+            if not matching:
+                await session.rollback()
+                return result_type(
+                    statuses.ALREADY_AUTHORIZED
+                    if locked.existing_claims or locked.existing_leases
+                    else statuses.NONE,
+                    None,
+                    locked.observed_at,
+                )
+            if len(matching) != 1:
+                await session.rollback()
+                return result_type(statuses.EVIDENCE_CONFLICT, None, locked.observed_at)
+            claim_row = matching[0]
+            lease_row = next(
+                (
+                    row
+                    for row in locked.existing_leases
+                    if row.authorization_lease_id == claim_row.authorization_lease_id
+                ),
+                None,
+            )
+            exact = bool(
+                lease_row is not None
+                and claim_row.process_scheduling_result_id == request.process_scheduling_result_id
+                and claim_row.policy_id == request.policy_id
+                and claim_row.policy_version == request.policy_version
+                and claim_row.policy_digest == request.policy_digest
+                and claim_row.idempotency_digest == request.idempotency_digest
+                and claim_row.request_fingerprint == request.request_fingerprint
+            )
+            lease: WorkflowProtectedRuntimeProcessResumeAuthorizationLease | None = None
+            if exact and lease_row is not None:
+                try:
+                    lease = self._protected_runtime_process_resume_lease_from_row(lease_row)
+                    attestation = self._protected_runtime_process_resume_attestation_from_row(
+                        lease_row
+                    )
+                    source = self._protected_runtime_process_resume_source_from_locked(locked)
+                    exact = bool(
+                        source is not None
+                        and request.offline_signature_verifier.verify_runtime_process_resume_state_attestation(  # noqa: E501
+                            attestation
+                        )
+                        and request.offline_process_scheduling_receipt_signature_verifier.verify_receipt(  # noqa: E501
+                            source.process_scheduling_receipt
+                        )
+                        and workflow_protected_runtime_process_resume_receipt_matches_source(source)
+                        and lease.claim_id == claim_row.claim_id
+                        and lease.claim_digest == claim_row.canonical_digest
+                    )
+                except Exception:
+                    exact = False
+                    lease = None
+            changed = bool(
+                claim_row.idempotency_digest != request.idempotency_digest
+                or claim_row.request_fingerprint != request.request_fingerprint
+                or claim_row.process_scheduling_result_id != request.process_scheduling_result_id
+            )
+            await session.rollback()
+            if exact and lease is not None:
+                return result_type(statuses.REPLAY, lease, locked.observed_at)
+            return result_type(
+                statuses.IDEMPOTENCY_CONFLICT if changed else statuses.EVIDENCE_CONFLICT,
+                None,
+                locked.observed_at,
+            )
+
+    async def get_protected_runtime_process_resume_authorization_source(
+        self,
+        request: WorkflowProtectedRuntimeProcessResumeAuthorizationSourceRequest,
+    ) -> WorkflowProtectedRuntimeProcessResumeAuthorizationSource | None:
+        async with self._sessions() as session:
+            locked = await self._lock_protected_runtime_process_resume_authorization_rows(
+                session,
+                process_scheduling_result_id=request.process_scheduling_result_id,
+                scope=request.scope,
+                consumer_subject_id=request.consumer_subject_id,
+                consumer_audience=request.consumer_audience,
+                idempotency_key=None,
+                for_update=False,
+            )
+            source = self._protected_runtime_process_resume_source_from_locked(locked)
+            await session.rollback()
+        if (
+            source is None
+            or source.result.consumer_contract_id != request.consumer_contract_id
+            or source.result.consumer_contract_version != request.consumer_contract_version
+        ):
+            return None
+        return source
+
+    async def authorize_protected_runtime_process_resume(
+        self,
+        request: WorkflowProtectedRuntimeProcessResumeAuthorizationLeaseRequest,
+    ) -> WorkflowProtectedRuntimeProcessResumeAuthorizationLeaseResult:
+        statuses = WorkflowProtectedRuntimeProcessResumeAuthorizationLeaseStatus
+        result_type = WorkflowProtectedRuntimeProcessResumeAuthorizationLeaseResult
+        async with self._sessions() as session:
+            locked = await self._lock_protected_runtime_process_resume_authorization_rows(
+                session,
+                process_scheduling_result_id=request.source.result.result_id,
+                scope=request.scope,
+                consumer_subject_id=request.consumer_subject_id,
+                consumer_audience=request.consumer_audience,
+                idempotency_key=request.idempotency_key,
+            )
+            replay = self._protected_runtime_process_resume_replay(request, locked)
+            if replay is not None:
+                await session.rollback()
+                return replay
+            try:
+                working = self._protected_runtime_process_resume_retimed_request(
+                    request, observed_at=locked.observed_at
+                )
+                validate_workflow_protected_runtime_process_resume_authorization_request(working)
+            except Exception:
+                await session.rollback()
+                return result_type(statuses.EVIDENCE_CONFLICT, None, locked.observed_at)
+            source = self._protected_runtime_process_resume_source_from_locked(locked)
+            try:
+                commit_observed_at = cast(
+                    datetime, await session.scalar(select(func.clock_timestamp()))
+                )
+            except SQLAlchemyError:
+                with suppress(SQLAlchemyError):
+                    await session.rollback()
+                raise
+            if (
+                source is None
+                or source != working.source
+                or not locked.scheduling_source_current
+                or locked.existing_claims
+                or locked.existing_leases
+                or source.result.recorded_at > locked.first_observed_at
+                or working.process_state_attestation.observed_at > commit_observed_at
+                or commit_observed_at >= working.candidate.valid_until
+                or commit_observed_at
+                + timedelta(
+                    milliseconds=(working.expected_minimum_remaining_safety_margin_milliseconds)
+                )
+                > working.candidate.valid_until
+                or commit_observed_at
+                + timedelta(
+                    milliseconds=(working.expected_minimum_remaining_safety_margin_milliseconds)
+                )
+                > working.candidate.effective_until
+                or commit_observed_at
+                + timedelta(
+                    milliseconds=(working.expected_minimum_remaining_safety_margin_milliseconds)
+                )
+                > working.process_state_attestation.valid_until
+                or commit_observed_at
+                + timedelta(
+                    milliseconds=(working.expected_minimum_remaining_safety_margin_milliseconds)
+                )
+                > working.process_state_attestation.process_state_eligible_until
+            ):
+                await session.rollback()
+                return result_type(
+                    statuses.ALREADY_AUTHORIZED
+                    if locked.existing_claims or locked.existing_leases
+                    else statuses.EVIDENCE_CONFLICT,
+                    None,
+                    locked.observed_at,
+                )
+            audit_payload: dict[str, object] = {
+                "policy_digest": working.candidate.policy_digest,
+                "request_fingerprint": working.request_fingerprint,
+                "scope": working.scope.canonical_value(),
+                "process_scheduling_result_id": source.result.result_id,
+            }
+            if (
+                canonical_digest(audit_payload)
+                != working.candidate_claim.authorization_audit_digest
+            ):
+                await session.rollback()
+                return result_type(statuses.EVIDENCE_CONFLICT, None, locked.observed_at)
+            assert locked.scheduling_result is not None
+            assert locked.scheduling_attempt is not None
+            try:
+                session.add(
+                    self._protected_runtime_process_resume_lease_model(
+                        working.candidate,
+                        working.process_state_attestation,
+                        result_row=locked.scheduling_result,
+                        attempt_row=locked.scheduling_attempt,
+                        source_observed_at=locked.observed_at,
+                    )
+                )
+                await session.flush()
+                session.add(
+                    self._protected_runtime_process_resume_claim_model(
+                        working.candidate_claim,
+                        authorization_lease_id=working.candidate.authorization_lease_id,
+                        idempotency_key=working.idempotency_key,
+                        audit_payload=audit_payload,
+                        result_row=locked.scheduling_result,
+                        attempt_row=locked.scheduling_attempt,
+                        source_observed_at=locked.observed_at,
+                    )
+                )
+                await session.commit()
+                return result_type(statuses.AUTHORIZED, working.candidate, commit_observed_at)
+            except IntegrityError:
+                await session.rollback()
+            except SQLAlchemyError:
+                with suppress(SQLAlchemyError):
+                    await session.rollback()
+
+        async with self._sessions() as session:
+            locked = await self._lock_protected_runtime_process_resume_authorization_rows(
+                session,
+                process_scheduling_result_id=request.source.result.result_id,
+                scope=request.scope,
+                consumer_subject_id=request.consumer_subject_id,
+                consumer_audience=request.consumer_audience,
+                idempotency_key=request.idempotency_key,
+            )
+            replay = self._protected_runtime_process_resume_replay(request, locked)
+            await session.rollback()
+            if replay is not None:
+                return replay
+            return result_type(
+                statuses.ALREADY_AUTHORIZED
+                if locked.existing_claims or locked.existing_leases
+                else statuses.EVIDENCE_CONFLICT,
+                None,
+                locked.observed_at,
+            )
+
+    async def list_protected_runtime_process_resume_authorization_presentations(
+        self,
+        *,
+        scope: WorkflowScope,
+        evaluated_at: datetime,
+        authorization_lease_ids: tuple[str, ...] | None = None,
+        limit: int = 256,
+    ) -> tuple[WorkflowProtectedRuntimeProcessResumeAuthorizationPresentation, ...]:
+        if authorization_lease_ids == ():
+            return ()
+        model = WorkflowProtectedRuntimeProcessResumeAuthorizationLeaseModel
+        statement = select(model).where(
+            model.organization_id == scope.organization_id,
+            model.environment_id == scope.environment_id,
+            model.site_id == scope.site_id,
+        )
+        if authorization_lease_ids is not None:
+            statement = statement.where(model.authorization_lease_id.in_(authorization_lease_ids))
+        async with self._sessions() as session:
+            rows = tuple(
+                (
+                    await session.scalars(
+                        statement.order_by(
+                            model.issued_at.desc(), model.authorization_lease_id
+                        ).limit(max(1, min(limit, 256)))
+                    )
+                ).all()
+            )
+        presentations: list[WorkflowProtectedRuntimeProcessResumeAuthorizationPresentation] = []
+        states = WorkflowProtectedRuntimeProcessResumeAuthorizationPresentationState
+        for row in rows:
+            lease = self._protected_runtime_process_resume_lease_from_row(row)
+            active = lease.is_active(evaluated_at=evaluated_at, consumed=False)
+            presentations.append(
+                WorkflowProtectedRuntimeProcessResumeAuthorizationPresentation(
+                    lease=lease,
+                    consumed=False,
+                    evaluated_at=evaluated_at,
+                    effective_state=states.ACTIVE if active else states.EXPIRED,
+                    protected_runtime_process_resume_authority_granted=active,
+                )
+            )
+        return tuple(presentations)
+
+    async def _lock_protected_runtime_process_resume_authorization_rows(
+        self,
+        session: AsyncSession,
+        *,
+        process_scheduling_result_id: str,
+        scope: WorkflowScope,
+        consumer_subject_id: str,
+        consumer_audience: str,
+        idempotency_key: str | None,
+        for_update: bool = True,
+    ) -> _ProtectedRuntimeProcessResumeAuthorizationLockedSources:
+        claim_model = WorkflowProtectedRuntimeProcessResumeAuthorizationClaimModel
+        lease_model = WorkflowProtectedRuntimeProcessResumeAuthorizationLeaseModel
+
+        def locked(statement: Any) -> Any:
+            statement = statement.execution_options(populate_existing=True)
+            return statement.with_for_update() if for_update else statement
+
+        claim_scope = and_(
+            claim_model.organization_id == scope.organization_id,
+            claim_model.environment_id == scope.environment_id,
+            claim_model.site_id == scope.site_id,
+            claim_model.consumer_subject_id == consumer_subject_id,
+            claim_model.consumer_audience == consumer_audience,
+        )
+        claim_filters = [
+            and_(
+                claim_scope,
+                claim_model.process_scheduling_result_id == process_scheduling_result_id,
+            )
+        ]
+        if idempotency_key is not None:
+            claim_filters.append(and_(claim_scope, claim_model.idempotency_key == idempotency_key))
+        # Durable replay classification precedes source eligibility and attestation use.
+        existing_claims = tuple(
+            (
+                await session.scalars(
+                    locked(
+                        select(claim_model)
+                        .where(or_(*claim_filters))
+                        .order_by(claim_model.claim_id)
+                    )
+                )
+            ).all()
+        )
+        lease_ids = tuple(row.authorization_lease_id for row in existing_claims)
+        lease_scope = and_(
+            lease_model.organization_id == scope.organization_id,
+            lease_model.environment_id == scope.environment_id,
+            lease_model.site_id == scope.site_id,
+            lease_model.consumer_subject_id == consumer_subject_id,
+            lease_model.consumer_audience == consumer_audience,
+        )
+        lease_filter = and_(
+            lease_scope,
+            lease_model.process_scheduling_result_id == process_scheduling_result_id,
+        )
+        if lease_ids:
+            lease_filter = or_(
+                lease_filter,
+                and_(lease_scope, lease_model.authorization_lease_id.in_(lease_ids)),
+            )
+        existing_leases = tuple(
+            (
+                await session.scalars(
+                    locked(
+                        select(lease_model)
+                        .where(lease_filter)
+                        .order_by(lease_model.authorization_lease_id)
+                    )
+                )
+            ).all()
+        )
+        first_observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+
+        result = WorkflowProtectedRuntimeProcessSchedulingResultModel
+        attempt = WorkflowProtectedRuntimeProcessSchedulingAttemptModel
+        source_claim = WorkflowProtectedRuntimeProcessSchedulingConsumptionClaimModel
+        source_lease = WorkflowProtectedRuntimeProcessSchedulingAuthorizationLeaseModel
+        source_auth_claim = WorkflowProtectedRuntimeProcessSchedulingAuthorizationClaimModel
+        source_statement = (
+            select(result, attempt, source_claim, source_lease, source_auth_claim)
+            .select_from(result)
+            .join(
+                attempt,
+                and_(
+                    attempt.attempt_id == result.attempt_id,
+                    attempt.canonical_digest == result.attempt_digest,
+                    attempt.claim_id == result.claim_id,
+                    attempt.claim_digest == result.claim_digest,
+                    attempt.consumption_id == result.consumption_id,
+                    attempt.scheduling_authorization_lease_id
+                    == result.scheduling_authorization_lease_id,
+                    attempt.scheduling_authorization_lease_digest
+                    == result.scheduling_authorization_lease_digest,
+                ),
+            )
+            .join(
+                source_claim,
+                and_(
+                    source_claim.claim_id == result.claim_id,
+                    source_claim.canonical_digest == result.claim_digest,
+                    source_claim.consumption_id == result.consumption_id,
+                    source_claim.attempt_id == result.attempt_id,
+                    source_claim.scheduling_authorization_lease_id
+                    == result.scheduling_authorization_lease_id,
+                ),
+            )
+            .join(
+                source_lease,
+                and_(
+                    source_lease.authorization_lease_id == result.scheduling_authorization_lease_id,
+                    source_lease.canonical_digest == result.scheduling_authorization_lease_digest,
+                    source_lease.claim_id == source_claim.scheduling_authorization_claim_id,
+                    source_lease.claim_digest == source_claim.scheduling_authorization_claim_digest,
+                ),
+            )
+            .join(
+                source_auth_claim,
+                and_(
+                    source_auth_claim.claim_id == source_lease.claim_id,
+                    source_auth_claim.canonical_digest == source_lease.claim_digest,
+                    source_auth_claim.authorization_lease_id == source_lease.authorization_lease_id,
+                ),
+            )
+            .where(
+                result.result_id == process_scheduling_result_id,
+                result.organization_id == scope.organization_id,
+                result.environment_id == scope.environment_id,
+                result.site_id == scope.site_id,
+                result.consumer_subject_id == consumer_subject_id,
+                result.consumer_audience == consumer_audience,
+                result.state == "process_scheduled_suspended_in_protected_boundary",
+                result.failure_class.is_(None),
+                result.outcome_known.is_(True),
+                result.result_process_scheduled.is_(True),
+                result.result_process_suspended.is_(True),
+                result.result_process_runnable.is_(False),
+                result.result_process_resumed.is_(False),
+                result.result_process_dispatched.is_(False),
+                result.result_process_executed.is_(False),
+                result.receipt_digest.is_not(None),
+            )
+        )
+        source_row = (await session.execute(locked(source_statement))).one_or_none()
+        source_current = False
+        if source_row is None:
+            result_row = None
+            attempt_row = None
+            source_claim_row = None
+            source_lease_row = None
+            source_auth_claim_row = None
+        else:
+            (
+                result_row,
+                attempt_row,
+                source_claim_row,
+                source_lease_row,
+                source_auth_claim_row,
+            ) = source_row
+            scheduling_source = (
+                await self._lock_protected_runtime_process_scheduling_authorization_rows(
+                    session,
+                    process_creation_result_id=source_lease_row.process_creation_result_id,
+                    scope=scope,
+                    consumer_subject_id=consumer_subject_id,
+                    consumer_audience=consumer_audience,
+                    idempotency_key=None,
+                    for_update=for_update,
+                )
+            )
+            source_current = bool(
+                self._protected_runtime_process_scheduling_source_is_current(scheduling_source)
+                and source_lease_row.process_creation_result_id
+                == scheduling_source.process_creation_result.result_id
+                if scheduling_source.process_creation_result is not None
+                else False
+            )
+        observed_at = cast(datetime, await session.scalar(select(func.clock_timestamp())))
+        return _ProtectedRuntimeProcessResumeAuthorizationLockedSources(
+            scheduling_result=result_row,
+            scheduling_attempt=attempt_row,
+            scheduling_claim=source_claim_row,
+            scheduling_authorization_lease=source_lease_row,
+            scheduling_authorization_claim=source_auth_claim_row,
+            scheduling_source_current=source_current,
+            existing_claims=existing_claims,
+            existing_leases=existing_leases,
+            first_observed_at=first_observed_at,
+            observed_at=observed_at,
+        )
+
+    @staticmethod
+    def _protected_runtime_process_resume_idempotency_scope(
+        scope: WorkflowScope, consumer_subject_id: str, consumer_audience: str
+    ) -> str:
+        return canonical_digest(
+            {
+                "scope": scope.canonical_value(),
+                "subject_id": consumer_subject_id,
+                "audience": consumer_audience,
+            }
+        )
+
+    @classmethod
+    def _protected_runtime_process_resume_idempotency_claims(
+        cls,
+        locked: _ProtectedRuntimeProcessResumeAuthorizationLockedSources,
+        *,
+        scope: WorkflowScope,
+        consumer_subject_id: str,
+        consumer_audience: str,
+        idempotency_key: str,
+    ) -> tuple[WorkflowProtectedRuntimeProcessResumeAuthorizationClaimModel, ...]:
+        scope_id = cls._protected_runtime_process_resume_idempotency_scope(
+            scope, consumer_subject_id, consumer_audience
+        )
+        return tuple(
+            row
+            for row in locked.existing_claims
+            if row.idempotency_scope_id == scope_id and row.idempotency_key == idempotency_key
+        )
+
+    def _protected_runtime_process_resume_replay(
+        self,
+        request: WorkflowProtectedRuntimeProcessResumeAuthorizationLeaseRequest,
+        locked: _ProtectedRuntimeProcessResumeAuthorizationLockedSources,
+    ) -> WorkflowProtectedRuntimeProcessResumeAuthorizationLeaseResult | None:
+        statuses = WorkflowProtectedRuntimeProcessResumeAuthorizationLeaseStatus
+        result_type = WorkflowProtectedRuntimeProcessResumeAuthorizationLeaseResult
+        matching = self._protected_runtime_process_resume_idempotency_claims(
+            locked,
+            scope=request.scope,
+            consumer_subject_id=request.consumer_subject_id,
+            consumer_audience=request.consumer_audience,
+            idempotency_key=request.idempotency_key,
+        )
+        if not matching:
+            return None
+        if len(matching) != 1:
+            return result_type(statuses.EVIDENCE_CONFLICT, None, locked.observed_at)
+        claim_row = matching[0]
+        changed = bool(
+            claim_row.idempotency_digest != request.idempotency_digest
+            or claim_row.request_fingerprint != request.request_fingerprint
+            or claim_row.process_scheduling_result_id != request.source.result.result_id
+            or claim_row.policy_digest != request.expected_policy_digest
+        )
+        if changed:
+            return result_type(statuses.IDEMPOTENCY_CONFLICT, None, locked.observed_at)
+        lease_row = next(
+            (
+                row
+                for row in locked.existing_leases
+                if row.authorization_lease_id == claim_row.authorization_lease_id
+            ),
+            None,
+        )
+        try:
+            lease = (
+                None
+                if lease_row is None
+                else self._protected_runtime_process_resume_lease_from_row(lease_row)
+            )
+            claim = self._protected_runtime_process_resume_claim_from_row(claim_row)
+        except Exception:
+            return result_type(statuses.EVIDENCE_CONFLICT, None, locked.observed_at)
+        if (
+            lease is None
+            or lease.claim_id != claim.claim_id
+            or lease.claim_digest != claim.canonical_digest
+        ):
+            return result_type(statuses.EVIDENCE_CONFLICT, None, locked.observed_at)
+        return result_type(statuses.REPLAY, lease, locked.observed_at)
+
+    @staticmethod
+    def _protected_runtime_process_resume_retimed_request(
+        request: WorkflowProtectedRuntimeProcessResumeAuthorizationLeaseRequest,
+        *,
+        observed_at: datetime,
+    ) -> WorkflowProtectedRuntimeProcessResumeAuthorizationLeaseRequest:
+        valid_until = min(
+            observed_at + timedelta(seconds=1),
+            request.process_state_attestation.valid_until,
+            request.process_state_attestation.process_state_eligible_until,
+        )
+        if valid_until - observed_at < timedelta(
+            milliseconds=request.expected_minimum_remaining_safety_margin_milliseconds
+        ):
+            raise ValueError("runtime process-resume authorization window is exhausted")
+        claim_payload = request.candidate_claim.digest_payload()
+        claim_payload["claimed_at"] = observed_at.isoformat()
+        claim = dataclass_replace(
+            request.candidate_claim,
+            claimed_at=observed_at,
+            canonical_digest=canonical_digest(claim_payload),
+        )
+        lease_payload = request.candidate.digest_payload()
+        lease_payload.update(
+            claim_digest=claim.canonical_digest,
+            issued_at=observed_at.isoformat(),
+            valid_until=valid_until.isoformat(),
+            effective_until=valid_until.isoformat(),
+        )
+        lease = dataclass_replace(
+            request.candidate,
+            claim_digest=claim.canonical_digest,
+            issued_at=observed_at,
+            valid_until=valid_until,
+            effective_until=valid_until,
+            canonical_digest=canonical_digest(lease_payload),
+        )
+        return dataclass_replace(
+            request,
+            requested_at=observed_at,
+            candidate_claim=claim,
+            candidate=lease,
+        )
+
+    @classmethod
+    def _protected_runtime_process_resume_model_values(
+        cls,
+        model_type: Any,
+        value: WorkflowProtectedRuntimeProcessResumeAuthorizationClaim
+        | WorkflowProtectedRuntimeProcessResumeAuthorizationLease,
+        *,
+        result_row: WorkflowProtectedRuntimeProcessSchedulingResultModel,
+        attempt_row: WorkflowProtectedRuntimeProcessSchedulingAttemptModel,
+        source_observed_at: datetime,
+    ) -> dict[str, object]:
+        columns = {column.name for column in model_type.__table__.columns}
+        authority = value.authority.canonical_value()
+        values: dict[str, object] = {
+            name: getattr(value, name)
+            for name in columns
+            if hasattr(value, name)
+            and name
+            not in {
+                "scope",
+                "state",
+                "process_scheduling_result_state",
+                "process_scheduling_failure_class",
+                "authority",
+                "canonical_digest",
+                "payload",
+            }
+            and name not in authority
+        }
+        policy = code_owned_workflow_protected_runtime_process_resume_authorization_policy()
+        values.update(
+            organization_id=value.scope.organization_id,
+            environment_id=value.scope.environment_id,
+            site_id=value.scope.site_id,
+            source_policy_id=policy.source_policy_id,
+            source_policy_version=policy.source_policy_version,
+            source_policy_digest=policy.source_policy_digest,
+            process_scheduling_result_state=value.process_scheduling_result_state.value,
+            process_scheduling_failure_class=(
+                None
+                if value.process_scheduling_failure_class is None
+                else value.process_scheduling_failure_class.value
+            ),
+            source_protected_operation_reference=attempt_row.protected_operation_reference,
+            source_scheduling_instruction_digest=attempt_row.instruction_digest,
+            source_observed_at=source_observed_at,
+            canonical_digest=value.canonical_digest,
+            payload=value.digest_payload(),
+            **authority,
+        )
+        state = getattr(value, "state", None)
+        if state is not None:
+            values["state"] = state.value
+        return {name: item for name, item in values.items() if name in columns}
+
+    @classmethod
+    def _protected_runtime_process_resume_lease_model(
+        cls,
+        lease: WorkflowProtectedRuntimeProcessResumeAuthorizationLease,
+        attestation: WorkflowProtectedRuntimeProcessResumeStateAttestation,
+        *,
+        result_row: WorkflowProtectedRuntimeProcessSchedulingResultModel,
+        attempt_row: WorkflowProtectedRuntimeProcessSchedulingAttemptModel,
+        source_observed_at: datetime,
+    ) -> WorkflowProtectedRuntimeProcessResumeAuthorizationLeaseModel:
+        values = cls._protected_runtime_process_resume_model_values(
+            WorkflowProtectedRuntimeProcessResumeAuthorizationLeaseModel,
+            lease,
+            result_row=result_row,
+            attempt_row=attempt_row,
+            source_observed_at=source_observed_at,
+        )
+        values.update(
+            effective_from=lease.issued_at,
+            replaceable=False,
+            reissuable=False,
+            process_state_attestation_observed_at=attestation.observed_at,
+            process_state_attestation_payload={
+                **attestation.digest_payload(),
+                "canonical_digest": attestation.canonical_digest,
+            },
+        )
+        return WorkflowProtectedRuntimeProcessResumeAuthorizationLeaseModel(**values)
+
+    @classmethod
+    def _protected_runtime_process_resume_claim_model(
+        cls,
+        claim: WorkflowProtectedRuntimeProcessResumeAuthorizationClaim,
+        *,
+        authorization_lease_id: str,
+        idempotency_key: str,
+        audit_payload: dict[str, object],
+        result_row: WorkflowProtectedRuntimeProcessSchedulingResultModel,
+        attempt_row: WorkflowProtectedRuntimeProcessSchedulingAttemptModel,
+        source_observed_at: datetime,
+    ) -> WorkflowProtectedRuntimeProcessResumeAuthorizationClaimModel:
+        values = cls._protected_runtime_process_resume_model_values(
+            WorkflowProtectedRuntimeProcessResumeAuthorizationClaimModel,
+            claim,
+            result_row=result_row,
+            attempt_row=attempt_row,
+            source_observed_at=source_observed_at,
+        )
+        values.update(
+            authorization_lease_id=authorization_lease_id,
+            idempotency_scope_id=cls._protected_runtime_process_resume_idempotency_scope(
+                claim.scope, claim.consumer_subject_id, claim.consumer_audience
+            ),
+            idempotency_key=idempotency_key,
+            authorization_audit_payload=audit_payload,
+        )
+        return WorkflowProtectedRuntimeProcessResumeAuthorizationClaimModel(**values)
+
+    @classmethod
+    def _protected_runtime_process_resume_domain_from_row(
+        cls,
+        row: WorkflowProtectedRuntimeProcessResumeAuthorizationClaimModel
+        | WorkflowProtectedRuntimeProcessResumeAuthorizationLeaseModel,
+        *,
+        lease: bool,
+    ) -> (
+        WorkflowProtectedRuntimeProcessResumeAuthorizationClaim
+        | WorkflowProtectedRuntimeProcessResumeAuthorizationLease
+    ):
+        from atlas.modules.workflows.domain.protected_runtime_process_scheduling_consumption_domain import (  # noqa: E501
+            WorkflowProtectedRuntimeProcessSchedulingConsumptionFailureClass,
+            WorkflowProtectedRuntimeProcessSchedulingConsumptionResultState,
+        )
+
+        payload = dict(row.payload)
+        payload["scope"] = WorkflowScope(**cast(dict[str, str], payload["scope"]))
+        payload["process_scheduling_result_state"] = (
+            WorkflowProtectedRuntimeProcessSchedulingConsumptionResultState(
+                str(payload["process_scheduling_result_state"])
+            )
+        )
+        if payload.get("process_scheduling_failure_class") is not None:
+            payload["process_scheduling_failure_class"] = (
+                WorkflowProtectedRuntimeProcessSchedulingConsumptionFailureClass(
+                    str(payload["process_scheduling_failure_class"])
+                )
+            )
+        payload["authority"] = WorkflowProtectedRuntimeProcessResumeAuthorizationAuthority(
+            **cast(Any, payload["authority"])
+        )
+        for name, raw in tuple(payload.items()):
+            if isinstance(raw, str) and (name.endswith("_at") or name.endswith("_until")):
+                payload[name] = datetime.fromisoformat(raw)
+        value: (
+            WorkflowProtectedRuntimeProcessResumeAuthorizationClaim
+            | WorkflowProtectedRuntimeProcessResumeAuthorizationLease
+        )
+        if lease:
+            payload["state"] = WorkflowProtectedRuntimeProcessResumeAuthorizationLeaseState(
+                str(payload["state"])
+            )
+            value = WorkflowProtectedRuntimeProcessResumeAuthorizationLease(
+                **cast(Any, payload), canonical_digest=row.canonical_digest
+            )
+        else:
+            value = WorkflowProtectedRuntimeProcessResumeAuthorizationClaim(
+                **cast(Any, payload), canonical_digest=row.canonical_digest
+            )
+        if (
+            row.payload != value.digest_payload()
+            or canonical_digest(row.payload) != row.canonical_digest
+        ):
+            cls._protected_runtime_process_resume_contract_violation()
+        return value
+
+    @classmethod
+    def _protected_runtime_process_resume_lease_from_row(
+        cls, row: WorkflowProtectedRuntimeProcessResumeAuthorizationLeaseModel
+    ) -> WorkflowProtectedRuntimeProcessResumeAuthorizationLease:
+        value = cls._protected_runtime_process_resume_domain_from_row(row, lease=True)
+        if not isinstance(value, WorkflowProtectedRuntimeProcessResumeAuthorizationLease):
+            cls._protected_runtime_process_resume_contract_violation()
+        if (
+            row.authorization_lease_id != value.authorization_lease_id
+            or row.claim_id != value.claim_id
+            or row.claim_digest != value.claim_digest
+            or row.process_scheduling_result_id != value.process_scheduling_result_id
+            or row.process_scheduling_result_digest != value.process_scheduling_result_digest
+            or row.process_state_attestation_id != value.process_state_attestation_id
+            or row.process_state_attestation_digest != value.process_state_attestation_digest
+            or row.effective_from != value.issued_at
+            or row.replaceable
+            or row.reissuable
+            or row.runtime_resume_authorized
+            or not row.protected_runtime_process_resume_authority_granted
+        ):
+            cls._protected_runtime_process_resume_contract_violation()
+        return value
+
+    @classmethod
+    def _protected_runtime_process_resume_claim_from_row(
+        cls, row: WorkflowProtectedRuntimeProcessResumeAuthorizationClaimModel
+    ) -> WorkflowProtectedRuntimeProcessResumeAuthorizationClaim:
+        value = cls._protected_runtime_process_resume_domain_from_row(row, lease=False)
+        if not isinstance(value, WorkflowProtectedRuntimeProcessResumeAuthorizationClaim):
+            cls._protected_runtime_process_resume_contract_violation()
+        if (
+            row.claim_id != value.claim_id
+            or row.process_scheduling_result_id != value.process_scheduling_result_id
+            or row.process_scheduling_result_digest != value.process_scheduling_result_digest
+            or row.idempotency_digest != value.idempotency_digest
+            or row.request_fingerprint != value.request_fingerprint
+            or row.authorization_audit_digest != value.authorization_audit_digest
+            or canonical_digest(row.authorization_audit_payload) != value.authorization_audit_digest
+            or row.runtime_resume_authorized
+            or row.protected_runtime_process_resume_authority_granted
+        ):
+            cls._protected_runtime_process_resume_contract_violation()
+        return value
+
+    @staticmethod
+    def _protected_runtime_process_resume_attestation_from_row(
+        row: WorkflowProtectedRuntimeProcessResumeAuthorizationLeaseModel,
+    ) -> WorkflowProtectedRuntimeProcessResumeStateAttestation:
+        payload = dict(row.process_state_attestation_payload)
+        digest = str(payload.pop("canonical_digest"))
+        payload["scope"] = WorkflowScope(**cast(dict[str, str], payload["scope"]))
+        for name, raw in tuple(payload.items()):
+            if isinstance(raw, str) and (name.endswith("_at") or name.endswith("_until")):
+                payload[name] = datetime.fromisoformat(raw)
+        attestation = WorkflowProtectedRuntimeProcessResumeStateAttestation(
+            **cast(Any, payload), canonical_digest=digest
+        )
+        if (
+            digest != row.process_state_attestation_digest
+            or attestation.attestation_id != row.process_state_attestation_id
+            or attestation.observed_at != row.process_state_attestation_observed_at
+            or attestation.valid_until != row.process_state_attestation_valid_until
+            or canonical_digest(attestation.digest_payload()) != digest
+        ):
+            raise ValueError("runtime process-resume state attestation mismatch")
+        return attestation
+
+    @classmethod
+    def _protected_runtime_process_resume_source_from_locked(
+        cls, locked: _ProtectedRuntimeProcessResumeAuthorizationLockedSources
+    ) -> WorkflowProtectedRuntimeProcessResumeAuthorizationSource | None:
+        rows = (
+            locked.scheduling_result,
+            locked.scheduling_attempt,
+            locked.scheduling_claim,
+            locked.scheduling_authorization_lease,
+            locked.scheduling_authorization_claim,
+        )
+        if any(row is None for row in rows):
+            return None
+        result_row, attempt_row, claim_row, lease_row, auth_claim_row = rows
+        assert result_row is not None
+        assert attempt_row is not None
+        assert claim_row is not None
+        assert lease_row is not None
+        assert auth_claim_row is not None
+        if result_row.receipt_payload is None:
+            return None
+        try:
+            result = cls._protected_runtime_process_scheduling_result_from_row(result_row)
+            attempt = cls._protected_runtime_process_scheduling_attempt_from_row(attempt_row)
+            claim = cls._protected_runtime_process_scheduling_domain_from_payload(
+                claim_row.payload, claim_row.canonical_digest, "claim"
+            )
+            lease = cls._protected_runtime_process_scheduling_lease_from_row(lease_row)
+            auth_claim = cls._protected_runtime_process_scheduling_claim_from_row(auth_claim_row)
+            receipt = cls._protected_runtime_process_resume_receipt_from_payload(
+                result_row.receipt_payload
+            )
+            source = WorkflowProtectedRuntimeProcessResumeAuthorizationSource(
+                result=result,
+                attempt=attempt,
+                process_scheduling_claim=claim,
+                process_scheduling_receipt=receipt,
+                process_scheduling_authorization_lease=lease,
+                process_scheduling_authorization_claim=auth_claim,
+            )
+            if not workflow_protected_runtime_process_resume_receipt_matches_source(source):
+                return None
+            return source
+        except Exception:
+            return None
+
+    @staticmethod
+    def _protected_runtime_process_resume_receipt_from_payload(payload: dict[str, Any]) -> Any:
+        from atlas.modules.workflows.domain.protected_runtime_process_scheduling_consumption_domain import (  # noqa: E501
+            WorkflowProtectedRuntimeProcessSchedulingConsumptionResultState,
+            WorkflowProtectedRuntimeProcessSchedulingReceipt,
+        )
+
+        values = dict(payload)
+        digest = str(values.pop("canonical_digest"))
+        values["result_state"] = WorkflowProtectedRuntimeProcessSchedulingConsumptionResultState(
+            str(values["result_state"])
+        )
+        values["completed_at"] = datetime.fromisoformat(str(values["completed_at"]))
+        receipt = WorkflowProtectedRuntimeProcessSchedulingReceipt(
+            **cast(Any, values), canonical_digest=digest
+        )
+        if canonical_digest(receipt.digest_payload()) != digest:
+            raise ValueError("runtime process-scheduling receipt mismatch")
+        return receipt
+
+    @staticmethod
+    def _protected_runtime_process_resume_contract_violation() -> NoReturn:
+        raise ValueError("protected runtime process-resume authorization contract violated")
 
     @staticmethod
     def _to_domain(raw: dict[str, Any]) -> WorkflowRunPlan:

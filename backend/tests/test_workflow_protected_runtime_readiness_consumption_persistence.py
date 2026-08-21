@@ -249,7 +249,7 @@ def test_alembic_graph_keeps_0149_in_single_0150_lineage() -> None:
     config.set_main_option("script_location", str(ROOT / "migrations"))
     script = ScriptDirectory.from_config(config)
 
-    assert script.get_heads() == ["20260821_0153"]
+    assert script.get_heads() == ["20260821_0154"]
     revision = script.get_revision("20260817_0149")
     assert revision is not None
     assert revision.down_revision == "20260817_0148"

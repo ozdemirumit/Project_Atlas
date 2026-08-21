@@ -873,6 +873,13 @@ MVP workflows do not execute C3 through C5 capabilities.
   mutation. All authority remains false, AI remains advisory-only, Active Directory remains
   authentication-only, and normal password-session GET/UI stays read-only without MFA or another
   browser prompt.
+- ADR-181 permits only one canonical scheduled-while-suspended ADR-180 result to originate one
+  append-only process-resume authorization claim and one non-bearer lease valid for no more than one
+  second. Fresh signed metadata-only process-state evidence and PostgreSQL revalidation must prove
+  the scheduler registration and complete lineage remain current while the process remains sealed,
+  suspended, non-runnable and unexecuted. Only the active lease may grant submission of one future
+  resume-consumption request; IMP-231 performs no resume, dispatch or execution and exposes no
+  operational control or protected material.
 
 ## 39. Assumptions
 
@@ -929,3 +936,4 @@ This document is ready to enter Review when:
 | 2.9.0 | 2026-08-20 | Workflow Architecture | Added atomic protected runtime process-creation consumption and single suspended-process attempt |
 | 3.0.0 | 2026-08-20 | Workflow Architecture | Added bounded single-use protected runtime process-scheduling authorization lease boundary |
 | 3.1.0 | 2026-08-21 | Workflow Architecture | Added atomic protected runtime process-scheduling consumption boundary |
+| 3.2.0 | 2026-08-21 | Workflow Architecture | Added bounded single-use protected runtime process-resume authorization lease boundary |

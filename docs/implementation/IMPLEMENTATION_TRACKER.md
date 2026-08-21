@@ -4,14 +4,78 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-230 |
-| Title | Atomic protected runtime process-scheduling authorization consumption |
+| Task ID | ATLAS-IMP-231 |
+| Title | Bounded single-use protected runtime process-resume authorization lease |
 | Status | Review |
-| Branch | `agent/protected-runtime-process-scheduling-consumption` |
-| Pull Request | [#243](https://github.com/ozdemirumit/Project_Atlas/pull/243) |
-| Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-180 |
+| Branch | `agent/protected-runtime-process-resume-authorization` |
+| Pull Request | [#244](https://github.com/ozdemirumit/Project_Atlas/pull/244) |
+| Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-181 |
 | Last Updated | 2026-08-21 |
-| Next Action | Publish the pull request, pass exact-head CI, squash-merge, and verify post-main CI |
+| Next Action | Complete exact-head PR CI, squash-merge PR #244 and verify post-main CI |
+
+### ATLAS-IMP-231 Scope Rationale
+
+- IMP-230 proves only that one exact sealed process was registered with the protected scheduler
+  while remaining suspended and non-runnable. The result is historical evidence and grants no
+  resume, dispatch or execution authority.
+- The next safe boundary is a separate short-lived authorization rooted only in one canonical
+  successful IMP-230 result plus fresh signed metadata-only protected process-state attestation.
+- IMP-231 issues only an at-most-one-second lease for one future process-resume request. It performs
+  no resume, dispatch, execution, model, network, connector, MCP, provider or infrastructure action.
+
+### ATLAS-IMP-231 Acceptance Criteria
+
+- Only the exact protected consumer workload bound through canonical ADR-160 through ADR-180
+  lineage may POST. Humans, AI agents, MCP tools, connectors, schedulers and recovery workers fail
+  closed before protected-state I/O.
+- Only a canonical terminal `process_scheduled_suspended_in_protected_boundary` result is eligible.
+  Rejected, failed, pending and uncertain scheduling outcomes are rejected.
+- Fresh signed metadata-only attestation proves the exact process remains scheduler-registered,
+  sealed, suspended, non-runnable, not resumed, not dispatched, unexecuted and bound to the same
+  runtime envelope, destination fence, process image, manifest and scheduler profile.
+- PostgreSQL revalidates the complete immutable lineage and current coordination heads under
+  authoritative database time before committing the append-only claim and lease.
+- The non-transferable, non-renewable, single-use, non-bearer lease expires within one second and
+  authorizes only submission of one future process-resume request. The final PostgreSQL observation
+  requires at least 100 milliseconds of code-owned remaining safety margin.
+- Only an active lease may set `protected_runtime_process_resume_authority_granted=true`; all other
+  authority fields remain false. Exact replay returns the same lease without extending it; changed
+  replay, race, expiry, lineage drift and cancellation fail closed.
+- The lease contains no runtime/process locator, handle, resume token, command, executable,
+  argument, environment, credential, endpoint, prompt, model or provider coordinate.
+- The slice performs no resume, dispatch, execution, supervision, stop, cleanup, network,
+  connector/MCP/provider, publication, delivery or infrastructure mutation.
+- Production authority is PostgreSQL-only. The POST is workload-only; normal username/password
+  sessions receive minimized `no-store` read-only GET/UI without MFA or a second browser session.
+- AI remains advisory-only. Active Directory remains authentication-only; no Active Directory
+  management capability or MCP is introduced.
+
+### ATLAS-IMP-231 Verification Evidence
+
+- The final focused backend integration pass covered the resume-authorization domain, replay-first
+  service, signed process-state attestor, API, persistence contracts, migration-head compatibility
+  and DSN-gated PostgreSQL boundary: `69` tests passed and two live PostgreSQL cases skipped only
+  because `ATLAS_TEST_POSTGRES_DSN` is not configured locally.
+- Ruff formatting and lint passed across all `27` changed Python files. Targeted MyPy passed across
+  `16` source and PostgreSQL-test files. Alembic reports the single head `20260821_0154`.
+- Frontend TypeScript passed. The two focused process-resume rendering/parsing tests passed while
+  `639` unrelated tests were skipped; the broad frontend suite was not duplicated locally.
+- Independent review findings were closed by signing eight pending/conflicting-state absence facts,
+  enforcing a code-owned 100 millisecond final transaction safety margin, unifying the canonical
+  authority vector and expanding the live PostgreSQL test to cover authorization, replay, changed
+  replay, lineage drift, concurrency, no-reissue, append-only guards and guarded downgrade.
+- A current-code API at `127.0.0.1:8054` returned `401` for an unauthenticated inventory request with
+  `Cache-Control: no-store, max-age=0`, `Pragma: no-cache` and `Referrer-Policy: no-referrer`.
+- Live browser validation at `http://127.0.0.1:5215/#/workspace/workflows` rendered the read-only
+  `Protected runtime process-resume authorizations` region in a fail-closed state with zero buttons,
+  links or form controls and no current-page console errors or warnings.
+
+### ATLAS-IMP-230 Delivery Evidence
+
+- [PR #243](https://github.com/ozdemirumit/Project_Atlas/pull/243) was squash-merged to `main` as
+  `d73ccdd44e20819b7b19ef0e2b49eb8ce62e3d2d`.
+- Exact-head pull-request CI run `32466098977` and post-main CI run `32468012212` both passed for
+  backend and frontend. Local `main` and `origin/main` were synchronized before IMP-231.
 
 ### ATLAS-IMP-230 Scope Rationale
 
