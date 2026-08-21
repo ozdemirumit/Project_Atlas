@@ -8,7 +8,7 @@
 | Title | Atomic protected runtime process-scheduling authorization consumption |
 | Status | Review |
 | Branch | `agent/protected-runtime-process-scheduling-consumption` |
-| Pull Request | Pending |
+| Pull Request | [#243](https://github.com/ozdemirumit/Project_Atlas/pull/243) |
 | Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-180 |
 | Last Updated | 2026-08-21 |
 | Next Action | Publish the pull request, pass exact-head CI, squash-merge, and verify post-main CI |
