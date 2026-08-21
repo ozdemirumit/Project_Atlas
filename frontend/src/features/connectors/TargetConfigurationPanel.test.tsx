@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ConnectorTargetConfigurationBinding } from "../../api/targetConfigurations";
@@ -53,14 +53,51 @@ const binding = {
   reused: false,
 } satisfies ConnectorTargetConfigurationBinding;
 
-afterEach(() => vi.unstubAllGlobals());
+const option = {
+  source_instance_record_id: instance.record_id,
+  target_profile_id: binding.target_profile_id,
+  target_profile_digest: binding.target_profile_digest,
+  site_id: binding.site_id,
+  target_type: binding.target_type,
+  target_product: binding.target_product,
+  target_version: binding.target_version,
+  target_profile_expires_at: "2030-01-01T00:00:00Z",
+  configuration_policy_id: binding.configuration_policy_id,
+  configuration_policy_digest: binding.configuration_policy_digest,
+  configuration_policy_version: binding.configuration_policy_version,
+  configuration_policy_expires_at: "2030-01-01T00:00:00Z",
+  required_assurance_level: "SINGLE_FACTOR",
+  resulting_instance_state: "disabled_target_configured",
+  resulting_target_configured: true,
+  credentials_resolved: false,
+  connector_enabled: false,
+  runtime_trust_granted: false,
+  execution_authorized: false,
+  infrastructure_mutation_performed: false,
+} as const;
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 describe("TargetConfigurationPanel", () => {
   it("binds only exact governed profile and policy evidence without target internals", async () => {
     document.cookie = "atlas_csrf=test-csrf; path=/";
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(JSON.stringify({ data: binding }), { status: 201 }),
-    );
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation((input, init) => {
+      const url = input instanceof Request ? input.url : input instanceof URL ? input.href : input;
+      if (init?.method === "POST") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ data: binding }), { status: 201 }),
+        );
+      }
+      if (url.includes("/options?")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ data: [option] }), { status: 200 }),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify({ data: [] }), { status: 200 }));
+    });
     vi.stubGlobal("fetch", fetchMock);
     const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
     render(
@@ -69,6 +106,7 @@ describe("TargetConfigurationPanel", () => {
       </QueryClientProvider>,
     );
 
+    await screen.findByRole("combobox", { name: "Governed target" });
     expect(
       screen.queryByRole("textbox", {
         name: /endpoint|address|host|port|certificate|trust|route|proxy|secret|credential/i,
@@ -82,10 +120,13 @@ describe("TargetConfigurationPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Bind governed target" }));
 
     expect(await screen.findByText(binding.binding_id)).toBeVisible();
-    expect(screen.getByText(binding.instance_state)).toBeVisible();
+    expect(screen.getAllByText("Disabled / target configured").length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: /enable|execute|deploy/i })).toBeNull();
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
-    const init = fetchMock.mock.calls[0]?.[1];
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some((call) => call[1]?.method === "POST")).toBe(true),
+    );
+    const postCall = fetchMock.mock.calls.find((call) => call[1]?.method === "POST");
+    const init = postCall?.[1];
     const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as Record<
       string,
       unknown
@@ -119,5 +160,21 @@ describe("TargetConfigurationPanel", () => {
       expect(body).not.toHaveProperty(forbidden);
     }
     expect(new Headers(init?.headers).get("X-CSRF-Token")).toBe("test-csrf");
+  });
+
+  it("renders a reloaded binding without offering another target mutation", () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <TargetConfigurationPanel existingBinding={binding} instance={instance} />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByText(binding.binding_id)).toBeVisible();
+    expect(screen.getAllByText("Disabled / target configured").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "Bind governed target" })).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

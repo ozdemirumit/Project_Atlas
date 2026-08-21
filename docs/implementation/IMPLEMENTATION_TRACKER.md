@@ -4,14 +4,67 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-233 |
-| Title | First-class Inventory and MCP lifecycle access |
-| Status | Review |
-| Branch | `agent/first-class-inventory-mcp-access` |
-| Pull Request | [#246](https://github.com/ozdemirumit/Project_Atlas/pull/246) |
-| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-050, ATLAS-052, ADR-079, ADR-123, ADR-133, ADR-182 |
+| Task ID | ATLAS-IMP-234 |
+| Title | Installed MCP governed target configuration |
+| Status | Implementation Complete - PR Pending |
+| Branch | `agent/installed-mcp-target-configuration` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-050, ATLAS-052, ADR-031, ADR-123, ADR-133, ADR-182 |
 | Last Updated | 2026-08-21 |
-| Next Action | Complete exact-head PR CI and squash-merge PR #246 |
+| Next Action | Commit the reviewed slice, open the pull request and complete exact-head CI |
+
+### ATLAS-IMP-234 Scope Rationale
+
+- Installed MCP creation already produces a governed `disabled_unconfigured` record and the backend
+  already owns an immutable target-binding contract, but the first-class Installed MCP workspace
+  cannot advance that record to its next non-operational lifecycle state.
+- The existing Builder-only target panel embeds development profile and policy digests in the
+  browser and cannot rediscover a binding by instance after refresh.
+- This slice exposes server-selected compatible target and policy evidence, persistent binding
+  inventory and an Installed MCP `Manage target` flow. It performs metadata binding only.
+
+### ATLAS-IMP-234 Acceptance Criteria
+
+- Installed MCP rows expose `Manage target`; configured rows reload as
+  `Disabled / target configured` and no longer expose retirement.
+- The browser selects only server-provided, exact-scope, connector-compatible signed target/profile
+  and policy evidence. No profile or policy digest is hard-coded in the production UI.
+- Binding inventory can be filtered by source instance identity and survives page refresh.
+- The create request contains exact instance/profile/policy lineage, a bounded purpose and explicit
+  no-authority acknowledgement; normal username/password browser sessions remain sufficient.
+- API and UI projections exclude endpoint, host, IP, port, certificate trust, route, proxy, target
+  identity, credentials, secrets and idempotency material.
+- Success advances only to `disabled_target_configured`; credential assignment, capability
+  enablement, runtime activation, connectivity checks, connector invocation, AI execution and
+  infrastructure mutation remain outside this slice.
+- Focused backend/frontend tests, targeted static checks and desktop/mobile live validation pass
+  before PR.
+
+### ATLAS-IMP-234 Verification Evidence
+
+- Backend Ruff formatting/lint and targeted MyPy passed across the six affected source modules.
+  The target-configuration service, minimized API inventory/options and create boundary passed all
+  `11` focused backend tests.
+- Frontend TypeScript and targeted ESLint passed. Target API parsing/status preservation, governed
+  binding presentation and Installed MCP lifecycle integration passed `27` focused tests across
+  three files.
+- A current-code API and web pair at `127.0.0.1:8056` and `127.0.0.1:5217` completed normal
+  username/password sign-in and loaded the target-binding inventory in the Installed MCP workspace
+  without requesting MFA, step-up or another browser session. The clean in-memory server correctly
+  exposed no target action because it contained no installed package or MCP instance.
+- Desktop and 390x844 browser validation retained the `Installed MCP management` and `Installed
+  MCPs` headings, the advisory-only boundary and the disabled-metadata footnote. The mobile document
+  width remained below the viewport and the current-page browser log contained no errors or
+  warnings.
+
+### ATLAS-IMP-233 Delivery Evidence
+
+- Source commit `01a271fda1ece28e3981e9344fedce28364da145` passed exact-head pull-request CI run
+  `32506579443`; frontend completed in 11m26s and backend in 20m02s.
+- [PR #246](https://github.com/ozdemirumit/Project_Atlas/pull/246) was squash-merged to `main` as
+  `0bc3fdefda1b09d654f668a37640ea085e459614`.
+- The exact merge commit independently passed post-main CI run `32508386603`; frontend completed in
+  10m52s and backend in 21m23s. Local `main` and `origin/main` were synchronized before IMP-234.
 
 ### ATLAS-IMP-233 Scope Rationale
 

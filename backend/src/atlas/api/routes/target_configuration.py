@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated, NoReturn
 
-from fastapi import APIRouter, Depends, Header, Path, Request, Response
+from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response
 
 from atlas.api.errors import AtlasError
 from atlas.api.schemas import ResponseMeta
@@ -15,6 +15,9 @@ from atlas.api.security import (
 from atlas.api.target_configuration_schemas import (
     ConnectorTargetConfigurationData,
     ConnectorTargetConfigurationInput,
+    ConnectorTargetConfigurationInventoryResponse,
+    ConnectorTargetConfigurationOptionData,
+    ConnectorTargetConfigurationOptionsResponse,
     ConnectorTargetConfigurationResponse,
 )
 from atlas.modules.authorization.domain.models import AuthorizationDecision
@@ -59,6 +62,66 @@ def _response(
     response.headers["Cache-Control"] = "no-store"
     return ConnectorTargetConfigurationResponse(
         data=ConnectorTargetConfigurationData.from_domain(binding),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.get("", response_model=ConnectorTargetConfigurationInventoryResponse)
+async def list_connector_target_configurations(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_connector_target_configuration_read)
+    ],
+    source_instance_record_id: Annotated[
+        str | None, Query(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")
+    ] = None,
+) -> ConnectorTargetConfigurationInventoryResponse:
+    service: ConnectorTargetConfigurationService = request.app.state.target_configuration_service
+    try:
+        bindings = await service.list_bindings(
+            actor=subject,
+            source_instance_record_id=source_instance_record_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ConnectorTargetConfigurationError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorTargetConfigurationInventoryResponse(
+        data=tuple(ConnectorTargetConfigurationData.from_domain(item) for item in bindings),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.get("/options", response_model=ConnectorTargetConfigurationOptionsResponse)
+async def list_connector_target_configuration_options(
+    source_instance_record_id: Annotated[str, Query(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_connector_target_configuration_read)
+    ],
+) -> ConnectorTargetConfigurationOptionsResponse:
+    service: ConnectorTargetConfigurationService = request.app.state.target_configuration_service
+    try:
+        options = await service.list_options(
+            actor=subject,
+            source_instance_record_id=source_instance_record_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ConnectorTargetConfigurationError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorTargetConfigurationOptionsResponse(
+        data=tuple(
+            ConnectorTargetConfigurationOptionData.from_application(item) for item in options
+        ),
         meta=ResponseMeta(
             correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
         ),

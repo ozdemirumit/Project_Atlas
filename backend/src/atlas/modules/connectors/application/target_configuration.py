@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Callable
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 from hashlib import sha256
@@ -46,6 +46,24 @@ from atlas.modules.identity.domain.models import (
 TARGET_BINDING_CREATE_PERMISSION = "connectors.target-configuration-bindings.create"
 TARGET_BINDING_READ_PERMISSION = "connectors.target-configuration-bindings.read"
 TARGET_BINDING_SCHEMA = "atlas.connector-target-configuration-binding.v1"
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectorTargetConfigurationOption:
+    source_instance_record_id: str
+    target_profile_id: str
+    target_profile_digest: str
+    site_id: str
+    target_type: str
+    target_product: str
+    target_version: str
+    target_profile_expires_at: datetime
+    configuration_policy_id: str
+    configuration_policy_digest: str
+    configuration_policy_version: str
+    configuration_policy_expires_at: datetime
+    required_assurance_level: AssuranceLevel
+    resulting_instance_state: str = DISABLED_TARGET_CONFIGURED
 
 
 class ConnectorTargetConfigurationService:
@@ -246,6 +264,131 @@ class ConnectorTargetConfigurationService:
             permission_id=TARGET_BINDING_READ_PERMISSION,
         )
         return binding
+
+    async def list_bindings(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        source_instance_record_id: str | None,
+        correlation_id: str,
+    ) -> tuple[ConnectorTargetConfigurationBinding, ...]:
+        self._require_human(actor)
+        if source_instance_record_id is None:
+            candidates = await self._repository.list_scope(
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+            )
+        else:
+            candidate = await self._repository.get_by_instance(
+                source_instance_record_id=source_instance_record_id
+            )
+            candidates = (candidate,) if candidate is not None else ()
+        visible: list[ConnectorTargetConfigurationBinding] = []
+        for binding in candidates:
+            self._verify_record(binding)
+            self._require_scope(actor, binding.organization_id, binding.environment_id)
+            visible.append(binding)
+        visible.sort(key=lambda item: item.binding_id)
+        await self._audit(
+            actor,
+            correlation_id,
+            "connector_target_configurations_listed",
+            source_instance_record_id or self._environment_id,
+            None,
+            (("count", str(len(visible))),),
+            permission_id=TARGET_BINDING_READ_PERMISSION,
+        )
+        return tuple(visible)
+
+    async def list_options(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        source_instance_record_id: str,
+        correlation_id: str,
+    ) -> tuple[ConnectorTargetConfigurationOption, ...]:
+        self._require_human(actor)
+        try:
+            (
+                instance,
+                _instance_policy,
+                _installation,
+                registration,
+                source_actors,
+            ) = await self._instance_source.target_configuration_source(
+                record_id=source_instance_record_id
+            )
+        except ConnectorInstanceCreationError as error:
+            raise ConnectorTargetConfigurationError(
+                "target_configuration_source_not_found"
+            ) from error
+        self._require_scope(actor, instance.organization_id, instance.environment_id)
+        existing = await self._repository.get_by_instance(
+            source_instance_record_id=source_instance_record_id
+        )
+        if existing is not None:
+            self._verify_record(existing)
+            options: list[ConnectorTargetConfigurationOption] = []
+        else:
+            profiles = await self._target_profile_source.list_scope(
+                organization_id=instance.organization_id,
+                environment_id=instance.environment_id,
+            )
+            policies = await self._policy_source.list_scope(
+                organization_id=instance.organization_id,
+                environment_id=instance.environment_id,
+            )
+            now = self._clock()
+            options = []
+            for profile in profiles:
+                for policy in policies:
+                    try:
+                        self._verify_profile(profile)
+                        self._verify_policy(policy)
+                        self._verify_binding(
+                            actor=actor,
+                            instance=instance,
+                            profile=profile,
+                            policy=policy,
+                            source_instance_record_digest=instance.canonical_digest,
+                            package_digest=instance.package_digest,
+                            target_profile_digest=profile.canonical_digest,
+                            configuration_policy_digest=policy.canonical_digest,
+                            registration_target_products=registration.manifest.target_products,
+                            now=now,
+                        )
+                    except ConnectorTargetConfigurationError:
+                        continue
+                    if actor.subject_id in source_actors | {profile.signed_by, policy.signed_by}:
+                        continue
+                    options.append(
+                        ConnectorTargetConfigurationOption(
+                            source_instance_record_id=instance.record_id,
+                            target_profile_id=profile.profile_id,
+                            target_profile_digest=profile.canonical_digest,
+                            site_id=profile.site_id,
+                            target_type=profile.target_type,
+                            target_product=profile.target_product,
+                            target_version=profile.target_version,
+                            target_profile_expires_at=profile.expires_at,
+                            configuration_policy_id=policy.policy_id,
+                            configuration_policy_digest=policy.canonical_digest,
+                            configuration_policy_version=policy.policy_version,
+                            configuration_policy_expires_at=policy.expires_at,
+                            required_assurance_level=policy.required_assurance_level,
+                        )
+                    )
+        options.sort(key=lambda item: (item.target_product, item.site_id, item.target_profile_id))
+        await self._audit(
+            actor,
+            correlation_id,
+            "connector_target_configuration_options_listed",
+            instance.instance_id,
+            None,
+            (("count", str(len(options))),),
+            permission_id=TARGET_BINDING_READ_PERMISSION,
+        )
+        return tuple(options)
 
     async def credential_assignment_source(
         self, *, binding_id: str
