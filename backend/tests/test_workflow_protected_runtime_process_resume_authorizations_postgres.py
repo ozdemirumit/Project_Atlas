@@ -576,11 +576,14 @@ async def test_live_postgres_resume_authorization_repository_contract() -> None:
                 with pytest.raises(DBAPIError, match="append-only"):
                     await connection.execute(table.delete().where(table.c[key] == value))
                 await transaction.rollback()
-            async with engine.connect() as connection:
-                transaction = await connection.begin()
-                with pytest.raises(DBAPIError, match="append-only"):
-                    await connection.execute(text(f"TRUNCATE TABLE {table.name}"))
-                await transaction.rollback()
+
+        async with engine.connect() as connection:
+            transaction = await connection.begin()
+            with pytest.raises(DBAPIError, match="append-only"):
+                await connection.execute(
+                    text(f"TRUNCATE TABLE {lease_table.name}, {claim_table.name}")
+                )
+            await transaction.rollback()
 
         downgrade_environment = os.environ.copy()
         downgrade_environment["ATLAS_DATABASE_URL"] = database_url
