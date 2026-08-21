@@ -36,6 +36,7 @@ from atlas.api.security import (
     authorize_workflow_protected_runtime_context_use_read,
     authorize_workflow_protected_runtime_process_creation_authorization_read,
     authorize_workflow_protected_runtime_process_creation_consumption_read,
+    authorize_workflow_protected_runtime_process_scheduling_consumption_read,
     authorize_workflow_protected_runtime_readiness_authorization_read,
     authorize_workflow_protected_runtime_readiness_consumption_read,
     authorize_workflow_protected_runtime_start_authorization_read,
@@ -59,6 +60,7 @@ from atlas.api.security import (
     workflow_physical_transport_target_context_binder_subject,
     workflow_physical_transport_target_context_capsule_binder_subject,
     workflow_protected_runtime_process_creator_subject,
+    workflow_protected_runtime_process_scheduler_subject,
     workflow_protected_transport_target_context_capsule_consumer_subject,
     workflow_transport_compatibility_admitter_subject,
     workflow_transport_credential_assignment_registry_subject,
@@ -98,6 +100,7 @@ from atlas.api.workflow_schemas import (
     CreateWorkflowProtectedRuntimeProcessCreationAuthorizationInput,
     CreateWorkflowProtectedRuntimeProcessCreationConsumptionInput,
     CreateWorkflowProtectedRuntimeProcessSchedulingAuthorizationInput,
+    CreateWorkflowProtectedRuntimeProcessSchedulingConsumptionInput,
     CreateWorkflowProtectedRuntimeReadinessAuthorizationInput,
     CreateWorkflowProtectedRuntimeReadinessConsumptionInput,
     CreateWorkflowProtectedRuntimeStartAuthorizationInput,
@@ -261,6 +264,10 @@ from atlas.api.workflow_schemas import (
     WorkflowProtectedRuntimeProcessSchedulingAuthorizationInventoryData,
     WorkflowProtectedRuntimeProcessSchedulingAuthorizationInventoryResponse,
     WorkflowProtectedRuntimeProcessSchedulingAuthorizationResponse,
+    WorkflowProtectedRuntimeProcessSchedulingConsumptionData,
+    WorkflowProtectedRuntimeProcessSchedulingConsumptionInventoryData,
+    WorkflowProtectedRuntimeProcessSchedulingConsumptionInventoryResponse,
+    WorkflowProtectedRuntimeProcessSchedulingConsumptionResponse,
     WorkflowProtectedRuntimeReadinessAuthorizationData,
     WorkflowProtectedRuntimeReadinessAuthorizationInventoryData,
     WorkflowProtectedRuntimeReadinessAuthorizationInventoryResponse,
@@ -450,6 +457,14 @@ from atlas.modules.workflows.application.protected_runtime_process_creation_cons
 from atlas.modules.workflows.application.protected_runtime_process_scheduling_authorization_ports import (  # noqa: E501
     WorkflowProtectedRuntimeProcessSchedulingAuthorizationError,
 )
+from atlas.modules.workflows.application.protected_runtime_process_scheduling_consumption_ports import (  # noqa: E501
+    WorkflowProtectedRuntimeProcessSchedulingConsumptionError,
+    WorkflowProtectedRuntimeProcessSchedulingConsumptionRepository,
+)
+from atlas.modules.workflows.application.protected_runtime_process_scheduling_consumptions import (
+    WorkflowProtectedRuntimeProcessSchedulingConsumptionPresentation,
+    WorkflowProtectedRuntimeProcessSchedulingConsumptionService,
+)
 from atlas.modules.workflows.application.protected_runtime_readiness_authorization_ports import (
     WorkflowProtectedRuntimeReadinessAuthorizationError,
 )
@@ -545,6 +560,9 @@ from atlas.modules.workflows.domain import (
 )
 from atlas.modules.workflows.domain.protected_runtime_process_creation_consumption_domain import (
     code_owned_workflow_protected_runtime_process_creation_consumption_policy,
+)
+from atlas.modules.workflows.domain.protected_runtime_process_scheduling_consumption_domain import (
+    code_owned_workflow_protected_runtime_process_scheduling_consumption_policy,
 )
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
@@ -8201,6 +8219,162 @@ async def create_workflow_protected_runtime_process_creation_consumption(
             retryable=True,
         ) from error
     return WorkflowProtectedRuntimeProcessCreationConsumptionResponse(
+        data=data,
+        meta=_meta(request),
+    )
+
+
+@router.get(
+    "/protected-runtime-process-scheduling-consumptions",
+    response_model=WorkflowProtectedRuntimeProcessSchedulingConsumptionInventoryResponse,
+)
+async def list_workflow_protected_runtime_process_scheduling_consumptions(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_workflow_protected_runtime_process_scheduling_consumption_read),
+    ],
+) -> WorkflowProtectedRuntimeProcessSchedulingConsumptionInventoryResponse:
+    del decision
+    _no_store(response)
+    scope = WorkflowScope(
+        organization_id=subject.organization_id,
+        environment_id=f"environment.{request.app.state.settings.environment}",
+        site_id="site.local",
+    )
+    try:
+        repository = cast(
+            WorkflowProtectedRuntimeProcessSchedulingConsumptionRepository,
+            request.app.state.workflow_protected_runtime_process_scheduling_consumption_repository,
+        )
+        if not repository.durable:
+            raise RuntimeError("durable process-scheduling repository required")
+        attempts = await repository.list_protected_runtime_process_scheduling_attempts(
+            scope=scope, limit=256
+        )
+        results = await repository.get_protected_runtime_process_scheduling_results(
+            scope=scope,
+            consumption_ids=tuple(attempt.consumption_id for attempt in attempts),
+        )
+        by_consumption_id = {result.consumption_id: result for result in results}
+        presentations = tuple(
+            WorkflowProtectedRuntimeProcessSchedulingConsumptionPresentation(
+                attempt=attempt,
+                result=by_consumption_id.get(attempt.consumption_id),
+            )
+            for attempt in attempts
+        )
+        server_time = await repository.get_authoritative_time()
+        consumption_ids = tuple(
+            presentation.attempt.consumption_id for presentation in presentations
+        )
+        if len(consumption_ids) != len(set(consumption_ids)) or any(
+            presentation.attempt.scope != scope
+            or (presentation.result is not None and presentation.result.scope != scope)
+            for presentation in presentations
+        ):
+            raise RuntimeError("protected process-scheduling consumption scope mismatch")
+        data = WorkflowProtectedRuntimeProcessSchedulingConsumptionInventoryData(
+            process_schedulings=[
+                WorkflowProtectedRuntimeProcessSchedulingConsumptionData.from_domain(
+                    presentation,
+                    evaluated_at=server_time,
+                )
+                for presentation in presentations
+            ],
+            server_time=server_time,
+            durable=repository.durable,
+        )
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_protected_runtime_process_scheduling_consumption_service_unavailable",
+            title="Protected process-scheduling outcomes unavailable",
+            detail="Process-scheduling outcome metadata is temporarily unavailable.",
+            retryable=True,
+        ) from error
+    return WorkflowProtectedRuntimeProcessSchedulingConsumptionInventoryResponse(
+        data=data,
+        meta=_meta(request),
+    )
+
+
+@router.post(
+    "/protected-runtime-process-scheduling-consumptions",
+    response_model=WorkflowProtectedRuntimeProcessSchedulingConsumptionResponse,
+    status_code=201,
+)
+async def create_workflow_protected_runtime_process_scheduling_consumption(
+    payload: CreateWorkflowProtectedRuntimeProcessSchedulingConsumptionInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[
+        AuthenticatedSubject,
+        Depends(workflow_protected_runtime_process_scheduler_subject),
+    ],
+) -> WorkflowProtectedRuntimeProcessSchedulingConsumptionResponse:
+    _no_store(response)
+    service = cast(
+        WorkflowProtectedRuntimeProcessSchedulingConsumptionService,
+        request.app.state.workflow_protected_runtime_process_scheduling_consumption_service,
+    )
+    del subject
+    try:
+        policy = code_owned_workflow_protected_runtime_process_scheduling_consumption_policy()
+        presentation = await service.consume(
+            authorization_lease_id=payload.authorization_lease_id,
+            policy_id=policy.policy_id,
+            policy_version=policy.policy_version,
+            irreversible_consumption_acknowledged=payload.irreversible_consumption_acknowledged,
+            uncertainty_no_retry_acknowledged=payload.uncertainty_no_retry_acknowledged,
+            idempotency_key=payload.idempotency_key,
+        )
+        data = WorkflowProtectedRuntimeProcessSchedulingConsumptionData.from_domain(presentation)
+    except WorkflowProtectedRuntimeProcessSchedulingConsumptionError as error:
+        uncertain = "uncertain" in error.code
+        unavailable = "unavailable" in error.code or error.code.endswith(
+            "durable_repository_required"
+        )
+        raise AtlasError(
+            status=409 if uncertain else (503 if unavailable else 409),
+            code=(
+                "workflow_protected_runtime_process_scheduling_outcome_uncertain"
+                if uncertain
+                else (
+                    "workflow_protected_runtime_process_scheduling_consumption_service_unavailable"
+                    if unavailable
+                    else "authorization_denied"
+                )
+            ),
+            title=(
+                "Protected process-scheduling outcome uncertain"
+                if uncertain
+                else (
+                    "Protected process-scheduling unavailable" if unavailable else "Request denied"
+                )
+            ),
+            detail=(
+                "The process-scheduling outcome is uncertain and this request must not be retried."
+                if uncertain
+                else (
+                    "Process-scheduling processing is temporarily unavailable."
+                    if unavailable
+                    else "The current identity or evidence is not authorized for this operation."
+                )
+            ),
+            retryable=unavailable and not uncertain,
+        ) from error
+    except Exception as error:
+        raise AtlasError(
+            status=503,
+            code="workflow_protected_runtime_process_scheduling_consumption_service_unavailable",
+            title="Protected process-scheduling unavailable",
+            detail="Process-scheduling processing is temporarily unavailable.",
+            retryable=True,
+        ) from error
+    return WorkflowProtectedRuntimeProcessSchedulingConsumptionResponse(
         data=data,
         meta=_meta(request),
     )

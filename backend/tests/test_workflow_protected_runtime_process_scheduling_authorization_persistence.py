@@ -196,15 +196,18 @@ def test_uniqueness_enforces_replay_one_winner_and_no_reissue() -> None:
         assert foreign_key.initially == "DEFERRED"
 
 
-def test_alembic_graph_has_single_0152_head_and_identifiers_fit_postgresql() -> None:
+def test_alembic_graph_keeps_0152_as_parent_and_identifiers_fit_postgresql() -> None:
     config = Config(str(ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(ROOT / "migrations"))
     script = ScriptDirectory.from_config(config)
 
-    assert script.get_heads() == ["20260820_0152"]
+    assert script.get_heads() == ["20260821_0153"]
     revision = script.get_revision("20260820_0152")
     assert revision is not None
     assert revision.down_revision == "20260820_0151"
+    child = script.get_revision("20260821_0153")
+    assert child is not None
+    assert child.down_revision == "20260820_0152"
     names = {
         item.name
         for model in (

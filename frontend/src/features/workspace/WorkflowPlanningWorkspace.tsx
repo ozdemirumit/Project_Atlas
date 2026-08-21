@@ -54,6 +54,7 @@ import {
   listWorkflowProtectedRuntimeContextUses,
   listWorkflowProtectedRuntimeProcessCreationAuthorizations,
   listWorkflowProtectedRuntimeProcessCreations,
+  listWorkflowProtectedRuntimeProcessSchedulingConsumptions,
   listWorkflowProtectedRuntimeReadiness,
   listWorkflowProtectedRuntimeReadinessAuthorizations,
   listWorkflowProtectedRuntimeStartAuthorizations,
@@ -456,6 +457,16 @@ export default function WorkflowPlanningWorkspace({
       siteId,
     ],
     queryFn: listWorkflowProtectedRuntimeProcessSchedulingAuthorizations,
+    retry: false,
+  });
+  const protectedRuntimeProcessSchedulingQuery = useQuery({
+    queryKey: [
+      "workflow-protected-runtime-process-scheduling-consumptions",
+      organizationId,
+      environmentId,
+      siteId,
+    ],
+    queryFn: listWorkflowProtectedRuntimeProcessSchedulingConsumptions,
     retry: false,
   });
   const targetQuery = useQuery({
@@ -1001,6 +1012,10 @@ export default function WorkflowPlanningWorkspace({
   const protectedRuntimeProcessSchedulingAuthorizationErrorStatus =
     protectedRuntimeProcessSchedulingAuthorizationQuery.error instanceof ApiRequestError
       ? protectedRuntimeProcessSchedulingAuthorizationQuery.error.status
+      : undefined;
+  const protectedRuntimeProcessSchedulingErrorStatus =
+    protectedRuntimeProcessSchedulingQuery.error instanceof ApiRequestError
+      ? protectedRuntimeProcessSchedulingQuery.error.status
       : undefined;
   const eventEnvelopes = eventEnvelopesForAdmission;
   const transportAdmissions = transportAdmissionsForArtifacts;
@@ -5892,6 +5907,196 @@ export default function WorkflowPlanningWorkspace({
             process-scheduling request. It does not schedule, queue, reserve, resume, dispatch or
             execute a process and grants no runtime material, network, connector, MCP, provider or
             infrastructure-mutation authority. This view cannot consume, renew or replace it.
+          </span>
+        </div>
+      </section>
+
+      <section
+        className="workflow-physical-route-binding-band workflow-target-context-opening-band"
+        aria-labelledby="workflow-protected-runtime-process-scheduling-title"
+      >
+        <div className="workflow-section-heading">
+          <div>
+            <p className="eyebrow">SUSPENDED SCHEDULING OUTCOME EVIDENCE</p>
+            <h2 id="workflow-protected-runtime-process-scheduling-title">
+              Protected runtime process-scheduling consumptions
+            </h2>
+          </div>
+          <span>Read only</span>
+        </div>
+        {protectedRuntimeProcessSchedulingQuery.isLoading && (
+          <div className="workflow-empty-state" role="status">
+            <RefreshCw className="spin" size={18} />
+            <span>Loading protected runtime process-scheduling evidence...</span>
+          </div>
+        )}
+        {protectedRuntimeProcessSchedulingQuery.isError && (
+          <div className="workflow-inline-error" role="alert">
+            <AlertTriangle aria-hidden="true" size={18} />
+            <div>
+              <strong>
+                {protectedRuntimeProcessSchedulingErrorStatus === 401
+                  ? "Your session has expired"
+                  : protectedRuntimeProcessSchedulingErrorStatus === 403
+                    ? "Process-scheduling evidence permission is missing"
+                    : "Process-scheduling evidence is unavailable"}
+              </strong>
+              <span>
+                {protectedRuntimeProcessSchedulingErrorStatus === 401
+                  ? "Sign in again with your username and password to continue."
+                  : protectedRuntimeProcessSchedulingErrorStatus === 403
+                    ? "Your current role or scope cannot inspect protected runtime process-scheduling evidence."
+                    : "The durable process-scheduling repository is unavailable or failed closed; no outcome or authority is inferred."}
+              </span>
+            </div>
+          </div>
+        )}
+        {protectedRuntimeProcessSchedulingQuery.isSuccess &&
+          protectedRuntimeProcessSchedulingQuery.data.process_schedulings.length === 0 && (
+            <div className="workflow-empty-state" role="status">
+              <LockKeyhole size={19} />
+              <span>
+                No protected runtime process-scheduling attempts are recorded in this scope.
+              </span>
+            </div>
+          )}
+        {protectedRuntimeProcessSchedulingQuery.isSuccess &&
+          protectedRuntimeProcessSchedulingQuery.data.process_schedulings.length > 0 && (
+            <ol
+              className="workflow-step-preview workflow-physical-route-binding-list workflow-target-context-opening-list"
+              aria-label="Protected runtime process-scheduling consumptions"
+            >
+              {protectedRuntimeProcessSchedulingQuery.data.process_schedulings.map(
+                (processScheduling) => {
+                  const outcome =
+                    processScheduling.result_state === null
+                      ? "Pending"
+                      : processScheduling.result_state ===
+                          "process_scheduled_suspended_in_protected_boundary"
+                        ? "Scheduled suspended"
+                        : processScheduling.result_state ===
+                            "process_scheduling_rejected_without_scheduling"
+                          ? "Rejected without scheduling"
+                          : processScheduling.result_state ===
+                              "process_scheduling_failed_without_scheduling"
+                            ? "Failed without scheduling"
+                            : "Outcome uncertain";
+                  const outcomeClass =
+                    processScheduling.result_state ===
+                    "process_scheduled_suspended_in_protected_boundary"
+                      ? "success"
+                      : processScheduling.result_state ===
+                          "process_scheduling_outcome_uncertain"
+                        ? "warning"
+                        : "neutral";
+                  const OutcomeIcon =
+                    processScheduling.result_state ===
+                    "process_scheduled_suspended_in_protected_boundary"
+                      ? CheckCircle2
+                      : processScheduling.result_state ===
+                            "process_scheduling_rejected_without_scheduling" ||
+                          processScheduling.result_state ===
+                            "process_scheduling_failed_without_scheduling"
+                        ? Ban
+                        : processScheduling.result_state ===
+                            "process_scheduling_outcome_uncertain"
+                          ? AlertTriangle
+                          : FileClock;
+                  return (
+                    <li key={processScheduling.process_scheduling_id}>
+                      <OutcomeIcon size={18} />
+                      <div>
+                        <strong>
+                          <code title={processScheduling.process_scheduling_id}>
+                            {safeHolderIdentifier(processScheduling.process_scheduling_id)}
+                          </code>
+                          <span className={`state-badge ${outcomeClass}`}>{outcome}</span>
+                        </strong>
+                        <div className="workflow-physical-route-binding-grid">
+                          <span>
+                            Attempt {readableKind(processScheduling.attempt_state)} | result{" "}
+                            {processScheduling.result_state === null
+                              ? "pending"
+                              : readableKind(processScheduling.result_state)}
+                          </span>
+                          <span>
+                            Started {formatTimestamp(processScheduling.started_at)} | completed{" "}
+                            {processScheduling.completed_at === null
+                              ? "pending"
+                              : formatTimestamp(processScheduling.completed_at)}
+                            {" | "}recorded{" "}
+                            {processScheduling.recorded_at === null
+                              ? "pending"
+                              : formatTimestamp(processScheduling.recorded_at)}
+                          </span>
+                          <span>
+                            Process scheduled{" "}
+                            {processScheduling.process_scheduled === null
+                              ? "unknown"
+                              : processScheduling.process_scheduled
+                                ? "true"
+                                : "false"}
+                            {" | "}sealed{" "}
+                            {processScheduling.process_sealed === null
+                              ? "unknown"
+                              : processScheduling.process_sealed
+                                ? "true"
+                                : "false"}
+                            {" | "}suspended{" "}
+                            {processScheduling.process_suspended === null
+                              ? "unknown"
+                              : processScheduling.process_suspended
+                                ? "true"
+                                : "false"}
+                            {" | "}runnable{" "}
+                            {processScheduling.process_runnable === null
+                              ? "unknown"
+                              : processScheduling.process_runnable
+                                ? "true"
+                                : "false"}
+                          </span>
+                          <span>
+                            Policy{" "}
+                            <code title={processScheduling.policy_reference}>
+                              {safeHolderIdentifier(processScheduling.policy_reference)}
+                            </code>
+                          </span>
+                          <span>
+                            Scheduler profile{" "}
+                            <code title={processScheduling.scheduling_profile_reference}>
+                              {shortDigest(processScheduling.scheduling_profile_reference)}
+                            </code>
+                            {" | "}primitive{" "}
+                            <code title={processScheduling.primitive_reference}>
+                              {shortDigest(processScheduling.primitive_reference)}
+                            </code>
+                          </span>
+                          <span>
+                            Integrity reference{" "}
+                            <code title={processScheduling.integrity_reference}>
+                              {shortDigest(processScheduling.integrity_reference)}
+                            </code>
+                          </span>
+                          <span className="workflow-physical-route-binding-authority">
+                            Effective authority false. This record is immutable historical outcome
+                            evidence only.
+                          </span>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                },
+              )}
+            </ol>
+          )}
+        <div className="workflow-safety-boundary" role="note">
+          <LockKeyhole size={18} />
+          <span>
+            Read-only evidence. This view cannot consume or schedule, retry, resume, dispatch,
+            execute, stop or clean up a process; access protected process material; select a queue,
+            priority or resource; invoke AI, connector or MCP capabilities; use network access; or
+            mutate infrastructure. A successful record proves only scheduler registration while
+            the sealed process remained suspended and non-runnable.
           </span>
         </div>
       </section>

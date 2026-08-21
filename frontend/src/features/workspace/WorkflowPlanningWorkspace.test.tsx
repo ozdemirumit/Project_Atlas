@@ -39,6 +39,7 @@ import {
   type WorkflowProtectedRuntimeContextUse,
   type WorkflowProtectedRuntimeProcessCreationAuthorization,
   type WorkflowProtectedRuntimeProcessCreation,
+  type WorkflowProtectedRuntimeProcessScheduling,
   type WorkflowProtectedRuntimeReadiness,
   type WorkflowProtectedRuntimeReadinessAuthorization,
   type WorkflowProtectedRuntimeStartAuthorization,
@@ -1675,6 +1676,28 @@ const protectedRuntimeProcessCreation: WorkflowProtectedRuntimeProcessCreation =
   effective_authority: false,
 };
 
+const protectedRuntimeProcessScheduling: WorkflowProtectedRuntimeProcessScheduling = {
+  process_scheduling_id: "prpsc-consumption-1234567890abcdef12345678",
+  attempt_state: "process_scheduling_attempt_started",
+  result_state: "process_scheduled_suspended_in_protected_boundary",
+  started_at: "2026-08-21T06:00:00.300Z",
+  completed_at: "2026-08-21T06:00:00.500Z",
+  recorded_at: "2026-08-21T06:00:00.600Z",
+  process_scheduled: true,
+  process_sealed: true,
+  process_suspended: true,
+  process_runnable: false,
+  policy_reference:
+    "policy.workflow-protected-runtime-process-scheduling-consumption:1.0",
+  scheduling_profile_reference:
+    "integrity.workflow-protected-runtime-process-scheduling-profile.1234567890abcdef",
+  primitive_reference:
+    "integrity.workflow-protected-runtime-process-scheduling-primitive.1234567890abcdef",
+  integrity_reference:
+    "integrity.workflow-protected-runtime-process-scheduling-consumption.1234567890abcdef",
+  effective_authority: false,
+};
+
 const protectedRuntimeContextInjectionConsumption: WorkflowProtectedRuntimeContextInjectionConsumption = {
   injection_id:
     "workflow-protected-runtime-context-injection-consumption.1234567890abcdef12345678",
@@ -2619,6 +2642,31 @@ function protectedRuntimeProcessCreationResponse(
   );
 }
 
+function protectedRuntimeProcessSchedulingResponse(
+  processSchedulingConsumptions: unknown[],
+  status = 200,
+  serverTime = "2026-08-21T06:00:00.700Z",
+  durable = true,
+): Response {
+  return new Response(
+    status === 200
+      ? JSON.stringify({
+          data: {
+            process_schedulings: processSchedulingConsumptions,
+            server_time: serverTime,
+            durable,
+          },
+          meta: {
+            correlation_id:
+              "correlation.workflow.protected-runtime-process-scheduling-consumption",
+            generated_at: serverTime,
+          },
+        })
+      : null,
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function protectedRuntimeContextInjectionConsumptionResponse(
   consumptions: unknown[],
   status = 200,
@@ -2767,6 +2815,9 @@ function mockReadResponses(input: {
   protectedRuntimeProcessCreations?: unknown[];
   protectedRuntimeProcessCreationServerTime?: string;
   protectedRuntimeProcessCreationDurable?: boolean;
+  protectedRuntimeProcessSchedulings?: unknown[];
+  protectedRuntimeProcessSchedulingServerTime?: string;
+  protectedRuntimeProcessSchedulingDurable?: boolean;
   credentialAssignmentSnapshots?: unknown[];
   transportCompatibilityAdmissions?: unknown[];
   pendingTransportAdmissionResponse?: Promise<Response>;
@@ -2803,6 +2854,7 @@ function mockReadResponses(input: {
   pendingProtectedRuntimeReadinessResponse?: Promise<Response>;
   pendingProtectedRuntimeProcessCreationAuthorizationResponse?: Promise<Response>;
   pendingProtectedRuntimeProcessCreationResponse?: Promise<Response>;
+  pendingProtectedRuntimeProcessSchedulingResponse?: Promise<Response>;
   pendingCredentialAssignmentSnapshotResponse?: Promise<Response>;
   pendingTransportCompatibilityAdmissionResponse?: Promise<Response>;
   leaseStatus?: number;
@@ -2880,6 +2932,8 @@ function mockReadResponses(input: {
   protectedRuntimeProcessCreationAuthorizationStatuses?: number[];
   protectedRuntimeProcessCreationStatus?: number;
   protectedRuntimeProcessCreationStatuses?: number[];
+  protectedRuntimeProcessSchedulingStatus?: number;
+  protectedRuntimeProcessSchedulingStatuses?: number[];
   credentialAssignmentSnapshotStatus?: number;
   credentialAssignmentSnapshotStatuses?: number[];
   transportCompatibilityAdmissionStatus?: number;
@@ -2919,10 +2973,35 @@ function mockReadResponses(input: {
   let protectedRuntimeReadinessReadCount = 0;
   let protectedRuntimeProcessCreationAuthorizationReadCount = 0;
   let protectedRuntimeProcessCreationReadCount = 0;
+  let protectedRuntimeProcessSchedulingReadCount = 0;
   let credentialAssignmentSnapshotReadCount = 0;
   let transportCompatibilityAdmissionReadCount = 0;
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (
+      url.endsWith(
+        "/api/v1/workflows/protected-runtime-process-scheduling-consumptions",
+      )
+    ) {
+      if (input.pendingProtectedRuntimeProcessSchedulingResponse) {
+        return input.pendingProtectedRuntimeProcessSchedulingResponse;
+      }
+      const status =
+        input.protectedRuntimeProcessSchedulingStatuses?.[
+          Math.min(
+            protectedRuntimeProcessSchedulingReadCount++,
+            input.protectedRuntimeProcessSchedulingStatuses.length - 1,
+          )
+        ] ?? input.protectedRuntimeProcessSchedulingStatus ?? 200;
+      return Promise.resolve(
+        protectedRuntimeProcessSchedulingResponse(
+          input.protectedRuntimeProcessSchedulings ?? [],
+          status,
+          input.protectedRuntimeProcessSchedulingServerTime,
+          input.protectedRuntimeProcessSchedulingDurable,
+        ),
+      );
+    }
     if (
       url.endsWith(
         "/api/v1/workflows/protected-runtime-process-scheduling-authorizations",
@@ -10231,6 +10310,129 @@ describe("WorkflowPlanningWorkspace", () => {
     expect(within(section).queryByRole("checkbox")).toBeNull();
   });
 
+  it("renders all protected process-scheduling outcomes as minimized password-session evidence", async () => {
+    const pending: WorkflowProtectedRuntimeProcessScheduling = {
+      ...protectedRuntimeProcessScheduling,
+      process_scheduling_id: "prpsc-consumption-abcdef1234567890abcdef01",
+      result_state: null,
+      completed_at: null,
+      recorded_at: null,
+      process_scheduled: null,
+      process_sealed: null,
+      process_suspended: null,
+      process_runnable: null,
+    };
+    const rejected: WorkflowProtectedRuntimeProcessScheduling = {
+      ...protectedRuntimeProcessScheduling,
+      process_scheduling_id: "prpsc-consumption-abcdef1234567890abcdef02",
+      result_state: "process_scheduling_rejected_without_scheduling",
+      process_scheduled: false,
+    };
+    const failed: WorkflowProtectedRuntimeProcessScheduling = {
+      ...rejected,
+      process_scheduling_id: "prpsc-consumption-abcdef1234567890abcdef03",
+      result_state: "process_scheduling_failed_without_scheduling",
+    };
+    const uncertain: WorkflowProtectedRuntimeProcessScheduling = {
+      ...rejected,
+      process_scheduling_id: "prpsc-consumption-abcdef1234567890abcdef04",
+      result_state: "process_scheduling_outcome_uncertain",
+      process_scheduled: null,
+      process_sealed: null,
+      process_suspended: null,
+      process_runnable: null,
+    };
+    mockReadResponses({
+      protectedRuntimeProcessSchedulings: [
+        pending,
+        protectedRuntimeProcessScheduling,
+        rejected,
+        failed,
+        uncertain,
+      ],
+    });
+    renderWorkspace();
+
+    const authorizationSection = (await screen.findByRole("heading", {
+      name: "Protected runtime process-scheduling authorizations",
+    })).closest("section") as HTMLElement;
+    const section = (await screen.findByRole("heading", {
+      name: "Protected runtime process-scheduling consumptions",
+    })).closest("section") as HTMLElement;
+    expect(authorizationSection.nextElementSibling).toBe(section);
+    const records = await within(section).findByRole("list", {
+      name: "Protected runtime process-scheduling consumptions",
+    });
+    expect(records).toHaveTextContent("Pending");
+    expect(records).toHaveTextContent("Scheduled suspended");
+    expect(records).toHaveTextContent("Rejected without scheduling");
+    expect(records).toHaveTextContent("Failed without scheduling");
+    expect(records).toHaveTextContent("Outcome uncertain");
+    expect(records).toHaveTextContent(/Process scheduled unknown/i);
+    expect(records).toHaveTextContent(
+      /Process scheduled true.*sealed true.*suspended true.*runnable false/i,
+    );
+    expect(records).toHaveTextContent(/Effective authority false/i);
+    expect(
+      within(section).getAllByTitle(protectedRuntimeProcessScheduling.policy_reference)[0],
+    ).toBeVisible();
+    expect(
+      within(section).getAllByTitle(
+        protectedRuntimeProcessScheduling.scheduling_profile_reference,
+      )[0],
+    ).toBeVisible();
+    expect(
+      within(section).getAllByTitle(protectedRuntimeProcessScheduling.primitive_reference)[0],
+    ).toBeVisible();
+    expect(section).toHaveTextContent(/remained suspended and non-runnable/i);
+    expect(section).not.toHaveTextContent(/authorized browser session|mfa|second session/i);
+    expect(
+      section.querySelector(
+        "button, a, input, select, textarea, [role='button'], [role='switch'], [role='checkbox']",
+      ),
+    ).toBeNull();
+    const schedulingCall = vi.mocked(fetch).mock.calls.find(([request]) =>
+      (request instanceof Request ? request.url : request.toString()).endsWith(
+        "/api/v1/workflows/protected-runtime-process-scheduling-consumptions",
+      ),
+    );
+    expect(schedulingCall).toBeDefined();
+    expect(schedulingCall?.[1]?.method ?? "GET").toBe("GET");
+    expect(schedulingCall?.[1]?.credentials).toBe("same-origin");
+  });
+
+  it.each([
+    ["a protected locator", { ...protectedRuntimeProcessScheduling, process_locator: "hidden" }],
+    ["a command", { ...protectedRuntimeProcessScheduling, command: "hidden" }],
+    ["a queue", { ...protectedRuntimeProcessScheduling, queue: "hidden" }],
+    ["a priority", { ...protectedRuntimeProcessScheduling, priority: 10 }],
+    ["a resource", { ...protectedRuntimeProcessScheduling, resource: "hidden" }],
+  ])("fails closed for process-scheduling evidence with %s", async (_case, unsafe) => {
+    mockReadResponses({ protectedRuntimeProcessSchedulings: [unsafe] });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Protected runtime process-scheduling consumptions",
+    })).closest("section") as HTMLElement;
+    expect(
+      await within(section).findByText("Process-scheduling evidence is unavailable"),
+    ).toBeVisible();
+    expect(within(section).queryByRole("list")).toBeNull();
+    expect(section).not.toHaveTextContent(/hidden/i);
+  });
+
+  it("uses the existing password session for process-scheduling read errors", async () => {
+    mockReadResponses({ protectedRuntimeProcessSchedulingStatus: 401 });
+    renderWorkspace();
+
+    const section = (await screen.findByRole("heading", {
+      name: "Protected runtime process-scheduling consumptions",
+    })).closest("section") as HTMLElement;
+    expect(await within(section).findByText("Your session has expired")).toBeVisible();
+    expect(section).toHaveTextContent("Sign in again with your username and password");
+    expect(section).not.toHaveTextContent(/authorized browser session|mfa|second session/i);
+  });
+
   it("renders protected runtime-context injection consumptions as minimized read-only evidence", async () => {
     expect(Object.keys(protectedRuntimeContextInjectionConsumption).sort()).toEqual(
       [
@@ -10613,6 +10815,9 @@ describe("WorkflowPlanningWorkspace", () => {
     let runReads = 0;
     vi.mocked(fetch).mockImplementation((request) => {
       const url = request instanceof Request ? request.url : request.toString();
+      if (url.endsWith("/protected-runtime-process-scheduling-consumptions")) {
+        return Promise.resolve(protectedRuntimeProcessSchedulingResponse([]));
+      }
       if (!url.endsWith("/materialized-run")) return Promise.resolve(leaseResponse(null));
       runReads += 1;
       return Promise.resolve(
@@ -10685,6 +10890,9 @@ describe("WorkflowPlanningWorkspace", () => {
     });
     vi.mocked(fetch).mockImplementation((request) => {
       const url = request instanceof Request ? request.url : request.toString();
+      if (url.endsWith("/protected-runtime-process-scheduling-consumptions")) {
+        return Promise.resolve(protectedRuntimeProcessSchedulingResponse([]));
+      }
       if (url.endsWith("/attempts")) return new Promise<Response>(() => undefined);
       if (url.endsWith("/materialized-run")) {
         return Promise.resolve(materializedRunResponse(materializedRun));
@@ -10786,6 +10994,9 @@ describe("WorkflowPlanningWorkspace", () => {
     let attemptReads = 0;
     vi.mocked(fetch).mockImplementation((request) => {
       const url = request instanceof Request ? request.url : request.toString();
+      if (url.endsWith("/protected-runtime-process-scheduling-consumptions")) {
+        return Promise.resolve(protectedRuntimeProcessSchedulingResponse([]));
+      }
       if (url.endsWith("/attempts")) {
         attemptReads += 1;
         return Promise.resolve(attemptResponse([], attemptReads === 1 ? 503 : 200));
@@ -10853,6 +11064,9 @@ describe("WorkflowPlanningWorkspace", () => {
     });
     vi.mocked(fetch).mockImplementation((request) => {
       const url = request instanceof Request ? request.url : request.toString();
+      if (url.endsWith("/protected-runtime-process-scheduling-consumptions")) {
+        return Promise.resolve(protectedRuntimeProcessSchedulingResponse([]));
+      }
       if (url.endsWith("/dispatch-intents")) return new Promise<Response>(() => undefined);
       if (url.endsWith("/attempts")) return Promise.resolve(attemptResponse([materializedAttempt]));
       if (url.endsWith("/materialized-run")) return Promise.resolve(materializedRunResponse(materializedRun));
@@ -10962,6 +11176,9 @@ describe("WorkflowPlanningWorkspace", () => {
     let dispatchIntentReads = 0;
     vi.mocked(fetch).mockImplementation((request) => {
       const url = request instanceof Request ? request.url : request.toString();
+      if (url.endsWith("/protected-runtime-process-scheduling-consumptions")) {
+        return Promise.resolve(protectedRuntimeProcessSchedulingResponse([]));
+      }
       if (url.endsWith("/dispatch-intents")) {
         dispatchIntentReads += 1;
         return Promise.resolve(

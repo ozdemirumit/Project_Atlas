@@ -28,6 +28,9 @@ from atlas.modules.workflows.application.protected_runtime_process_creation_auth
 from atlas.modules.workflows.application.protected_runtime_process_creation_consumptions import (
     WorkflowProtectedRuntimeProcessCreationConsumptionPresentation,
 )
+from atlas.modules.workflows.application.protected_runtime_process_scheduling_consumptions import (
+    WorkflowProtectedRuntimeProcessSchedulingConsumptionPresentation,
+)
 from atlas.modules.workflows.application.protected_runtime_readiness_authorization_ports import (
     WorkflowProtectedRuntimeReadinessAuthorizationPresentation,
 )
@@ -4230,6 +4233,198 @@ class WorkflowProtectedRuntimeProcessCreationConsumptionResponse(BaseModel):
 
 class WorkflowProtectedRuntimeProcessCreationConsumptionInventoryResponse(BaseModel):
     data: WorkflowProtectedRuntimeProcessCreationConsumptionInventoryData
+    meta: ResponseMeta
+
+
+class CreateWorkflowProtectedRuntimeProcessSchedulingConsumptionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    authorization_lease_id: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    policy_id: Literal["policy.workflow-protected-runtime-process-scheduling-consumption"]
+    policy_version: Literal["1.0"]
+    irreversible_consumption_acknowledged: Literal[True]
+    uncertainty_no_retry_acknowledged: Literal[True]
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class WorkflowProtectedRuntimeProcessSchedulingConsumptionData(BaseModel):
+    """Minimized scheduling outcome without process or scheduler material."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    process_scheduling_id: str = Field(min_length=3, max_length=240, pattern=STABLE_ID)
+    attempt_state: Literal["process_scheduling_attempt_started"]
+    result_state: (
+        Literal[
+            "process_scheduled_suspended_in_protected_boundary",
+            "process_scheduling_rejected_without_scheduling",
+            "process_scheduling_failed_without_scheduling",
+            "process_scheduling_outcome_uncertain",
+        ]
+        | None
+    )
+    started_at: datetime
+    completed_at: datetime | None
+    recorded_at: datetime | None
+    process_scheduled: bool | None
+    process_sealed: bool | None
+    process_suspended: bool | None
+    process_runnable: bool | None
+    policy_reference: str = Field(min_length=1, max_length=240)
+    scheduling_profile_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    primitive_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    integrity_reference: str = Field(min_length=3, max_length=128, pattern=STABLE_ID)
+    effective_authority: Literal[False]
+
+    @model_validator(mode="after")
+    def validate_outcome(self) -> WorkflowProtectedRuntimeProcessSchedulingConsumptionData:
+        pending = (
+            self.result_state is None
+            and self.completed_at is None
+            and self.recorded_at is None
+            and self.process_scheduled is None
+            and self.process_sealed is None
+            and self.process_suspended is None
+            and self.process_runnable is None
+        )
+        effective_uncertainty = (
+            self.result_state == "process_scheduling_outcome_uncertain"
+            and self.completed_at is None
+            and self.recorded_at is not None
+            and self.process_scheduled is None
+            and self.process_sealed is None
+            and self.process_suspended is None
+            and self.process_runnable is None
+        )
+        success = (
+            self.result_state == "process_scheduled_suspended_in_protected_boundary"
+            and self.completed_at is not None
+            and self.recorded_at is not None
+            and self.process_scheduled is True
+            and self.process_sealed is True
+            and self.process_suspended is True
+            and self.process_runnable is False
+        )
+        known_without_scheduling = (
+            self.result_state
+            in {
+                "process_scheduling_rejected_without_scheduling",
+                "process_scheduling_failed_without_scheduling",
+            }
+            and self.completed_at is not None
+            and self.recorded_at is not None
+            and self.process_scheduled is False
+            and self.process_sealed is True
+            and self.process_suspended is True
+            and self.process_runnable is False
+        )
+        durable_uncertainty = (
+            self.result_state == "process_scheduling_outcome_uncertain"
+            and self.completed_at is not None
+            and self.recorded_at is not None
+            and self.process_scheduled is None
+            and self.process_sealed is None
+            and self.process_suspended is None
+            and self.process_runnable is None
+        )
+        if not (
+            pending
+            or effective_uncertainty
+            or success
+            or known_without_scheduling
+            or durable_uncertainty
+        ):
+            raise ValueError("process-scheduling outcome projection is inconsistent")
+        if self.recorded_at is not None and self.recorded_at < self.started_at:
+            raise ValueError("process-scheduling outcome predates its attempt")
+        if self.completed_at is not None and (
+            self.completed_at < self.started_at
+            or self.recorded_at is None
+            or self.recorded_at < self.completed_at
+        ):
+            raise ValueError("process-scheduling completion projection is inconsistent")
+        return self
+
+    @classmethod
+    def from_domain(
+        cls,
+        presentation: WorkflowProtectedRuntimeProcessSchedulingConsumptionPresentation,
+        *,
+        evaluated_at: datetime | None = None,
+    ) -> WorkflowProtectedRuntimeProcessSchedulingConsumptionData:
+        attempt = presentation.attempt
+        result = presentation.result
+        if result is not None and (
+            result.attempt_id != attempt.attempt_id
+            or result.attempt_digest != attempt.canonical_digest
+            or result.consumption_id != attempt.consumption_id
+            or result.scope != attempt.scope
+        ):
+            raise ValueError("process-scheduling attempt and outcome do not match")
+        effective_uncertainty = (
+            result is None
+            and evaluated_at is not None
+            and evaluated_at.tzinfo is not None
+            and evaluated_at >= attempt.invocation_deadline
+        )
+        return cls(
+            process_scheduling_id=attempt.consumption_id,
+            attempt_state=attempt.state.value,
+            result_state=(
+                "process_scheduling_outcome_uncertain"
+                if effective_uncertainty
+                else (None if result is None else result.result_state.value)
+            ),
+            started_at=attempt.started_at,
+            completed_at=None if result is None else result.completed_at,
+            recorded_at=(
+                evaluated_at
+                if effective_uncertainty
+                else (None if result is None else result.recorded_at)
+            ),
+            process_scheduled=None if result is None else result.process_scheduled,
+            process_sealed=(
+                None
+                if result is None
+                or result.result_state.value == "process_scheduling_outcome_uncertain"
+                else True
+            ),
+            process_suspended=None if result is None else result.process_suspended,
+            process_runnable=None if result is None else result.process_runnable,
+            policy_reference=f"{attempt.policy_id}:{attempt.policy_version}",
+            scheduling_profile_reference=(
+                "integrity.workflow-protected-runtime-process-scheduling-profile."
+                f"{sha256(attempt.scheduling_profile_digest.encode('utf-8')).hexdigest()[:24]}"
+            ),
+            primitive_reference=(
+                "integrity.workflow-protected-runtime-process-scheduling-primitive."
+                f"{sha256(attempt.primitive_digest.encode('utf-8')).hexdigest()[:24]}"
+            ),
+            integrity_reference=(
+                "integrity.workflow-protected-runtime-process-scheduling-consumption."
+                f"{sha256(attempt.canonical_digest.encode('utf-8')).hexdigest()[:24]}"
+            ),
+            effective_authority=False,
+        )
+
+
+class WorkflowProtectedRuntimeProcessSchedulingConsumptionInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    process_schedulings: list[WorkflowProtectedRuntimeProcessSchedulingConsumptionData] = Field(
+        max_length=256
+    )
+    server_time: datetime
+    durable: Literal[True]
+
+
+class WorkflowProtectedRuntimeProcessSchedulingConsumptionResponse(BaseModel):
+    data: WorkflowProtectedRuntimeProcessSchedulingConsumptionData
+    meta: ResponseMeta
+
+
+class WorkflowProtectedRuntimeProcessSchedulingConsumptionInventoryResponse(BaseModel):
+    data: WorkflowProtectedRuntimeProcessSchedulingConsumptionInventoryData
     meta: ResponseMeta
 
 

@@ -725,6 +725,15 @@ execution, model/network/connector/MCP/provider operation or infrastructure muta
 remains read-only through the normal password session without MFA or a second browser prompt; AI
 remains advisory-only and Active Directory remains authentication-only.
 
+ADR-180 atomically consumes one exact active ADR-179 lease and appends one immutable scheduling
+claim plus one immutable attempt before at most one code-owned protected scheduler call. The
+primitive may register only the exact existing sealed process while preserving suspended and non-
+runnable state. Exact terminal or pending replay, recovery, event, outbox and DLQ paths perform no
+scheduler I/O. Known terminal receipts and permanent uncertainty are append-only evidence; no path
+may retry, resume, dispatch, execute or infer scheduling. All authority remains false, human GET/UI
+is minimized and read-only, AI remains advisory-only and Active Directory remains authentication-
+only.
+
 ### 10.2 Publication State
 
 Outbox records track:
@@ -1137,3 +1146,4 @@ This document is ready to enter Review when:
 | 2.8.0 | 2026-08-18 | Workflow Architecture | Added bounded single-use protected runtime process-creation authorization lease boundary |
 | 2.9.0 | 2026-08-20 | Workflow Architecture | Added atomic protected runtime process-creation consumption and suspended-process evidence boundary |
 | 3.0.0 | 2026-08-20 | Workflow Architecture | Added bounded single-use protected runtime process-scheduling authorization lease boundary |
+| 3.1.0 | 2026-08-21 | Workflow Architecture | Added atomic protected runtime process-scheduling consumption boundary |
