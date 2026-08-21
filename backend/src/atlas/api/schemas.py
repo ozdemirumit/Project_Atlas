@@ -6,7 +6,36 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from atlas.modules.authorization.domain.models import AuthorizationDecision, ResourceScope
 from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.platform.domain.advisory_posture import AdvisoryOnlyPosture
 from atlas.modules.platform.domain.status import ComponentHealth, PlatformHealth
+
+
+class AdvisoryOnlyPostureSchema(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    contract_id: str
+    contract_version: str
+    platform_mode: str
+    operational_execution_enabled: bool
+    process_resume_consumption_enabled: bool
+    dispatch_enabled: bool
+    infrastructure_mutation_enabled: bool
+    ai_execution_authorized: bool
+    contract_digest: str
+
+    @classmethod
+    def from_domain(cls, posture: AdvisoryOnlyPosture) -> AdvisoryOnlyPostureSchema:
+        return cls(
+            contract_id=posture.contract_id,
+            contract_version=posture.contract_version,
+            platform_mode=posture.platform_mode,
+            operational_execution_enabled=posture.operational_execution_enabled,
+            process_resume_consumption_enabled=posture.process_resume_consumption_enabled,
+            dispatch_enabled=posture.dispatch_enabled,
+            infrastructure_mutation_enabled=posture.infrastructure_mutation_enabled,
+            ai_execution_authorized=posture.ai_execution_authorized,
+            contract_digest=posture.contract_digest,
+        )
 
 
 class ComponentStatusSchema(BaseModel):
@@ -45,6 +74,7 @@ class PlatformStatusData(BaseModel):
     status: str
     components: list[ComponentStatusSchema]
     warnings: list[str]
+    operational_posture: AdvisoryOnlyPostureSchema
 
     @classmethod
     def from_domain(cls, status: PlatformHealth) -> PlatformStatusData:
@@ -55,6 +85,7 @@ class PlatformStatusData(BaseModel):
             status=status.status.value,
             components=[ComponentStatusSchema.from_domain(item) for item in status.components],
             warnings=list(status.warnings),
+            operational_posture=AdvisoryOnlyPostureSchema.from_domain(status.operational_posture),
         )
 
 

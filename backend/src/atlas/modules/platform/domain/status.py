@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
 
+from atlas.modules.platform.domain.advisory_posture import AdvisoryOnlyPosture
+
 
 class ComponentState(StrEnum):
     HEALTHY = "healthy"
@@ -29,6 +31,7 @@ class PlatformHealth:
     ready: bool
     components: tuple[ComponentHealth, ...]
     warnings: tuple[str, ...]
+    operational_posture: AdvisoryOnlyPosture
 
 
 class HealthProbe(Protocol):

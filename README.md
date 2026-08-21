@@ -20,7 +20,9 @@ Atlas must be suitable for enterprise environments from the beginning. Security,
 
 AI assists. Humans decide.
 
-Atlas may analyze, correlate, explain, recommend, prepare plans, estimate impact, and propose rollback steps. It must not execute operationally risky actions without explicit human approval and policy control.
+Atlas may analyze, correlate, explain, recommend, prepare plans, estimate impact, and propose rollback
+steps. It does not execute infrastructure-changing operations; approved plans are carried out through
+external, human-governed organizational processes.
 
 ## Product Vision
 
@@ -46,7 +48,9 @@ The following principles are architectural constraints for the entire project.
 
 ### AI Assists, Humans Decide
 
-Atlas may analyze, explain, recommend, and prepare plans. It must not perform operationally risky or infrastructure-changing actions without explicit human approval and policy control.
+Atlas may analyze, explain, recommend, and prepare plans. It must not perform operationally risky or
+infrastructure-changing actions. Approval cannot convert a recommendation into Atlas execution
+authority.
 
 ### Explainability First
 

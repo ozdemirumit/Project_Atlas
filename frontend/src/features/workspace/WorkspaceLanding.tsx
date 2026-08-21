@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { CurrentIdentity } from "../../api/identity";
-import { getPlatformStatus } from "../../api/platform";
+import { getPlatformStatus, PlatformPostureViolationError } from "../../api/platform";
 import { logoutBrowserSession } from "../../api/sessions";
 import {
+  AdvisoryBoundaryViolation,
   ApplicationSidebar,
   ApplicationTopbar,
 } from "../shell/ApplicationShell";
@@ -74,6 +75,10 @@ export function WorkspaceLanding({
     );
   }
 
+  if (statusQuery.error instanceof PlatformPostureViolationError) {
+    return <AdvisoryBoundaryViolation />;
+  }
+
   return (
     <div className="app-frame">
       <ApplicationSidebar
@@ -88,6 +93,7 @@ export function WorkspaceLanding({
         }}
         open={sidebarOpen}
         platformState={platformState}
+        platformMode={statusQuery.data?.data.operational_posture.platform_mode}
       />
 
       <main className="main-area">

@@ -33,7 +33,8 @@ Agents must preserve these principles:
 - Security is the default.
 - The platform is vendor agnostic.
 - The architecture is modular by design.
-- Risky or infrastructure-changing actions require explicit human approval and policy control.
+- Atlas must not execute risky or infrastructure-changing actions; approval may govern only an
+  external organizational process.
 - Everything required to build, test, validate, and deploy should be reproducible from the repository.
 - Active Directory and LDAP are authentication-only identity providers; agents must not add an AD
   MCP or directory-management capability.
@@ -98,7 +99,8 @@ Any recommendation involving operational change must include:
 - Rollback plan
 - Alternatives
 
-Read-only diagnostics may be automated only when policy allows it. Service-impacting and destructive actions must require explicit human approval.
+Read-only diagnostics may be automated only when policy allows it. Service-impacting and destructive
+actions remain outside Atlas and must be handled through external human-governed procedures.
 
 ## 8. Commit Expectations
 

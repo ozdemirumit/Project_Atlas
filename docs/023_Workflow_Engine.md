@@ -5,15 +5,15 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-023 |
-| Version | 1.0.0 |
+| Version | 3.3.0 |
 | Status | Approved |
 | Document Owner | Workflow Platform Owner |
 | Reviewers | Architecture Owner, Security Architecture, Infrastructure Operations, Backend Architecture, Audit Owner |
 | Approver | Umit Ozdemir (acting Architecture Owner) |
 | Approval Date | 2026-08-03 |
-| Last Updated | 2026-08-03 |
+| Last Updated | 2026-08-21 |
 | Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-010](010_System_Architecture.md), [ATLAS-011](011_Component_Architecture.md), [ATLAS-016](016_Event_Architecture.md), [ATLAS-025](025_Policy_Engine.md), [ATLAS-037](037_Approval_Workflow.md) |
-| Supersedes | ATLAS-023 version 0.1.0 |
+| Supersedes | ATLAS-023 version 3.2.0 |
 
 ## 1. Purpose
 
@@ -308,7 +308,7 @@ Policy evaluation occurs:
 - Before sensitive evidence access
 - Before connector capability dispatch
 - Before approval packet creation
-- Immediately before future controlled execution
+- Immediately before a non-executable handoff to an external controlled process
 - When relevant context or proposal version changes
 
 Policy results are versioned references. A conditional result creates explicit required steps; it is not treated as allow.
@@ -880,6 +880,10 @@ MVP workflows do not execute C3 through C5 capabilities.
   suspended, non-runnable and unexecuted. Only the active lease may grant submission of one future
   resume-consumption request; IMP-231 performs no resume, dispatch or execution and exposes no
   operational control or protected material.
+- ADR-182 closes the deferred process-resume consumption path. Workflow state, approval, policy,
+  lease, AI, MCP, connector, event, scheduler, outbox, recovery or configuration cannot resume,
+  dispatch or execute the protected process or mutate infrastructure. Existing lineage remains
+  read-only evidence; Atlas's terminal product posture is advisory-only.
 
 ## 39. Assumptions
 
@@ -937,3 +941,4 @@ This document is ready to enter Review when:
 | 3.0.0 | 2026-08-20 | Workflow Architecture | Added bounded single-use protected runtime process-scheduling authorization lease boundary |
 | 3.1.0 | 2026-08-21 | Workflow Architecture | Added atomic protected runtime process-scheduling consumption boundary |
 | 3.2.0 | 2026-08-21 | Workflow Architecture | Added bounded single-use protected runtime process-resume authorization lease boundary |
+| 3.3.0 | 2026-08-21 | Umit Ozdemir | Closed process-resume consumption under the advisory-only terminal execution boundary |

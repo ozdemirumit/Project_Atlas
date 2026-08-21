@@ -12,6 +12,17 @@ const platformResponse = {
     status: "healthy",
     components: [],
     warnings: [],
+    operational_posture: {
+      contract_id: "platform-posture.advisory-only",
+      contract_version: "1.0.0",
+      platform_mode: "advisory_only",
+      operational_execution_enabled: false,
+      process_resume_consumption_enabled: false,
+      dispatch_enabled: false,
+      infrastructure_mutation_enabled: false,
+      ai_execution_authorized: false,
+      contract_digest: "edfde9fc024bab918b587740e23d96e95f8dc3329e8e34f28897dad590c212c1",
+    },
   },
   meta: {
     correlation_id: "test-correlation",

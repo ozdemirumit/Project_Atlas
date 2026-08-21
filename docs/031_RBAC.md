@@ -5,15 +5,15 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-031 |
-| Version | 1.0.0 |
+| Version | 1.1.0 |
 | Status | Approved |
 | Document Owner | Security Architecture Owner |
 | Reviewers | Architecture Owner, Identity and Access Management, Platform Engineering, Infrastructure Operations, Audit and Compliance |
 | Approver | Umit Ozdemir (acting Security Architecture Owner) |
 | Approval Date | 2026-08-03 |
-| Last Updated | 2026-08-03 |
+| Last Updated | 2026-08-21 |
 | Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-020](020_MCP_Framework.md), [ATLAS-025](025_Policy_Engine.md), [ATLAS-030](030_Authentication.md), [ATLAS-032](032_Audit.md), [ATLAS-037](037_Approval_Workflow.md) |
-| Supersedes | ATLAS-031 version 0.1.0 |
+| Supersedes | ATLAS-031 version 1.0.0 |
 
 ## 1. Purpose
 
@@ -183,7 +183,9 @@ Legend: `A` allowed by role subject to scope and policy, `-` not included, `S` s
 | Restricted export | S | S | - | S | S | - | A | - |
 | General scoped read | A | A | A | A | A | A | A | A |
 
-The matrix is a design baseline, not a production assignment. `S` permissions require explicit role composition and review. C3 through C5 remain subject to ATLAS-003, ATLAS-025, and ATLAS-037 even when a future execution role exists.
+The matrix is a design baseline, not a production assignment. `S` permissions require explicit role
+composition and review. No Atlas role grants C2 operational dispatch or C3-C5 execution;
+recommendations and approval evidence may only support an external human-governed process.
 
 ## 11. Role and Assignment Lifecycle
 
@@ -430,3 +432,4 @@ This document is ready to enter Review when:
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial roles and permission areas |
 | 0.2.0 | 2026-08-03 | Security Architecture Owner | Added scoped authorization model, baseline roles, permission matrix, group mapping, separation, delegation, enforcement, revocation, and testing contracts |
 | 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |
+| 1.1.0 | 2026-08-21 | Umit Ozdemir | Removed runtime execution authority from the Atlas RBAC model under ADR-182 |

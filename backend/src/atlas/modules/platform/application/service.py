@@ -3,6 +3,10 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Sequence
 
+from atlas.modules.platform.domain.advisory_posture import (
+    AdvisoryOnlyPosture,
+    build_advisory_only_posture,
+)
 from atlas.modules.platform.domain.status import (
     ComponentHealth,
     ComponentState,
@@ -19,11 +23,13 @@ class PlatformStatusService:
         service_version: str,
         environment: str,
         probes: Sequence[HealthProbe],
+        operational_posture: AdvisoryOnlyPosture | None = None,
     ) -> None:
         self.service_name = service_name
         self.service_version = service_version
         self.environment = environment
         self._probes = tuple(probes)
+        self._operational_posture = operational_posture or build_advisory_only_posture()
 
     async def get_status(self) -> PlatformHealth:
         components: tuple[ComponentHealth, ...] = tuple(
@@ -58,4 +64,5 @@ class PlatformStatusService:
             ready=not required_failure,
             components=components,
             warnings=warnings,
+            operational_posture=self._operational_posture,
         )

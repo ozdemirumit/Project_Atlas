@@ -5,15 +5,15 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-003 |
-| Version | 1.0.0 |
+| Version | 1.1.0 |
 | Status | Approved |
 | Document Owner | Product Owner and Architecture Owner |
 | Reviewers | Security Architecture, Infrastructure Operations |
 | Approver | Umit Ozdemir (Product Owner) |
 | Approval Date | 2026-08-03 |
-| Last Updated | 2026-08-03 |
+| Last Updated | 2026-08-21 |
 | Related Documents | [ATLAS-001](001_Product_Vision.md), [ATLAS-002](002_Product_Requirements.md), [ATLAS-004](004_Glossary.md), [ATLAS-025](025_Policy_Engine.md), [ATLAS-037](037_Approval_Workflow.md), [ATLAS-047](047_Guardrails.md) |
-| Supersedes | ATLAS-003 version 0.1.0 |
+| Supersedes | ATLAS-003 version 1.0.0 |
 
 ## 1. Purpose
 
@@ -77,7 +77,8 @@ All live infrastructure access must pass through governed platform services and 
 - Audit event generation
 - Structured results and error handling
 
-If controlled automation is introduced in a later phase, execution must be performed by a deterministic execution service. AI may propose a plan, but it cannot bypass policy or invoke arbitrary commands.
+Atlas does not provide operational execution. AI may propose a plan, but neither AI nor a
+deterministic Atlas service may resume processes, dispatch operational work or mutate infrastructure.
 
 ### PRN-003: Read-Only by Default
 
@@ -260,10 +261,10 @@ Every connector capability and workflow action must be assigned a class before i
 | --- | --- | --- |
 | C0 - Informational | Uses already-ingested data and performs no live infrastructure access | Allowed according to data-access permissions |
 | C1 - Read-only | Queries live systems without changing their state | Authorized identities and approved targets only; fully audited |
-| C2 - Diagnostic | Starts bounded diagnostics or log collection with no intended service change | Policy-controlled; approval may be required based on resource impact |
-| C3 - Controlled change | Changes configuration or operational state with a defined recovery path | Disabled by default; explicit approval and execution controls required |
-| C4 - Service-impacting | May interrupt, degrade, fail over, restart, or materially affect a service | Disabled by default; privileged approval, current impact analysis, and change record required |
-| C5 - Destructive | Deletes data, removes protection, irreversibly alters state, or lacks reliable rollback | Prohibited for autonomous execution; exceptional human-governed procedures only |
+| C2 - Diagnostic | Starts bounded diagnostics or log collection with no intended service change | Proposal-only unless reclassified and implemented as a C1 read-only query; execution remains external |
+| C3 - Controlled change | Changes configuration or operational state with a defined recovery path | Not executable by Atlas; external human-governed process only |
+| C4 - Service-impacting | May interrupt, degrade, fail over, restart, or materially affect a service | Not executable by Atlas; external privileged process with current impact analysis and change record |
+| C5 - Destructive | Deletes data, removes protection, irreversibly alters state, or lacks reliable rollback | Prohibited in Atlas; exceptional external human-governed procedure only |
 
 Classification is based on realistic worst-case impact, not the capability name or intended outcome. A capability must be reclassified when its behavior, permissions, vendor implementation, or target scope changes.
 
@@ -304,7 +305,10 @@ Every major feature or architecture proposal must answer these questions before 
 
 These principles intentionally constrain product behavior. They may increase design effort, review time, infrastructure requirements, and operational controls. That cost is accepted because Atlas operates in environments where an incorrect recommendation or unauthorized action can affect business services and data.
 
-No principle in this document grants permission to execute an infrastructure action. Authorization is determined at runtime by identity, RBAC, policy, capability class, target scope, approval state, and environment controls.
+No principle in this document grants permission to execute an infrastructure action. Under ADR-182,
+Atlas is advisory-only: identity, RBAC, policy, approval, workflow state or configuration cannot
+grant process-resume, dispatch, execution or infrastructure-mutation authority. Real operational
+changes are performed outside Atlas through separately governed organizational processes.
 
 ## 9. Dependencies and Traceability
 
@@ -348,3 +352,4 @@ This document is ready to enter Review when:
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial draft |
 | 0.2.0 | 2026-08-03 | Architecture Owner | Added governed metadata, stable principle IDs, execution boundaries, capability classes, output contract, and review gates |
 | 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |
+| 1.1.0 | 2026-08-21 | Umit Ozdemir | Established the ADR-182 advisory-only terminal execution boundary |

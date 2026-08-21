@@ -6,6 +6,8 @@ import {
   Menu,
   MessageSquareText,
   PanelRightClose,
+  ShieldCheck,
+  ShieldX,
   X,
 } from "lucide-react";
 
@@ -34,6 +36,19 @@ function statusLabel(status: string | undefined): string {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
+export function AdvisoryBoundaryViolation() {
+  return (
+    <main className="advisory-boundary-violation" role="alert">
+      <ShieldX size={28} aria-hidden="true" />
+      <div>
+        <p className="eyebrow">PLATFORM SAFETY</p>
+        <h1>Advisory boundary unavailable</h1>
+        <p>The operational workspace is blocked because its safety posture could not be verified.</p>
+      </div>
+    </main>
+  );
+}
+
 interface ApplicationSidebarProps {
   activeWorkspace: WorkspaceId;
   authenticationMethod?: string;
@@ -43,6 +58,7 @@ interface ApplicationSidebarProps {
   onNavigate: (workspace: WorkspaceId) => void;
   open: boolean;
   platformState?: string;
+  platformMode?: "advisory_only";
 }
 
 export function ApplicationSidebar({
@@ -54,6 +70,7 @@ export function ApplicationSidebar({
   onNavigate,
   open,
   platformState,
+  platformMode,
 }: ApplicationSidebarProps) {
   const identityLabel =
     credentialKind === "browser_session"
@@ -110,6 +127,15 @@ export function ApplicationSidebar({
               <span>Platform status</span>
             </div>
           </div>
+          {platformMode === "advisory_only" && (
+            <div className="sidebar-posture" aria-label="Operational execution boundary">
+              <ShieldCheck size={16} aria-hidden="true" />
+              <div>
+                <strong>Advisory only</strong>
+                <span>Execution boundary</span>
+              </div>
+            </div>
+          )}
           <div className="user-row">
             <div className="avatar">{initials(displayName)}</div>
             <div>

@@ -15,6 +15,7 @@ describe("ApplicationShell", () => {
         onClose={vi.fn()}
         onNavigate={onNavigate}
         open={false}
+        platformMode="advisory_only"
         platformState="healthy"
       />,
     );
@@ -28,6 +29,9 @@ describe("ApplicationShell", () => {
     expect(screen.queryByRole("button", { name: "Governance" })).not.toBeInTheDocument();
     expect(screen.getByText("Signed in")).toBeVisible();
     expect(screen.queryByText("development identity")).not.toBeInTheDocument();
+    const boundary = screen.getByLabelText("Operational execution boundary");
+    expect(boundary).toHaveTextContent("Advisory only");
+    expect(boundary.querySelectorAll("button, a, input, select, textarea")).toHaveLength(0);
 
     fireEvent.click(screen.getByRole("button", { name: "Health" }));
     expect(onNavigate).toHaveBeenCalledWith("Health");

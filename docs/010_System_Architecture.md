@@ -5,15 +5,15 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-010 |
-| Version | 1.0.0 |
+| Version | 1.1.0 |
 | Status | Approved |
 | Document Owner | Architecture Owner |
 | Reviewers | Product Owner, Security Architecture, Infrastructure Operations, AI Architecture |
 | Approver | Umit Ozdemir (acting Architecture Owner) |
 | Approval Date | 2026-08-03 |
-| Last Updated | 2026-08-03 |
+| Last Updated | 2026-08-21 |
 | Related Documents | [ATLAS-001](001_Product_Vision.md), [ATLAS-002](002_Product_Requirements.md), [ATLAS-003](003_Project_Principles.md), [ATLAS-004](004_Glossary.md), [ATLAS-011](011_Component_Architecture.md), [ATLAS-013](013_Deployment_Architecture.md), [ATLAS-014](014_AI_Architecture.md), [ATLAS-020](020_MCP_Framework.md) |
-| Supersedes | ATLAS-010 version 0.1.0 |
+| Supersedes | ATLAS-010 version 1.0.0 |
 
 ## 1. Purpose
 
@@ -30,7 +30,7 @@ The architecture is intentionally technology-neutral where a product choice requ
 - Atlas system context and external actors
 - Logical architecture planes and component responsibilities
 - Trust boundaries and infrastructure execution boundaries
-- Primary query, health-check, recommendation, and future execution flows
+- Primary query, health-check, recommendation, and non-executable external handoff flows
 - Data ownership and communication principles
 - MVP runtime and deployment direction
 - Reliability, observability, audit, and security requirements
@@ -695,7 +695,8 @@ Architecture evolution should occur in evidence-based stages:
 3. Add durable workflows, graph reconciliation, and governed knowledge ingestion.
 4. Measure load, failure modes, deployment constraints, and ownership boundaries.
 5. Extract services only where trust, scale, availability, or ownership requires it.
-6. Introduce future controlled execution only after policy, approval, simulation, recovery, and audit controls are independently validated.
+6. Preserve the ADR-182 advisory-only boundary; approved plans may leave Atlas only as
+   non-executable artifacts for external human-governed processes.
 
 No stage grants AI autonomous operational authority.
 
@@ -787,3 +788,4 @@ This document is ready to enter Review when:
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial high-level architecture draft |
 | 0.2.0 | 2026-08-03 | Architecture Owner | Added governed metadata, planes, trust zones, component boundaries, core flows, data ownership, MVP runtime strategy, failure behavior, and ADR backlog |
 | 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |
+| 1.1.0 | 2026-08-21 | Umit Ozdemir | Established the advisory-only terminal execution boundary in system architecture |
