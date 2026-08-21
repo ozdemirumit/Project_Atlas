@@ -4,14 +4,49 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-229 |
-| Title | Bounded single-use protected runtime process-scheduling authorization lease |
-| Status | Review |
-| Branch | `agent/protected-runtime-process-scheduling-authorization` |
-| Pull Request | [#242](https://github.com/ozdemirumit/Project_Atlas/pull/242) |
-| Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-179 |
+| Task ID | ATLAS-IMP-230 |
+| Title | Atomic protected runtime process-scheduling authorization consumption |
+| Status | In Progress |
+| Branch | `agent/protected-runtime-process-scheduling-consumption` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-180 |
 | Last Updated | 2026-08-21 |
-| Next Action | Pass exact-head pull-request CI, squash-merge, and verify post-main CI |
+| Next Action | Implement and validate the ADR-180 atomic scheduling-consumption vertical slice |
+
+### ATLAS-IMP-230 Scope Rationale
+
+- IMP-229 authorizes only submission of one future process-scheduling consumption request. The
+  historical lease neither proves consumption nor grants resume, dispatch or execution authority.
+- The next safe boundary atomically consumes that exact active lease and records an immutable claim
+  plus immutable attempt before at most one code-owned scheduler call.
+- A successful IMP-230 result may prove only that the exact sealed process was registered with the
+  protected scheduler while remaining suspended and non-runnable. It grants no follow-on authority.
+
+### ATLAS-IMP-230 Acceptance Criteria
+
+- Only the exact protected consumer workload and audience bound through canonical ADR-160 through
+  ADR-179 lineage may POST. Human sessions, AI agents, MCP tools, connectors, recovery workers and
+  generic schedulers fail closed before protected-state I/O.
+- Caller input is limited to the ADR-179 lease identity, code-owned policy identity, tenant-scoped
+  idempotency key and explicit irreversible-consumption and uncertainty acknowledgements.
+- PostgreSQL atomically consumes one active lease and appends one immutable claim plus one immutable
+  scheduling attempt before any scheduler I/O. Exact replay performs no scheduler I/O; changed
+  replay, expiry, cancellation, stale process state and competing consumption fail closed.
+- The only approved scheduler primitive is code-owned and may register the exact existing sealed,
+  suspended process as scheduled while preserving suspended and non-runnable state. It cannot
+  resume, dispatch, execute, supervise, stop or clean up the process.
+- Caller-controlled process/runtime locators, handles, commands, executables, arguments,
+  environments, working directories, priorities, affinity, resource assignments and queue names are
+  forbidden. Required protected references remain internal to the trusted adapter boundary.
+- Terminal evidence is limited to scheduled-while-suspended, rejection without scheduling, failure
+  without scheduling or permanent uncertainty. No automatic retry or recovery may cross the
+  scheduler boundary after an ambiguous outcome.
+- The slice performs no resume, dispatch, execution, model, network, connector/MCP/provider,
+  publication, delivery or infrastructure mutation and grants no such authority.
+- Production authority is PostgreSQL-only. The POST is workload-only; normal username/password
+  sessions receive minimized `no-store` read-only GET/UI without MFA or a second browser session.
+- AI remains advisory-only. Active Directory remains authentication-only; no Active Directory
+  management capability or MCP is introduced.
 
 ### ATLAS-IMP-229 Scope Rationale
 
@@ -74,6 +109,13 @@
   source evidence expires and aligning the generated lease identifier with the strict frontend
   parser. The focused replay/prefix regression passed `7` tests with the DSN-gated live case
   skipped, and targeted MyPy passed the four affected files.
+
+### ATLAS-IMP-229 Delivery Evidence
+
+- [PR #242](https://github.com/ozdemirumit/Project_Atlas/pull/242) was squash-merged to `main` as
+  `04c7b24ae421b22707b2b160be298a4e2b155437`.
+- Exact-head pull-request CI run `32456067428` and post-main CI run `32457957346` both passed for
+  backend and frontend. Local `main` and `origin/main` were synchronized before IMP-230.
 
 ### ATLAS-IMP-228 Scope Rationale
 

@@ -864,6 +864,15 @@ MVP workflows do not execute C3 through C5 capabilities.
   model/network/connector/MCP/provider operation or infrastructure mutation. AI remains advisory-
   only, Active Directory remains authentication-only, and normal password-session read-only GET/UI
   requires no MFA or second browser prompt.
+- ADR-180 atomically consumes one exact active ADR-179 lease and commits one immutable claim plus
+  one immutable scheduling attempt before at most one code-owned protected scheduler call. Success
+  proves only that the existing sealed process was registered with the scheduler while remaining
+  suspended and non-runnable. Exact replay and recovery perform no scheduler I/O; ambiguous post-
+  commit outcomes become permanent uncertainty and are never retried. The protocol performs no
+  resume, dispatch, execution, model/network/connector/MCP/provider activity or infrastructure
+  mutation. All authority remains false, AI remains advisory-only, Active Directory remains
+  authentication-only, and normal password-session GET/UI stays read-only without MFA or another
+  browser prompt.
 
 ## 39. Assumptions
 
@@ -919,3 +928,4 @@ This document is ready to enter Review when:
 | 2.8.0 | 2026-08-18 | Workflow Architecture | Added bounded single-use protected runtime process-creation authorization lease boundary |
 | 2.9.0 | 2026-08-20 | Workflow Architecture | Added atomic protected runtime process-creation consumption and single suspended-process attempt |
 | 3.0.0 | 2026-08-20 | Workflow Architecture | Added bounded single-use protected runtime process-scheduling authorization lease boundary |
+| 3.1.0 | 2026-08-21 | Workflow Architecture | Added atomic protected runtime process-scheduling consumption boundary |
