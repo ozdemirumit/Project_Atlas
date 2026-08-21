@@ -4,14 +4,58 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-231 |
-| Title | Bounded single-use protected runtime process-resume authorization lease |
+| Task ID | ATLAS-IMP-232 |
+| Title | Advisory-only terminal execution boundary |
 | Status | Review |
-| Branch | `agent/protected-runtime-process-resume-authorization` |
-| Pull Request | [#244](https://github.com/ozdemirumit/Project_Atlas/pull/244) |
-| Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-181 |
+| Branch | `agent/advisory-only-execution-boundary` |
+| Pull Request | [#245](https://github.com/ozdemirumit/Project_Atlas/pull/245) |
+| Governing Documents | ATLAS-003, ATLAS-014, ATLAS-023, ATLAS-025, ATLAS-032, ATLAS-037, ATLAS-047, ADR-182 |
 | Last Updated | 2026-08-21 |
-| Next Action | Complete exact-head PR CI, squash-merge PR #244 and verify post-main CI |
+| Next Action | Complete exact-head PR CI, squash-merge PR #245 and verify post-main CI |
+
+### ATLAS-IMP-232 Scope Rationale
+
+- The Product Owner selected advisory-only as Atlas's terminal product posture.
+- No process-resume consumer, operational executor or infrastructure mutation path may be added.
+- The absence of those components must be enforced at startup and represented consistently in the
+  API and UI rather than remaining an accidental implementation gap.
+
+### ATLAS-IMP-232 Acceptance Criteria
+
+- A code-owned immutable posture reports advisory-only mode and false operational execution,
+  process-resume consumption, dispatch, infrastructure mutation and AI execution authority.
+- Application composition fails closed when an operational component is registered or a reserved
+  operational enablement flag is true.
+- Existing runtime lineage remains read-only evidence and grants no follow-on operational authority.
+- The current platform-status endpoint returns the minimized posture with `no-store` headers.
+- The frontend strictly rejects any true authority field and displays a read-only advisory-only
+  boundary with no operational control.
+- Normal username/password browser sessions require no MFA, step-up or second browser session.
+- Active Directory remains authentication-only; no Active Directory management capability or MCP
+  is introduced.
+
+### ATLAS-IMP-232 Verification Evidence
+
+- Backend advisory-posture domain, composition, service and platform API checks passed `15` focused
+  tests. Targeted Ruff formatting/lint and Mypy passed across the eight affected backend files.
+- Frontend TypeScript and targeted ESLint passed. The strict platform-posture parser, shell rendering
+  and workspace integration passed `14` focused tests across three files.
+- Independent review findings were closed by validating the actual application-state registry at
+  startup, reconciling remaining future-execution language, blocking all UI workspace surfaces on a
+  posture-contract violation and pinning the exact frontend contract digest.
+- A current-code API at `127.0.0.1:8055` returned `advisory_only`, all five operational authority
+  fields false, a 64-character contract digest and `Cache-Control: no-store, max-age=0`, `Pragma:
+  no-cache` and `Referrer-Policy: no-referrer`.
+- Live browser validation at `http://127.0.0.1:5216/` rendered the two-line read-only `Advisory only`
+  execution boundary with zero buttons, links or form controls, no horizontal overflow and no
+  browser console errors or warnings.
+
+### ATLAS-IMP-231 Delivery Evidence
+
+- [PR #244](https://github.com/ozdemirumit/Project_Atlas/pull/244) was squash-merged to `main` as
+  `43482b85db893fda85a3616e873533bdbe97e0ba`.
+- Exact-head pull-request CI run `32479463800` and post-main CI run `32481269000` both passed for
+  backend and frontend. Local `main` and `origin/main` were synchronized before IMP-232.
 
 ### ATLAS-IMP-231 Scope Rationale
 

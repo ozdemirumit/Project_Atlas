@@ -5,21 +5,24 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-047 |
-| Version | 1.0.0 |
+| Version | 1.1.0 |
 | Status | Approved |
 | Document Owner | AI Security Owner |
 | Reviewers | Security Architecture, AI Architecture, Architecture Owner, Infrastructure Domain Architects, Platform Engineering, Operations, Privacy and Data Governance, Audit and Compliance |
 | Approver | Umit Ozdemir (acting Security Architecture Owner) |
 | Approval Date | 2026-08-03 |
-| Last Updated | 2026-08-03 |
+| Last Updated | 2026-08-21 |
 | Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-014](014_AI_Architecture.md), [ATLAS-015](015_RAG_Architecture.md), [ATLAS-020](020_MCP_Framework.md), [ATLAS-022](022_MCP_Builder.md), [ATLAS-023](023_Workflow_Engine.md), [ATLAS-025](025_Policy_Engine.md), [ATLAS-030](030_Authentication.md), [ATLAS-031](031_RBAC.md), [ATLAS-032](032_Audit.md), [ATLAS-037](037_Approval_Workflow.md), [ATLAS-040](040_AI_Agents.md), [ATLAS-041](041_Reasoning.md), [ATLAS-046](046_Explainability.md) |
-| Supersedes | ATLAS-047 version 0.1.0 |
+| Supersedes | ATLAS-047 version 1.0.0 |
 
 ## 1. Purpose
 
 This document defines the non-overridable safety guardrails for AI-assisted behavior in Project Atlas.
 
-Guardrails form a minimum security and operational safety envelope around model input, retrieval, reasoning, tool use, generated artifacts, output, and any future controlled action. They supplement but never replace authentication, RBAC, policy, approval, connector isolation, workflow control, and audit.
+Guardrails form a minimum security and operational safety envelope around model input, retrieval,
+reasoning, read-only tool use, generated artifacts, output and external handoff. They supplement but
+never replace authentication, RBAC, policy, approval, connector isolation, workflow control and
+audit.
 
 ## 2. Scope
 
@@ -281,10 +284,10 @@ Denied calls are not sent to the tool. The model receives a bounded safe denial 
 | --- | --- |
 | C0 Informational | Allowed within data permissions and task scope |
 | C1 Read-only | Allowed only through approved live-read capabilities, current authorization, policy, and audit |
-| C2 Diagnostic | Proposal allowed; dispatch only through explicitly enabled bounded workflows and approval where required |
-| C3 Controlled change | AI can draft plan and impact; no direct invocation |
-| C4 Service-impacting | AI can analyze and recommend; no direct invocation |
-| C5 Destructive | No autonomous execution; exceptional human-governed procedures only |
+| C2 Diagnostic | Proposal allowed; execution remains external unless the capability is reclassified as C1 read-only |
+| C3 Controlled change | AI can draft plan and impact; Atlas cannot invoke or dispatch it |
+| C4 Service-impacting | AI can analyze and recommend; Atlas cannot invoke or dispatch it |
+| C5 Destructive | Prohibited in Atlas; exceptional external human-governed procedures only |
 
 Misclassified or unknown capabilities are denied until reviewed.
 
@@ -523,6 +526,12 @@ Production AI capability requires evidence that:
 
 ## 34. MVP Scope
 
+ADR-182 makes advisory-only behavior a platform invariant rather than an MVP phase preference.
+Operational execution, process-resume consumption, dispatch, infrastructure mutation and AI
+execution authority remain code-owned false values. Registration or configuration that attempts to
+enable them must fail application startup, and the frontend must reject a platform posture that
+reports any of them as true.
+
 ### Included
 
 - GRD-001 through GRD-016 invariants
@@ -588,3 +597,4 @@ This document is ready to enter Review when:
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial mandatory guardrails, risk handling, and failure behavior |
 | 0.2.0 | 2026-08-03 | AI Security Owner | Added threat model, layered controls, stable invariants, instruction hierarchy, prompt-injection, context, retrieval, tool, output, DLP, model, agent, generated-artifact, exception, incident, evaluation, and release-gate contracts |
 | 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |
+| 1.1.0 | 2026-08-21 | Umit Ozdemir | Added the ADR-182 code-owned advisory-only platform invariant |

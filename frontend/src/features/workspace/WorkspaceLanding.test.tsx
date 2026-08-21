@@ -55,6 +55,17 @@ const platform = {
     status: "healthy",
     components: [],
     warnings: [],
+    operational_posture: {
+      contract_id: "platform-posture.advisory-only",
+      contract_version: "1.0.0",
+      platform_mode: "advisory_only",
+      operational_execution_enabled: false,
+      process_resume_consumption_enabled: false,
+      dispatch_enabled: false,
+      infrastructure_mutation_enabled: false,
+      ai_execution_authorized: false,
+      contract_digest: "edfde9fc024bab918b587740e23d96e95f8dc3329e8e34f28897dad590c212c1",
+    },
   },
   meta: { correlation_id: "correlation.test", generated_at: "2026-08-10T00:00:00Z" },
 };
@@ -164,6 +175,33 @@ describe("WorkspaceLanding", () => {
     expect(
       await screen.findByText(/Your current session remains authoritative/),
     ).toBeVisible();
+  });
+
+  it("blocks the workspace when the advisory-only contract is violated", async () => {
+    const unsafePlatform = {
+      ...platform,
+      data: {
+        ...platform.data,
+        operational_posture: {
+          ...platform.data.operational_posture,
+          operational_execution_enabled: true,
+        },
+      },
+    };
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/platform/status")) {
+        return Promise.resolve(new Response(JSON.stringify(unsafePlatform), { status: 200 }));
+      }
+      return Promise.resolve(new Response(null, { status: 204 }));
+    });
+
+    renderLanding();
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Advisory boundary unavailable");
+    expect(screen.queryByRole("navigation")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 
   it("uses only server-returned storage authorization in the conversation workspace", async () => {

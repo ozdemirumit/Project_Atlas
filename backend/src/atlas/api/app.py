@@ -1283,6 +1283,10 @@ from atlas.modules.platform.application.deployment_configuration import (
 )
 from atlas.modules.platform.application.release_preflight import ReleasePreflightService
 from atlas.modules.platform.application.service import PlatformStatusService
+from atlas.modules.platform.domain.advisory_posture import (
+    assert_advisory_only_component_registry,
+    assert_advisory_only_composition,
+)
 from atlas.modules.rca.adapters.synthetic import SyntheticStorageRcaAssembler
 from atlas.modules.rca.application.service import RcaService
 from atlas.modules.recommendations.adapters.correction_resubmission_memory import (
@@ -3318,6 +3322,7 @@ def create_app(
     final_recommendation_disposition_service: (FinalRecommendationDispositionService | None) = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
+    operational_posture = assert_advisory_only_composition()
     base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
     resolved_security_export_service = security_export_service or SecurityExportService(
         delegate=base_audit_sink,
@@ -6655,6 +6660,7 @@ def create_app(
         service_version=__version__,
         environment=resolved_settings.environment,
         probes=(database_probe,),
+        operational_posture=operational_posture,
     )
     resolved_storage_operations_service = storage_operations_service or StorageOperationsService(
         overview=build_synthetic_storage_overview(
@@ -9894,6 +9900,7 @@ def create_app(
         app.state.workflow_event_transport_compatibility_admission_repository = (
             resolved_workflow_event_transport_compatibility_admission_service.repository
         )
+        assert_advisory_only_component_registry(app.state._state)
         yield
         await resolved_workflow_planning_service.close()
         await resolved_conversation_service.close()

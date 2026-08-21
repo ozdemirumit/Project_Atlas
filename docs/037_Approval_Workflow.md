@@ -5,21 +5,25 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-037 |
-| Version | 1.0.0 |
+| Version | 1.1.0 |
 | Status | Approved |
 | Document Owner | Governance and Workflow Owner |
 | Reviewers | Product Owner, Security Architecture, Architecture Owner, Infrastructure Operations, IT Service Management Owner, Audit and Compliance |
 | Approver | Umit Ozdemir (Product Owner) |
 | Approval Date | 2026-08-03 |
-| Last Updated | 2026-08-03 |
+| Last Updated | 2026-08-21 |
 | Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-020](020_MCP_Framework.md), [ATLAS-023](023_Workflow_Engine.md), [ATLAS-024](024_Decision_Engine.md), [ATLAS-025](025_Policy_Engine.md), [ATLAS-030](030_Authentication.md), [ATLAS-031](031_RBAC.md), [ATLAS-032](032_Audit.md), [ATLAS-036](036_ITSM_Integration.md), [ATLAS-047](047_Guardrails.md) |
-| Supersedes | ATLAS-037 version 0.1.0 |
+| Supersedes | ATLAS-037 version 1.0.0 |
 
 ## 1. Purpose
 
 This document defines human approval for consequential Project Atlas plans and actions.
 
-Approval records an informed, authorized human decision about one immutable proposal. It does not replace authentication, RBAC, policy, current precondition checks, connector safeguards, or runtime authorization. Atlas remains a decision-support platform; operational execution is outside the initial product scope and can be introduced only through separately approved controlled automation.
+Approval records an informed, authorized human decision about one immutable proposal. It does not
+replace authentication, RBAC, policy, current precondition checks or connector safeguards. Atlas
+remains advisory-only under ADR-182: approval does not create Atlas runtime, process-resume,
+dispatch, execution or infrastructure-mutation authority. Approved plans may be handed to external
+organizational processes, but Atlas does not execute them.
 
 ## 2. Scope
 
@@ -30,7 +34,7 @@ Approval records an informed, authorized human decision about one immutable prop
 - Eligible approvers, separation of duties, multi-step approval, expiry, and revocation
 - ITSM approval mapping and emergency governance
 - Revalidation, audit, notification, administration, and testing
-- Approval requirements for future C2-C5 execution and sensitive platform administration
+- Approval requirements for external C2-C5 handoff and sensitive platform administration
 
 ### Out of Scope
 
@@ -286,7 +290,7 @@ Invalidation is immediate for new handoff. In-progress behavior follows the dete
 
 ## 16. Final Revalidation
 
-Immediately before a future controlled handoff, Atlas revalidates:
+Immediately before a non-executable external handoff, Atlas revalidates:
 
 1. Approval state, digest, stages, quorum, and expiry
 2. Requester, operator, and approver identities and separation
@@ -295,23 +299,25 @@ Immediately before a future controlled handoff, Atlas revalidates:
 5. Connector trust, package, capability, credential, and target binding
 6. ITSM record, approval, window, and freeze state
 7. Preconditions, topology, service impact, and evidence freshness
-8. Idempotency, prior execution, and cancellation state
-9. Audit availability and runtime health
+8. Prior handoff and cancellation state
+9. Audit availability and platform health
 
 Any mismatch stops handoff and produces an explicit reason.
 
 ## 17. Approval Token or Handoff Artifact
 
-If execution is introduced in a future phase, a successful approval produces a short-lived, single-purpose handoff artifact that contains or references:
+A successful approval may produce a short-lived, single-purpose, non-executable external handoff
+artifact that contains or references:
 
 - Approval request and canonical packet digest
 - Authorized capability, target, parameters, and plan
-- Required runtime identity and environment
+- Intended external operator role and environment
 - Not-before, expiry, and one-time or bounded-use constraints
 - Policy, ITSM, and audit references
 - Issuer and integrity signature
 
-The artifact is validated by the deterministic execution service, not interpreted by the LLM. It cannot be exchanged for broader permission.
+The artifact is validated by the receiving external governance process, not interpreted by the LLM.
+It cannot be consumed by Atlas or exchanged for runtime, dispatch, execution or broader permission.
 
 ## 18. ITSM Approval Mapping
 
@@ -521,3 +527,4 @@ This document is ready to enter Review when:
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial approval goals, packet fields, and outcomes |
 | 0.2.0 | 2026-08-03 | Governance and Workflow Owner | Added immutable exact binding, lifecycle, eligibility, separation, multi-stage approval, expiry, revocation, revalidation, ITSM and emergency governance, handoff, failure, and testing contracts |
 | 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |
+| 1.1.0 | 2026-08-21 | Umit Ozdemir | Clarified that approval cannot cross the ADR-182 advisory-only execution boundary |

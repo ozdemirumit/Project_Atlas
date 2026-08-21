@@ -78,6 +78,7 @@ import { getCurrentIdentity } from "./api/identity";
 import { ConnectorLifecycleOverview } from "./features/connectors/ConnectorLifecycleOverview";
 import { ConnectorWorkspaceNavigation } from "./features/connectors/ConnectorWorkspaceNavigation";
 import {
+  AdvisoryBoundaryViolation,
   ApplicationSidebar,
   ApplicationTopbar,
 } from "./features/shell/ApplicationShell";
@@ -138,7 +139,7 @@ import {
   revokeGovernedSession,
 } from "./api/identityGovernance";
 import { createStorageInvestigation } from "./api/investigations";
-import { getPlatformStatus } from "./api/platform";
+import { getPlatformStatus, PlatformPostureViolationError } from "./api/platform";
 import { createStorageRca } from "./api/rca";
 import { createStorageRecommendation } from "./api/recommendations";
 import {
@@ -2073,6 +2074,10 @@ export function OperationalApplication({
     overview?.evidence.filter((item) =>
       selectedAsset?.evidence_references.includes(item.reference),
     ) ?? [];
+  if (statusQuery.error instanceof PlatformPostureViolationError) {
+    return <AdvisoryBoundaryViolation />;
+  }
+
   if (!identityQuery.isLoading && (identityQuery.data === null || enterpriseLoginRequested)) {
     const submitLogin = (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
@@ -2145,6 +2150,7 @@ export function OperationalApplication({
         authenticationMethod={identity?.authentication.method}
         credentialKind={identity?.credential_kind}
         displayName={identity?.display_name}
+        platformMode={statusQuery.data?.data.operational_posture.platform_mode}
         onClose={() => setSidebarOpen(false)}
         onNavigate={navigateToWorkspace}
         open={sidebarOpen}

@@ -70,8 +70,23 @@ def test_platform_status_uses_api_envelope() -> None:
     assert response.status_code == 200
     assert payload["data"]["status"] == "healthy"
     assert payload["data"]["environment"] == "test"
+    assert payload["data"]["operational_posture"] == {
+        "contract_id": "platform-posture.advisory-only",
+        "contract_version": "1.0.0",
+        "platform_mode": "advisory_only",
+        "operational_execution_enabled": False,
+        "process_resume_consumption_enabled": False,
+        "dispatch_enabled": False,
+        "infrastructure_mutation_enabled": False,
+        "ai_execution_authorized": False,
+        "contract_digest": payload["data"]["operational_posture"]["contract_digest"],
+    }
+    assert len(payload["data"]["operational_posture"]["contract_digest"]) == 64
     assert payload["meta"]["correlation_id"] == "cor_test-123"
     assert response.headers["X-Correlation-ID"] == "cor_test-123"
+    assert response.headers["Cache-Control"] == "no-store, max-age=0"
+    assert response.headers["Pragma"] == "no-cache"
+    assert response.headers["Referrer-Policy"] == "no-referrer"
 
 
 def test_invalid_correlation_identifier_returns_safe_problem_details() -> None:

@@ -5,15 +5,15 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-001 |
-| Version | 1.0.0 |
+| Version | 1.1.0 |
 | Status | Approved |
 | Document Owner | Product Owner |
 | Reviewers | Architecture Owner, Security Architecture, Infrastructure Domain Architects, Operations, AI Architecture, IT Service Management Owner |
 | Approver | Umit Ozdemir (Product Owner) |
 | Approval Date | 2026-08-03 |
-| Last Updated | 2026-08-03 |
+| Last Updated | 2026-08-21 |
 | Related Documents | [ATLAS-002](002_Product_Requirements.md), [ATLAS-003](003_Project_Principles.md), [ATLAS-004](004_Glossary.md), [ATLAS-010](010_System_Architecture.md), [ATLAS-020](020_MCP_Framework.md), [ATLAS-026](026_Graph_Engine.md), [ATLAS-027](027_Knowledge_Engine.md), [ATLAS-037](037_Approval_Workflow.md), [ATLAS-040](040_AI_Agents.md), [ATLAS-047](047_Guardrails.md) |
-| Supersedes | ATLAS-001 version 0.1.0 |
+| Supersedes | ATLAS-001 version 1.0.0 |
 
 ## 1. Executive Summary
 
@@ -21,7 +21,9 @@ Project Atlas is an enterprise AI Infrastructure Operations Platform that helps 
 
 Atlas brings together modular MCP connectors, infrastructure and service relationships, governed organizational and vendor knowledge, deterministic policy and workflow controls, and locally deployable AI assistance. Its center is an operational workspace where users can ask questions, inspect evidence, compare hypotheses and options, and prepare safe plans.
 
-Atlas is not an autonomous infrastructure operator. AI can collect authorized read-only context, reason, explain, and recommend. Accountable humans decide. Any future controlled automation remains outside the LLM and behind explicit identity, authorization, policy, approval, audit, and deterministic runtime controls.
+Atlas is not an infrastructure operator. AI can collect authorized read-only context, reason,
+explain, and recommend. Accountable humans decide, and approved operational work is performed
+outside Atlas through human-governed organizational processes.
 
 ## 2. Problem
 
@@ -222,7 +224,8 @@ Only separately approved, deterministic, typed, reversible capabilities can exec
 
 ### Permanent Boundary
 
-The LLM does not become the execution authority. C5 destructive operations are never autonomously executed.
+Atlas does not become the execution authority. C2 actions that exceed read-only access and all C3-C5
+operations remain external to Atlas.
 
 ## 13. Enterprise Deployment Vision
 
@@ -284,7 +287,7 @@ Potential later capabilities include:
 - Marketplace-style signed extension distribution
 - AI-assisted MCP, runbook, workflow, and policy drafting
 - Calibrated domain simulation and eventually validated digital-twin capabilities
-- More advanced controlled diagnostic and approved automation paths
+- More advanced read-only diagnostics and governed external handoff paths
 - Multi-site resilience and enterprise-scale deployment profiles
 
 Future scope remains subject to evidence, safety, customer need, and operating maturity.
@@ -365,7 +368,7 @@ This document is ready to enter Review when:
 - Decision support and permanent execution boundaries are unambiguous.
 - MVP describes one bounded end-to-end proof rather than broad vendor coverage.
 - Enterprise governance and restricted-network operation are core product expectations.
-- Long-term simulation and automation are represented as maturity stages, not current claims.
+- Long-term simulation and external handoff are represented without granting Atlas execution authority.
 - Success measures balance speed, usefulness, safety, and reliability.
 - Product, architecture, security, AI, domain, and operations reviewers accept the direction.
 
@@ -376,3 +379,4 @@ This document is ready to enter Review when:
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial product vision, philosophy, goals, users, and long-term direction |
 | 0.2.0 | 2026-08-03 | Product Owner | Added product problem and promise, target-user value, strategic pillars, experience and boundaries, autonomy stages, enterprise deployment, differentiation, bounded MVP, success measures, and risk |
 | 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |
+| 1.1.0 | 2026-08-21 | Umit Ozdemir | Established advisory-only as the terminal product execution boundary |

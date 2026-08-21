@@ -5,15 +5,15 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-013 |
-| Version | 1.0.0 |
+| Version | 1.1.0 |
 | Status | Approved |
 | Document Owner | Platform Architecture |
 | Reviewers | Architecture Owner, Security Architecture, Platform Engineering, Infrastructure Operations, Database Administration |
 | Approver | Umit Ozdemir (acting Architecture Owner) |
 | Approval Date | 2026-08-03 |
-| Last Updated | 2026-08-03 |
+| Last Updated | 2026-08-21 |
 | Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-010](010_System_Architecture.md), [ATLAS-011](011_Component_Architecture.md), [ATLAS-012](012_Microservice_Architecture.md), [ATLAS-038](038_Deployment_and_Bootstrap.md), [ATLAS-057](057_Deployment.md) |
-| Supersedes | ATLAS-013 version 0.1.0 |
+| Supersedes | ATLAS-013 version 1.0.0 |
 
 ## 1. Purpose
 
@@ -63,7 +63,7 @@ It separates logical architecture from physical topology so the same governed co
 | Lab | End-to-end architecture and connector validation | Recoverable but not production HA | Non-production infrastructure targets |
 | Restricted Enterprise | On-premises deployment with controlled or absent internet | Defined by customer environment | Internal mirrors, identity, model, logging, and targets |
 | Production | Future supported operational deployment | Explicit SLO, RTO, and RPO | Enterprise platform and recovery services |
-| Site Connector Edge | Optional future site-local connector execution | Site policy dependent | Central control plane and local target systems |
+| Site Connector Edge | Optional site-local read-only connector queries | Site policy dependent | Central control plane and local target systems |
 
 Profiles use the same signed release version and contracts. Profile differences are configuration, scale, placement, dependency, and resilience decisions.
 
@@ -590,3 +590,4 @@ This document is ready to enter Review when:
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial deployment goals and candidate profiles |
 | 0.2.0 | 2026-08-03 | Platform Architecture | Added deployment zones, runtime placement, network flows, restricted-network support, availability, recovery, upgrade, and operational readiness |
 | 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |
+| 1.1.0 | 2026-08-21 | Umit Ozdemir | Restricted site-local connector deployment to the advisory-only read boundary |
