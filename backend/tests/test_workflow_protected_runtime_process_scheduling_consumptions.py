@@ -44,6 +44,7 @@ from atlas.modules.workflows.application.protected_runtime_process_scheduling_co
     WorkflowProtectedRuntimeProcessSchedulingConsumptionPresentation,
     WorkflowProtectedRuntimeProcessSchedulingConsumptionService,
 )
+from atlas.modules.workflows.domain.models import WorkflowScope
 from atlas.modules.workflows.domain.protected_runtime_process_scheduling_consumption_domain import (
     WorkflowProtectedRuntimeProcessSchedulingAttempt,
     WorkflowProtectedRuntimeProcessSchedulingConsumptionClaim,
@@ -138,6 +139,21 @@ class _Repository:
             status=WorkflowProtectedRuntimeProcessSchedulingResultWriteStatus.RECORDED,
             result=request.result,
         )
+
+    async def list_protected_runtime_process_scheduling_attempts(
+        self, *, scope: WorkflowScope, limit: int = 256
+    ) -> tuple[WorkflowProtectedRuntimeProcessSchedulingAttempt, ...]:
+        assert scope == self.source.authorization_lease.scope
+        assert limit == 256
+        return () if self.attempt is None else (self.attempt,)
+
+    async def get_protected_runtime_process_scheduling_results(
+        self, *, scope: WorkflowScope, consumption_ids: tuple[str, ...]
+    ) -> tuple[WorkflowProtectedRuntimeProcessSchedulingResult, ...]:
+        assert scope == self.source.authorization_lease.scope
+        if self.result is None or self.result.consumption_id not in consumption_ids:
+            return ()
+        return (self.result,)
 
 
 class _Scheduler:
