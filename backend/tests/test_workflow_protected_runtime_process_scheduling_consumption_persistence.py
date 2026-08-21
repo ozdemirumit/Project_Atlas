@@ -155,9 +155,13 @@ def test_repository_is_replay_first_and_commits_claim_attempt_atomically() -> No
     assert body.index("_protected_runtime_process_scheduling_locked_replay") < body.index(
         "_protected_runtime_process_scheduling_request_is_valid"
     )
-    assert "session.add_all(" in body
+    claim_add = body.index("session.add(claim_model)")
+    claim_flush = body.index("await session.flush()", claim_add)
+    attempt_add = body.index("session.add(", claim_flush)
+    attempt_flush = body.index("await session.flush()", attempt_add)
+    commit = body.index("await session.commit()", attempt_flush)
     assert body.count("await session.commit()") == 1
-    assert body.index("session.add_all(") < body.index("await session.commit()")
+    assert claim_add < claim_flush < attempt_add < attempt_flush < commit
     assert "func.clock_timestamp()" in source
 
 
