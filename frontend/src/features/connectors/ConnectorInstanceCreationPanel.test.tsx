@@ -11,8 +11,12 @@ afterEach(() => vi.unstubAllGlobals());
 describe("ConnectorInstanceCreationPanel", () => {
   it("creates only a disabled identity without target, secret, capability, or runtime input", async () => {
     document.cookie = "atlas_csrf=test-csrf; path=/";
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(JSON.stringify({ data: record }), { status: 201 }),
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation((_input, init) =>
+      Promise.resolve(
+        init?.method === "POST"
+          ? new Response(JSON.stringify({ data: record }), { status: 201 })
+          : new Response(JSON.stringify({ data: [] }), { status: 200 }),
+      ),
     );
     vi.stubGlobal("fetch", fetchMock);
     const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
@@ -44,8 +48,10 @@ describe("ConnectorInstanceCreationPanel", () => {
     expect(await screen.findByText(record.instance_id)).toBeVisible();
     expect(screen.getByText(record.instance_state)).toBeVisible();
     expect(screen.queryByRole("button", { name: /configure|enable|execute|deploy/i })).toBeNull();
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
-    const init = fetchMock.mock.calls[0]?.[1];
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some((call) => call[1]?.method === "POST")).toBe(true),
+    );
+    const init = fetchMock.mock.calls.find((call) => call[1]?.method === "POST")?.[1];
     const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as Record<
       string,
       unknown

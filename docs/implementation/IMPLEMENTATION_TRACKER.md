@@ -46,8 +46,8 @@
   The target-configuration service, minimized API inventory/options and create boundary passed all
   `11` focused backend tests.
 - Frontend TypeScript and targeted ESLint passed. Target API parsing/status preservation, governed
-  binding presentation and Installed MCP lifecycle integration passed `27` focused tests across
-  three files.
+  binding presentation, instance handoff and Installed MCP lifecycle integration passed `28`
+  focused tests across four files.
 - A current-code API and web pair at `127.0.0.1:8056` and `127.0.0.1:5217` completed normal
   username/password sign-in and loaded the target-binding inventory in the Installed MCP workspace
   without requesting MFA, step-up or another browser session. The clean in-memory server correctly
