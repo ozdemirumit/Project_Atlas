@@ -50,6 +50,26 @@
 - AI remains advisory-only. Active Directory remains authentication-only; no Active Directory
   management capability or MCP is introduced.
 
+### ATLAS-IMP-231 Verification Evidence
+
+- The final focused backend integration pass covered the resume-authorization domain, replay-first
+  service, signed process-state attestor, API, persistence contracts, migration-head compatibility
+  and DSN-gated PostgreSQL boundary: `69` tests passed and two live PostgreSQL cases skipped only
+  because `ATLAS_TEST_POSTGRES_DSN` is not configured locally.
+- Ruff formatting and lint passed across all `27` changed Python files. Targeted MyPy passed across
+  `16` source and PostgreSQL-test files. Alembic reports the single head `20260821_0154`.
+- Frontend TypeScript passed. The two focused process-resume rendering/parsing tests passed while
+  `639` unrelated tests were skipped; the broad frontend suite was not duplicated locally.
+- Independent review findings were closed by signing eight pending/conflicting-state absence facts,
+  enforcing a code-owned 100 millisecond final transaction safety margin, unifying the canonical
+  authority vector and expanding the live PostgreSQL test to cover authorization, replay, changed
+  replay, lineage drift, concurrency, no-reissue, append-only guards and guarded downgrade.
+- A current-code API at `127.0.0.1:8054` returned `401` for an unauthenticated inventory request with
+  `Cache-Control: no-store, max-age=0`, `Pragma: no-cache` and `Referrer-Policy: no-referrer`.
+- Live browser validation at `http://127.0.0.1:5215/#/workspace/workflows` rendered the read-only
+  `Protected runtime process-resume authorizations` region in a fail-closed state with zero buttons,
+  links or form controls and no current-page console errors or warnings.
+
 ### ATLAS-IMP-230 Delivery Evidence
 
 - [PR #243](https://github.com/ozdemirumit/Project_Atlas/pull/243) was squash-merged to `main` as
