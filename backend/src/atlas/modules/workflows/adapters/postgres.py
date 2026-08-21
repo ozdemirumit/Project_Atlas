@@ -43257,14 +43257,14 @@ class PostgreSQLWorkflowPlanRepository:
                 except Exception:
                     exact = False
                     lease = None
-            await session.rollback()
-            if exact and lease is not None:
-                return result_type(statuses.REPLAY, lease, locked.observed_at)
             changed = bool(
                 claim_row.idempotency_digest != request.idempotency_digest
                 or claim_row.request_fingerprint != request.request_fingerprint
                 or claim_row.process_scheduling_result_id != request.process_scheduling_result_id
             )
+            await session.rollback()
+            if exact and lease is not None:
+                return result_type(statuses.REPLAY, lease, locked.observed_at)
             return result_type(
                 statuses.IDEMPOTENCY_CONFLICT if changed else statuses.EVIDENCE_CONFLICT,
                 None,
