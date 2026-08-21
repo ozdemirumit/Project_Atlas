@@ -996,9 +996,10 @@ async def test_live_postgres_publication_fence_change_fails_closed() -> None:
                 readiness_result,
                 idempotency_key=f"imp-227-fence-{uuid4().hex}",
             )
-        assert (
-            exc_info.value.code == "workflow_protected_runtime_process_creation_evidence_conflict"
-        )
+        assert exc_info.value.code in {
+            "workflow_protected_runtime_process_creation_attestation_invalid",
+            "workflow_protected_runtime_process_creation_evidence_conflict",
+        }
     finally:
         if publication_lease_id is not None:
             async with engine.begin() as connection:

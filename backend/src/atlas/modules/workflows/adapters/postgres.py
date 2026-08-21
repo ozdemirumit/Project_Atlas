@@ -42303,14 +42303,14 @@ class PostgreSQLWorkflowPlanRepository:
                 return result_type(status)
             assert locked.authorization_lease is not None
             try:
-                session.add_all(
-                    (
-                        self._protected_runtime_process_scheduling_consumption_claim_model(
-                            request, authorization_lease_row=locked.authorization_lease
-                        ),
-                        self._protected_runtime_process_scheduling_consumption_attempt_model(
-                            request, authorization_lease_row=locked.authorization_lease
-                        ),
+                claim_model = self._protected_runtime_process_scheduling_consumption_claim_model(
+                    request, authorization_lease_row=locked.authorization_lease
+                )
+                session.add(claim_model)
+                await session.flush()
+                session.add(
+                    self._protected_runtime_process_scheduling_consumption_attempt_model(
+                        request, authorization_lease_row=locked.authorization_lease
                     )
                 )
                 await session.flush()
