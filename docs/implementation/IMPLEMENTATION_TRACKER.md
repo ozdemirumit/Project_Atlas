@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-231 |
 | Title | Bounded single-use protected runtime process-resume authorization lease |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/protected-runtime-process-resume-authorization` |
-| Pull Request | Pending |
+| Pull Request | [#244](https://github.com/ozdemirumit/Project_Atlas/pull/244) |
 | Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-181 |
 | Last Updated | 2026-08-21 |
-| Next Action | Implement the ADR-181 domain, PostgreSQL, workload-only POST, read-only GET/UI and focused verification boundaries |
+| Next Action | Complete exact-head PR CI, squash-merge PR #244 and verify post-main CI |
 
 ### ATLAS-IMP-231 Scope Rationale
 
