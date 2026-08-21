@@ -61,3 +61,4 @@ ADR numbers are permanent and never reused. Material changes require a new ADR r
 | [ADR-178](ADR-178_Atomic_Protected_Runtime_Process_Creation_Consumption.md) | Atomic protected runtime process-creation consumption and single suspended-process attempt | Accepted |
 | [ADR-179](ADR-179_Bounded_Single_Use_Protected_Runtime_Process_Scheduling_Authorization_Lease.md) | Bounded single-use protected runtime process-scheduling authorization lease | Accepted |
 | [ADR-180](ADR-180_Atomic_Protected_Runtime_Process_Scheduling_Consumption.md) | Atomic protected runtime process-scheduling consumption | Accepted |
+| [ADR-181](ADR-181_Bounded_Single_Use_Protected_Runtime_Process_Resume_Authorization_Lease.md) | Bounded single-use protected runtime process-resume authorization lease | Accepted |

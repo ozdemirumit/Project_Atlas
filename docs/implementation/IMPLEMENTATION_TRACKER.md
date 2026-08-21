@@ -4,14 +4,57 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-230 |
-| Title | Atomic protected runtime process-scheduling authorization consumption |
-| Status | Review |
-| Branch | `agent/protected-runtime-process-scheduling-consumption` |
-| Pull Request | [#243](https://github.com/ozdemirumit/Project_Atlas/pull/243) |
-| Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-180 |
+| Task ID | ATLAS-IMP-231 |
+| Title | Bounded single-use protected runtime process-resume authorization lease |
+| Status | In Progress |
+| Branch | `agent/protected-runtime-process-resume-authorization` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-181 |
 | Last Updated | 2026-08-21 |
-| Next Action | Publish the pull request, pass exact-head CI, squash-merge, and verify post-main CI |
+| Next Action | Implement the ADR-181 domain, PostgreSQL, workload-only POST, read-only GET/UI and focused verification boundaries |
+
+### ATLAS-IMP-231 Scope Rationale
+
+- IMP-230 proves only that one exact sealed process was registered with the protected scheduler
+  while remaining suspended and non-runnable. The result is historical evidence and grants no
+  resume, dispatch or execution authority.
+- The next safe boundary is a separate short-lived authorization rooted only in one canonical
+  successful IMP-230 result plus fresh signed metadata-only protected process-state attestation.
+- IMP-231 issues only an at-most-one-second lease for one future process-resume request. It performs
+  no resume, dispatch, execution, model, network, connector, MCP, provider or infrastructure action.
+
+### ATLAS-IMP-231 Acceptance Criteria
+
+- Only the exact protected consumer workload bound through canonical ADR-160 through ADR-180
+  lineage may POST. Humans, AI agents, MCP tools, connectors, schedulers and recovery workers fail
+  closed before protected-state I/O.
+- Only a canonical terminal `process_scheduled_suspended_in_protected_boundary` result is eligible.
+  Rejected, failed, pending and uncertain scheduling outcomes are rejected.
+- Fresh signed metadata-only attestation proves the exact process remains scheduler-registered,
+  sealed, suspended, non-runnable, not resumed, not dispatched, unexecuted and bound to the same
+  runtime envelope, destination fence, process image, manifest and scheduler profile.
+- PostgreSQL revalidates the complete immutable lineage and current coordination heads under
+  authoritative database time before committing the append-only claim and lease.
+- The non-transferable, non-renewable, single-use, non-bearer lease expires within one second and
+  authorizes only submission of one future process-resume request.
+- Only an active lease may set `protected_runtime_process_resume_authority_granted=true`; all other
+  authority fields remain false. Exact replay returns the same lease without extending it; changed
+  replay, race, expiry, lineage drift and cancellation fail closed.
+- The lease contains no runtime/process locator, handle, resume token, command, executable,
+  argument, environment, credential, endpoint, prompt, model or provider coordinate.
+- The slice performs no resume, dispatch, execution, supervision, stop, cleanup, network,
+  connector/MCP/provider, publication, delivery or infrastructure mutation.
+- Production authority is PostgreSQL-only. The POST is workload-only; normal username/password
+  sessions receive minimized `no-store` read-only GET/UI without MFA or a second browser session.
+- AI remains advisory-only. Active Directory remains authentication-only; no Active Directory
+  management capability or MCP is introduced.
+
+### ATLAS-IMP-230 Delivery Evidence
+
+- [PR #243](https://github.com/ozdemirumit/Project_Atlas/pull/243) was squash-merged to `main` as
+  `d73ccdd44e20819b7b19ef0e2b49eb8ce62e3d2d`.
+- Exact-head pull-request CI run `32466098977` and post-main CI run `32468012212` both passed for
+  backend and frontend. Local `main` and `origin/main` were synchronized before IMP-231.
 
 ### ATLAS-IMP-230 Scope Rationale
 

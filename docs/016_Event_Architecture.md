@@ -734,6 +734,20 @@ may retry, resume, dispatch, execute or infer scheduling. All authority remains 
 is minimized and read-only, AI remains advisory-only and Active Directory remains authentication-
 only.
 
+ADR-181 permits only one canonical ADR-180
+`process_scheduled_suspended_in_protected_boundary` result to originate an append-only, single-use,
+non-renewable, non-transferable, non-replaceable, non-reissuable and non-bearer protected runtime
+process-resume authorization lease. Fresh signed, nonce-bound, metadata-only process-state
+attestation must prove the exact scheduler registration remains current and the process remains
+sealed, suspended, non-runnable, not resumed, not dispatched and unexecuted. PostgreSQL revalidates
+the complete lineage and current coordination heads before appending one claim and a lease valid for
+no more than one second. Only the active lease may set
+`protected_runtime_process_resume_authority_granted=true`, meaning solely that the exact workload
+may submit one future resume-consumption request. IMP-231 performs no resume, dispatch, execution,
+model/network/connector/MCP/provider operation or infrastructure mutation. Human GET/UI remains
+read-only through the normal password session without MFA or a second browser prompt; AI remains
+advisory-only and Active Directory remains authentication-only.
+
 ### 10.2 Publication State
 
 Outbox records track:
@@ -1147,3 +1161,4 @@ This document is ready to enter Review when:
 | 2.9.0 | 2026-08-20 | Workflow Architecture | Added atomic protected runtime process-creation consumption and suspended-process evidence boundary |
 | 3.0.0 | 2026-08-20 | Workflow Architecture | Added bounded single-use protected runtime process-scheduling authorization lease boundary |
 | 3.1.0 | 2026-08-21 | Workflow Architecture | Added atomic protected runtime process-scheduling consumption boundary |
+| 3.2.0 | 2026-08-21 | Workflow Architecture | Added bounded single-use protected runtime process-resume authorization lease boundary |
