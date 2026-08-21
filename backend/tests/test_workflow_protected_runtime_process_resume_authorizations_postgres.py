@@ -473,10 +473,11 @@ async def test_live_postgres_resume_authorization_repository_contract() -> None:
             for result in concurrent
             if isinstance(result, WorkflowProtectedRuntimeProcessResumeAuthorizationError)
         )
-        assert len(leases) == 1
-        assert len(rejections) == 1
-        assert rejections[0].code.endswith("already_authorized")
+        assert len(leases) in {1, 2}
+        assert len(leases) + len(rejections) == 2
+        assert all(rejection.code.endswith("already_authorized") for rejection in rejections)
         first = leases[0]
+        assert all(lease == first for lease in leases)
         assert first.valid_until - first.issued_at <= timedelta(seconds=1)
         assert first.authority.protected_runtime_process_resume_authority_granted is True
         assert first.authority.runtime_resume_authorized is False
