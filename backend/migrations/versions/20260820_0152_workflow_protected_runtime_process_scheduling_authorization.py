@@ -133,8 +133,7 @@ def _source_columns() -> tuple[sa.Column[object], ...]:
             sa.Column(
                 name,
                 sa.String(64),
-                nullable=name
-                not in ("process_creation_failure_class", "process_creation_receipt_digest"),
+                nullable=name == "process_creation_failure_class",
             )
             for name in strings_64
         ),

@@ -49,6 +49,7 @@ def test_migration_is_linear_bounded_append_only_and_guarded() -> None:
     assert "uq_wf_rtpsched_src_attempt_lineage" in source
     assert "uq_wf_rtpsched_src_claim_lineage" in source
     assert "uq_wf_rtpsched_src_auth_lease" in source
+    assert 'nullable=name == "process_creation_failure_class"' in source
     names = re.findall(r'name="([^"]+)"', source)
     assert len(names) == len(set(names))
     assert max(map(len, names)) <= 63
@@ -99,6 +100,9 @@ def test_models_bind_exact_successful_adr178_lineage() -> None:
     }
     for table, prefix in ((claim, "claim"), (lease, "lease")):
         assert required <= set(table.c.keys())
+        assert table.c.process_creation_failure_class.nullable is True
+        assert table.c.process_creation_receipt_digest.nullable is False
+        assert table.c.process_creation_result_digest.nullable is False
         names = {
             item.name
             for item in table.foreign_key_constraints

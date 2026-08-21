@@ -18264,7 +18264,7 @@ class _WorkflowProtectedRuntimeProcessSchedulingAuthorizationSourceColumns:
     process_resumed: Mapped[bool] = mapped_column(Boolean, nullable=False)
     process_dispatched: Mapped[bool] = mapped_column(Boolean, nullable=False)
     process_executed: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    process_creation_receipt_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    process_creation_receipt_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     process_creation_completed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
