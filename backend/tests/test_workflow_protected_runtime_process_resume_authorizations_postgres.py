@@ -445,7 +445,7 @@ async def test_live_postgres_resume_authorization_repository_contract() -> None:
             receipt_verifier=scheduling_receipt_verifier,
         )
         idempotency_key = f"imp-231-resume-auth-{uuid4().hex}"
-        exact = await asyncio.wait_for(
+        concurrent = await asyncio.wait_for(
             asyncio.gather(
                 _authorize_resume(
                     service,
@@ -459,11 +459,24 @@ async def test_live_postgres_resume_authorization_repository_contract() -> None:
                     scope=scope,
                     idempotency_key=idempotency_key,
                 ),
+                return_exceptions=True,
             ),
             timeout=20,
         )
-        first, second = exact
-        assert first == second
+        leases = tuple(
+            result
+            for result in concurrent
+            if isinstance(result, WorkflowProtectedRuntimeProcessResumeAuthorizationLease)
+        )
+        rejections = tuple(
+            result
+            for result in concurrent
+            if isinstance(result, WorkflowProtectedRuntimeProcessResumeAuthorizationError)
+        )
+        assert len(leases) == 1
+        assert len(rejections) == 1
+        assert rejections[0].code.endswith("already_authorized")
+        first = leases[0]
         assert first.valid_until - first.issued_at <= timedelta(seconds=1)
         assert first.authority.protected_runtime_process_resume_authority_granted is True
         assert first.authority.runtime_resume_authorized is False
