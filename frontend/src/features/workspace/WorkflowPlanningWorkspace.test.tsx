@@ -2583,6 +2583,21 @@ function protectedRuntimeProcessCreationAuthorizationResponse(
   );
 }
 
+function protectedRuntimeProcessSchedulingAuthorizationResponse(): Response {
+  const serverTime = "2026-08-21T06:00:00Z";
+  return new Response(
+    JSON.stringify({
+      data: { authorizations: [], server_time: serverTime, durable: true },
+      meta: {
+        correlation_id:
+          "correlation.workflow.protected-runtime-process-scheduling-authorization",
+        generated_at: serverTime,
+      },
+    }),
+    { status: 200, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function protectedRuntimeProcessCreationResponse(
   processCreations: unknown[],
   status = 200,
@@ -2908,6 +2923,13 @@ function mockReadResponses(input: {
   let transportCompatibilityAdmissionReadCount = 0;
   vi.mocked(fetch).mockImplementation((request) => {
     const url = request instanceof Request ? request.url : request.toString();
+    if (
+      url.endsWith(
+        "/api/v1/workflows/protected-runtime-process-scheduling-authorizations",
+      )
+    ) {
+      return Promise.resolve(protectedRuntimeProcessSchedulingAuthorizationResponse());
+    }
     if (
       url.endsWith(
         "/api/v1/workflows/protected-runtime-process-creation-consumptions",
