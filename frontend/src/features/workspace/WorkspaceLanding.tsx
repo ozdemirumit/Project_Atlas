@@ -82,6 +82,7 @@ export function WorkspaceLanding({
   return (
     <div className="app-frame">
       <ApplicationSidebar
+        activeTaskLabel={activeView === "workflows" ? "Workflow planning" : "Operations workspace"}
         activeWorkspace="Workspace"
         authenticationMethod={identity.authentication.method}
         credentialKind={identity.credential_kind}

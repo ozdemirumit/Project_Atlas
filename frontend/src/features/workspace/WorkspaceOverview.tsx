@@ -3,6 +3,7 @@ import {
   ArrowRight,
   Blocks,
   Bot,
+  Boxes,
   BrainCircuit,
   FileChartColumn,
   GitBranch,
@@ -40,7 +41,7 @@ const capabilityGroups: CapabilityGroup[] = [
   {
     title: "Infrastructure operations",
     capabilities: [
-      { label: "Inventory and health", destination: { workspace: "Health", view: "overview" }, icon: Activity },
+      { label: "Device Registry", destination: { workspace: "Health", view: "overview" }, icon: Activity },
       { label: "Topology and service impact", destination: { workspace: "Health", view: "overview" }, icon: GitBranch },
       { label: "Investigation and RCA", destination: { workspace: "Health", view: "investigate" }, icon: ScanSearch },
       { label: "Recommendations and reports", destination: { workspace: "Health", view: "investigate" }, icon: FileChartColumn },
@@ -49,6 +50,7 @@ const capabilityGroups: CapabilityGroup[] = [
   {
     title: "Connector lifecycle",
     capabilities: [
+      { label: "Installed MCPs", destination: { workspace: "Connectors", view: "inventory" }, icon: Boxes },
       { label: "MCP Builder", destination: { workspace: "Connectors", view: "builder" }, icon: Blocks },
       { label: "Package trust chain", destination: { workspace: "Connectors", view: "builder" }, icon: ShieldCheck },
       { label: "Runtime governance", destination: { workspace: "Connectors", view: "runtime" }, icon: Network },
@@ -90,7 +92,7 @@ export function WorkspaceOverview({ onNavigate }: WorkspaceOverviewProps) {
           <span>operational domains</span>
         </div>
         <div>
-          <strong>14</strong>
+          <strong>15</strong>
           <span>available capabilities</span>
         </div>
         <div>

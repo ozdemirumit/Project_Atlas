@@ -4,14 +4,64 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-232 |
-| Title | Advisory-only terminal execution boundary |
+| Task ID | ATLAS-IMP-233 |
+| Title | First-class Inventory and MCP lifecycle access |
 | Status | Review |
-| Branch | `agent/advisory-only-execution-boundary` |
-| Pull Request | [#245](https://github.com/ozdemirumit/Project_Atlas/pull/245) |
-| Governing Documents | ATLAS-003, ATLAS-014, ATLAS-023, ATLAS-025, ATLAS-032, ATLAS-037, ATLAS-047, ADR-182 |
+| Branch | `agent/first-class-inventory-mcp-access` |
+| Pull Request | [#246](https://github.com/ozdemirumit/Project_Atlas/pull/246) |
+| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-050, ATLAS-052, ADR-079, ADR-123, ADR-133, ADR-182 |
 | Last Updated | 2026-08-21 |
-| Next Action | Complete exact-head PR CI, squash-merge PR #245 and verify post-main CI |
+| Next Action | Complete exact-head PR CI and squash-merge PR #246 |
+
+### ATLAS-IMP-233 Scope Rationale
+
+- Device registration/retirement and disabled MCP instance creation/retirement already use real,
+  governed API contracts, but their primary entry points remain difficult to discover from the main
+  capability directory.
+- Connector Inventory renders a generic MCP Builder page heading even when Installed MCPs is the
+  selected task, while mutation clients discard the exact HTTP status needed for useful 401, 403 and
+  409 guidance.
+- This slice changes navigation and lifecycle error presentation only. It adds no backend authority,
+  hard delete, runtime activation, connector invocation, execution or infrastructure mutation.
+
+### ATLAS-IMP-233 Acceptance Criteria
+
+- The main capability directory exposes separate `Device Registry` and `Installed MCPs` entries that
+  navigate to `#/health/overview` and `#/connectors/inventory` respectively.
+- The sidebar reserves stable task context and the page heading reflects the selected Health or
+  Connector task; Installed MCPs never presents an MCP Builder heading.
+- Normal username/password browser sessions remain sufficient without MFA, step-up or a second
+  browser session.
+- MCP creation still produces only `disabled_unconfigured` records; removal remains history-
+  preserving retirement.
+- MCP create/retire 401, 403 and 409 responses retain their status through the API client and render
+  re-login, missing role/scope or authoritative refresh guidance respectively.
+- Focused TypeScript, ESLint and frontend tests plus desktop/mobile live validation pass before PR.
+
+### ATLAS-IMP-233 Verification Evidence
+
+- Frontend TypeScript and targeted ESLint passed across the affected API, shell, workspace and MCP
+  lifecycle files.
+- The API status-preservation, capability-directory, shell navigation and Installed MCP lifecycle
+  surface passed `38` focused tests across six files; the unrelated frontend suite was not duplicated
+  locally and remains assigned to pull-request CI.
+- Live desktop validation at `http://127.0.0.1:5216/` exposed separate `Device Registry` and
+  `Installed MCPs` capabilities, the `15`-capability count and the exact `Installed MCP management`
+  page heading with no horizontal overflow. A clean authenticated in-app reload produced no new
+  browser-console errors.
+- A separate 390x844 browser session rendered the Installed MCP workspace without horizontal
+  overflow; its heading and controls stayed within the viewport. Expected 403/404/409 resource
+  responses reflected the unauthenticated isolated session and did not cause an application or page
+  error.
+
+### ATLAS-IMP-232 Delivery Evidence
+
+- Source commit `478eb5c0138d206f8c545af56df480b8a52f6c88` passed exact-head pull-request
+  CI run `32501416057`; frontend completed in 9m44s and backend in 19m18s.
+- [PR #245](https://github.com/ozdemirumit/Project_Atlas/pull/245) was squash-merged to `main` as
+  `6a73c5d05c9ecd3ab119ae9b0914605d6322d356`.
+- The exact merged commit independently passed post-main CI run `32503117320`; frontend completed in
+  9m58s and backend in 21m21s. Local `main` and `origin/main` were synchronized before IMP-233.
 
 ### ATLAS-IMP-232 Scope Rationale
 

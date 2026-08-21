@@ -1166,6 +1166,63 @@ describe("InstalledMcpManagementWorkspace", () => {
     );
   });
 
+  it("offers re-login when MCP creation returns a verified 401", async () => {
+    const onRequestEnterpriseLogin = vi.fn();
+    vi.mocked(createConnectorInstance).mockRejectedValue(
+      new ApiRequestError("Connector instance creation failed", 401),
+    );
+    renderWorkspace("subject.connector-operator", onRequestEnterpriseLogin);
+
+    const add = await screen.findByRole("button", { name: "Add MCP" });
+    await waitFor(() => expect(add).toBeEnabled());
+    fireEvent.click(add);
+    fireEvent.click(screen.getByLabelText(/The MCP remains disabled and unconfigured/i));
+    fireEvent.click(screen.getByRole("button", { name: "Add disabled MCP" }));
+
+    expect(await screen.findByText("Your signed-in session has expired")).toBeVisible();
+    expect(screen.getByText(/Sign in again before changing MCP lifecycle records/i)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Sign in again" }));
+    expect(onRequestEnterpriseLogin).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a verified 403 retirement denial without suggesting re-login", async () => {
+    const onRequestEnterpriseLogin = vi.fn();
+    vi.mocked(retireConnectorInstance).mockRejectedValue(
+      new ApiRequestError("Connector instance retirement failed", 403),
+    );
+    renderWorkspace("subject.connector-operator", onRequestEnterpriseLogin);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Remove Storage East" }));
+    fireEvent.change(screen.getByLabelText("Retirement reason"), {
+      target: { value: "Retire this unused connector identity while preserving its history." },
+    });
+    fireEvent.click(screen.getByLabelText(/history is preserved/i));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm retirement" }));
+
+    expect(await screen.findByText("Connector lifecycle permission is required")).toBeVisible();
+    expect(screen.getByText(/missing the required role or scope/i)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Sign in again" })).toBeNull();
+    expect(onRequestEnterpriseLogin).not.toHaveBeenCalled();
+  });
+
+  it("refreshes authoritative inventory after a verified 409 lifecycle conflict", async () => {
+    vi.mocked(retireConnectorInstance).mockRejectedValue(
+      new ApiRequestError("Connector instance retirement failed", 409),
+    );
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Remove Storage East" }));
+    fireEvent.change(screen.getByLabelText("Retirement reason"), {
+      target: { value: "Retire this unused connector identity while preserving its history." },
+    });
+    fireEvent.click(screen.getByLabelText(/history is preserved/i));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm retirement" }));
+
+    expect(await screen.findByText("MCP lifecycle changed")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Refresh inventory" }));
+    await waitFor(() => expect(getConnectorInstances).toHaveBeenCalledTimes(2));
+  });
+
   it("does not expose an approval request control for a blocked upgrade plan", async () => {
     vi.mocked(getConnectorUpgradePlan).mockResolvedValue({
       ...upgradePlan,

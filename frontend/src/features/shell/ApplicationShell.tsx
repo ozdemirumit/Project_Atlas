@@ -16,10 +16,11 @@ import type { WorkspaceId } from "./workspace";
 const navigation: Array<{
   id: WorkspaceId;
   icon: typeof MessageSquareText;
+  summary: string;
 }> = [
-  { id: "Workspace", icon: MessageSquareText },
-  { id: "Health", icon: Activity },
-  { id: "Connectors", icon: Blocks },
+  { id: "Workspace", icon: MessageSquareText, summary: "Chat and planning" },
+  { id: "Health", icon: Activity, summary: "Inventory and analysis" },
+  { id: "Connectors", icon: Blocks, summary: "MCP lifecycle" },
 ];
 
 function initials(displayName: string | undefined): string {
@@ -50,6 +51,7 @@ export function AdvisoryBoundaryViolation() {
 }
 
 interface ApplicationSidebarProps {
+  activeTaskLabel?: string;
   activeWorkspace: WorkspaceId;
   authenticationMethod?: string;
   credentialKind?: "identity_provider" | "browser_session" | "api_token";
@@ -62,6 +64,7 @@ interface ApplicationSidebarProps {
 }
 
 export function ApplicationSidebar({
+  activeTaskLabel,
   activeWorkspace,
   authenticationMethod,
   credentialKind,
@@ -105,8 +108,9 @@ export function ApplicationSidebar({
 
         <nav aria-label="Primary navigation">
           <p className="nav-heading">OPERATE</p>
-          {navigation.map(({ id, icon: Icon }) => (
+          {navigation.map(({ id, icon: Icon, summary }) => (
             <button
+              aria-label={id}
               aria-current={activeWorkspace === id ? "page" : undefined}
               className={`nav-item ${activeWorkspace === id ? "active" : ""}`}
               type="button"
@@ -114,7 +118,10 @@ export function ApplicationSidebar({
               onClick={() => onNavigate(id)}
             >
               <Icon size={18} strokeWidth={1.8} />
-              <span>{id}</span>
+              <span className="nav-item-label">
+                <strong>{id}</strong>
+                <small>{activeWorkspace === id && activeTaskLabel ? activeTaskLabel : summary}</small>
+              </span>
             </button>
           ))}
         </nav>

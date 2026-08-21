@@ -900,6 +900,11 @@ export default function InstalledMcpManagementWorkspace({
   const lifecycleQueryFailed = lifecycleQueryErrors.length > 0;
   const sessionAuthenticationFailed = lifecycleQueryErrors.some((error) => hasStatus(error, 401));
   const lifecycleAuthorizationFailed = lifecycleQueryErrors.some((error) => hasStatus(error, 403));
+  const lifecycleMutationError = createMutation.error ?? retireMutation.error;
+  const mutationAuthenticationFailed = hasStatus(lifecycleMutationError, 401);
+  const mutationAuthorizationFailed = hasStatus(lifecycleMutationError, 403);
+  const mutationConflict = hasStatus(lifecycleMutationError, 409);
+  const mutationAction = createMutation.error ? "creation" : "retirement";
   const openBuilder = () => {
     setAdding(false);
     if (onOpenBuilder) {
@@ -1187,8 +1192,42 @@ export default function InstalledMcpManagementWorkspace({
       {instanceQuery.isLoading && (
         <div className="installed-mcp-status" role="status"><RefreshCw className="spin" size={18} /><span>Loading MCP lifecycle inventory...</span></div>
       )}
-      {createMutation.isError && <div className="installed-mcp-status error-state" role="alert"><AlertTriangle size={18} />MCP creation failed. Review the exact package, identity key and policy boundary.</div>}
-      {retireMutation.isError && <div className="installed-mcp-status error-state" role="alert"><AlertTriangle size={18} />MCP retirement failed. Configured instances require governed decommissioning first.</div>}
+      {lifecycleMutationError && (
+        <div className="installed-mcp-status error-state" role="alert">
+          {mutationAuthenticationFailed ? <LogIn size={18} /> : <AlertTriangle size={18} />}
+          <div>
+            <strong>
+              {mutationAuthenticationFailed
+                ? "Your signed-in session has expired"
+                : mutationAuthorizationFailed
+                  ? "Connector lifecycle permission is required"
+                  : mutationConflict
+                    ? "MCP lifecycle changed"
+                    : `MCP ${mutationAction} failed`}
+            </strong>
+            <span>
+              {mutationAuthenticationFailed
+                ? "Sign in again before changing MCP lifecycle records."
+                : mutationAuthorizationFailed
+                  ? "This signed-in account is missing the required role or scope."
+                  : mutationConflict
+                    ? "Refresh the MCP inventory and review the current package or instance state."
+                    : mutationAction === "creation"
+                      ? "Review the exact package, instance key, and creation policy."
+                      : "Configured instances require governed decommissioning before retirement."}
+            </span>
+          </div>
+          {mutationAuthenticationFailed && onRequestEnterpriseLogin ? (
+            <button type="button" onClick={onRequestEnterpriseLogin}>
+              <LogIn size={15} /> Sign in again
+            </button>
+          ) : mutationConflict ? (
+            <button type="button" onClick={refresh}>
+              <RefreshCw size={15} /> Refresh inventory
+            </button>
+          ) : null}
+        </div>
+      )}
       {!instanceQuery.isError && !instanceQuery.isLoading && instances.length === 0 ? (
         <div className="installed-mcp-empty"><Boxes size={24} /><div><strong>No {lifecycle === "all" ? "" : lifecycle} MCP instances</strong><span>{packages.length ? "Select Add MCP to create a disabled instance from a governed package." : "Complete package installation in the Builder workflow, then return here to add an MCP."}</span></div></div>
       ) : !instanceQuery.isLoading && !instanceQuery.isError ? (
