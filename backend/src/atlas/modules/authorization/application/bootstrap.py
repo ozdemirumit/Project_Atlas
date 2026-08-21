@@ -119,6 +119,9 @@ WORKFLOW_PROTECTED_RUNTIME_READINESS_CONSUMPTION_READ = (
 WORKFLOW_PROTECTED_RUNTIME_PROCESS_CREATION_AUTHORIZATION_READ = (
     "workflow.protected-runtime-process-creation-authorizations.read"
 )
+WORKFLOW_PROTECTED_RUNTIME_PROCESS_SCHEDULING_AUTHORIZATION_READ = (
+    "workflow.protected-runtime-process-scheduling-authorizations.read"
+)
 WORKFLOW_PROTECTED_RUNTIME_PROCESS_CREATION_CONSUMPTION_READ = (
     "workflow.protected-runtime-process-creation-consumptions.read"
 )
@@ -2107,6 +2110,20 @@ def workflow_protected_runtime_process_creation_authorization_scope(
     )
 
 
+def workflow_protected_runtime_process_scheduling_authorization_scope(
+    organization_id: str,
+    environment: str,
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.workflow",
+        resource_id="resource.workflow.protected-runtime-process-scheduling-authorizations",
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
 def workflow_protected_runtime_process_creation_consumption_scope(
     organization_id: str,
     environment: str,
@@ -2571,6 +2588,12 @@ def build_development_authorization_service(
             permission_id=WORKFLOW_PROTECTED_RUNTIME_PROCESS_CREATION_AUTHORIZATION_READ,
             description=(
                 "Read minimized immutable protected runtime process-creation authorizations."
+            ),
+        ),
+        PermissionDefinition(
+            permission_id=WORKFLOW_PROTECTED_RUNTIME_PROCESS_SCHEDULING_AUTHORIZATION_READ,
+            description=(
+                "Read minimized immutable protected runtime process-scheduling authorizations."
             ),
         ),
         PermissionDefinition(
@@ -3514,6 +3537,7 @@ def build_development_authorization_service(
                 WORKFLOW_PROTECTED_RUNTIME_READINESS_AUTHORIZATION_READ,
                 WORKFLOW_PROTECTED_RUNTIME_READINESS_CONSUMPTION_READ,
                 WORKFLOW_PROTECTED_RUNTIME_PROCESS_CREATION_AUTHORIZATION_READ,
+                WORKFLOW_PROTECTED_RUNTIME_PROCESS_SCHEDULING_AUTHORIZATION_READ,
                 WORKFLOW_PROTECTED_RUNTIME_PROCESS_CREATION_CONSUMPTION_READ,
                 WORKFLOW_PROTECTED_RUNTIME_START_CONSUMPTION_READ,
                 WORKFLOW_PROTECTED_RUNTIME_CONTEXT_USE_AUTHORIZATION_CONSUMPTION_READ,
@@ -5805,6 +5829,20 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=workflow_protected_runtime_process_creation_authorization_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id=(
+                    "assignment.development."
+                    "workflow-protected-runtime-process-scheduling-authorizations"
+                ),
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=workflow_protected_runtime_process_scheduling_authorization_scope(
                     settings.development_organization_id,
                     settings.environment,
                 ),

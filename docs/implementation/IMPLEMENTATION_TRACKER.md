@@ -4,14 +4,76 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-228 |
-| Title | Atomic protected runtime process-creation consumption |
-| Status | Review |
-| Branch | `agent/protected-runtime-process-creation-consumption` |
-| Pull Request | [#241](https://github.com/ozdemirumit/Project_Atlas/pull/241) |
-| Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-178 |
-| Last Updated | 2026-08-20 |
-| Next Action | Complete exact-head CI and merge PR #241 |
+| Task ID | ATLAS-IMP-229 |
+| Title | Bounded single-use protected runtime process-scheduling authorization lease |
+| Status | In Progress |
+| Branch | `agent/protected-runtime-process-scheduling-authorization` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-179 |
+| Last Updated | 2026-08-21 |
+| Next Action | Implement the authorization-only vertical slice and run focused risk validation |
+
+### ATLAS-IMP-229 Scope Rationale
+
+- IMP-228 creates only one sealed suspended process in the exact protected runtime. Its terminal
+  result is non-bearer historical evidence and grants no scheduling, resume, dispatch or execution
+  authority.
+- The next safe boundary is a separate short-lived authorization rooted only in one canonical
+  successful IMP-228 result plus fresh signed metadata-only protected process-state attestation.
+- IMP-229 issues only an at-most-one-second lease for one future process-scheduling request. It
+  does not schedule, resume, dispatch or execute the process and performs no model, network,
+  connector, MCP, provider or infrastructure operation.
+
+### ATLAS-IMP-229 Acceptance Criteria
+
+- Only the exact protected consumer workload bound through canonical ADR-160 through ADR-178
+  lineage may POST. Humans, AI agents, MCP tools, connectors, schedulers and recovery workers fail
+  closed before protected-state I/O.
+- Only a canonical terminal `process_created_suspended_in_protected_boundary` result is eligible.
+  Rejected, failed, pending and uncertain process-creation outcomes are rejected.
+- Fresh signed metadata-only attestation proves that the exact process remains created, sealed,
+  suspended, unscheduled, not resumed, not dispatched, unexecuted, current and bound to the same
+  runtime envelope, destination fence, process image, manifest and creation primitive.
+- PostgreSQL revalidates the complete immutable lineage and current coordination heads under
+  authoritative database time before committing the append-only claim and lease.
+- The non-transferable, non-renewable, single-use, non-bearer lease expires within one second and
+  authorizes only submission of one future process-scheduling request.
+- Only an active lease may set `protected_runtime_process_scheduling_authority_granted=true`; all
+  other authority fields remain false. Exact replay returns the same lease without extending it;
+  changed replay, race, expiry, lineage drift and cancellation fail closed.
+- The lease contains no runtime or process locator, handle, command, executable, argument,
+  environment, working directory, credential, endpoint, prompt, model or provider coordinate.
+- The slice performs no scheduling, resume, dispatch, execution, supervision, stop, cleanup,
+  network, connector/MCP/provider, publication, delivery or infrastructure mutation.
+- Production authority is PostgreSQL-only. The POST is workload-only; normal username/password
+  sessions receive minimized `no-store` read-only GET/UI without MFA or a second browser session.
+- AI remains advisory-only. Active Directory remains authentication-only; no Active Directory
+  management capability or MCP is introduced.
+
+### ATLAS-IMP-229 Verification Evidence
+
+- Focused domain, application, persistence-contract, API and signed process-state attestor tests
+  passed. The live PostgreSQL case remained intentionally skipped because
+  `ATLAS_TEST_POSTGRES_DSN` is not configured on this workstation; it is included in pull-request
+  CI rather than triggering a second local regression run.
+- Targeted Ruff formatting and lint passed for every changed backend file. Targeted MyPy passed for
+  the combined API, persistence, domain, service, adapter and focused-test surface with no issues
+  across `15` files.
+- Alembic reports the single head `20260820_0152`. The migration adds strict composite lineage
+  constraints, append-only enforcement and the one-second single-use authorization lease.
+- Frontend TypeScript passed. The two focused process-scheduling authorization rendering/parsing
+  scenarios passed without running the unrelated frontend suite locally.
+- A current-code API process on port `8001` accepted the normal `atlas-demo` / `local-demo`
+  username/password login with `201`. With no PostgreSQL DSN, the new read-only inventory failed
+  closed with `503` and `Cache-Control: no-store, max-age=0`; no MFA or second browser session was
+  required.
+- Live browser validation rendered the read-only `Protected runtime process-scheduling
+  authorizations` section at `1280px`. Body and viewport widths matched, the section exposed zero
+  buttons and zero form controls, and the browser reported no error or warning logs.
+- Independent review findings were resolved by allowing immutable exact replay after upstream
+  source evidence expires and aligning the generated lease identifier with the strict frontend
+  parser. The focused replay/prefix regression passed `7` tests with the DSN-gated live case
+  skipped, and targeted MyPy passed the four affected files.
 
 ### ATLAS-IMP-228 Scope Rationale
 
@@ -71,6 +133,13 @@
   uncertainty, re-verifying creator receipt signatures in the persistence result-write path, and
   representing ambiguous process creation, sealing and suspension facts as unknown rather than
   false.
+
+### ATLAS-IMP-228 Delivery Evidence
+
+- [PR #241](https://github.com/ozdemirumit/Project_Atlas/pull/241) was squash-merged to `main` as
+  `ba7849062e6fb8fa649a74dd055493ea3417b062`.
+- Exact-head pull-request CI run `32366842019` and post-main CI run `32368672674` both passed for
+  backend and frontend. Local `main` and `origin/main` were synchronized before IMP-229.
 
 ### ATLAS-IMP-227 Scope Rationale
 

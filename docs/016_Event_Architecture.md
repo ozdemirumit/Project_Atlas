@@ -710,6 +710,21 @@ and event recovery perform no creator I/O. Known terminal receipts and permanent
 append-only evidence; no event, outbox, DLQ, scheduler, AI, MCP or connector path may retry or infer
 process creation. Human UI remains minimized and read-only.
 
+ADR-179 permits only one canonical ADR-178
+`process_created_suspended_in_protected_boundary` result to originate an append-only, single-use,
+non-renewable, non-transferable, non-replaceable, non-reissuable and non-bearer protected runtime
+process-scheduling authorization lease. Fresh signed, nonce-bound, metadata-only protected process-
+state attestation must prove the exact process remains created, sealed, suspended, non-runnable,
+unscheduled, current and unexecuted. PostgreSQL revalidates the complete lineage, process primitive,
+destination fence, protected slot generation and process-state evidence before atomically appending
+one claim and an at-most-one-second lease. Exact replay returns the same lease without extension;
+event, outbox, scheduler, DLQ and recovery paths cannot issue or replace it. Only the active lease
+may set `protected_runtime_process_scheduling_authority_granted=true`, meaning solely that the exact
+workload may submit one future scheduling request. It performs no scheduling, resume, dispatch,
+execution, model/network/connector/MCP/provider operation or infrastructure mutation. Human GET/UI
+remains read-only through the normal password session without MFA or a second browser prompt; AI
+remains advisory-only and Active Directory remains authentication-only.
+
 ### 10.2 Publication State
 
 Outbox records track:
@@ -1120,3 +1135,5 @@ This document is ready to enter Review when:
 | 2.6.0 | 2026-08-17 | Workflow Architecture | Added bounded single-use protected runtime-readiness authorization lease boundary |
 | 2.7.0 | 2026-08-17 | Workflow Architecture | Added atomic protected runtime-readiness consumption and single assessment attempt |
 | 2.8.0 | 2026-08-18 | Workflow Architecture | Added bounded single-use protected runtime process-creation authorization lease boundary |
+| 2.9.0 | 2026-08-20 | Workflow Architecture | Added atomic protected runtime process-creation consumption and suspended-process evidence boundary |
+| 3.0.0 | 2026-08-20 | Workflow Architecture | Added bounded single-use protected runtime process-scheduling authorization lease boundary |

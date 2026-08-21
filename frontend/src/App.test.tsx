@@ -1247,6 +1247,70 @@ const reportResponse = {
   },
 };
 
+const processSchedulingAuthorizationResponse = {
+  data: {
+    authorizations: [
+      {
+        authorization_lease_id:
+          "workflow-protected-runtime-process-scheduling-authorization-lease.0123456789abcdef01234567",
+        process_creation_result_reference:
+          "integrity.workflow-protected-runtime-process-creation-result.0123456789abcdef01234567",
+        state: "authorized_unconsumed",
+        effective_state: "active",
+        issued_at: "2026-08-20T10:30:00Z",
+        valid_until: "2026-08-20T10:30:01Z",
+        effective_until: "2026-08-20T10:30:01Z",
+        consumer_contract_id:
+          "contract.workflow-protected-transport-target-context-capsule-consumer",
+        consumer_contract_version: "1.0",
+        purpose_id: "purpose.workflow-protected-runtime-process-scheduling-request",
+        policy_id: "policy.workflow-protected-runtime-process-scheduling-authorization",
+        policy_version: "1.0",
+        authority: {
+          protected_runtime_process_scheduling_authority_granted: true,
+          protected_runtime_process_creation_authority_granted: false,
+          protected_runtime_readiness_authority_granted: false,
+          protected_runtime_start_authority_granted: false,
+          protected_runtime_context_use_authority_granted: false,
+          runtime_use_authorized: false,
+          runtime_start_authorized: false,
+          runtime_resume_authorized: false,
+          connector_activity_authorized: false,
+          protected_runtime_context_injection_authority_granted: false,
+          protected_resident_context_access_authority_granted: false,
+          target_context_capsule_opening_authorized: false,
+          target_context_capsule_handoff_authorized: false,
+          endpoint_resolution_authorized: false,
+          route_selection_authorized: false,
+          route_binding_authorized: false,
+          credential_selection_authorized: false,
+          credential_assignment_binding_authorized: false,
+          credential_access_authorized: false,
+          credential_brokerage_authorized: false,
+          credential_resolution_authorized: false,
+          protected_artifact_access_authorized: false,
+          credential_delivery_authorized: false,
+          network_access_authorized: false,
+          readiness_probe_authorized: false,
+          publication_authorized: false,
+          delivery_authorized: false,
+          dispatch_authorized: false,
+          execution_authorized: false,
+          infrastructure_mutation_authorized: false,
+        },
+        integrity_reference:
+          "integrity.workflow-protected-runtime-process-scheduling-authorization.0123456789abcdef01234567",
+      },
+    ],
+    server_time: "2026-08-20T10:30:00.500Z",
+    durable: true,
+  },
+  meta: {
+    correlation_id: "test-process-scheduling-authorization-correlation",
+    generated_at: "2026-08-20T10:30:00.500Z",
+  },
+};
+
 beforeEach(() => {
   window.history.replaceState({}, "", "/#/health/overview");
 });
@@ -1259,6 +1323,61 @@ afterEach(() => {
 });
 
 describe("Atlas application shell", () => {
+  it("renders process-scheduling authorization as password-session read-only evidence", async () => {
+    window.history.replaceState({}, "", "/#/workspace/workflows");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/identity/me")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(identityResponse), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      if (url.includes("/protected-runtime-process-scheduling-authorizations")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(processSchedulingAuthorizationResponse), {
+            status: 200,
+            headers: {
+              "Cache-Control": "no-store, max-age=0",
+              "Content-Type": "application/json",
+            },
+          }),
+        );
+      }
+      return Promise.resolve(new Response(null, { status: 503 }));
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    render(
+      <QueryClientProvider client={client}>
+        <App />
+      </QueryClientProvider>,
+    );
+
+    const section = (await screen.findByRole("heading", {
+      name: "Protected runtime process-scheduling authorizations",
+    })).closest("section") as HTMLElement;
+    await waitFor(() => expect(section).toHaveTextContent("active for one request"));
+    expect(section).toHaveTextContent("does not schedule, queue, reserve, resume, dispatch or execute");
+    expect(section).not.toHaveTextContent(/MFA|second browser|authorized browser session/i);
+    expect(
+      section.querySelector(
+        "button, input, select, textarea, [role='button'], [role='switch'], [role='checkbox']",
+      ),
+    ).toBeNull();
+    const schedulingCall = fetchMock.mock.calls.find(([request]) =>
+      (request instanceof Request ? request.url : request.toString()).includes(
+        "/protected-runtime-process-scheduling-authorizations",
+      ),
+    );
+    expect(schedulingCall).toBeDefined();
+    expect(schedulingCall?.[1]?.method ?? "GET").toBe("GET");
+    expect(schedulingCall?.[1]?.credentials).toBe("same-origin");
+  });
+
   it("shows the governed operations workspace and platform status", async () => {
     vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
     vi.spyOn(globalThis, "fetch").mockImplementation((input) => {

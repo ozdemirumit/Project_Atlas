@@ -11761,6 +11761,15 @@ tbody tr.selected {
   gap: 16px;
 }
 
+.workflow-process-scheduling-authorization-band {
+  border-left-color: #4e7569;
+}
+
+.workflow-process-scheduling-authorization-band .workflow-safety-boundary {
+  border-left-color: #4e7569;
+  background: #f3f8f6;
+}
+
 .itsm-authority-boundary,
 .itsm-readiness-state,
 .itsm-fixed-mapping-note,
