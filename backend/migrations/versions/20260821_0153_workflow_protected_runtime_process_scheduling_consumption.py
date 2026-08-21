@@ -114,9 +114,7 @@ def _source_columns() -> tuple[sa.Column[object], ...]:
             "process_creation_result_recorded_at", sa.DateTime(timezone=True), nullable=False
         ),
         sa.Column("source_observed_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column(
-            "scheduling_authorization_issued_at", sa.DateTime(timezone=True), nullable=False
-        ),
+        sa.Column("scheduling_authorization_issued_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column(
             "scheduling_authorization_valid_until", sa.DateTime(timezone=True), nullable=False
         ),
@@ -282,17 +280,14 @@ def _create_claim() -> None:
             "AND claimed_at < scheduling_authorization_valid_until "
             "AND length(idempotency_scope_id) = 64 "
             "AND length(idempotency_digest) = 64 "
-            "AND length(request_fingerprint) = 64 AND "
-            + _zero_authority(),
+            "AND length(request_fingerprint) = 64 AND " + _zero_authority(),
             name="ck_wf_rtpsched_cons_claim_semantics",
         ),
         sa.CheckConstraint(
             "jsonb_typeof(payload) = 'object'", name="ck_wf_rtpsched_cons_claim_payload"
         ),
     )
-    op.create_index(
-        "ix_wf_rtpsched_cons_claim_scope", CLAIM_TABLE, [*SCOPE, "claimed_at"]
-    )
+    op.create_index("ix_wf_rtpsched_cons_claim_scope", CLAIM_TABLE, [*SCOPE, "claimed_at"])
 
 
 def _create_attempt() -> None:
@@ -396,8 +391,7 @@ def _create_attempt() -> None:
             "AND instruction_signature_algorithm = 'hmac-sha256' "
             "AND length(instruction_digest) = 64 "
             "AND length(signed_instruction_envelope_digest) = 64 "
-            "AND length(request_nonce_digest) = 64 AND "
-            + _zero_authority(),
+            "AND length(request_nonce_digest) = 64 AND " + _zero_authority(),
             name="ck_wf_rtpsched_cons_attempt_instruction",
         ),
         sa.CheckConstraint(
@@ -407,9 +401,7 @@ def _create_attempt() -> None:
             name="ck_wf_rtpsched_cons_attempt_payload",
         ),
     )
-    op.create_index(
-        "ix_wf_rtpsched_cons_attempt_scope", ATTEMPT_TABLE, [*SCOPE, "started_at"]
-    )
+    op.create_index("ix_wf_rtpsched_cons_attempt_scope", ATTEMPT_TABLE, [*SCOPE, "started_at"])
 
 
 def _create_result() -> None:
@@ -536,9 +528,7 @@ def _create_result() -> None:
             name="ck_wf_rtpsched_cons_result_payload",
         ),
     )
-    op.create_index(
-        "ix_wf_rtpsched_cons_result_scope", RESULT_TABLE, [*SCOPE, "recorded_at"]
-    )
+    op.create_index("ix_wf_rtpsched_cons_result_scope", RESULT_TABLE, [*SCOPE, "recorded_at"])
 
 
 def upgrade() -> None:
@@ -602,7 +592,5 @@ def downgrade() -> None:
     op.drop_table(RESULT_TABLE)
     op.drop_table(ATTEMPT_TABLE)
     op.drop_table(CLAIM_TABLE)
-    op.drop_constraint(
-        "uq_wf_rtpsched_lease_cons_source", AUTH_LEASE_TABLE, type_="unique"
-    )
+    op.drop_constraint("uq_wf_rtpsched_lease_cons_source", AUTH_LEASE_TABLE, type_="unique")
     op.execute(sa.text(f"DROP FUNCTION IF EXISTS {APPEND_ONLY_FUNCTION}()"))

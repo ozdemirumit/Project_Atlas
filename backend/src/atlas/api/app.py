@@ -2463,9 +2463,7 @@ class _UnavailableWorkflowProtectedRuntimeProcessSchedulingConsumptionRepository
     ) -> None:
         raise RuntimeError("protected runtime process-scheduling consumption is unavailable")
 
-    async def claim_protected_runtime_process_scheduling(
-        self, *_: object, **__: object
-    ) -> None:
+    async def claim_protected_runtime_process_scheduling(self, *_: object, **__: object) -> None:
         raise RuntimeError("protected runtime process-scheduling consumption is unavailable")
 
     async def record_protected_runtime_process_scheduling_result(

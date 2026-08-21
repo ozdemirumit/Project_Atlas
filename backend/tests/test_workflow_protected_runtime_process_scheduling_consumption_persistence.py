@@ -200,21 +200,18 @@ async def test_postgres_models_accept_real_domain_claim_attempt_and_result() -> 
         **lease.authority.canonical_value(),
     )
     source_row = SimpleNamespace(**source_values)
-    claim_row = (
-        PostgreSQLWorkflowPlanRepository._protected_runtime_process_scheduling_consumption_claim_model(
-            repository.claim_request, authorization_lease_row=source_row
-        )
-    )
-    attempt_row = (
-        PostgreSQLWorkflowPlanRepository._protected_runtime_process_scheduling_consumption_attempt_model(
-            repository.claim_request, authorization_lease_row=source_row
-        )
-    )
-    result_row = (
-        PostgreSQLWorkflowPlanRepository._protected_runtime_process_scheduling_consumption_result_model(
-            repository.result_request, attempt_row=attempt_row
-        )
-    )
+    claim_mapper = (
+        PostgreSQLWorkflowPlanRepository
+    )._protected_runtime_process_scheduling_consumption_claim_model
+    attempt_mapper = (
+        PostgreSQLWorkflowPlanRepository
+    )._protected_runtime_process_scheduling_consumption_attempt_model
+    result_mapper = (
+        PostgreSQLWorkflowPlanRepository
+    )._protected_runtime_process_scheduling_consumption_result_model
+    claim_row = claim_mapper(repository.claim_request, authorization_lease_row=source_row)
+    attempt_row = attempt_mapper(repository.claim_request, authorization_lease_row=source_row)
+    result_row = result_mapper(repository.result_request, attempt_row=attempt_row)
 
     assert claim_row.scheduling_authorization_lease_id == lease.authorization_lease_id
     assert claim_row.process_creation_failure_class is None
@@ -225,8 +222,7 @@ async def test_postgres_models_accept_real_domain_claim_attempt_and_result() -> 
     )
     assert attempt_row.primitive_digest == lease.primitive_digest
     assert (
-        result_row.scheduler_primitive_digest
-        == repository.result_request.result.primitive_digest
+        result_row.scheduler_primitive_digest == repository.result_request.result.primitive_digest
     )
     assert result_row.failure_class is None
     assert (

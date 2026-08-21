@@ -18695,18 +18695,10 @@ _WF_RTPSCHED_CONS_ZERO_AUTHORITY = _WF_RTPSCHED_AUTH_ZERO_AUTHORITY
 class _WorkflowProtectedRuntimeProcessSchedulingConsumptionSourceColumns(
     _WorkflowProtectedRuntimeProcessSchedulingAuthorizationSourceColumns
 ):
-    scheduling_authorization_lease_id: Mapped[str] = mapped_column(
-        String(128), nullable=False
-    )
-    scheduling_authorization_lease_digest: Mapped[str] = mapped_column(
-        String(64), nullable=False
-    )
-    scheduling_authorization_claim_id: Mapped[str] = mapped_column(
-        String(128), nullable=False
-    )
-    scheduling_authorization_claim_digest: Mapped[str] = mapped_column(
-        String(64), nullable=False
-    )
+    scheduling_authorization_lease_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    scheduling_authorization_lease_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    scheduling_authorization_claim_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    scheduling_authorization_claim_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     scheduling_authorization_state: Mapped[str] = mapped_column(String(64), nullable=False)
     scheduling_authorization_issued_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False

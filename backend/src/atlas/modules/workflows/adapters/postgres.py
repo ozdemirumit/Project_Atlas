@@ -42148,9 +42148,7 @@ class PostgreSQLWorkflowPlanRepository:
             return [PostgreSQLWorkflowPlanRepository._normalize(item) for item in value]
         return value
 
-    async def lookup_protected_runtime_process_scheduling_replay(
-        self, request: Any
-    ) -> Any:
+    async def lookup_protected_runtime_process_scheduling_replay(self, request: Any) -> Any:
         from atlas.modules.workflows.application.protected_runtime_process_scheduling_consumption_ports import (  # noqa: E501
             WorkflowProtectedRuntimeProcessSchedulingConsumptionReplayStatus,
             WorkflowProtectedRuntimeProcessSchedulingReplayLookup,
@@ -42167,8 +42165,7 @@ class PostgreSQLWorkflowPlanRepository:
             .outerjoin(result_model, result_model.attempt_id == attempt_model.attempt_id)
             .where(
                 or_(
-                    claim_model.scheduling_authorization_lease_id
-                    == request.authorization_lease_id,
+                    claim_model.scheduling_authorization_lease_id == request.authorization_lease_id,
                     claim_model.consumption_id == request.consumption_id,
                     tenant_idempotency,
                 )
@@ -42942,8 +42939,10 @@ class PostgreSQLWorkflowPlanRepository:
             **cast(Any, payload["authority"])
         )
         for name, value in tuple(payload.items()):
-            if value is not None and isinstance(value, str) and (
-                name.endswith("_at") or name.endswith("_deadline")
+            if (
+                value is not None
+                and isinstance(value, str)
+                and (name.endswith("_at") or name.endswith("_deadline"))
             ):
                 payload[name] = datetime.fromisoformat(value)
         domain_type: type[Any]
@@ -42994,9 +42993,7 @@ class PostgreSQLWorkflowPlanRepository:
         return value
 
     @classmethod
-    def _protected_runtime_process_scheduling_assert_row_matches(
-        cls, row: Any, value: Any
-    ) -> None:
+    def _protected_runtime_process_scheduling_assert_row_matches(cls, row: Any, value: Any) -> None:
         outcomes = {
             "process_scheduled",
             "process_suspended",

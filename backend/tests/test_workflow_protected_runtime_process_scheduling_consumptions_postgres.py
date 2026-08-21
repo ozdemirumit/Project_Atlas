@@ -30,9 +30,10 @@ async def test_live_postgres_schema_is_append_only_and_source_digests_are_requir
     try:
         async with engine.connect() as connection:
             columns = (
-                await connection.execute(
-                    text(
-                        """
+                (
+                    await connection.execute(
+                        text(
+                            """
                         SELECT table_name, column_name, is_nullable
                         FROM information_schema.columns
                         WHERE table_schema = current_schema()
@@ -40,10 +41,13 @@ async def test_live_postgres_schema_is_append_only_and_source_digests_are_requir
                           AND (column_name = ANY(:digests)
                                OR column_name = 'process_creation_failure_class')
                         """
-                    ),
-                    {"tables": list(tables), "digests": list(source_digest_columns)},
+                        ),
+                        {"tables": list(tables), "digests": list(source_digest_columns)},
+                    )
                 )
-            ).mappings().all()
+                .mappings()
+                .all()
+            )
             triggers = int(
                 (
                     await connection.execute(

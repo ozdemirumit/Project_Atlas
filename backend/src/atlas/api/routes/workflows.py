@@ -8352,9 +8352,7 @@ async def create_workflow_protected_runtime_process_scheduling_consumption(
                 "Protected process-scheduling outcome uncertain"
                 if uncertain
                 else (
-                    "Protected process-scheduling unavailable"
-                    if unavailable
-                    else "Request denied"
+                    "Protected process-scheduling unavailable" if unavailable else "Request denied"
                 )
             ),
             detail=(
