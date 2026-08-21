@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-233 |
 | Title | First-class Inventory and MCP lifecycle access |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/first-class-inventory-mcp-access` |
-| Pull Request | Pending |
+| Pull Request | [#246](https://github.com/ozdemirumit/Project_Atlas/pull/246) |
 | Governing Documents | ATLAS-003, ATLAS-020, ATLAS-021, ATLAS-050, ATLAS-052, ADR-079, ADR-123, ADR-133, ADR-182 |
 | Last Updated | 2026-08-21 |
-| Next Action | Commit the verified slice and open the pull request |
+| Next Action | Complete exact-head PR CI and squash-merge PR #246 |
 
 ### ATLAS-IMP-233 Scope Rationale
 
