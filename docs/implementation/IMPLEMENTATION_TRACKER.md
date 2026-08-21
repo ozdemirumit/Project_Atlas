@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-229 |
 | Title | Bounded single-use protected runtime process-scheduling authorization lease |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/protected-runtime-process-scheduling-authorization` |
-| Pull Request | Pending |
+| Pull Request | [#242](https://github.com/ozdemirumit/Project_Atlas/pull/242) |
 | Governing Documents | ATLAS-003, ATLAS-014, ATLAS-016, ATLAS-023, ATLAS-024, ATLAS-025, ATLAS-032, ADR-160 through ADR-179 |
 | Last Updated | 2026-08-21 |
-| Next Action | Implement the authorization-only vertical slice and run focused risk validation |
+| Next Action | Pass exact-head pull-request CI, squash-merge, and verify post-main CI |
 
 ### ATLAS-IMP-229 Scope Rationale
 
