@@ -106,9 +106,12 @@ def test_models_bind_exact_successful_adr178_lineage() -> None:
         }
         assert {f"fk_wf_rtpsched_{prefix}_{suffix}" for suffix in expected_fks} <= names
         for foreign_key in table.foreign_key_constraints:
-            if foreign_key.name and foreign_key.name.startswith(f"fk_wf_rtpsched_{prefix}_"):
+            constraint_name = foreign_key.name
+            if isinstance(constraint_name, str) and constraint_name.startswith(
+                f"fk_wf_rtpsched_{prefix}_"
+            ):
                 local = {column.name for column in foreign_key.columns}
-                if foreign_key.name.endswith(("result", "attempt", "claim", "src_lease")):
+                if constraint_name.endswith(("result", "attempt", "claim", "src_lease")):
                     assert {"organization_id", "environment_id", "site_id"} <= local
                 assert len(local) <= 32
 

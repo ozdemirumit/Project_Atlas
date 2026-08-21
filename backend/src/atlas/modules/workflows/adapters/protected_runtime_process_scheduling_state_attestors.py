@@ -48,7 +48,7 @@ class UnavailableWorkflowProtectedRuntimeProcessSchedulingStateAttestor:
 
     def verify_runtime_process_scheduling_state_attestation(
         self,
-        attestation: StateAttestation,
+        attestation: object,
     ) -> bool:
         del attestation
         return False
@@ -172,7 +172,7 @@ class DeterministicDevelopmentWorkflowProtectedRuntimeProcessSchedulingStateAtte
 
     def verify_runtime_process_scheduling_state_attestation(
         self,
-        attestation: StateAttestation,
+        attestation: object,
     ) -> bool:
         if not isinstance(attestation, StateAttestation):
             return False
