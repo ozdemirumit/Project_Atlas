@@ -77,6 +77,7 @@ import { getHealthCheckOverview, runHealthCheck } from "./api/healthChecks";
 import { getCurrentIdentity } from "./api/identity";
 import { ConnectorLifecycleOverview } from "./features/connectors/ConnectorLifecycleOverview";
 import { ConnectorWorkspaceNavigation } from "./features/connectors/ConnectorWorkspaceNavigation";
+import { connectorViewDescriptor } from "./features/connectors/connectorWorkspace";
 import {
   AdvisoryBoundaryViolation,
   ApplicationSidebar,
@@ -358,6 +359,7 @@ export function OperationalApplication({
   const queryClient = useQueryClient();
   const activeNavigation = activeWorkspace;
   const activeHealthViewDescriptor = healthViewDescriptor(activeHealthView);
+  const activeConnectorViewDescriptor = connectorViewDescriptor(activeConnectorView);
   const connectorFocusTarget = useRef<ConnectorViewId | null>(null);
 
   useEffect(() => {
@@ -2146,6 +2148,11 @@ export function OperationalApplication({
   return (
     <div className="app-frame">
       <ApplicationSidebar
+        activeTaskLabel={
+          activeNavigation === "Connectors"
+            ? activeConnectorViewDescriptor.label
+            : activeHealthViewDescriptor.label
+        }
         activeWorkspace={activeNavigation}
         authenticationMethod={identity?.authentication.method}
         credentialKind={identity?.credential_kind}
@@ -2175,16 +2182,18 @@ export function OperationalApplication({
             <div className="conversation-heading">
               <div>
                 <p className="eyebrow">
-                  {activeNavigation === "Connectors" ? "MCP BUILDER" : "STORAGE HEALTH"}
+                  {activeNavigation === "Connectors"
+                    ? activeConnectorViewDescriptor.eyebrow
+                    : "STORAGE HEALTH"}
                 </p>
                 <h1>
                   {activeNavigation === "Connectors"
-                    ? "Governed connector analysis"
+                    ? activeConnectorViewDescriptor.title
                     : activeHealthViewDescriptor.title}
                 </h1>
                 <p>
                   {activeNavigation === "Connectors"
-                    ? "Quarantined OpenAPI evidence review for read-only connector candidates."
+                    ? activeConnectorViewDescriptor.description
                     : activeHealthViewDescriptor.description}
                 </p>
               </div>

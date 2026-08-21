@@ -5698,10 +5698,10 @@ textarea:focus-visible {
 .nav-item {
   display: flex;
   width: 100%;
-  min-height: 40px;
+  min-height: 52px;
   align-items: center;
   gap: 11px;
-  padding: 0 11px;
+  padding: 7px 11px;
   color: #aebbb8;
   background: transparent;
   border: 0;
@@ -5709,6 +5709,32 @@ textarea:focus-visible {
   cursor: pointer;
   font-size: 13px;
   text-align: left;
+}
+
+.nav-item-label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-item-label strong {
+  color: inherit;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.nav-item-label small {
+  overflow: hidden;
+  color: #81928e;
+  font-size: 11px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-item.active .nav-item-label small {
+  color: #b8cbc6;
 }
 
 .nav-item:hover {

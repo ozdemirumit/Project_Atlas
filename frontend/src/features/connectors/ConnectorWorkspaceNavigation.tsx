@@ -1,19 +1,5 @@
-import { Blocks, Boxes, BrainCircuit, ShieldCheck, type LucideIcon } from "lucide-react";
-
 import type { ConnectorViewId } from "../shell/workspace";
-
-interface ConnectorViewDescriptor {
-  id: ConnectorViewId;
-  label: string;
-  icon: LucideIcon;
-}
-
-const connectorViewDescriptors: readonly ConnectorViewDescriptor[] = [
-  { id: "inventory", label: "Installed MCPs", icon: Boxes },
-  { id: "builder", label: "Builder", icon: Blocks },
-  { id: "runtime", label: "Runtime", icon: ShieldCheck },
-  { id: "knowledge", label: "Knowledge", icon: BrainCircuit },
-] as const;
+import { connectorViewDescriptors } from "./connectorWorkspace";
 
 export function ConnectorWorkspaceNavigation({
   activeView,

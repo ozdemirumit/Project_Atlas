@@ -155,7 +155,7 @@ export async function createConnectorInstance(input: {
     }),
   });
   if (!response.ok) {
-    throw new Error(`Connector instance creation failed with ${response.status}`);
+    throw new ApiRequestError("Connector instance creation failed", response.status);
   }
   const payload: unknown = await response.json();
   if (!isInstanceResponse(payload)) {
@@ -275,7 +275,9 @@ export async function retireConnectorInstance(input: {
       }),
     },
   );
-  if (!response.ok) throw new Error(`Connector instance retirement failed with ${response.status}`);
+  if (!response.ok) {
+    throw new ApiRequestError("Connector instance retirement failed", response.status);
+  }
   const payload: unknown = await response.json();
   if (!isInstanceResponse(payload) || payload.data.instance_state !== "retired") {
     throw new Error("Connector instance retirement returned an unsafe record");

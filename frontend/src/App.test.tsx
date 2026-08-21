@@ -1493,11 +1493,14 @@ describe("Atlas application shell", () => {
     ).toBeVisible();
     expect(window.location.hash).toBe("#/health/overview");
     expect(screen.getByText("Human decision required")).toBeVisible();
+    expect(screen.getByText("Device registry", { selector: ".nav-item-label small" })).toBeVisible();
     expect(await screen.findByRole("heading", { name: "Storage systems" })).toBeVisible();
     expect(screen.queryByRole("heading", { name: "Assigned upgrade reviews" })).toBeNull();
     expect(screen.getByLabelText("Health inventory and evidence")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: /^Connectors$/ }));
-    expect(await screen.findByRole("heading", { name: "Governed connector analysis" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Installed MCP management" })).toBeVisible();
+    expect(screen.getByText("Installed MCPs", { selector: ".nav-item-label small" })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Governed connector analysis" })).toBeNull();
     expect(screen.getByRole("tab", { name: "Installed MCPs" })).toHaveAttribute(
       "aria-selected",
       "true",

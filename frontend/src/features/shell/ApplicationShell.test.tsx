@@ -8,6 +8,7 @@ describe("ApplicationShell", () => {
     const onNavigate = vi.fn();
     render(
       <ApplicationSidebar
+        activeTaskLabel="Operations workspace"
         activeWorkspace="Workspace"
         authenticationMethod="development"
         credentialKind="browser_session"
@@ -28,6 +29,9 @@ describe("ApplicationShell", () => {
     expect(screen.queryByRole("button", { name: "Infrastructure" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Governance" })).not.toBeInTheDocument();
     expect(screen.getByText("Signed in")).toBeVisible();
+    expect(screen.getByText("Operations workspace")).toBeVisible();
+    expect(screen.getByText("Inventory and analysis")).toBeVisible();
+    expect(screen.getByText("MCP lifecycle")).toBeVisible();
     expect(screen.queryByText("development identity")).not.toBeInTheDocument();
     const boundary = screen.getByLabelText("Operational execution boundary");
     expect(boundary).toHaveTextContent("Advisory only");

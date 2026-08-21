@@ -8,8 +8,8 @@ describe("WorkspaceOverview", () => {
     const onNavigate = vi.fn();
     render(<WorkspaceOverview onNavigate={onNavigate} />);
 
-    expect(screen.getByLabelText("Workspace coverage")).toHaveTextContent("14");
-    expect(screen.getAllByRole("button")).toHaveLength(14);
+    expect(screen.getByLabelText("Workspace coverage")).toHaveTextContent("15");
+    expect(screen.getAllByRole("button")).toHaveLength(15);
     expect(screen.getByRole("heading", { name: "Operational planning" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "Infrastructure operations" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "Connector lifecycle" })).toBeVisible();
@@ -18,8 +18,10 @@ describe("WorkspaceOverview", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /MCP Builder/ }));
     expect(onNavigate).toHaveBeenCalledWith({ workspace: "Connectors", view: "builder" });
-    fireEvent.click(screen.getByRole("button", { name: /Inventory and health/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Device Registry/ }));
     expect(onNavigate).toHaveBeenCalledWith({ workspace: "Health", view: "overview" });
+    fireEvent.click(screen.getByRole("button", { name: /Installed MCPs/ }));
+    expect(onNavigate).toHaveBeenCalledWith({ workspace: "Connectors", view: "inventory" });
     fireEvent.click(screen.getByRole("button", { name: /Identity and access/ }));
     expect(onNavigate).toHaveBeenCalledWith({ workspace: "Health", view: "governance" });
     fireEvent.click(screen.getByRole("button", { name: /Workflow planning/ }));
