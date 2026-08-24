@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated, NoReturn
 
-from fastapi import APIRouter, Depends, Header, Path, Request, Response
+from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response
 
 from atlas.api.errors import AtlasError
 from atlas.api.schemas import ResponseMeta
@@ -15,6 +15,9 @@ from atlas.api.security import (
 from atlas.api.target_session_schemas import (
     ConnectorTargetSessionData,
     ConnectorTargetSessionInput,
+    ConnectorTargetSessionInventoryResponse,
+    ConnectorTargetSessionOptionData,
+    ConnectorTargetSessionOptionsResponse,
     ConnectorTargetSessionResponse,
 )
 from atlas.modules.authorization.domain.models import AuthorizationDecision
@@ -57,6 +60,60 @@ def _response(
     response.headers["Cache-Control"] = "no-store"
     return ConnectorTargetSessionResponse(
         data=ConnectorTargetSessionData.from_domain(record),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.get("", response_model=ConnectorTargetSessionInventoryResponse)
+async def list_connector_target_session_verifications(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[AuthorizationDecision, Depends(authorize_connector_target_session_read)],
+    source_runtime_activation_id: Annotated[
+        str | None, Query(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")
+    ] = None,
+) -> ConnectorTargetSessionInventoryResponse:
+    service: ConnectorTargetSessionService = request.app.state.target_session_service
+    try:
+        records = await service.list_verifications(
+            actor=subject,
+            source_runtime_activation_id=source_runtime_activation_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ConnectorTargetSessionError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorTargetSessionInventoryResponse(
+        data=tuple(ConnectorTargetSessionData.from_domain(record) for record in records),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.get("/options", response_model=ConnectorTargetSessionOptionsResponse)
+async def list_connector_target_session_options(
+    source_runtime_activation_id: Annotated[str, Query(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[AuthorizationDecision, Depends(authorize_connector_target_session_read)],
+) -> ConnectorTargetSessionOptionsResponse:
+    service: ConnectorTargetSessionService = request.app.state.target_session_service
+    try:
+        options = await service.list_options(
+            actor=subject,
+            source_runtime_activation_id=source_runtime_activation_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ConnectorTargetSessionError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorTargetSessionOptionsResponse(
+        data=tuple(ConnectorTargetSessionOptionData.from_application(option) for option in options),
         meta=ResponseMeta(
             correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
         ),

@@ -4,14 +4,81 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-240 |
-| Title | Installed MCP governed runtime activation and local health evidence |
-| Status | Ready to Merge |
-| Branch | `agent/installed-mcp-runtime-activation-governance` |
-| Pull Request | [PR #253](https://github.com/ozdemirumit/Project_Atlas/pull/253) |
-| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-030, ATLAS-031, ATLAS-050, ATLAS-052, ADR-037, ADR-100, ADR-123, ADR-133, ADR-182 |
+| Task ID | ATLAS-IMP-241 |
+| Title | Installed MCP governed target-session verification and connectivity evidence |
+| Status | Ready for PR |
+| Branch | `agent/installed-mcp-target-session-governance` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-030, ATLAS-031, ATLAS-050, ATLAS-052, ADR-038, ADR-100, ADR-123, ADR-133, ADR-182 |
 | Last Updated | 2026-08-24 |
-| Next Action | Squash merge PR #253 with its exact head and verify the exact merge commit on `main` |
+| Next Action | Open the pull request and complete exact-head CI, squash merge and post-main CI |
+
+### ATLAS-IMP-241 Scope Rationale
+
+- IMP-240 makes governed runtime activation and local health evidence reloadable in Installed MCPs,
+  but target-session verification remains a separate Builder-only form with browser-entered signed
+  profile and policy identifiers and digests.
+- This slice selects only server-provided exact-scope signed target-session options, performs one
+  bounded read-only connectivity verification through a separately trusted adapter, closes every
+  ephemeral session and reloads minimized signed evidence in Installed MCPs.
+- Verification grants no capability invocation, workflow execution, deployment or infrastructure
+  mutation authority. Production remains fail-closed without a trusted adapter; the development
+  adapter is synthetic and performs no network or infrastructure operation.
+
+### ATLAS-IMP-241 Acceptance Criteria
+
+- Runtime-healthy Installed MCP rows expose `Verify target session`; verified rows reload with a
+  read-only evidence action and authoritative target-session state.
+- The browser submits only a server-provided signed profile/policy pair. Profile/policy IDs and
+  digests, target coordinates, credentials, commands, lease/session handles and raw adapter output
+  are neither hard-coded nor freely editable in the production UI.
+- Inventory and option reads are tenant scoped before discovery, survive refresh and clear stale
+  data on authoritative empty or failed refresh responses.
+- Complete activation, brokerage, credential, runtime-trust, signed profile/policy and target
+  identity lineage is revalidated on create/read/list and downstream use.
+- Distributed source plus actor/idempotency claims, expiring recovery ownership, exact-attempt
+  fencing and atomic publish prevent duplicate adapter work across service replicas.
+- Adapter timeout, receipt attempt/freshness mismatch, required audit failure, compensation failure
+  and uncertain persistence fail closed and emit bounded failure evidence.
+- Successful evidence confirms only a closed read-only target session and connectivity checks;
+  target-connected, invocation, scheduling, execution, deployment and mutation flags remain false.
+- Normal username/password sessions satisfy the default `SINGLE_FACTOR` policy. Optional named
+  step-up remains policy-specific; global MFA or a second browser session is not introduced.
+
+### ATLAS-IMP-241 Verification Evidence
+
+- The focused target-session suite passes `20` tests, including cross-service claim exclusion,
+  exact-attempt timeout compensation, receipt attempt/freshness validation, fenced stale-claim
+  recovery, required persistence-uncertainty audit, legacy canonical-lineage compatibility,
+  bounded completion-audit failure compensation, tenant-scoped persistence contracts, a live
+  two-engine PostgreSQL claim/publish race and live PostgreSQL expired-owner takeover.
+- The downstream invocation-authorization suite passes `9` tests. Targeted Ruff and MyPy checks pass
+  for the affected backend contracts, adapters, API projections, persistence models and migration.
+- Migration `20260824_0160` upgraded, downgraded to `20260824_0159` and upgraded again against the
+  local PostgreSQL integration database without error.
+- Focused frontend API, Installed MCP workspace and target-session panel suites pass `83` tests;
+  TypeScript typecheck, targeted ESLint, production build and repository diff validation pass. The
+  build reports only the existing large-chunk advisory.
+- A current-code API/web pair at `127.0.0.1:8060` and `127.0.0.1:5221` accepted the normal
+  `operator` / `correct-password` session. The exact server-provided option created and reloaded one
+  `enabled_target_session_verified` record; selected profile/policy digests matched, broad mutable
+  projection fields were absent, read-only and closed-session evidence was true, and target-
+  connected, invoked and infrastructure-mutation flags remained false.
+- Independent security and persistence review found no remaining P0, P1 or P2 issue after exact
+  deterministic legacy-attempt binding, DB-time recovery fencing, bounded recovery, completion and
+  failure audits, tenant-scoped downstream discovery, minimized digest-bound API projection,
+  persistence minimization and claim-state constraints were verified against regression coverage.
+
+### ATLAS-IMP-240 Delivery Evidence
+
+- Source commit `130af1faeeabc259c38c8f4aea27ea79e1370d3a` passed exact-head pull-request CI run
+  `32755195541`; frontend completed in 11m27s and backend in 22m52s.
+- [PR #253](https://github.com/ozdemirumit/Project_Atlas/pull/253) was squash-merged to `main` as
+  `cf74c8855e4b4ef903085f3657eadffb4a80696d`.
+- The exact merge commit passed post-main CI run `32757517536` on attempt 2; frontend completed in
+  11m7s and backend in 24m10s. Attempt 1 exposed only the pre-existing flaky IMP-231 PostgreSQL race
+  assertion; the unchanged merge commit passed on rerun. Local `main` and `origin/main` were
+  synchronized before IMP-241.
 
 ### ATLAS-IMP-240 Scope Rationale
 

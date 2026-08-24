@@ -187,6 +187,7 @@ class ConnectorTargetSessionPolicySnapshot:
 @dataclass(frozen=True, slots=True)
 class ConnectorTargetSessionInstruction:
     verification_id: str
+    verification_attempt_id: str
     organization_id: str
     environment_id: str
     source_runtime_activation_id: str
@@ -203,6 +204,7 @@ class ConnectorTargetSessionInstruction:
     def __post_init__(self) -> None:
         _validate_ids(
             self.verification_id,
+            self.verification_attempt_id,
             self.organization_id,
             self.environment_id,
             self.source_runtime_activation_id,
@@ -224,11 +226,51 @@ class ConnectorTargetSessionInstruction:
 
 
 @dataclass(frozen=True, slots=True)
+class ConnectorTargetSessionClaim:
+    verification_attempt_id: str
+    verification_id: str
+    source_runtime_activation_id: str
+    organization_id: str
+    environment_id: str
+    verified_by_digest: str
+    idempotency_digest: str
+    replay_digest: str
+    claimed_at: datetime
+    expires_at: datetime
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        _validate_ids(
+            self.verification_attempt_id,
+            self.verification_id,
+            self.source_runtime_activation_id,
+            self.organization_id,
+            self.environment_id,
+        )
+        if (
+            self.claimed_at.tzinfo is None
+            or self.expires_at.tzinfo is None
+            or self.expires_at <= self.claimed_at
+            or any(
+                _DIGEST.fullmatch(item) is None
+                for item in (
+                    self.verified_by_digest,
+                    self.idempotency_digest,
+                    self.replay_digest,
+                    self.canonical_digest,
+                )
+            )
+        ):
+            raise ValueError("Connector target session claim is invalid")
+
+
+@dataclass(frozen=True, slots=True)
 class ConnectorTargetSessionReceipt:
     receipt_id: str
     schema_version: str
     version: int
     verification_id: str
+    verification_attempt_id: str
     organization_id: str
     environment_id: str
     source_runtime_activation_digest: str
@@ -259,6 +301,7 @@ class ConnectorTargetSessionReceipt:
             self.receipt_id,
             self.schema_version,
             self.verification_id,
+            self.verification_attempt_id,
             self.organization_id,
             self.environment_id,
             self.session_adapter_id,
@@ -302,6 +345,7 @@ class ConnectorTargetSessionReceipt:
 @dataclass(frozen=True, slots=True)
 class ConnectorTargetSessionVerificationRecord:
     verification_id: str
+    verification_attempt_id: str
     schema_version: str
     version: int
     source_runtime_activation_id: str
@@ -332,8 +376,8 @@ class ConnectorTargetSessionVerificationRecord:
     purpose: str
     verified_at: datetime
     canonical_digest: str
-    request_fingerprint: str
-    idempotency_key: str
+    replay_digest: str
+    idempotency_digest: str
     runtime_health_verified: bool = True
     secret_brokerage_governed: bool = True
     target_connection_authorized: bool = True
@@ -357,6 +401,7 @@ class ConnectorTargetSessionVerificationRecord:
     def __post_init__(self) -> None:
         _validate_ids(
             self.verification_id,
+            self.verification_attempt_id,
             self.schema_version,
             self.source_runtime_activation_id,
             self.organization_id,
@@ -379,7 +424,6 @@ class ConnectorTargetSessionVerificationRecord:
             or self.instance_state != ENABLED_TARGET_SESSION_VERIFIED
             or not 1 <= len(self.expected_target_product) <= 160
             or not 20 <= len(self.purpose.strip()) <= 1000
-            or not 8 <= len(self.idempotency_key) <= 128
             or self.verified_at.tzinfo is None
             or any(
                 _DIGEST.fullmatch(item) is None
@@ -392,7 +436,8 @@ class ConnectorTargetSessionVerificationRecord:
                     self.session_profile_digest,
                     self.session_policy_digest,
                     self.canonical_digest,
-                    self.request_fingerprint,
+                    self.replay_digest,
+                    self.idempotency_digest,
                 )
             )
             or not self.connectivity_check_results

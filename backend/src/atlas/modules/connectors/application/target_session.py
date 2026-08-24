@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Callable
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 from hashlib import sha256
@@ -37,6 +37,7 @@ from atlas.modules.connectors.domain.secret_brokerage import (
 )
 from atlas.modules.connectors.domain.target_session import (
     ENABLED_TARGET_SESSION_VERIFIED,
+    ConnectorTargetSessionClaim,
     ConnectorTargetSessionInstruction,
     ConnectorTargetSessionPolicySnapshot,
     ConnectorTargetSessionProfileSnapshot,
@@ -53,6 +54,25 @@ from atlas.modules.identity.domain.models import (
 TARGET_SESSION_CREATE_PERMISSION = "connectors.target-session-verifications.create"
 TARGET_SESSION_READ_PERMISSION = "connectors.target-session-verifications.read"
 TARGET_SESSION_SCHEMA = "atlas.connector-target-session-verification.v1"
+TARGET_SESSION_REQUIRED_AUDIT_TIMEOUT_SECONDS = 30
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectorTargetSessionOption:
+    source_runtime_activation_id: str
+    source_runtime_activation_digest: str
+    package_digest: str
+    session_profile_id: str
+    session_profile_digest: str
+    session_profile_expires_at: datetime
+    expected_target_product: str
+    protocol_classification: str
+    connectivity_check_ids: tuple[str, ...]
+    session_policy_id: str
+    session_policy_digest: str
+    session_policy_version: str
+    session_policy_expires_at: datetime
+    required_assurance_level: AssuranceLevel
 
 
 class ConnectorTargetSessionService:
@@ -104,6 +124,16 @@ class ConnectorTargetSessionService:
         purpose = purpose.strip()
         if not 20 <= len(purpose) <= 1000 or not 8 <= len(idempotency_key) <= 128:
             raise ConnectorTargetSessionError("target_session_request_invalid")
+        (
+            activation,
+            brokerage,
+            runtime_trust,
+            credential_profile,
+            source_actors,
+        ) = await self._source_in_scope(
+            actor=actor,
+            source_runtime_activation_id=source_runtime_activation_id,
+        )
         fingerprint = self._digest(
             {
                 "source_runtime_activation_id": source_runtime_activation_id,
@@ -116,28 +146,46 @@ class ConnectorTargetSessionService:
                 "purpose": purpose,
             }
         )
-        existing = await self._repository.get_by_create_key(
-            verified_by=actor.subject_id, idempotency_key=idempotency_key
+        actor_digest = self._identifier_digest(actor.subject_id)
+        idempotency_digest = self._digest(
+            [
+                activation.organization_id,
+                activation.environment_id,
+                actor.subject_id,
+                idempotency_key,
+            ]
+        )
+        replay_digest = self._digest(
+            [
+                activation.organization_id,
+                activation.environment_id,
+                actor_digest,
+                idempotency_digest,
+                fingerprint,
+            ]
+        )
+        existing = await self._repository.get_by_create_key_in_scope(
+            verified_by=actor.subject_id,
+            idempotency_key=idempotency_key,
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
         )
         if existing is not None:
-            return self._reuse(existing, actor, fingerprint)
-        try:
-            (
-                activation,
-                brokerage,
-                runtime_trust,
-                credential_profile,
-                source_actors,
-            ) = await self._source.target_session_source(activation_id=source_runtime_activation_id)
-        except ConnectorRuntimeActivationError as error:
-            raise ConnectorTargetSessionError("target_session_source_not_found") from error
-        profile = await self._profile_source.get_by_id(profile_id=session_profile_id)
-        policy = await self._policy_source.get_by_id(policy_id=session_policy_id)
+            return self._reuse(await self._current_record(existing), actor, replay_digest)
+        profile = await self._profile_source.get_by_id_in_scope(
+            profile_id=session_profile_id,
+            organization_id=activation.organization_id,
+            environment_id=activation.environment_id,
+        )
+        policy = await self._policy_source.get_by_id_in_scope(
+            policy_id=session_policy_id,
+            organization_id=activation.organization_id,
+            environment_id=activation.environment_id,
+        )
         if profile is None or policy is None:
             raise ConnectorTargetSessionError("target_session_evidence_not_found")
         self._verify_snapshot(profile, "profile")
         self._verify_snapshot(policy, "policy")
-        self._require_scope(actor, activation.organization_id, activation.environment_id)
         self._verify_session(
             actor=actor,
             activation=activation,
@@ -162,8 +210,10 @@ class ConnectorTargetSessionService:
             [activation.activation_id, profile.profile_id, profile.canonical_digest]
         )
         verification_id = f"connector-target-session-verification.{seed[:24]}"
+        verification_attempt_id = f"connector-target-session-attempt.{uuid4().hex}"
         instruction = ConnectorTargetSessionInstruction(
             verification_id=verification_id,
+            verification_attempt_id=verification_attempt_id,
             organization_id=activation.organization_id,
             environment_id=activation.environment_id,
             source_runtime_activation_id=activation.activation_id,
@@ -177,28 +227,151 @@ class ConnectorTargetSessionService:
             session_timeout_seconds=profile.session_timeout_seconds,
             connectivity_check_ids=profile.connectivity_check_ids,
         )
+        claim_now = self._clock()
+        claim = ConnectorTargetSessionClaim(
+            verification_attempt_id=verification_attempt_id,
+            verification_id=verification_id,
+            source_runtime_activation_id=activation.activation_id,
+            organization_id=activation.organization_id,
+            environment_id=activation.environment_id,
+            verified_by_digest=actor_digest,
+            idempotency_digest=idempotency_digest,
+            replay_digest=replay_digest,
+            claimed_at=claim_now,
+            expires_at=claim_now
+            + timedelta(seconds=max(profile.session_timeout_seconds + 60, 600)),
+            canonical_digest="0" * 64,
+        )
+        claim = replace(claim, canonical_digest=self._digest(self._claim_payload(claim)))
         async with self._mutation_lock:
-            prior = await self._repository.get_by_runtime_activation(
-                source_runtime_activation_id=activation.activation_id
+            prior = await self._repository.get_by_runtime_activation_in_scope(
+                source_runtime_activation_id=activation.activation_id,
+                organization_id=activation.organization_id,
+                environment_id=activation.environment_id,
             )
             if prior is not None:
-                if (
-                    prior.verified_by == actor.subject_id
-                    and prior.request_fingerprint == fingerprint
-                ):
-                    return replace(prior, reused=True)
+                if prior.verified_by == actor.subject_id and prior.replay_digest == replay_digest:
+                    return replace(await self._current_record(prior), reused=True)
                 raise ConnectorTargetSessionError("target_session_source_conflict")
             await self._audit(
                 actor,
                 correlation_id,
                 "connector_target_session_requested",
                 activation.instance_id,
-                idempotency_key,
+                idempotency_digest,
                 (("session_profile_digest", profile.canonical_digest),),
             )
             try:
-                receipt = await self._adapter.verify(instruction)
-                self._verify_receipt(receipt, instruction, profile, policy)
+                claimed = await self._repository.claim(claim)
+            except Exception as error:
+                await self._audit_required_failure(
+                    actor,
+                    correlation_id,
+                    "connector_target_session_claim_uncertain",
+                    verification_id,
+                    "claim_outcome_uncertain",
+                )
+                raise ConnectorTargetSessionError(
+                    "target_session_claim_outcome_uncertain"
+                ) from error
+            if not claimed:
+                stale_claim = await self._repository.get_claim_by_source_in_scope(
+                    source_runtime_activation_id=activation.activation_id,
+                    organization_id=activation.organization_id,
+                    environment_id=activation.environment_id,
+                )
+                if stale_claim is not None and stale_claim.expires_at <= self._clock():
+                    try:
+                        recovery_fenced = await self._repository.fence_expired_claim(
+                            claim=stale_claim,
+                            recovery_attempt_id=verification_attempt_id,
+                            now=self._clock(),
+                        )
+                    except Exception as error:
+                        await self._audit_required_failure(
+                            actor,
+                            correlation_id,
+                            "connector_target_session_stale_recovery_failed",
+                            stale_claim.verification_id,
+                            "recovery_fence_uncertain",
+                        )
+                        raise ConnectorTargetSessionError(
+                            "target_session_stale_claim_recovery_failed"
+                        ) from error
+                    if recovery_fenced:
+                        try:
+                            await self._compensate(
+                                stale_claim.verification_attempt_id,
+                                timeout_seconds=profile.session_timeout_seconds,
+                            )
+                            await asyncio.wait_for(
+                                self._audit(
+                                    actor,
+                                    correlation_id,
+                                    "connector_target_session_stale_claim_recovered",
+                                    stale_claim.verification_id,
+                                    None,
+                                    (),
+                                ),
+                                timeout=TARGET_SESSION_REQUIRED_AUDIT_TIMEOUT_SECONDS,
+                            )
+                            released = await self._repository.release_claim(
+                                stale_claim,
+                                now=self._clock(),
+                                recovery_attempt_id=verification_attempt_id,
+                            )
+                            if not released:
+                                raise ConnectorTargetSessionError(
+                                    "target_session_stale_claim_release_conflict"
+                                )
+                            claimed = await self._repository.claim(claim)
+                        except Exception as error:
+                            await self._audit_required_failure(
+                                actor,
+                                correlation_id,
+                                "connector_target_session_stale_recovery_failed",
+                                stale_claim.verification_id,
+                                "recovery_operation_failed",
+                            )
+                            if isinstance(error, ConnectorTargetSessionError):
+                                raise
+                            raise ConnectorTargetSessionError(
+                                "target_session_stale_claim_recovery_failed"
+                            ) from error
+            if not claimed:
+                raced = await self._repository.get_by_create_key_in_scope(
+                    verified_by=actor.subject_id,
+                    idempotency_key=idempotency_key,
+                    organization_id=activation.organization_id,
+                    environment_id=activation.environment_id,
+                )
+                if raced is not None and raced.replay_digest == replay_digest:
+                    return replace(await self._current_record(raced), reused=True)
+                prior = await self._repository.get_by_runtime_activation_in_scope(
+                    source_runtime_activation_id=activation.activation_id,
+                    organization_id=activation.organization_id,
+                    environment_id=activation.environment_id,
+                )
+                if prior is not None:
+                    raise ConnectorTargetSessionError("target_session_source_conflict")
+                raise ConnectorTargetSessionError("target_session_in_progress")
+            try:
+                attempt_started_at = self._clock()
+                try:
+                    receipt = await asyncio.wait_for(
+                        self._adapter.verify(instruction),
+                        timeout=profile.session_timeout_seconds,
+                    )
+                except TimeoutError as error:
+                    raise ConnectorTargetSessionError("target_session_adapter_timeout") from error
+                self._verify_receipt(
+                    receipt,
+                    instruction,
+                    profile,
+                    policy,
+                    attempt_started_at=attempt_started_at,
+                    now=self._clock(),
+                )
                 record = self._record(
                     activation=activation,
                     runtime_trust=runtime_trust,
@@ -207,42 +380,129 @@ class ConnectorTargetSessionService:
                     receipt=receipt,
                     actor=actor,
                     purpose=purpose,
-                    fingerprint=fingerprint,
-                    idempotency_key=idempotency_key,
+                    replay_digest=replay_digest,
+                    idempotency_digest=idempotency_digest,
                 )
-                await self._audit(
+                try:
+                    await asyncio.wait_for(
+                        self._audit(
+                            actor,
+                            correlation_id,
+                            "connector_target_session_completed",
+                            record.verification_id,
+                            idempotency_digest,
+                            (("instance_state", record.instance_state),),
+                        ),
+                        timeout=TARGET_SESSION_REQUIRED_AUDIT_TIMEOUT_SECONDS,
+                    )
+                except Exception as audit_error:
+                    raise ConnectorTargetSessionError(
+                        "target_session_completion_audit_failed"
+                    ) from audit_error
+            except Exception as error:
+                failure_class = (
+                    str(error)
+                    if isinstance(error, ConnectorTargetSessionError)
+                    else "unexpected_target_session_failure"
+                )
+                try:
+                    await self._compensate(
+                        verification_attempt_id,
+                        timeout_seconds=profile.session_timeout_seconds,
+                    )
+                except Exception as compensation_error:
+                    await self._audit_required_failure(
+                        actor,
+                        correlation_id,
+                        "connector_target_session_compensation_failed",
+                        verification_id,
+                        failure_class,
+                    )
+                    raise ConnectorTargetSessionError(
+                        "target_session_compensation_failed"
+                    ) from compensation_error
+                await self._audit_required_failure(
                     actor,
                     correlation_id,
-                    "connector_target_session_completed",
-                    record.verification_id,
-                    idempotency_key,
-                    (("instance_state", record.instance_state),),
+                    "connector_target_session_failed",
+                    verification_id,
+                    failure_class,
                 )
-            except Exception as error:
-                await self._adapter.compensate(verification_id=verification_id)
+                released = await self._repository.release_claim(claim, now=self._clock())
+                if not released:
+                    raise ConnectorTargetSessionError(
+                        "target_session_claim_release_conflict"
+                    ) from error
                 if isinstance(error, ConnectorTargetSessionError):
                     raise
                 raise ConnectorTargetSessionError("target_session_failed") from error
-            if not await self._repository.add(record):
-                raced = await self._repository.get_by_create_key(
-                    verified_by=actor.subject_id, idempotency_key=idempotency_key
+            try:
+                published = await self._repository.publish(
+                    claim=claim,
+                    record=record,
+                    now=self._clock(),
                 )
-                if raced is None or raced.request_fingerprint != fingerprint:
-                    await self._adapter.compensate(verification_id=verification_id)
+            except Exception as error:
+                await self._audit_required_failure(
+                    actor,
+                    correlation_id,
+                    "connector_target_session_persistence_uncertain",
+                    verification_id,
+                    "persistence_outcome_uncertain",
+                )
+                raise ConnectorTargetSessionError(
+                    "target_session_persistence_outcome_uncertain"
+                ) from error
+            if not published:
+                try:
+                    await self._compensate(
+                        verification_attempt_id,
+                        timeout_seconds=profile.session_timeout_seconds,
+                    )
+                except Exception as compensation_error:
+                    await self._audit_required_failure(
+                        actor,
+                        correlation_id,
+                        "connector_target_session_compensation_failed",
+                        verification_id,
+                        "publish_rejected",
+                    )
+                    raise ConnectorTargetSessionError(
+                        "target_session_compensation_failed"
+                    ) from compensation_error
+                await self._audit_required_failure(
+                    actor,
+                    correlation_id,
+                    "connector_target_session_publish_rejected",
+                    verification_id,
+                    "publish_rejected",
+                )
+                released = await self._repository.release_claim(claim, now=self._clock())
+                if not released:
+                    raise ConnectorTargetSessionError("target_session_claim_release_conflict")
+                raced = await self._repository.get_by_create_key_in_scope(
+                    verified_by=actor.subject_id,
+                    idempotency_key=idempotency_key,
+                    organization_id=actor.organization_id,
+                    environment_id=self._environment_id,
+                )
+                if raced is None or raced.replay_digest != replay_digest:
                     raise ConnectorTargetSessionError("target_session_record_conflict")
-                self._verify_record(raced)
-                return replace(raced, reused=True)
+                return replace(await self._current_record(raced), reused=True)
         return record
 
     async def get(
         self, *, actor: AuthenticatedSubject, verification_id: str, correlation_id: str
     ) -> ConnectorTargetSessionVerificationRecord:
         self._require_enterprise_human(actor)
-        record = await self._repository.get(verification_id=verification_id)
+        record = await self._repository.get_in_scope(
+            verification_id=verification_id,
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+        )
         if record is None:
             raise ConnectorTargetSessionError("target_session_record_not_found")
-        self._verify_record(record)
-        self._require_scope(actor, record.organization_id, record.environment_id)
+        record = await self._current_record(record)
         await self._audit(
             actor,
             correlation_id,
@@ -254,20 +514,304 @@ class ConnectorTargetSessionService:
         )
         return record
 
+    async def list_verifications(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        source_runtime_activation_id: str | None,
+        correlation_id: str,
+    ) -> tuple[ConnectorTargetSessionVerificationRecord, ...]:
+        self._require_enterprise_human(actor)
+        if source_runtime_activation_id is None:
+            candidates = await self._repository.list_scope(
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+            )
+        else:
+            candidate = await self._repository.get_by_runtime_activation_in_scope(
+                source_runtime_activation_id=source_runtime_activation_id,
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+            )
+            candidates = (candidate,) if candidate is not None else ()
+        visible = [await self._current_record(record) for record in candidates]
+        visible.sort(key=lambda item: item.verification_id)
+        await self._audit(
+            actor,
+            correlation_id,
+            "connector_target_sessions_listed",
+            source_runtime_activation_id or self._environment_id,
+            None,
+            (("count", str(len(visible))),),
+            permission_id=TARGET_SESSION_READ_PERMISSION,
+        )
+        return tuple(visible)
+
+    async def list_options(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        source_runtime_activation_id: str,
+        correlation_id: str,
+    ) -> tuple[ConnectorTargetSessionOption, ...]:
+        self._require_enterprise_human(actor)
+        (
+            activation,
+            brokerage,
+            runtime_trust,
+            credential_profile,
+            source_actors,
+        ) = await self._source_in_scope(
+            actor=actor,
+            source_runtime_activation_id=source_runtime_activation_id,
+        )
+        existing = await self._repository.get_by_runtime_activation_in_scope(
+            source_runtime_activation_id=activation.activation_id,
+            organization_id=activation.organization_id,
+            environment_id=activation.environment_id,
+        )
+        options: list[ConnectorTargetSessionOption] = []
+        if existing is not None:
+            await self._current_record(existing)
+        else:
+            profiles = await self._profile_source.list_scope(
+                organization_id=activation.organization_id,
+                environment_id=activation.environment_id,
+            )
+            policies = await self._policy_source.list_scope(
+                organization_id=activation.organization_id,
+                environment_id=activation.environment_id,
+            )
+            now = self._clock()
+            for profile in profiles:
+                for policy in policies:
+                    try:
+                        self._verify_snapshot(profile, "profile")
+                        self._verify_snapshot(policy, "policy")
+                        self._verify_session(
+                            actor=actor,
+                            activation=activation,
+                            brokerage=brokerage,
+                            runtime_trust=runtime_trust,
+                            credential_profile=credential_profile,
+                            profile=profile,
+                            policy=policy,
+                            source_digest=activation.canonical_digest,
+                            package_digest=activation.package_digest,
+                            profile_digest=profile.canonical_digest,
+                            policy_digest=policy.canonical_digest,
+                            now=now,
+                        )
+                    except ConnectorTargetSessionError:
+                        continue
+                    if actor.subject_id in (
+                        source_actors
+                        | {
+                            profile.signed_by,
+                            policy.signed_by,
+                            profile.session_adapter_attestor_id,
+                        }
+                    ):
+                        continue
+                    options.append(
+                        ConnectorTargetSessionOption(
+                            source_runtime_activation_id=activation.activation_id,
+                            source_runtime_activation_digest=activation.canonical_digest,
+                            package_digest=activation.package_digest,
+                            session_profile_id=profile.profile_id,
+                            session_profile_digest=profile.canonical_digest,
+                            session_profile_expires_at=profile.expires_at,
+                            expected_target_product=profile.expected_target_product,
+                            protocol_classification=profile.protocol_classification,
+                            connectivity_check_ids=profile.connectivity_check_ids,
+                            session_policy_id=policy.policy_id,
+                            session_policy_digest=policy.canonical_digest,
+                            session_policy_version=policy.policy_version,
+                            session_policy_expires_at=policy.expires_at,
+                            required_assurance_level=policy.required_assurance_level,
+                        )
+                    )
+        options.sort(
+            key=lambda item: (
+                item.session_profile_id,
+                item.session_profile_digest,
+                item.session_policy_id,
+                item.session_policy_digest,
+            )
+        )
+        await self._audit(
+            actor,
+            correlation_id,
+            "connector_target_session_options_listed",
+            activation.instance_id,
+            None,
+            (("count", str(len(options))),),
+            permission_id=TARGET_SESSION_READ_PERMISSION,
+        )
+        return tuple(options)
+
+    async def _source_in_scope(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        source_runtime_activation_id: str,
+    ) -> tuple[
+        ConnectorRuntimeActivationRecord,
+        ConnectorSecretBrokerageAuthorizationRecord,
+        ConnectorRuntimeTrustGrantRecord,
+        ConnectorCredentialProfileSnapshot,
+        frozenset[str],
+    ]:
+        scoped = await self._source.repository.get_in_scope(
+            activation_id=source_runtime_activation_id,
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+        )
+        if scoped is None:
+            raise ConnectorTargetSessionError("target_session_source_not_found")
+        try:
+            source = await self._source.target_session_source(
+                activation_id=source_runtime_activation_id
+            )
+        except ConnectorRuntimeActivationError as error:
+            raise ConnectorTargetSessionError("target_session_source_not_found") from error
+        activation = source[0]
+        if (
+            activation.activation_id != scoped.activation_id
+            or activation.canonical_digest != scoped.canonical_digest
+            or activation.organization_id != actor.organization_id
+            or activation.environment_id != self._environment_id
+        ):
+            raise ConnectorTargetSessionError("target_session_source_not_found")
+        return source
+
+    async def _current_record(
+        self, record: ConnectorTargetSessionVerificationRecord
+    ) -> ConnectorTargetSessionVerificationRecord:
+        self._verify_record(record)
+        scoped = await self._source.repository.get_in_scope(
+            activation_id=record.source_runtime_activation_id,
+            organization_id=record.organization_id,
+            environment_id=record.environment_id,
+        )
+        if scoped is None:
+            raise ConnectorTargetSessionError("target_session_source_invalid")
+        try:
+            (
+                activation,
+                brokerage,
+                runtime_trust,
+                credential_profile,
+                _,
+            ) = await self._source.target_session_source(
+                activation_id=record.source_runtime_activation_id
+            )
+        except ConnectorRuntimeActivationError as error:
+            raise ConnectorTargetSessionError("target_session_source_invalid") from error
+        if (
+            activation.activation_id != scoped.activation_id
+            or activation.canonical_digest != scoped.canonical_digest
+        ):
+            raise ConnectorTargetSessionError("target_session_source_invalid")
+        profile = await self._profile_source.get_by_id_in_scope(
+            profile_id=record.session_profile_id,
+            organization_id=record.organization_id,
+            environment_id=record.environment_id,
+        )
+        policy = await self._policy_source.get_by_id_in_scope(
+            policy_id=record.session_policy_id,
+            organization_id=record.organization_id,
+            environment_id=record.environment_id,
+        )
+        if profile is None or policy is None:
+            raise ConnectorTargetSessionError("target_session_source_invalid")
+        self._verify_snapshot(profile, "profile")
+        self._verify_snapshot(policy, "policy")
+        now = self._clock()
+        self._verify_session(
+            actor=None,
+            activation=activation,
+            brokerage=brokerage,
+            runtime_trust=runtime_trust,
+            credential_profile=credential_profile,
+            profile=profile,
+            policy=policy,
+            source_digest=record.source_runtime_activation_digest,
+            package_digest=record.package_digest,
+            profile_digest=record.session_profile_digest,
+            policy_digest=record.session_policy_digest,
+            now=now,
+        )
+        expected_checks = tuple(
+            (check_id, "connectivity.passed") for check_id in profile.connectivity_check_ids
+        )
+        actual_checks = tuple(
+            (item.check_id, item.outcome) for item in record.connectivity_check_results
+        )
+        if (
+            record.organization_id != activation.organization_id
+            or record.environment_id != activation.environment_id
+            or record.connector_id != activation.connector_id
+            or record.release_version != activation.release_version
+            or record.manifest_digest != activation.manifest_digest
+            or record.instance_id != activation.instance_id
+            or record.target_profile_digest != runtime_trust.target_profile_digest
+            or record.target_identity_digest != profile.expected_target_identity_digest
+            or record.expected_target_product != profile.expected_target_product
+            or record.protocol_classification != profile.protocol_classification
+            or record.tls_classification != policy.required_tls_classification
+            or record.session_profile_digest != profile.canonical_digest
+            or record.session_policy_digest != policy.canonical_digest
+            or record.session_policy_version != policy.policy_version
+            or record.session_adapter_id != profile.session_adapter_id
+            or actual_checks != expected_checks
+            or record.verified_at < profile.issued_at
+            or record.verified_at > now
+            or record.instance_state != ENABLED_TARGET_SESSION_VERIFIED
+            or not record.runtime_health_verified
+            or not record.secret_brokerage_governed
+            or not record.target_connection_authorized
+            or not record.target_connectivity_verified
+            or not record.target_identity_verified
+            or not record.read_only_session_verified
+            or not record.target_session_established
+            or not record.target_session_closed
+            or not record.delivery_channel_closed
+            or not record.lease_revocation_confirmed
+            or not record.eligible_for_capability_invocation_governance
+            or record.target_connected
+            or record.capability_invocation_authorized
+            or record.capability_invoked
+            or record.scheduled
+            or record.execution_authorized
+            or record.deployment_approved
+            or record.infrastructure_mutation_performed
+        ):
+            raise ConnectorTargetSessionError("target_session_source_invalid")
+        return record
+
     async def close(self) -> None:
         await self._repository.close()
 
     async def capability_invocation_authorization_source(
-        self, *, verification_id: str
+        self,
+        *,
+        verification_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> tuple[
         ConnectorTargetSessionVerificationRecord,
         ConnectorCapabilityEnablementRecord,
         frozenset[str],
     ]:
-        record = await self._repository.get(verification_id=verification_id)
+        record = await self._repository.get_in_scope(
+            verification_id=verification_id,
+            organization_id=organization_id,
+            environment_id=environment_id,
+        )
         if record is None:
             raise ConnectorTargetSessionError("target_session_record_not_found")
-        self._verify_record(record)
+        record = await self._current_record(record)
         activation, enablement, actors = await self._source.capability_invocation_source(
             activation_id=record.source_runtime_activation_id
         )
@@ -299,11 +843,12 @@ class ConnectorTargetSessionService:
         receipt: ConnectorTargetSessionReceipt,
         actor: AuthenticatedSubject,
         purpose: str,
-        fingerprint: str,
-        idempotency_key: str,
+        replay_digest: str,
+        idempotency_digest: str,
     ) -> ConnectorTargetSessionVerificationRecord:
         record = ConnectorTargetSessionVerificationRecord(
             verification_id=receipt.verification_id,
+            verification_attempt_id=receipt.verification_attempt_id,
             schema_version=TARGET_SESSION_SCHEMA,
             version=1,
             source_runtime_activation_id=activation.activation_id,
@@ -334,15 +879,15 @@ class ConnectorTargetSessionService:
             purpose=purpose,
             verified_at=receipt.verified_at,
             canonical_digest="0" * 64,
-            request_fingerprint=fingerprint,
-            idempotency_key=idempotency_key,
+            replay_digest=replay_digest,
+            idempotency_digest=idempotency_digest,
         )
         return replace(record, canonical_digest=self._digest(self._record_payload(record)))
 
     @staticmethod
     def _verify_session(
         *,
-        actor: AuthenticatedSubject,
+        actor: AuthenticatedSubject | None,
         activation: ConnectorRuntimeActivationRecord,
         brokerage: ConnectorSecretBrokerageAuthorizationRecord,
         runtime_trust: ConnectorRuntimeTrustGrantRecord,
@@ -419,8 +964,11 @@ class ConnectorTargetSessionService:
             or not profile.issued_at <= now < profile.expires_at
             or now - activation.healthy_at > timedelta(hours=policy.maximum_activation_age_hours)
             or now - profile.issued_at > timedelta(hours=policy.maximum_profile_age_hours)
-            or not assurance_satisfies_policy(
-                actor.assurance_level, policy.required_assurance_level
+            or (
+                actor is not None
+                and not assurance_satisfies_policy(
+                    actor.assurance_level, policy.required_assurance_level
+                )
             )
         ):
             raise ConnectorTargetSessionError("target_session_invalid")
@@ -443,12 +991,16 @@ class ConnectorTargetSessionService:
         instruction: ConnectorTargetSessionInstruction,
         profile: ConnectorTargetSessionProfileSnapshot,
         policy: ConnectorTargetSessionPolicySnapshot,
+        *,
+        attempt_started_at: datetime,
+        now: datetime,
     ) -> None:
         payload = cast(dict[str, object], asdict(receipt))
         payload.pop("canonical_digest")
         if (
             cls._digest(cls._normalize(payload)) != receipt.canonical_digest
             or receipt.verification_id != instruction.verification_id
+            or receipt.verification_attempt_id != instruction.verification_attempt_id
             or receipt.organization_id != instruction.organization_id
             or receipt.environment_id != instruction.environment_id
             or receipt.source_runtime_activation_digest
@@ -463,6 +1015,12 @@ class ConnectorTargetSessionService:
             or tuple(item.check_id for item in receipt.connectivity_check_results)
             != instruction.connectivity_check_ids
             or receipt.signed_by != profile.session_adapter_attestor_id
+            or receipt.verified_at < attempt_started_at
+            or receipt.verified_at > now + timedelta(seconds=5)
+            or receipt.verified_at - attempt_started_at
+            > timedelta(seconds=profile.session_timeout_seconds)
+            or not profile.issued_at <= receipt.verified_at < profile.expires_at
+            or not policy.issued_at <= receipt.verified_at < policy.expires_at
         ):
             raise ConnectorTargetSessionError("target_session_receipt_invalid")
 
@@ -470,23 +1028,50 @@ class ConnectorTargetSessionService:
         self,
         record: ConnectorTargetSessionVerificationRecord,
         actor: AuthenticatedSubject,
-        fingerprint: str,
+        replay_digest: str,
     ) -> ConnectorTargetSessionVerificationRecord:
-        if record.verified_by != actor.subject_id or record.request_fingerprint != fingerprint:
+        if record.verified_by != actor.subject_id or record.replay_digest != replay_digest:
             raise ConnectorTargetSessionError("target_session_idempotency_conflict")
         self._verify_record(record)
         return replace(record, reused=True)
 
+    async def _compensate(
+        self,
+        verification_attempt_id: str,
+        *,
+        timeout_seconds: int,
+    ) -> None:
+        await asyncio.wait_for(
+            self._adapter.compensate(verification_attempt_id=verification_attempt_id),
+            timeout=timeout_seconds,
+        )
+
     @classmethod
     def _verify_record(cls, record: ConnectorTargetSessionVerificationRecord) -> None:
-        if cls._digest(cls._record_payload(record)) != record.canonical_digest:
-            raise ConnectorTargetSessionError("target_session_record_integrity_failed")
+        if cls._digest(cls._record_payload(record)) == record.canonical_digest:
+            return
+        expected_legacy_attempt = (
+            "connector-target-session-attempt.legacy-"
+            f"{cls._identifier_digest(record.verification_id)[:24]}"
+        )
+        if record.verification_attempt_id == expected_legacy_attempt:
+            legacy_payload = cls._record_payload(record)
+            legacy_payload.pop("verification_attempt_id")
+            if cls._digest(legacy_payload) == record.canonical_digest:
+                return
+        raise ConnectorTargetSessionError("target_session_record_integrity_failed")
 
     @classmethod
     def _record_payload(cls, record: ConnectorTargetSessionVerificationRecord) -> dict[str, object]:
         payload = cast(dict[str, object], asdict(record))
-        for field in ("canonical_digest", "request_fingerprint", "idempotency_key", "reused"):
+        for field in ("canonical_digest", "replay_digest", "idempotency_digest", "reused"):
             payload.pop(field)
+        return cast(dict[str, object], cls._normalize(payload))
+
+    @classmethod
+    def _claim_payload(cls, claim: ConnectorTargetSessionClaim) -> dict[str, object]:
+        payload = cast(dict[str, object], asdict(claim))
+        payload.pop("canonical_digest")
         return cast(dict[str, object], cls._normalize(payload))
 
     @classmethod
@@ -534,6 +1119,7 @@ class ConnectorTargetSessionService:
         metadata: tuple[tuple[str, str], ...],
         *,
         permission_id: str = TARGET_SESSION_CREATE_PERMISSION,
+        outcome: str = "succeeded",
     ) -> None:
         await self._audit_sink.record(
             AuditRecord(
@@ -552,12 +1138,38 @@ class ConnectorTargetSessionService:
                 resource_type="resource.connector.target-session-verification",
                 scope_reference=scope_reference,
                 decision_id=None,
-                outcome="succeeded",
+                outcome=outcome,
                 result_code=result_code,
                 idempotency_key=idempotency_key,
                 target_metadata=metadata,
             )
         )
+
+    async def _audit_required_failure(
+        self,
+        actor: AuthenticatedSubject,
+        correlation_id: str,
+        result_code: str,
+        scope_reference: str,
+        failure_class: str,
+    ) -> None:
+        try:
+            await asyncio.wait_for(
+                self._audit(
+                    actor,
+                    correlation_id,
+                    result_code,
+                    scope_reference,
+                    None,
+                    (("failure_class", failure_class),),
+                    outcome="failed",
+                ),
+                timeout=TARGET_SESSION_REQUIRED_AUDIT_TIMEOUT_SECONDS,
+            )
+        except Exception as audit_error:
+            raise ConnectorTargetSessionError(
+                "target_session_failure_audit_failed"
+            ) from audit_error
 
 
 def _signed_snapshot(

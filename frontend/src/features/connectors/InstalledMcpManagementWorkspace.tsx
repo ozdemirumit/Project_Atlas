@@ -95,6 +95,10 @@ import {
   type ConnectorSecretBrokerageAuthorizationInventoryItem,
 } from "../../api/secretBrokerageAuthorizations";
 import {
+  getConnectorTargetSessionVerifications,
+  type ConnectorTargetSessionVerificationInventoryItem,
+} from "../../api/targetSessionVerifications";
+import {
   getConnectorTargetConfigurations,
   type ConnectorTargetConfigurationBinding,
 } from "../../api/targetConfigurations";
@@ -105,6 +109,7 @@ import { RuntimeTrustPanel } from "./RuntimeTrustPanel";
 import { RuntimeActivationPanel } from "./RuntimeActivationPanel";
 import { SecretBrokeragePanel } from "./SecretBrokeragePanel";
 import { TargetConfigurationPanel } from "./TargetConfigurationPanel";
+import { TargetSessionPanel } from "./TargetSessionPanel";
 
 type LifecycleFilter = "active" | "retired" | "all";
 
@@ -709,6 +714,70 @@ function RuntimeActivationDialog({
   );
 }
 
+function TargetSessionDialog({
+  activation,
+  instance,
+  onCancel,
+  onRequestEnterpriseLogin,
+  onVerificationCreated,
+  sessionScopeKey,
+  verification,
+}: {
+  activation: ConnectorRuntimeActivationInventoryItem;
+  instance: ConnectorInstanceRecord;
+  onCancel: () => void;
+  onRequestEnterpriseLogin?: () => void;
+  onVerificationCreated: (
+    verification: ConnectorTargetSessionVerificationInventoryItem,
+  ) => void;
+  sessionScopeKey: string;
+  verification?: ConnectorTargetSessionVerificationInventoryItem;
+}) {
+  return (
+    <div className="installed-mcp-dialog-backdrop" role="presentation">
+      <section
+        className="installed-mcp-dialog target-session-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="target-session-mcp-title"
+      >
+        <header>
+          <div>
+            <p className="eyebrow">GOVERNED TARGET SESSION VERIFICATION</p>
+            <h3 id="target-session-mcp-title">
+              Manage target session for {instance.display_name}
+            </h3>
+          </div>
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Close target session"
+            onClick={onCancel}
+          >
+            <X size={17} />
+          </button>
+        </header>
+        <p className="muted-copy">
+          Atlas uses only a server-provided signed profile and policy to verify one bounded
+          read-only target session. The session, delivery channel and lease are closed immediately;
+          no reusable connection, capability invocation, execution, deployment or infrastructure
+          mutation authority remains.
+        </p>
+        <TargetSessionPanel
+          activation={activation}
+          existingVerification={verification}
+          onRequestEnterpriseLogin={onRequestEnterpriseLogin}
+          onVerificationCreated={onVerificationCreated}
+          sessionScopeKey={sessionScopeKey}
+        />
+        <footer>
+          <button type="button" className="secondary-button" onClick={onCancel}>Close</button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
 function UpgradeCandidateCard({
   candidate,
   onReviewPlan,
@@ -1297,6 +1366,8 @@ export default function InstalledMcpManagementWorkspace({
     useState<ConnectorInstanceRecord | null>(null);
   const [activatingRuntime, setActivatingRuntime] =
     useState<ConnectorInstanceRecord | null>(null);
+  const [verifyingTargetSession, setVerifyingTargetSession] =
+    useState<ConnectorInstanceRecord | null>(null);
   const sessionScopeKey = JSON.stringify([subjectId, organizationId, environmentId]);
   const packageQuery = useQuery({
     queryKey: ["connector-package-installations", subjectId],
@@ -1346,6 +1417,11 @@ export default function InstalledMcpManagementWorkspace({
   const runtimeActivationQuery = useQuery({
     queryKey: ["connector-runtime-activations", sessionScopeKey],
     queryFn: () => getConnectorRuntimeActivations(),
+    enabled: Boolean(subjectId),
+  });
+  const targetSessionQuery = useQuery({
+    queryKey: ["connector-target-session-verifications", sessionScopeKey],
+    queryFn: () => getConnectorTargetSessionVerifications(),
     enabled: Boolean(subjectId),
   });
   const signingTrustQuery = useQuery({
@@ -1434,6 +1510,15 @@ export default function InstalledMcpManagementWorkspace({
       activation,
     ]),
   );
+  const targetSessionVerifications = targetSessionQuery.isError
+    ? []
+    : (targetSessionQuery.data ?? []);
+  const targetSessionByRuntimeActivation = new Map(
+    targetSessionVerifications.map((verification) => [
+      verification.source_runtime_activation_id,
+      verification,
+    ]),
+  );
   const packages = packageQuery.data ?? [];
   const policies = policyQuery.data ?? [];
   const activeCount = instances.filter(
@@ -1477,6 +1562,7 @@ export default function InstalledMcpManagementWorkspace({
     void runtimeTrustQuery.refetch();
     void secretBrokerageQuery.refetch();
     void runtimeActivationQuery.refetch();
+    void targetSessionQuery.refetch();
     void signingTrustQuery.refetch();
     void signingConformanceQuery.refetch();
     void signingOnboardingQuery.refetch();
@@ -1862,6 +1948,35 @@ export default function InstalledMcpManagementWorkspace({
           ) : null}
         </div>
       )}
+      {targetSessionQuery.isError && (
+        <div className="installed-mcp-status error-state" role="alert">
+          {hasStatus(targetSessionQuery.error, 401)
+            ? <LogIn size={18} />
+            : <AlertTriangle size={18} />}
+          <div>
+            <strong>
+              {hasStatus(targetSessionQuery.error, 401)
+                ? "Your signed-in session has expired"
+                : hasStatus(targetSessionQuery.error, 403)
+                  ? "Target session verification permission is required"
+                  : "Target session verification inventory is unavailable"}
+            </strong>
+            <span>
+              Existing lifecycle and runtime-health evidence remains available. Target session
+              state and verification controls stay hidden until this scoped inventory can be read.
+            </span>
+          </div>
+          {hasStatus(targetSessionQuery.error, 401) && onRequestEnterpriseLogin ? (
+            <button type="button" onClick={onRequestEnterpriseLogin}>
+              <LogIn size={15} /> Sign in again
+            </button>
+          ) : !hasStatus(targetSessionQuery.error, 403) ? (
+            <button type="button" onClick={() => void targetSessionQuery.refetch()}>
+              <RefreshCw size={15} /> Retry
+            </button>
+          ) : null}
+        </div>
+      )}
       {instanceQuery.isLoading && (
         <div className="installed-mcp-status" role="status"><RefreshCw className="spin" size={18} /><span>Loading MCP lifecycle inventory...</span></div>
       )}
@@ -1935,6 +2050,10 @@ export default function InstalledMcpManagementWorkspace({
                   ? runtimeActivationBySecretBrokerage.get(secretBrokerageAuthorization.authorization_id)
                   : undefined;
                 const runtimeHealthy = Boolean(runtimeActivation);
+                const targetSessionVerification = runtimeActivation
+                  ? targetSessionByRuntimeActivation.get(runtimeActivation.activation_id)
+                  : undefined;
+                const targetSessionVerified = Boolean(targetSessionVerification);
                 return (
                   <tr key={instance.record_id}>
                     <td><strong>{instance.display_name}</strong><code>{instance.instance_key}</code></td>
@@ -1943,12 +2062,14 @@ export default function InstalledMcpManagementWorkspace({
                       <span className={`state-badge ${
                         instance.instance_state === "retired"
                           ? "neutral"
-                          : runtimeHealthy || secretBrokerageGoverned || runtimeTrusted || capabilitiesGoverned
+                          : targetSessionVerified || runtimeHealthy || secretBrokerageGoverned || runtimeTrusted || capabilitiesGoverned
                             ? "success"
                             : "pending"
                       }`}>
                         {instance.instance_state === "retired"
                           ? "Retired"
+                          : targetSessionVerified
+                            ? "Enabled / target session verified"
                           : runtimeHealthy
                             ? "Enabled / runtime healthy"
                           : secretBrokerageGoverned
@@ -1971,6 +2092,8 @@ export default function InstalledMcpManagementWorkspace({
                       <span className="installed-mcp-event-label">
                         {instance.instance_state === "retired"
                           ? "Retired"
+                          : targetSessionVerification
+                            ? "Target session verified"
                           : runtimeActivation
                             ? "Runtime healthy"
                           : secretBrokerageAuthorization
@@ -1987,7 +2110,7 @@ export default function InstalledMcpManagementWorkspace({
                               ? "Target bound"
                               : "Created"}
                       </span>
-                      {new Date(runtimeActivation?.healthy_at ?? secretBrokerageAuthorization?.authorized_at ?? runtimeTrust?.granted_at ?? enablement?.enabled_at ?? validation?.validated_at ?? assignment?.assigned_at ?? binding?.bound_at ?? instance.retired_at ?? instance.created_at).toLocaleString()}
+                      {new Date(targetSessionVerification?.verified_at ?? runtimeActivation?.healthy_at ?? secretBrokerageAuthorization?.authorized_at ?? runtimeTrust?.granted_at ?? enablement?.enabled_at ?? validation?.validated_at ?? assignment?.assigned_at ?? binding?.bound_at ?? instance.retired_at ?? instance.created_at).toLocaleString()}
                     </td>
                     <td>
                       {instance.instance_state === "disabled_unconfigured" &&
@@ -2086,6 +2209,22 @@ export default function InstalledMcpManagementWorkspace({
                               <span>{runtimeHealthy ? "View runtime activation" : "Activate runtime"}</span>
                             </button>
                           )}
+                          {runtimeActivation && targetSessionQuery.isSuccess && (
+                            <button
+                              className="secondary-button installed-mcp-row-action"
+                              type="button"
+                              title={targetSessionVerified
+                                ? "View signed bounded target session evidence"
+                                : "Verify one bounded read-only target session"}
+                              aria-label={`${targetSessionVerified ? "View target session" : "Verify target session"} for ${instance.display_name}`}
+                              onClick={() => setVerifyingTargetSession(instance)}
+                            >
+                              <Link2 size={15} />
+                              <span>{targetSessionVerified
+                                ? "View target session"
+                                : "Verify target session"}</span>
+                            </button>
+                          )}
                           <button className="secondary-button installed-mcp-row-action" type="button" title="Review governed update evidence" aria-label={`Review update for ${instance.display_name}`} onClick={() => setReviewing(instance)}><ArrowUpCircle size={15} /><span>Review update</span></button>
                           {!configured && !credentialsAssigned && (
                             <button className="secondary-button installed-mcp-row-action danger" type="button" title="Remove from active management and preserve history" aria-label={`Remove ${instance.display_name}`} onClick={() => { retireMutation.reset(); setRetiring(instance); }}><Archive size={15} /><span>Remove</span></button>
@@ -2100,7 +2239,7 @@ export default function InstalledMcpManagementWorkspace({
           </table>
         </div>
       ) : null}
-      <div className="installed-mcp-footnote"><span>{activeCount} active in this result</span><span>Target, credential, validation, capability, runtime-trust, secret-brokerage and runtime-health records expose no secrets or operational controls. Runtime activation is bounded to isolated startup and local health evidence; Atlas does not connect, invoke, execute, deploy or mutate infrastructure. Updates remain review-only.</span></div>
+      <div className="installed-mcp-footnote"><span>{activeCount} active in this result</span><span>Target, credential, validation, capability, runtime-trust, secret-brokerage, runtime-health and target-session records expose no secrets or operational controls. Target verification uses one bounded read-only session and closes it immediately; Atlas does not retain a connection, invoke, execute, deploy or mutate infrastructure. Updates remain review-only.</span></div>
       {adding && <AddMcpDialog packages={packages} policies={policies} pending={createMutation.isPending} onCancel={() => setAdding(false)} onOpenBuilder={openBuilder} onSubmit={(input) => createMutation.mutate(input)} />}
       {retiring && <RetireMcpDialog instance={retiring} pending={retireMutation.isPending} onCancel={() => setRetiring(null)} onSubmit={(reason) => retireMutation.mutate({ instance: retiring, reason })} />}
       {reviewing && <UpgradeReadinessDialog instance={reviewing} subjectId={subjectId} onCancel={() => setReviewing(null)} />}
@@ -2316,6 +2455,50 @@ export default function InstalledMcpManagementWorkspace({
               );
             }}
             onCancel={() => setActivatingRuntime(null)}
+            onRequestEnterpriseLogin={onRequestEnterpriseLogin}
+          />
+        );
+      })()}
+      {verifyingTargetSession && (() => {
+        const binding = bindingByInstance.get(verifyingTargetSession.record_id);
+        const assignment = binding
+          ? assignmentByBinding.get(binding.binding_id)
+          : undefined;
+        const validation = assignment
+          ? validationByAssignment.get(assignment.assignment_id)
+          : undefined;
+        const enablement = validation
+          ? enablementByValidation.get(validation.validation_id)
+          : undefined;
+        const runtimeTrust = enablement
+          ? runtimeTrustByEnablement.get(enablement.enablement_id)
+          : undefined;
+        const brokerage = runtimeTrust
+          ? secretBrokerageByRuntimeTrust.get(runtimeTrust.grant_id)
+          : undefined;
+        const activation = brokerage
+          ? runtimeActivationBySecretBrokerage.get(brokerage.authorization_id)
+          : undefined;
+        if (!activation) return null;
+        return (
+          <TargetSessionDialog
+            activation={activation}
+            instance={verifyingTargetSession}
+            verification={targetSessionByRuntimeActivation.get(activation.activation_id)}
+            sessionScopeKey={sessionScopeKey}
+            onVerificationCreated={(verification) => {
+              queryClient.setQueryData<ConnectorTargetSessionVerificationInventoryItem[]>(
+                ["connector-target-session-verifications", sessionScopeKey],
+                (current = []) => [
+                  ...current.filter(
+                    (item) => item.source_runtime_activation_id !==
+                      verification.source_runtime_activation_id,
+                  ),
+                  verification,
+                ],
+              );
+            }}
+            onCancel={() => setVerifyingTargetSession(null)}
             onRequestEnterpriseLogin={onRequestEnterpriseLogin}
           />
         );

@@ -23,7 +23,11 @@ class ConnectorInvocationAuthorizationError(RuntimeError):
 
 class ConnectorInvocationAuthorizationSource(Protocol):
     async def capability_invocation_authorization_source(
-        self, *, verification_id: str
+        self,
+        *,
+        verification_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> tuple[
         ConnectorTargetSessionVerificationRecord,
         ConnectorCapabilityEnablementRecord,

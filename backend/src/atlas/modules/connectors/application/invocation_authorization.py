@@ -132,7 +132,9 @@ class ConnectorInvocationAuthorizationService:
                 enablement,
                 source_actors,
             ) = await self._source.capability_invocation_authorization_source(
-                verification_id=source_target_session_verification_id
+                verification_id=source_target_session_verification_id,
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
             )
         except ConnectorTargetSessionError as error:
             raise ConnectorInvocationAuthorizationError(
@@ -309,7 +311,9 @@ class ConnectorInvocationAuthorizationService:
                 enablement,
                 source_actors,
             ) = await self._source.capability_invocation_authorization_source(
-                verification_id=record.source_target_session_verification_id
+                verification_id=record.source_target_session_verification_id,
+                organization_id=record.organization_id,
+                environment_id=record.environment_id,
             )
         except ConnectorTargetSessionError as error:
             raise ConnectorInvocationAuthorizationError(
