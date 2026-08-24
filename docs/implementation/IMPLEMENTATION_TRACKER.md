@@ -4,14 +4,78 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-241 |
-| Title | Installed MCP governed target-session verification and connectivity evidence |
-| Status | Ready for PR |
-| Branch | `agent/installed-mcp-target-session-governance` |
-| Pull Request | [#254](https://github.com/ozdemirumit/Project_Atlas/pull/254) |
-| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-030, ATLAS-031, ATLAS-050, ATLAS-052, ADR-038, ADR-100, ADR-123, ADR-133, ADR-182 |
-| Last Updated | 2026-08-24 |
-| Next Action | Complete exact-head CI, squash merge and post-main CI |
+| Task ID | ATLAS-IMP-242 |
+| Title | Installed MCP tenant-scoped capability invocation authorization inventory and server-provided signed options |
+| Status | In Progress |
+| Branch | `agent/installed-mcp-invocation-authorization-governance` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-030, ATLAS-031, ATLAS-050, ATLAS-052, ADR-039, ADR-100, ADR-123, ADR-133, ADR-182 |
+| Last Updated | 2026-08-25 |
+| Next Action | Complete independent review, create PR, pass exact-head CI, squash merge and pass post-main CI |
+
+### ATLAS-IMP-242 Scope Rationale
+
+- IMP-241 makes target-session verification reloadable in Installed MCPs, but capability invocation
+  authorization still depends on caller-entered profile, envelope and policy identifiers and has no
+  tenant-scoped inventory or server-provided option discovery.
+- This slice publishes only current signed C0/C1 authorization options for one exact closed target
+  session, records one short-lived single-use authorization and reloads its minimized evidence in
+  Installed MCPs.
+- Authorization does not connect to a target, invoke a capability, schedule work, ingest a result,
+  execute a workflow, approve deployment or mutate infrastructure. Bounded invocation remains a
+  separate later action and is not opened by this workflow.
+
+### ATLAS-IMP-242 Acceptance Criteria
+
+- Authorization records, source discovery, signed profiles, input envelopes and policies are read
+  only through organization-and-environment-scoped contracts; database uniqueness and idempotency
+  coordinates are tenant scoped.
+- Installed MCP rows expose `Authorize invocation` or `View authorization` only after authoritative
+  target-session and authorization inventory reads succeed.
+- The browser selects only exact server-provided signed options and has no free-form identifier or
+  digest inputs. The server reloads and independently validates every submitted lineage value.
+- C2/C3 capabilities, stale or mismatched evidence, missing exact capability permissions,
+  insufficient policy assurance and separation-of-duty conflicts fail closed.
+- Development may prepare deterministic synthetic server-side profile/envelope evidence without
+  network or infrastructure access. Production has no synthetic provider and remains fail closed.
+- API and persistence projections exclude secrets, target coordinates, commands, raw parameters,
+  raw idempotency keys, request fingerprints and unrelated mutable lineage fields.
+- Successful authorization remains short-lived, single-use, non-renewable and unconsumed; every
+  target, invocation, scheduling, result, execution, deployment and mutation flag stays false.
+- Normal username/password authentication satisfies the default `SINGLE_FACTOR` policy. No global
+  MFA requirement or second browser session is introduced.
+
+### ATLAS-IMP-242 Verification Evidence
+
+- Focused invocation-authorization and bounded-invocation backend suites pass `23` tests with one
+  environment-gated PostgreSQL case skipped; targeted Ruff and MyPy checks pass for the affected
+  service, ports, adapters, API, persistence and test files.
+- The integrated target-session, invocation-authorization and bounded-invocation suite passes `44`
+  tests with live PostgreSQL enabled, preserving the complete IMP-241 to IMP-242 lineage boundary.
+- The invocation-authorization suite passes all `13` cases when the local PostgreSQL DSN is enabled,
+  including tenant-isolated reads, same source identity in separate tenants, payload minimization,
+  cross-service idempotency racing and deterministic development evidence recreation after service
+  restart.
+- Migration `20260824_0161` upgraded and downgraded against local PostgreSQL. A populated legacy
+  `0160` record was then upgraded: raw idempotency and fingerprint fields were removed, scoped
+  digests were backfilled and its existing canonical digest remained valid through the new adapter.
+- Focused frontend API, authorization panel and Installed MCP workspace suites pass `70` tests;
+  TypeScript typecheck, ESLint, production build and repository diff validation pass. The build
+  emits only the existing large-chunk advisory.
+- A current-code API/web pair at `127.0.0.1:8061` and `127.0.0.1:5222` accepted the normal
+  `operator` / `correct-password` session. Installed MCP inventory rendered authoritative empty
+  state and the explicit no-connection/no-invocation/no-schedule/no-execution/no-deployment/no-
+  mutation boundary without browser console errors. The `390x844` responsive check had no
+  horizontal overflow or overlapping controls.
+
+### ATLAS-IMP-241 Delivery Evidence
+
+- Source commit `16e73efdde5d535f92540f65bf9f371f7039b4e9` passed exact-head pull-request CI run
+  `32770109915`; frontend completed in 11m12s and backend in 24m29s.
+- [PR #254](https://github.com/ozdemirumit/Project_Atlas/pull/254) was squash-merged to `main` as
+  `a631f482e972d8b1742a0b2f597bc25dfdd14925`.
+- The exact merge commit passed post-main CI run `32772484249`; frontend completed in 10m52s and
+  backend in 21m52s. Local `main` and `origin/main` were synchronized before IMP-242.
 
 ### ATLAS-IMP-241 Scope Rationale
 

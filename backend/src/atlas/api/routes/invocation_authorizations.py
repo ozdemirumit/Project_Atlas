@@ -3,12 +3,15 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated, NoReturn
 
-from fastapi import APIRouter, Depends, Header, Path, Request, Response
+from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response
 
 from atlas.api.errors import AtlasError
 from atlas.api.invocation_authorization_schemas import (
     ConnectorInvocationAuthorizationData,
     ConnectorInvocationAuthorizationInput,
+    ConnectorInvocationAuthorizationInventoryResponse,
+    ConnectorInvocationAuthorizationOptionData,
+    ConnectorInvocationAuthorizationOptionsResponse,
     ConnectorInvocationAuthorizationResponse,
 )
 from atlas.api.schemas import ResponseMeta
@@ -61,6 +64,73 @@ def _response(
     response.headers["Cache-Control"] = "no-store"
     return ConnectorInvocationAuthorizationResponse(
         data=ConnectorInvocationAuthorizationData.from_domain(record),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.get("", response_model=ConnectorInvocationAuthorizationInventoryResponse)
+async def list_connector_invocation_authorizations(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_connector_invocation_authorization_read)
+    ],
+    source_target_session_verification_id: Annotated[
+        str | None, Query(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")
+    ] = None,
+) -> ConnectorInvocationAuthorizationInventoryResponse:
+    service: ConnectorInvocationAuthorizationService = (
+        request.app.state.invocation_authorization_service
+    )
+    try:
+        records = await service.list_authorizations(
+            actor=subject,
+            source_target_session_verification_id=source_target_session_verification_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ConnectorInvocationAuthorizationError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorInvocationAuthorizationInventoryResponse(
+        data=tuple(ConnectorInvocationAuthorizationData.from_domain(record) for record in records),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.get("/options", response_model=ConnectorInvocationAuthorizationOptionsResponse)
+async def list_connector_invocation_authorization_options(
+    source_target_session_verification_id: Annotated[
+        str, Query(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")
+    ],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_connector_invocation_authorization_read)
+    ],
+) -> ConnectorInvocationAuthorizationOptionsResponse:
+    service: ConnectorInvocationAuthorizationService = (
+        request.app.state.invocation_authorization_service
+    )
+    try:
+        options = await service.list_options(
+            actor=subject,
+            source_target_session_verification_id=source_target_session_verification_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ConnectorInvocationAuthorizationError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorInvocationAuthorizationOptionsResponse(
+        data=tuple(
+            ConnectorInvocationAuthorizationOptionData.from_application(option)
+            for option in options
+        ),
         meta=ResponseMeta(
             correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
         ),

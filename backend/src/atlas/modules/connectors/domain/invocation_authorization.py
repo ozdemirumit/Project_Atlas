@@ -243,8 +243,8 @@ class ConnectorInvocationAuthorizationRecord:
     authorized_at: datetime
     expires_at: datetime
     canonical_digest: str
-    request_fingerprint: str
-    idempotency_key: str
+    replay_digest: str
+    idempotency_digest: str
     target_session_verified: bool = True
     capability_enabled: bool = True
     capability_permission_verified: bool = True
@@ -290,7 +290,6 @@ class ConnectorInvocationAuthorizationRecord:
             or self.instance_state != ENABLED_CAPABILITY_INVOCATION_GOVERNED
             or self.capability_class not in {"C0", "C1"}
             or not 20 <= len(self.purpose.strip()) <= 1000
-            or not 8 <= len(self.idempotency_key) <= 128
             or self.authorized_at.tzinfo is None
             or self.expires_at.tzinfo is None
             or self.expires_at <= self.authorized_at
@@ -312,7 +311,8 @@ class ConnectorInvocationAuthorizationRecord:
                     self.result_policy_digest,
                     self.authorization_policy_digest,
                     self.canonical_digest,
-                    self.request_fingerprint,
+                    self.replay_digest,
+                    self.idempotency_digest,
                 )
             )
             or not all(

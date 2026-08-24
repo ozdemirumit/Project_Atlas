@@ -117,7 +117,9 @@ class ConnectorBoundedInvocationService:
             )
         try:
             source, source_actors = await self._source.bounded_invocation_source(
-                authorization_id=source_authorization_id
+                authorization_id=source_authorization_id,
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
             )
         except ConnectorInvocationAuthorizationError as error:
             raise ConnectorBoundedInvocationError("bounded_invocation_source_not_found") from error
@@ -365,7 +367,9 @@ class ConnectorBoundedInvocationService:
         self._verify_claim(claim)
         try:
             authorization, source_actors = await self._source.bounded_invocation_source(
-                authorization_id=record.source_authorization_id
+                authorization_id=record.source_authorization_id,
+                organization_id=record.organization_id,
+                environment_id=record.environment_id,
             )
         except ConnectorInvocationAuthorizationError as error:
             raise ConnectorBoundedInvocationError("bounded_invocation_source_not_found") from error

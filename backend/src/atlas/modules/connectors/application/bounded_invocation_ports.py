@@ -25,7 +25,7 @@ class ConnectorBoundedInvocationUncertainError(ConnectorBoundedInvocationError):
 
 class ConnectorBoundedInvocationSource(Protocol):
     async def bounded_invocation_source(
-        self, *, authorization_id: str
+        self, *, authorization_id: str, organization_id: str, environment_id: str
     ) -> tuple[ConnectorInvocationAuthorizationRecord, frozenset[str]]: ...
 
 

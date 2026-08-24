@@ -390,6 +390,9 @@ from atlas.modules.connectors.adapters.instance_creation_postgres import (
     PostgreSQLConnectorInstanceRepository,
 )
 from atlas.modules.connectors.adapters.invocation_authorization_memory import (
+    DevelopmentConnectorInvocationEvidenceStore,
+    DevelopmentConnectorInvocationInputEnvelopeSource,
+    DevelopmentConnectorInvocationProfileSource,
     InMemoryConnectorInvocationAuthorizationPolicySource,
     InMemoryConnectorInvocationAuthorizationRepository,
     InMemoryConnectorInvocationInputEnvelopeSource,
@@ -4861,14 +4864,28 @@ def create_app(
                 ),
             )
         )
+        development_invocation_evidence = (
+            None if is_production else DevelopmentConnectorInvocationEvidenceStore()
+        )
         resolved_invocation_authorization_service = ConnectorInvocationAuthorizationService(
             repository=invocation_authorization_repository,
             source=resolved_target_session_service,
-            profile_source=InMemoryConnectorInvocationProfileSource(()),
-            envelope_source=InMemoryConnectorInvocationInputEnvelopeSource(()),
+            profile_source=(
+                InMemoryConnectorInvocationProfileSource(())
+                if development_invocation_evidence is None
+                else DevelopmentConnectorInvocationProfileSource(development_invocation_evidence)
+            ),
+            envelope_source=(
+                InMemoryConnectorInvocationInputEnvelopeSource(())
+                if development_invocation_evidence is None
+                else DevelopmentConnectorInvocationInputEnvelopeSource(
+                    development_invocation_evidence
+                )
+            ),
             policy_source=InMemoryConnectorInvocationAuthorizationPolicySource(
                 invocation_authorization_policies
             ),
+            evidence_preparer=development_invocation_evidence,
             permission_authorizer=AuthorizationConnectorCapabilityPermissionAuthorizer(
                 service=resolved_authorization_service,
                 environment=resolved_settings.environment,

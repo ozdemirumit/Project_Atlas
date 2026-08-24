@@ -928,7 +928,8 @@ textarea:focus-visible {
 .installed-mcp-dialog.runtime-trust-dialog,
 .installed-mcp-dialog.secret-brokerage-dialog,
 .installed-mcp-dialog.runtime-activation-dialog,
-.installed-mcp-dialog.target-session-dialog {
+.installed-mcp-dialog.target-session-dialog,
+.installed-mcp-dialog.invocation-authorization-dialog {
   width: min(100%, 760px);
 }
 
@@ -939,7 +940,8 @@ textarea:focus-visible {
 .runtime-trust-dialog .target-configuration-panel,
 .secret-brokerage-dialog .target-configuration-panel,
 .runtime-activation-dialog .target-configuration-panel,
-.target-session-dialog .target-configuration-panel {
+.target-session-dialog .target-configuration-panel,
+.invocation-authorization-dialog .target-configuration-panel {
   margin-top: 0;
   padding-top: 0;
   border-top: 0;
@@ -1663,7 +1665,8 @@ textarea:focus-visible {
   .installed-mcp-dialog.runtime-trust-dialog,
   .installed-mcp-dialog.secret-brokerage-dialog,
   .installed-mcp-dialog.runtime-activation-dialog,
-  .installed-mcp-dialog.target-session-dialog {
+  .installed-mcp-dialog.target-session-dialog,
+  .installed-mcp-dialog.invocation-authorization-dialog {
     width: 100%;
     max-height: 100vh;
     border: 0;
@@ -1675,6 +1678,10 @@ textarea:focus-visible {
   }
 
   .target-configuration-option-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .invocation-authorization-option-facts {
     grid-template-columns: 1fr;
   }
 

@@ -55,6 +55,11 @@ import {
 } from "../../api/connectorUpgradeReadiness";
 import { getConnectorPackageInstallations } from "../../api/packageInstallations";
 import {
+  createConnectorInvocationAuthorization,
+  getConnectorInvocationAuthorizationOptions,
+  getConnectorInvocationAuthorizations,
+} from "../../api/invocationAuthorizations";
+import {
   createConnectorRuntimeTrustGrant,
   getConnectorRuntimeTrustGrantOptions,
   getConnectorRuntimeTrustGrants,
@@ -104,6 +109,10 @@ import {
   targetSessionVerificationInventoryItem,
   targetSessionVerificationOption,
 } from "./testTargetSessionFixture";
+import {
+  invocationAuthorizationInventoryItem,
+  invocationAuthorizationOption,
+} from "./testInvocationAuthorizationFixture";
 
 const policy: ConnectorInstanceCreationPolicy = {
   policy_id: "connector-instance-creation-policy.development",
@@ -888,6 +897,16 @@ vi.mock("../../api/targetSessionVerifications", async (importOriginal) => {
   };
 });
 
+vi.mock("../../api/invocationAuthorizations", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../api/invocationAuthorizations")>();
+  return {
+    ...original,
+    createConnectorInvocationAuthorization: vi.fn(),
+    getConnectorInvocationAuthorizationOptions: vi.fn(),
+    getConnectorInvocationAuthorizations: vi.fn(),
+  };
+});
+
 vi.mock("../../api/connectorUpgradeReadiness", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/connectorUpgradeReadiness")>();
   return {
@@ -964,6 +983,11 @@ beforeEach(() => {
   vi.mocked(getConnectorTargetSessionVerificationOptions).mockResolvedValue([]);
   vi.mocked(createConnectorTargetSessionVerification).mockResolvedValue({
     data: targetSessionVerificationInventoryItem,
+  });
+  vi.mocked(getConnectorInvocationAuthorizations).mockResolvedValue([]);
+  vi.mocked(getConnectorInvocationAuthorizationOptions).mockResolvedValue([]);
+  vi.mocked(createConnectorInvocationAuthorization).mockResolvedValue({
+    data: invocationAuthorizationInventoryItem,
   });
   vi.mocked(getConnectorUpgradeReadiness).mockResolvedValue(upgradeReadiness);
   vi.mocked(getConnectorUpgradePlan).mockResolvedValue(upgradePlan);
@@ -1519,6 +1543,123 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(within(dialog).queryByRole("combobox")).toBeNull();
     expect(within(dialog).queryByRole("button", {
       name: /^(connect|run|invoke|execute|deploy|mutate)/i,
+    })).toBeNull();
+  });
+
+  it("authorizes an exact server-provided invocation scope after target-session verification", async () => {
+    vi.mocked(getConnectorTargetConfigurations).mockResolvedValue([configuredBinding]);
+    vi.mocked(getConnectorCredentialAssignments).mockResolvedValue([credentialAssignment]);
+    vi.mocked(getConnectorConfigurationValidations).mockResolvedValue([configurationValidation]);
+    vi.mocked(getConnectorCapabilityEnablements).mockResolvedValue([
+      capabilityEnablementInventoryItem,
+    ]);
+    vi.mocked(getConnectorRuntimeTrustGrants).mockResolvedValue([runtimeTrustGrant]);
+    vi.mocked(getConnectorSecretBrokerageAuthorizations).mockResolvedValue([
+      secretBrokerageAuthorization,
+    ]);
+    vi.mocked(getConnectorRuntimeActivations).mockResolvedValue([runtimeActivationInventoryItem]);
+    vi.mocked(getConnectorTargetSessionVerifications).mockResolvedValue([
+      targetSessionVerificationInventoryItem,
+    ]);
+    vi.mocked(getConnectorInvocationAuthorizationOptions).mockResolvedValue([
+      invocationAuthorizationOption,
+    ]);
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", {
+      name: "Authorize invocation for Storage East",
+    }));
+    const dialog = screen.getByRole("dialog", {
+      name: "Manage invocation authorization for Storage East",
+    });
+    expect(await within(dialog).findByRole("combobox", {
+      name: "Signed capability, profile, envelope and policy",
+    })).toBeVisible();
+    expect(within(dialog).queryByRole("textbox", {
+      name: /capability id|profile id|profile digest|envelope id|envelope digest|policy id|policy digest/i,
+    })).toBeNull();
+    fireEvent.click(within(dialog).getByLabelText(/Authorization is short-lived, single-use/i));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Authorize invocation" }));
+
+    await waitFor(() => expect(createConnectorInvocationAuthorization).toHaveBeenCalledOnce());
+    const input = vi.mocked(createConnectorInvocationAuthorization).mock.calls[0]?.[0];
+    expect(input?.targetSession).toBe(targetSessionVerificationInventoryItem);
+    expect(input?.option).toBe(invocationAuthorizationOption);
+    expect(await screen.findByText("Enabled / invocation authorized")).toBeVisible();
+    expect(screen.getByRole("button", {
+      name: "View authorization for Storage East",
+    })).toHaveTextContent("View authorization");
+    expect(screen.queryByRole("button", { name: /invoke once|schedule|execute|deploy/i })).toBeNull();
+  });
+
+  it("restores minimized authorization evidence without exposing an invocation control", async () => {
+    vi.mocked(getConnectorTargetConfigurations).mockResolvedValue([configuredBinding]);
+    vi.mocked(getConnectorCredentialAssignments).mockResolvedValue([credentialAssignment]);
+    vi.mocked(getConnectorConfigurationValidations).mockResolvedValue([configurationValidation]);
+    vi.mocked(getConnectorCapabilityEnablements).mockResolvedValue([
+      capabilityEnablementInventoryItem,
+    ]);
+    vi.mocked(getConnectorRuntimeTrustGrants).mockResolvedValue([runtimeTrustGrant]);
+    vi.mocked(getConnectorSecretBrokerageAuthorizations).mockResolvedValue([
+      secretBrokerageAuthorization,
+    ]);
+    vi.mocked(getConnectorRuntimeActivations).mockResolvedValue([runtimeActivationInventoryItem]);
+    vi.mocked(getConnectorTargetSessionVerifications).mockResolvedValue([
+      targetSessionVerificationInventoryItem,
+    ]);
+    vi.mocked(getConnectorInvocationAuthorizations).mockResolvedValue([
+      invocationAuthorizationInventoryItem,
+    ]);
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", {
+      name: "View authorization for Storage East",
+    }));
+    const dialog = screen.getByRole("dialog", {
+      name: "Manage invocation authorization for Storage East",
+    });
+    expect(await within(dialog).findByText(invocationAuthorizationInventoryItem.authorization_id))
+      .toBeVisible();
+    expect(within(dialog).getByText(invocationAuthorizationInventoryItem.capability_id))
+      .toBeVisible();
+    expect(within(dialog).queryByRole("combobox")).toBeNull();
+    expect(within(dialog).queryByRole("button", {
+      name: /^(invoke|schedule|execute|deploy|mutate)/i,
+    })).toBeNull();
+  });
+
+  it("clears stale authorization state when its exact scoped inventory reload fails", async () => {
+    vi.mocked(getConnectorTargetConfigurations).mockResolvedValue([configuredBinding]);
+    vi.mocked(getConnectorCredentialAssignments).mockResolvedValue([credentialAssignment]);
+    vi.mocked(getConnectorConfigurationValidations).mockResolvedValue([configurationValidation]);
+    vi.mocked(getConnectorCapabilityEnablements).mockResolvedValue([
+      capabilityEnablementInventoryItem,
+    ]);
+    vi.mocked(getConnectorRuntimeTrustGrants).mockResolvedValue([runtimeTrustGrant]);
+    vi.mocked(getConnectorSecretBrokerageAuthorizations).mockResolvedValue([
+      secretBrokerageAuthorization,
+    ]);
+    vi.mocked(getConnectorRuntimeActivations).mockResolvedValue([runtimeActivationInventoryItem]);
+    vi.mocked(getConnectorTargetSessionVerifications).mockResolvedValue([
+      targetSessionVerificationInventoryItem,
+    ]);
+    vi.mocked(getConnectorInvocationAuthorizations).mockResolvedValue([
+      invocationAuthorizationInventoryItem,
+    ]);
+    renderWorkspace();
+    expect(await screen.findByText("Enabled / invocation authorized")).toBeVisible();
+    vi.mocked(getConnectorInvocationAuthorizations).mockRejectedValue(
+      new ApiRequestError("Authorization evidence expired", 422),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh MCP inventory" }));
+
+    expect(await screen.findByText("Invocation authorization inventory is unavailable"))
+      .toBeVisible();
+    expect(screen.queryByText("Enabled / invocation authorized")).toBeNull();
+    expect(screen.getByText("Enabled / target session verified")).toBeVisible();
+    expect(screen.queryByRole("button", {
+      name: /authorization for Storage East/i,
     })).toBeNull();
   });
 
