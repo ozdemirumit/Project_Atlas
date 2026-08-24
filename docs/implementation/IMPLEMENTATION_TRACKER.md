@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-242 |
 | Title | Installed MCP tenant-scoped capability invocation authorization inventory and server-provided signed options |
-| Status | In Progress |
+| Status | In Review |
 | Branch | `agent/installed-mcp-invocation-authorization-governance` |
-| Pull Request | Pending |
+| Pull Request | [#255](https://github.com/ozdemirumit/Project_Atlas/pull/255) |
 | Governing Documents | ATLAS-003, ATLAS-020, ATLAS-030, ATLAS-031, ATLAS-050, ATLAS-052, ADR-039, ADR-100, ADR-123, ADR-133, ADR-182 |
 | Last Updated | 2026-08-25 |
-| Next Action | Complete independent review, create PR, pass exact-head CI, squash merge and pass post-main CI |
+| Next Action | Pass exact-head CI, squash merge and pass post-main CI |
 
 ### ATLAS-IMP-242 Scope Rationale
 
