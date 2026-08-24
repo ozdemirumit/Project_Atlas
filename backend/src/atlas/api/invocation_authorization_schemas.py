@@ -114,7 +114,7 @@ class ConnectorInvocationAuthorizationOptionData(BaseModel):
     authorization_policy_digest: str
     authorization_policy_version: str
     authorization_policy_expires_at: datetime
-    required_assurance_level: str
+    required_assurance_level: Literal["single_factor", "multi_factor", "hardware_backed"]
     maximum_timeout_seconds: int
     maximum_output_bytes: int
     resulting_instance_state: Literal["enabled_capability_invocation_governed"]

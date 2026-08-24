@@ -52,7 +52,7 @@ export type ConnectorInvocationAuthorizationOption = {
   authorization_policy_digest: string;
   authorization_policy_version: string;
   authorization_policy_expires_at: string;
-  required_assurance_level: "single_factor";
+  required_assurance_level: "single_factor" | "multi_factor" | "hardware_backed";
   maximum_timeout_seconds: number;
   maximum_output_bytes: number;
   resulting_instance_state: "enabled_capability_invocation_governed";
@@ -201,7 +201,9 @@ function isOption(value: unknown): value is ConnectorInvocationAuthorizationOpti
     Number.isInteger(record.maximum_output_bytes) &&
     (record.maximum_output_bytes as number) > 0 &&
     (record.maximum_output_bytes as number) <= 1_048_576 &&
-    record.required_assurance_level === "single_factor" &&
+    (record.required_assurance_level === "single_factor" ||
+      record.required_assurance_level === "multi_factor" ||
+      record.required_assurance_level === "hardware_backed") &&
     record.resulting_instance_state === "enabled_capability_invocation_governed" &&
     hasSafeOptionBoundary(record);
 }

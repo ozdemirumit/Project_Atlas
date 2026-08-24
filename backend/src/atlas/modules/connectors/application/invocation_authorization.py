@@ -168,7 +168,11 @@ class ConnectorInvocationAuthorizationService:
             environment_id=self._environment_id,
         )
         if existing is not None:
-            return self._reuse(existing, actor, replay_digest)
+            return await self._current_record(
+                self._reuse(existing, actor, replay_digest),
+                actor=actor,
+                correlation_id=correlation_id,
+            )
         source, enablement, source_actors = await self._source_in_scope(
             actor=actor,
             source_target_session_verification_id=source_target_session_verification_id,
@@ -986,9 +990,11 @@ def build_connector_invocation_profile(
     issued_at: datetime,
     expires_at: datetime,
 ) -> ConnectorInvocationProfileSnapshot:
-    capability_suffix = sha256(capability.capability_id.encode("ascii")).hexdigest()[:12]
+    profile_suffix = sha256(
+        f"{source.canonical_digest}:{capability.capability_id}".encode("ascii")
+    ).hexdigest()[:12]
     snapshot = ConnectorInvocationProfileSnapshot(
-        profile_id=(f"connector-invocation-profile.development-read-only.{capability_suffix}"),
+        profile_id=(f"connector-invocation-profile.development-read-only.{profile_suffix}"),
         schema_version="atlas.connector-invocation-profile.v1",
         version=1,
         organization_id=source.organization_id,

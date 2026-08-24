@@ -40,13 +40,16 @@ def upgrade() -> None:
     )
     op.alter_column(table, "idempotency_key", new_column_name="idempotency_digest")
 
-    rows = connection.execute(
-        sa.text(
-            "SELECT authorization_id, organization_id, environment_id, authorized_by, "
-            "idempotency_digest, payload ->> 'request_fingerprint' AS request_fingerprint "
-            f"FROM {table}"
-        )
-    ).mappings()
+    rows = tuple(
+        connection.execute(
+            sa.text(
+                "SELECT authorization_id, organization_id, environment_id, authorized_by, "
+                "idempotency_digest, payload ->> 'request_fingerprint' AS request_fingerprint "
+                f"FROM {table}"
+            )
+        ).mappings()
+    )
+    updates: list[dict[str, str]] = []
     for row in rows:
         request_fingerprint = row["request_fingerprint"]
         if not isinstance(request_fingerprint, str) or len(request_fingerprint) != 64:
@@ -70,15 +73,29 @@ def upgrade() -> None:
                 request_fingerprint,
             ]
         )
-        connection.execute(
-            sa.text(
-                f"UPDATE {table} SET idempotency_digest = :idempotency_digest, "
-                "replay_digest = :replay_digest WHERE authorization_id = :authorization_id"
-            ),
+        updates.append(
             {
                 "authorization_id": row["authorization_id"],
                 "idempotency_digest": idempotency_digest,
                 "replay_digest": replay_digest,
+            }
+        )
+    if updates:
+        connection.execute(
+            sa.text(
+                f"UPDATE {table} AS target SET "
+                "idempotency_digest = replacement.idempotency_digest, "
+                "replay_digest = replacement.replay_digest FROM unnest("
+                "CAST(:authorization_ids AS text[]), "
+                "CAST(:idempotency_digests AS text[]), "
+                "CAST(:replay_digests AS text[])"
+                ") AS replacement(authorization_id, idempotency_digest, replay_digest) "
+                "WHERE target.authorization_id = replacement.authorization_id"
+            ),
+            {
+                "authorization_ids": [item["authorization_id"] for item in updates],
+                "idempotency_digests": [item["idempotency_digest"] for item in updates],
+                "replay_digests": [item["replay_digest"] for item in updates],
             },
         )
     connection.execute(

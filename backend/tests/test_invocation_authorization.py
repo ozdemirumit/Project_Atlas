@@ -219,6 +219,11 @@ async def test_invocation_authorization_is_single_use_bounded_and_idempotent() -
     actor = target_session_operator("subject.connector-independent-invocation-authorizer")
     record = await authorize_invocation(service, source, profile, envelope, policy, actor=actor)
     repeated = await authorize_invocation(service, source, profile, envelope, policy, actor=actor)
+    service._clock = lambda: record.expires_at
+    with pytest.raises(
+        ConnectorInvocationAuthorizationError, match="invocation_authorization_invalid"
+    ):
+        await authorize_invocation(service, source, profile, envelope, policy, actor=actor)
     with pytest.raises(ConnectorInvocationAuthorizationError, match="source_not_found"):
         await authorize_invocation(
             service,
@@ -238,7 +243,8 @@ async def test_invocation_authorization_is_single_use_bounded_and_idempotent() -
     assert not record.execution_authorized and not record.infrastructure_mutation_performed
     assert repeated.reused and repeated.authorization_id == record.authorization_id
     assert authorizer.calls == [
-        (profile.required_permission, profile.capability_id, profile.capability_class)
+        (profile.required_permission, profile.capability_id, profile.capability_class),
+        (profile.required_permission, profile.capability_id, profile.capability_class),
     ]
     assert [item.result_code for item in audit.records] == [
         "connector_invocation_authorization_requested",
@@ -483,6 +489,18 @@ async def test_development_invocation_evidence_is_server_prepared_and_restart_st
     )
     assert len(options) == 1
     option = options[0]
+    _, enablement, _ = await service._source.capability_invocation_authorization_source(
+        verification_id=source.verification_id,
+        organization_id=source.organization_id,
+        environment_id=source.environment_id,
+    )
+    alternate_profile = build_connector_invocation_profile(
+        source=replace(source, canonical_digest="f" * 64),
+        capability=enablement.capabilities[0],
+        issued_at=source.verified_at,
+        expires_at=source.verified_at + timedelta(hours=4),
+    )
+    assert alternate_profile.profile_id != option.invocation_profile_id
     record = await first_service.create(
         actor=actor,
         source_target_session_verification_id=option.source_target_session_verification_id,

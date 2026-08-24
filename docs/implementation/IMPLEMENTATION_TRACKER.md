@@ -59,7 +59,7 @@
 - Migration `20260824_0161` upgraded and downgraded against local PostgreSQL. A populated legacy
   `0160` record was then upgraded: raw idempotency and fingerprint fields were removed, scoped
   digests were backfilled and its existing canonical digest remained valid through the new adapter.
-- Focused frontend API, authorization panel and Installed MCP workspace suites pass `70` tests;
+- Focused frontend API, authorization panel and Installed MCP workspace suites pass `73` tests;
   TypeScript typecheck, ESLint, production build and repository diff validation pass. The build
   emits only the existing large-chunk advisory.
 - A current-code API/web pair at `127.0.0.1:8061` and `127.0.0.1:5222` accepted the normal
@@ -67,6 +67,11 @@
   state and the explicit no-connection/no-invocation/no-schedule/no-execution/no-deployment/no-
   mutation boundary without browser console errors. The `390x844` responsive check had no
   horizontal overflow or overlapping controls.
+- Independent security review found one P1 and three P2 closure items. Idempotent replay now reruns
+  current lineage, expiry and permission checks; development profile IDs include the exact target-
+  session digest; the frontend accepts explicitly stronger policy assurance without making MFA a
+  global prerequisite; and legacy digest backfill uses one set-based PostgreSQL update. All four
+  findings have focused regression coverage and the review-after-fix integrated suites pass.
 
 ### ATLAS-IMP-241 Delivery Evidence
 

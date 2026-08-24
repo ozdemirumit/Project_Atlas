@@ -53,6 +53,22 @@ describe("invocation authorization API client", () => {
       .resolves.toEqual([option]);
   });
 
+  it.each(["multi_factor", "hardware_backed"] as const)(
+    "accepts an explicitly stronger %s policy option",
+    async (requiredAssuranceLevel) => {
+      const strongerOption = {
+        ...option,
+        required_assurance_level: requiredAssuranceLevel,
+      };
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(JSON.stringify({ data: [strongerOption] }), { status: 200 }),
+      );
+
+      await expect(getConnectorInvocationAuthorizationOptions(targetSession.verification_id))
+        .resolves.toEqual([strongerOption]);
+    },
+  );
+
   it.each([
     ["target_address", "10.0.0.10"],
     ["target_endpoint", "https://storage.internal"],

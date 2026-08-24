@@ -91,6 +91,18 @@ describe("InvocationAuthorizationPanel", () => {
     expect(screen.queryByText("Bounded invocation")).toBeNull();
   });
 
+  it("labels an explicitly stronger policy without making MFA a global prerequisite", async () => {
+    vi.mocked(getConnectorInvocationAuthorizations).mockResolvedValue([]);
+    vi.mocked(getConnectorInvocationAuthorizationOptions).mockResolvedValue([{
+      ...option,
+      required_assurance_level: "multi_factor",
+    }]);
+    renderPanel();
+
+    expect(await screen.findByText("multi-factor step-up")).toBeVisible();
+    expect(screen.queryByText(/MFA is required for Atlas/i)).toBeNull();
+  });
+
   it("clears stale authorization evidence when authoritative inventory reload fails", async () => {
     vi.mocked(getConnectorInvocationAuthorizations).mockRejectedValue(
       new ApiRequestError("inventory unavailable", 422),

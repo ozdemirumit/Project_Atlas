@@ -29,6 +29,12 @@ function hasStatus(error: unknown, status: number): boolean {
   return error instanceof ApiRequestError && error.status === status;
 }
 
+function assuranceLabel(level: ConnectorInvocationAuthorizationOption["required_assurance_level"]): string {
+  if (level === "hardware_backed") return "hardware-backed step-up";
+  if (level === "multi_factor") return "multi-factor step-up";
+  return "username and password";
+}
+
 interface InvocationAuthorizationPanelProps {
   targetSession: ConnectorTargetSessionVerificationInventoryItem;
   existingAuthorization?: ConnectorInvocationAuthorizationInventoryItem;
@@ -188,7 +194,7 @@ export function InvocationAuthorizationPanel({
             <div><span>Invocation profile</span><code>{selectedOption.invocation_profile_id}</code></div>
             <div><span>Input envelope</span><code>{selectedOption.input_envelope_id}</code></div>
             <div><span>Authorization policy</span><code>{selectedOption.authorization_policy_id}</code></div>
-            <div><span>Assurance</span><strong>username and password</strong></div>
+            <div><span>Assurance</span><strong>{assuranceLabel(selectedOption.required_assurance_level)}</strong></div>
           </div>
           <label>
             <span>Authorization purpose</span>
