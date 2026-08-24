@@ -860,6 +860,11 @@ async def test_live_postgres_readiness_repository_race_replay_scope_guards_and_e
                     await connection.execute(text(f"TRUNCATE TABLE {table.name} CASCADE"))
                 await transaction.rollback()
 
+        async with engine.connect() as connection:
+            version_before_downgrade = await connection.scalar(
+                text("SELECT version_num FROM alembic_version")
+            )
+
         downgrade_environment = os.environ.copy()
         downgrade_environment["ATLAS_DATABASE_URL"] = database_url
         downgrade = await asyncio.to_thread(
@@ -876,7 +881,7 @@ async def test_live_postgres_readiness_repository_race_replay_scope_guards_and_e
         async with engine.connect() as connection:
             assert (
                 await connection.scalar(text("SELECT version_num FROM alembic_version"))
-                == "20260824_0156"
+                == version_before_downgrade
             )
             for table_name in (
                 WorkflowProtectedRuntimeReadinessAuthorizationLeaseModel.__tablename__,

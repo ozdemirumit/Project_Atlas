@@ -1166,6 +1166,8 @@ export function OperationalApplication({
       queryClient.removeQueries({ queryKey: ["connector-configuration-validation-options"] });
       queryClient.removeQueries({ queryKey: ["connector-capability-enablements"] });
       queryClient.removeQueries({ queryKey: ["connector-capability-enablement-options"] });
+      queryClient.removeQueries({ queryKey: ["connector-runtime-trust-grants"] });
+      queryClient.removeQueries({ queryKey: ["connector-runtime-trust-grant-options"] });
       setApprovalRequestId(null);
       setTechnicalReportId(null);
       const url = new URL(window.location.href);

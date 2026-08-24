@@ -924,14 +924,16 @@ textarea:focus-visible {
 .installed-mcp-dialog.target-configuration-dialog,
 .installed-mcp-dialog.credential-assignment-dialog,
 .installed-mcp-dialog.configuration-validation-dialog,
-.installed-mcp-dialog.capability-enablement-dialog {
+.installed-mcp-dialog.capability-enablement-dialog,
+.installed-mcp-dialog.runtime-trust-dialog {
   width: min(100%, 760px);
 }
 
 .target-configuration-dialog .target-configuration-panel,
 .credential-assignment-dialog .target-configuration-panel,
 .configuration-validation-dialog .target-configuration-panel,
-.capability-enablement-dialog .target-configuration-panel {
+.capability-enablement-dialog .target-configuration-panel,
+.runtime-trust-dialog .target-configuration-panel {
   margin-top: 0;
   padding-top: 0;
   border-top: 0;
@@ -1018,6 +1020,40 @@ textarea:focus-visible {
   min-width: 0;
   grid-template-columns: minmax(0, 140px) minmax(0, 1fr);
   gap: 6px 12px;
+}
+
+.runtime-trust-record code,
+.runtime-trust-record strong,
+.runtime-trust-option-facts strong,
+.runtime-trust-boundary strong {
+  overflow-wrap: anywhere;
+}
+
+.runtime-trust-record .section-heading > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.runtime-trust-boundary {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.runtime-trust-boundary > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  padding: 9px 10px;
+  border-left: 3px solid #78ad98;
+  background: #f7f9f8;
+}
+
+.runtime-trust-boundary span {
+  color: #63716d;
+  font-size: 0.72rem;
 }
 
 .installed-mcp-dialog header {
@@ -1588,7 +1624,8 @@ textarea:focus-visible {
   .installed-mcp-dialog.target-configuration-dialog,
   .installed-mcp-dialog.credential-assignment-dialog,
   .installed-mcp-dialog.configuration-validation-dialog,
-  .installed-mcp-dialog.capability-enablement-dialog {
+  .installed-mcp-dialog.capability-enablement-dialog,
+  .installed-mcp-dialog.runtime-trust-dialog {
     width: 100%;
     max-height: 100vh;
     border: 0;
@@ -1608,6 +1645,11 @@ textarea:focus-visible {
   }
 
   .capability-enablement-option-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .runtime-trust-option-facts,
+  .runtime-trust-boundary {
     grid-template-columns: 1fr;
   }
 

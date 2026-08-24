@@ -27,6 +27,23 @@ class PostgreSQLConnectorRuntimeTrustRepository:
             row = await session.get(ConnectorRuntimeTrustGrantModel, grant_id)
             return self._to_domain(row.payload) if row else None
 
+    async def get_in_scope(
+        self,
+        *,
+        grant_id: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> ConnectorRuntimeTrustGrantRecord | None:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(ConnectorRuntimeTrustGrantModel).where(
+                    ConnectorRuntimeTrustGrantModel.grant_id == grant_id,
+                    ConnectorRuntimeTrustGrantModel.organization_id == organization_id,
+                    ConnectorRuntimeTrustGrantModel.environment_id == environment_id,
+                )
+            )
+            return self._to_domain(row.payload) if row else None
+
     async def get_by_enablement(
         self, *, source_enablement_id: str
     ) -> ConnectorRuntimeTrustGrantRecord | None:
@@ -38,6 +55,39 @@ class PostgreSQLConnectorRuntimeTrustRepository:
             )
             return self._to_domain(row.payload) if row else None
 
+    async def get_by_enablement_in_scope(
+        self,
+        *,
+        source_enablement_id: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> ConnectorRuntimeTrustGrantRecord | None:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(ConnectorRuntimeTrustGrantModel).where(
+                    ConnectorRuntimeTrustGrantModel.source_enablement_id == source_enablement_id,
+                    ConnectorRuntimeTrustGrantModel.organization_id == organization_id,
+                    ConnectorRuntimeTrustGrantModel.environment_id == environment_id,
+                )
+            )
+            return self._to_domain(row.payload) if row else None
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorRuntimeTrustGrantRecord, ...]:
+        async with self._sessions() as session:
+            rows = (
+                await session.scalars(
+                    select(ConnectorRuntimeTrustGrantModel)
+                    .where(
+                        ConnectorRuntimeTrustGrantModel.organization_id == organization_id,
+                        ConnectorRuntimeTrustGrantModel.environment_id == environment_id,
+                    )
+                    .order_by(ConnectorRuntimeTrustGrantModel.grant_id)
+                )
+            ).all()
+            return tuple(self._to_domain(row.payload) for row in rows)
+
     async def get_by_create_key(
         self, *, granted_by: str, idempotency_key: str
     ) -> ConnectorRuntimeTrustGrantRecord | None:
@@ -46,6 +96,25 @@ class PostgreSQLConnectorRuntimeTrustRepository:
                 select(ConnectorRuntimeTrustGrantModel).where(
                     ConnectorRuntimeTrustGrantModel.granted_by == granted_by,
                     ConnectorRuntimeTrustGrantModel.idempotency_key == idempotency_key,
+                )
+            )
+            return self._to_domain(row.payload) if row else None
+
+    async def get_by_create_key_in_scope(
+        self,
+        *,
+        granted_by: str,
+        idempotency_key: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> ConnectorRuntimeTrustGrantRecord | None:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(ConnectorRuntimeTrustGrantModel).where(
+                    ConnectorRuntimeTrustGrantModel.granted_by == granted_by,
+                    ConnectorRuntimeTrustGrantModel.idempotency_key == idempotency_key,
+                    ConnectorRuntimeTrustGrantModel.organization_id == organization_id,
+                    ConnectorRuntimeTrustGrantModel.environment_id == environment_id,
                 )
             )
             return self._to_domain(row.payload) if row else None
