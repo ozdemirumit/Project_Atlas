@@ -8,10 +8,10 @@
 | Title | Installed MCP governed secret-brokerage authorization |
 | Status | Ready for PR |
 | Branch | `agent/installed-mcp-secret-brokerage-governance` |
-| Pull Request | Pending |
+| Pull Request | [#252](https://github.com/ozdemirumit/Project_Atlas/pull/252) |
 | Governing Documents | ATLAS-003, ATLAS-020, ATLAS-030, ATLAS-031, ATLAS-050, ATLAS-052, ADR-036, ADR-100, ADR-123, ADR-133, ADR-182 |
 | Last Updated | 2026-08-24 |
-| Next Action | Commit the reviewed slice, open a pull request and require exact-head CI before merge |
+| Next Action | Require exact-head pull-request CI before merge |
 
 ### ATLAS-IMP-239 Scope Rationale
 
