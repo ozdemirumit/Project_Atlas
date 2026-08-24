@@ -2268,12 +2268,16 @@ class ConnectorInvocationAuthorizationModel(Base):
     __tablename__ = "connector_invocation_authorizations"
     __table_args__ = (
         UniqueConstraint(
+            "organization_id",
+            "environment_id",
             "source_target_session_verification_id",
             name="uq_connector_invocation_authorizations_target_session",
         ),
         UniqueConstraint(
+            "organization_id",
+            "environment_id",
             "authorized_by",
-            "idempotency_key",
+            "idempotency_digest",
             name="uq_connector_invocation_authorizations_actor_idempotency",
         ),
     )
@@ -2285,7 +2289,8 @@ class ConnectorInvocationAuthorizationModel(Base):
     instance_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     capability_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     authorized_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
-    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    idempotency_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    replay_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)

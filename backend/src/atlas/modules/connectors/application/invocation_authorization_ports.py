@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol
 
 from atlas.modules.connectors.domain.capability_enablement import (
@@ -21,7 +22,20 @@ class ConnectorInvocationAuthorizationError(RuntimeError):
     pass
 
 
+class ConnectorInvocationAuthorizationTargetSessionRepository(Protocol):
+    async def get_in_scope(
+        self,
+        *,
+        verification_id: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> ConnectorTargetSessionVerificationRecord | None: ...
+
+
 class ConnectorInvocationAuthorizationSource(Protocol):
+    @property
+    def repository(self) -> ConnectorInvocationAuthorizationTargetSessionRepository: ...
+
     async def capability_invocation_authorization_source(
         self,
         *,
@@ -36,19 +50,43 @@ class ConnectorInvocationAuthorizationSource(Protocol):
 
 
 class ConnectorInvocationProfileSource(Protocol):
-    async def get_by_id(self, *, profile_id: str) -> ConnectorInvocationProfileSnapshot | None: ...
+    async def get_by_id_in_scope(
+        self, *, profile_id: str, organization_id: str, environment_id: str
+    ) -> ConnectorInvocationProfileSnapshot | None: ...
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorInvocationProfileSnapshot, ...]: ...
 
 
 class ConnectorInvocationInputEnvelopeSource(Protocol):
-    async def get_by_id(
-        self, *, envelope_id: str
+    async def get_by_id_in_scope(
+        self, *, envelope_id: str, organization_id: str, environment_id: str
     ) -> ConnectorInvocationInputEnvelopeSnapshot | None: ...
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorInvocationInputEnvelopeSnapshot, ...]: ...
 
 
 class ConnectorInvocationAuthorizationPolicySource(Protocol):
-    async def get_by_id(
-        self, *, policy_id: str
+    async def get_by_id_in_scope(
+        self, *, policy_id: str, organization_id: str, environment_id: str
     ) -> ConnectorInvocationAuthorizationPolicySnapshot | None: ...
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorInvocationAuthorizationPolicySnapshot, ...]: ...
+
+
+class ConnectorInvocationEvidencePreparer(Protocol):
+    async def prepare(
+        self,
+        *,
+        source: ConnectorTargetSessionVerificationRecord,
+        enablement: ConnectorCapabilityEnablementRecord,
+        issued_at: datetime,
+    ) -> None: ...
 
 
 class ConnectorCapabilityPermissionAuthorizer(Protocol):
@@ -66,17 +104,34 @@ class ConnectorCapabilityPermissionAuthorizer(Protocol):
 
 
 class ConnectorInvocationAuthorizationRepository(Protocol):
-    async def get(
-        self, *, authorization_id: str
+    async def get_in_scope(
+        self,
+        *,
+        authorization_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> ConnectorInvocationAuthorizationRecord | None: ...
 
-    async def get_by_target_session(
-        self, *, source_target_session_verification_id: str
+    async def get_by_target_session_in_scope(
+        self,
+        *,
+        source_target_session_verification_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> ConnectorInvocationAuthorizationRecord | None: ...
 
-    async def get_by_create_key(
-        self, *, authorized_by: str, idempotency_key: str
+    async def get_by_create_key_in_scope(
+        self,
+        *,
+        authorized_by: str,
+        idempotency_digest: str,
+        organization_id: str,
+        environment_id: str,
     ) -> ConnectorInvocationAuthorizationRecord | None: ...
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorInvocationAuthorizationRecord, ...]: ...
 
     async def add(self, record: ConnectorInvocationAuthorizationRecord) -> bool: ...
 
