@@ -1609,10 +1609,14 @@ class ConnectorCapabilityEnablementModel(Base):
     __tablename__ = "connector_capability_enablements"
     __table_args__ = (
         UniqueConstraint(
+            "organization_id",
+            "environment_id",
             "source_validation_id",
             name="uq_connector_capability_enablements_validation",
         ),
         UniqueConstraint(
+            "organization_id",
+            "environment_id",
             "enabled_by",
             "idempotency_key",
             name="uq_connector_capability_enablements_actor_idempotency",

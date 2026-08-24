@@ -3,12 +3,15 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated, NoReturn
 
-from fastapi import APIRouter, Depends, Header, Path, Request, Response
+from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response
 
 from atlas.api.capability_enablement_schemas import (
-    ConnectorCapabilityEnablementData,
     ConnectorCapabilityEnablementInput,
-    ConnectorCapabilityEnablementResponse,
+    ConnectorCapabilityEnablementInventoryData,
+    ConnectorCapabilityEnablementInventoryResponse,
+    ConnectorCapabilityEnablementOptionData,
+    ConnectorCapabilityEnablementOptionsResponse,
+    ConnectorCapabilityEnablementViewResponse,
 )
 from atlas.api.errors import AtlasError
 from atlas.api.schemas import ResponseMeta
@@ -55,17 +58,79 @@ def _raise(error: ConnectorCapabilityEnablementError) -> NoReturn:
 
 def _response(
     record: ConnectorCapabilityEnablementRecord, request: Request, response: Response
-) -> ConnectorCapabilityEnablementResponse:
+) -> ConnectorCapabilityEnablementViewResponse:
     response.headers["Cache-Control"] = "no-store"
-    return ConnectorCapabilityEnablementResponse(
-        data=ConnectorCapabilityEnablementData.from_domain(record),
+    return ConnectorCapabilityEnablementViewResponse(
+        data=ConnectorCapabilityEnablementInventoryData.from_domain(record),
         meta=ResponseMeta(
             correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
         ),
     )
 
 
-@router.post("", response_model=ConnectorCapabilityEnablementResponse, status_code=201)
+@router.get("", response_model=ConnectorCapabilityEnablementInventoryResponse)
+async def list_connector_capability_enablements(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_connector_capability_enablement_read)
+    ],
+    source_validation_id: Annotated[
+        str | None, Query(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")
+    ] = None,
+) -> ConnectorCapabilityEnablementInventoryResponse:
+    service: ConnectorCapabilityEnablementService = request.app.state.capability_enablement_service
+    try:
+        records = await service.list_enablements(
+            actor=subject,
+            source_validation_id=source_validation_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ConnectorCapabilityEnablementError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorCapabilityEnablementInventoryResponse(
+        data=tuple(
+            ConnectorCapabilityEnablementInventoryData.from_domain(record) for record in records
+        ),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.get("/options", response_model=ConnectorCapabilityEnablementOptionsResponse)
+async def list_connector_capability_enablement_options(
+    source_validation_id: Annotated[str, Query(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_connector_capability_enablement_read)
+    ],
+) -> ConnectorCapabilityEnablementOptionsResponse:
+    service: ConnectorCapabilityEnablementService = request.app.state.capability_enablement_service
+    try:
+        options = await service.list_options(
+            actor=subject,
+            source_validation_id=source_validation_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ConnectorCapabilityEnablementError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorCapabilityEnablementOptionsResponse(
+        data=tuple(
+            ConnectorCapabilityEnablementOptionData.from_application(option) for option in options
+        ),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.post("", response_model=ConnectorCapabilityEnablementViewResponse, status_code=201)
 async def create_connector_capability_enablement(
     payload: ConnectorCapabilityEnablementInput,
     request: Request,
@@ -75,7 +140,7 @@ async def create_connector_capability_enablement(
         AuthorizationDecision, Depends(authorize_connector_capability_enablement_create)
     ],
     idempotency_key: Annotated[str, IDEMPOTENCY],
-) -> ConnectorCapabilityEnablementResponse:
+) -> ConnectorCapabilityEnablementViewResponse:
     service: ConnectorCapabilityEnablementService = request.app.state.capability_enablement_service
     try:
         record = await service.create(
@@ -89,7 +154,7 @@ async def create_connector_capability_enablement(
     return _response(record, request, response)
 
 
-@router.get("/{enablement_id}", response_model=ConnectorCapabilityEnablementResponse)
+@router.get("/{enablement_id}", response_model=ConnectorCapabilityEnablementViewResponse)
 async def get_connector_capability_enablement(
     enablement_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
     request: Request,
@@ -98,7 +163,7 @@ async def get_connector_capability_enablement(
     _decision: Annotated[
         AuthorizationDecision, Depends(authorize_connector_capability_enablement_read)
     ],
-) -> ConnectorCapabilityEnablementResponse:
+) -> ConnectorCapabilityEnablementViewResponse:
     service: ConnectorCapabilityEnablementService = request.app.state.capability_enablement_service
     try:
         record = await service.get(

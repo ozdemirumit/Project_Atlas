@@ -923,13 +923,15 @@ textarea:focus-visible {
 
 .installed-mcp-dialog.target-configuration-dialog,
 .installed-mcp-dialog.credential-assignment-dialog,
-.installed-mcp-dialog.configuration-validation-dialog {
+.installed-mcp-dialog.configuration-validation-dialog,
+.installed-mcp-dialog.capability-enablement-dialog {
   width: min(100%, 760px);
 }
 
 .target-configuration-dialog .target-configuration-panel,
 .credential-assignment-dialog .target-configuration-panel,
-.configuration-validation-dialog .target-configuration-panel {
+.configuration-validation-dialog .target-configuration-panel,
+.capability-enablement-dialog .target-configuration-panel {
   margin-top: 0;
   padding-top: 0;
   border-top: 0;
@@ -964,6 +966,58 @@ textarea:focus-visible {
   font-size: 10px;
   font-weight: 720;
   text-transform: uppercase;
+}
+
+.capability-enablement-record code,
+.capability-enablement-record strong,
+.capability-enablement-option-facts strong {
+  overflow-wrap: anywhere;
+}
+
+.capability-enablement-record .section-heading > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.capability-enablement-capabilities {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+}
+
+.capability-enablement-capabilities > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 10px;
+  border-left: 3px solid #78ad98;
+  background: #f7f9f8;
+}
+
+.capability-enablement-capabilities > div > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.capability-enablement-capabilities strong,
+.capability-enablement-capabilities span {
+  overflow-wrap: anywhere;
+}
+
+.capability-enablement-capabilities > div > div > span {
+  color: #63716d;
+  font-size: 0.72rem;
+}
+
+.capability-enablement-record .credential-assignment-lineage {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 140px) minmax(0, 1fr);
+  gap: 6px 12px;
 }
 
 .installed-mcp-dialog header {
@@ -1533,7 +1587,8 @@ textarea:focus-visible {
   .installed-mcp-dialog.upgrade-review,
   .installed-mcp-dialog.target-configuration-dialog,
   .installed-mcp-dialog.credential-assignment-dialog,
-  .installed-mcp-dialog.configuration-validation-dialog {
+  .installed-mcp-dialog.configuration-validation-dialog,
+  .installed-mcp-dialog.capability-enablement-dialog {
     width: 100%;
     max-height: 100vh;
     border: 0;
@@ -1552,8 +1607,21 @@ textarea:focus-visible {
     grid-template-columns: 1fr;
   }
 
+  .capability-enablement-option-facts {
+    grid-template-columns: 1fr;
+  }
+
   .configuration-validation-record .credential-assignment-lineage {
     grid-template-columns: 1fr;
+  }
+
+  .capability-enablement-record .credential-assignment-lineage {
+    grid-template-columns: 1fr;
+  }
+
+  .capability-enablement-capabilities > div {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .installed-mcp-upgrade-facts {

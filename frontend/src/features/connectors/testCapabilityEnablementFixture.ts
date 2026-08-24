@@ -1,4 +1,8 @@
-import type { ConnectorCapabilityEnablement } from "../../api/capabilityEnablements";
+import type {
+  ConnectorCapabilityEnablement,
+  ConnectorCapabilityEnablementInventoryItem,
+  ConnectorCapabilityEnablementOption,
+} from "../../api/capabilityEnablements";
 import { configurationValidation } from "./testConfigurationValidationFixture";
 
 export const capabilityProfileDigest = "d".repeat(64);
@@ -59,3 +63,55 @@ export const capabilityEnablement = {
   infrastructure_mutation_performed: false,
   reused: false,
 } satisfies ConnectorCapabilityEnablement;
+
+export const capabilityEnablementInventoryItem = {
+  enablement_id: capabilityEnablement.enablement_id,
+  source_validation_id: capabilityEnablement.source_validation_id,
+  connector_id: capabilityEnablement.connector_id,
+  release_version: capabilityEnablement.release_version,
+  instance_id: capabilityEnablement.instance_id,
+  display_name: capabilityEnablement.display_name,
+  capability_profile_id: capabilityEnablement.capability_profile_id,
+  capabilities: capabilityEnablement.capabilities,
+  enablement_policy_id: capabilityEnablement.enablement_policy_id,
+  enablement_policy_version: capabilityEnablement.enablement_policy_version,
+  instance_state: capabilityEnablement.instance_state,
+  enabled_by: capabilityEnablement.enabled_by,
+  purpose: capabilityEnablement.purpose,
+  enabled_at: capabilityEnablement.enabled_at,
+  configuration_validated: true,
+  connectivity_evidence_verified: true,
+  eligible_for_capability_governance: true,
+  capability_governance_applied: true,
+  connector_enabled: true,
+  eligible_for_runtime_trust: true,
+  credentials_resolved: false,
+  runtime_trust_granted: false,
+  execution_authorized: false,
+  deployment_approved: false,
+  infrastructure_mutation_performed: false,
+} satisfies ConnectorCapabilityEnablementInventoryItem;
+
+export const capabilityEnablementOption = {
+  source_validation_id: configurationValidation.validation_id,
+  source_validation_digest: configurationValidation.canonical_digest,
+  package_digest: configurationValidation.package_digest,
+  capability_profile_id: capabilityEnablement.capability_profile_id,
+  capability_profile_digest: capabilityProfileDigest,
+  capability_profile_expires_at: "2030-01-01T00:00:00Z",
+  capabilities: capabilityEnablement.capabilities,
+  enablement_policy_id: capabilityEnablement.enablement_policy_id,
+  enablement_policy_digest: capabilityPolicyDigest,
+  enablement_policy_version: capabilityEnablement.enablement_policy_version,
+  enablement_policy_expires_at: "2030-01-01T00:00:00Z",
+  required_assurance_level: "single_factor",
+  resulting_instance_state: "enabled_capabilities_governed",
+  resulting_capability_governance_applied: true,
+  connector_enabled: true,
+  eligible_for_runtime_trust: true,
+  credentials_resolved: false,
+  runtime_trust_granted: false,
+  execution_authorized: false,
+  deployment_approved: false,
+  infrastructure_mutation_performed: false,
+} satisfies ConnectorCapabilityEnablementOption;

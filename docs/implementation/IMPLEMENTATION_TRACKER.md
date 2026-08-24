@@ -4,14 +4,79 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-236 |
-| Title | Installed MCP governed configuration-evidence validation |
+| Task ID | ATLAS-IMP-237 |
+| Title | Installed MCP governed C0/C1 capability enablement |
 | Status | Ready for PR |
-| Branch | `agent/installed-mcp-configuration-validation` |
+| Branch | `agent/installed-mcp-capability-governance` |
 | Pull Request | Pending |
-| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-030, ATLAS-031, ATLAS-050, ATLAS-052, ADR-033, ADR-123, ADR-133, ADR-182 |
+| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-030, ATLAS-031, ATLAS-050, ATLAS-052, ADR-034, ADR-123, ADR-133, ADR-182 |
 | Last Updated | 2026-08-24 |
-| Next Action | Open the exact-head PR, complete CI, merge and verify the resulting `main` commit |
+| Next Action | Commit the reviewed slice, open a pull request and require exact-head CI before merge |
+
+### ATLAS-IMP-237 Scope Rationale
+
+- IMP-236 makes governed signed configuration validation reloadable and visible from Installed MCPs,
+  but capability governance remains confined to a Builder-only panel.
+- The existing panel embeds development profile/policy identifiers and digests in the browser,
+  accepts free-form authority evidence and immediately nests the later runtime-trust workflow.
+- This slice selects only a server-provided exact signed C0/C1 profile and enablement policy, persists
+  the administrative selection and reloads it in Installed MCPs. It does not resolve credentials,
+  connect, start a connector process, grant runtime trust, invoke a capability or mutate infrastructure.
+
+### ATLAS-IMP-237 Acceptance Criteria
+
+- Configuration-validated Installed MCP rows expose `Enable governed capabilities`; enabled rows
+  reload as `Enabled / capabilities governed` and expose only read-only target, credential,
+  validation and capability views.
+- The browser selects only server-provided, exact-scope, validation-compatible signed capability
+  profile and enablement policy. No profile/policy identifier or digest is hard-coded in production UI.
+- Enablement inventory can be filtered by source validation identity and survives page refresh.
+- Foreign and missing validation filters are indistinguishable; complete upstream lineage, signed
+  profile/policy integrity, freshness, C0/C1 manifest parity, permissions, assurance and separation
+  are independently revalidated.
+- API and UI projections exclude target coordinates, credential/secret internals, commands,
+  parameters, signatures, request fingerprints, idempotency material, runners and runtime controls.
+- Success sets only administrative `enabled_capabilities_governed` and later runtime-trust
+  eligibility. Credential resolution, network access, runtime trust, invocation, execution,
+  deployment and infrastructure mutation remain unavailable.
+- Normal username/password sessions remain sufficient unless an explicitly configured optional
+  assurance policy says otherwise; no second browser session or global MFA requirement is added.
+- Focused backend/frontend tests, targeted static checks and desktop/mobile live validation pass
+  before PR.
+
+### ATLAS-IMP-237 Verification Evidence
+
+- Backend Ruff formatting/lint and focused MyPy passed across the affected API, application,
+  adapters, persistence and migration sources. Tenant-scoped inventory/options, foreign-versus-
+  missing equality, scope-before-discovery, signed profile/policy revalidation, exact manifest-subset
+  parity, future-validation rejection, tenant-scoped uniqueness and minimized create/read responses
+  passed all `17` focused capability-enablement tests. Alembic reports the single head
+  `20260824_0156`; downgrade now preflights legacy global-uniqueness conflicts.
+- Frontend TypeScript, targeted ESLint and production build passed. Exact-field fail-closed parsing,
+  lowercase assurance-enum parity, full minimized-response lineage checks, server-option refresh
+  blocking, collision-free session/scope cache keys, logout cleanup, capability-error isolation and
+  Installed MCP state restoration passed `48` selected tests across three files.
+- Independent review found and closed minimized create/read leakage, manifest-subset parity, future
+  timestamp, downgrade safety, response-lineage, stale-refetch and lifecycle-error-isolation risks.
+  A final re-review reported no findings.
+- A current-code API/web pair at `127.0.0.1:8058` and `127.0.0.1:5219` used one normal
+  `operator` / `correct-password` session. The Installed MCP advanced from `Disabled / configuration
+  validated` to `Enabled / capabilities governed`, restored after a full reload and exposed only
+  read-only target, credential, validation and capability views. No MFA, step-up or second browser
+  session was requested.
+- The live dialog exposed one server-selected signed profile/policy pair and one governed C1
+  capability. It contained no free authority/digest fields and no secret, connect, process, runtime,
+  invoke, execute, deploy or mutation control. Desktop `1280x720` and mobile `390x844` views had no
+  horizontal overflow; browser warning/error logs for the current preview were empty.
+
+### ATLAS-IMP-236 Delivery Evidence
+
+- Source commit `85246de2f1aaf757d4db46d97b05b7051fe2f458` passed exact-head pull-request CI
+  run `32709376184`; frontend completed in 11m00s and backend in 19m28s.
+- [PR #249](https://github.com/ozdemirumit/Project_Atlas/pull/249) was squash-merged to `main` as
+  `bdfe54c6e65b8ac68e45445d3d3c5a51d88ca9fa`.
+- The exact merge commit independently passed post-main CI run `32711182806`; frontend completed in
+  10m02s and backend in 22m41s. Local `main` and `origin/main` were synchronized before IMP-237.
 
 ### ATLAS-IMP-236 Scope Rationale
 

@@ -332,6 +332,26 @@ class ConnectorConfigurationValidationService:
             frozenset(source_actors | {record.validated_by, evidence.signed_by, policy.signed_by}),
         )
 
+    async def capability_enablement_source_in_scope(
+        self,
+        *,
+        validation_id: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> tuple[
+        ConnectorConfigurationValidationRecord,
+        ConnectorPackageRegistrationRecord,
+        frozenset[str],
+    ]:
+        record = await self._repository.get_in_scope(
+            validation_id=validation_id,
+            organization_id=organization_id,
+            environment_id=environment_id,
+        )
+        if record is None:
+            raise ConnectorConfigurationValidationError("configuration_validation_record_not_found")
+        return await self.capability_enablement_source(validation_id=record.validation_id)
+
     async def get(
         self, *, actor: AuthenticatedSubject, validation_id: str, correlation_id: str
     ) -> ConnectorConfigurationValidationRecord:

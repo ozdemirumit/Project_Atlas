@@ -32,6 +32,23 @@ class PostgreSQLConnectorCapabilityEnablementRepository:
             row = await session.get(ConnectorCapabilityEnablementModel, enablement_id)
             return self._to_domain(row.payload) if row else None
 
+    async def get_in_scope(
+        self,
+        *,
+        enablement_id: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> ConnectorCapabilityEnablementRecord | None:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(ConnectorCapabilityEnablementModel).where(
+                    ConnectorCapabilityEnablementModel.enablement_id == enablement_id,
+                    ConnectorCapabilityEnablementModel.organization_id == organization_id,
+                    ConnectorCapabilityEnablementModel.environment_id == environment_id,
+                )
+            )
+            return self._to_domain(row.payload) if row else None
+
     async def get_by_validation(
         self, *, source_validation_id: str
     ) -> ConnectorCapabilityEnablementRecord | None:
@@ -43,6 +60,39 @@ class PostgreSQLConnectorCapabilityEnablementRepository:
             )
             return self._to_domain(row.payload) if row else None
 
+    async def get_by_validation_in_scope(
+        self,
+        *,
+        source_validation_id: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> ConnectorCapabilityEnablementRecord | None:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(ConnectorCapabilityEnablementModel).where(
+                    ConnectorCapabilityEnablementModel.source_validation_id == source_validation_id,
+                    ConnectorCapabilityEnablementModel.organization_id == organization_id,
+                    ConnectorCapabilityEnablementModel.environment_id == environment_id,
+                )
+            )
+            return self._to_domain(row.payload) if row else None
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorCapabilityEnablementRecord, ...]:
+        async with self._sessions() as session:
+            rows = (
+                await session.scalars(
+                    select(ConnectorCapabilityEnablementModel)
+                    .where(
+                        ConnectorCapabilityEnablementModel.organization_id == organization_id,
+                        ConnectorCapabilityEnablementModel.environment_id == environment_id,
+                    )
+                    .order_by(ConnectorCapabilityEnablementModel.enablement_id)
+                )
+            ).all()
+            return tuple(self._to_domain(row.payload) for row in rows)
+
     async def get_by_create_key(
         self, *, enabled_by: str, idempotency_key: str
     ) -> ConnectorCapabilityEnablementRecord | None:
@@ -51,6 +101,25 @@ class PostgreSQLConnectorCapabilityEnablementRepository:
                 select(ConnectorCapabilityEnablementModel).where(
                     ConnectorCapabilityEnablementModel.enabled_by == enabled_by,
                     ConnectorCapabilityEnablementModel.idempotency_key == idempotency_key,
+                )
+            )
+            return self._to_domain(row.payload) if row else None
+
+    async def get_by_create_key_in_scope(
+        self,
+        *,
+        enabled_by: str,
+        idempotency_key: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> ConnectorCapabilityEnablementRecord | None:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(ConnectorCapabilityEnablementModel).where(
+                    ConnectorCapabilityEnablementModel.enabled_by == enabled_by,
+                    ConnectorCapabilityEnablementModel.idempotency_key == idempotency_key,
+                    ConnectorCapabilityEnablementModel.organization_id == organization_id,
+                    ConnectorCapabilityEnablementModel.environment_id == environment_id,
                 )
             )
             return self._to_domain(row.payload) if row else None

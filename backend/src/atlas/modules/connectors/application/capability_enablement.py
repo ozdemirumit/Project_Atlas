@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Callable
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 from hashlib import sha256
@@ -46,6 +46,23 @@ from atlas.modules.identity.domain.models import (
 CAPABILITY_ENABLEMENT_CREATE_PERMISSION = "connectors.capability-enablements.create"
 CAPABILITY_ENABLEMENT_READ_PERMISSION = "connectors.capability-enablements.read"
 CAPABILITY_ENABLEMENT_SCHEMA = "atlas.connector-capability-enablement.v1"
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectorCapabilityEnablementOption:
+    source_validation_id: str
+    source_validation_digest: str
+    package_digest: str
+    capability_profile_id: str
+    capability_profile_digest: str
+    capabilities: tuple[ConnectorGovernedCapability, ...]
+    capability_profile_expires_at: datetime
+    enablement_policy_id: str
+    enablement_policy_digest: str
+    enablement_policy_version: str
+    enablement_policy_expires_at: datetime
+    required_assurance_level: AssuranceLevel
+    resulting_instance_state: str = ENABLED_CAPABILITIES_GOVERNED
 
 
 class ConnectorCapabilityEnablementService:
@@ -109,8 +126,11 @@ class ConnectorCapabilityEnablementService:
                 "purpose": purpose,
             }
         )
-        existing = await self._repository.get_by_create_key(
-            enabled_by=actor.subject_id, idempotency_key=idempotency_key
+        existing = await self._repository.get_by_create_key_in_scope(
+            enabled_by=actor.subject_id,
+            idempotency_key=idempotency_key,
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
         )
         if existing is not None:
             return self._reuse(existing, actor, fingerprint)
@@ -119,22 +139,30 @@ class ConnectorCapabilityEnablementService:
                 validation,
                 registration,
                 source_actors,
-            ) = await self._validation_source.capability_enablement_source(
-                validation_id=source_validation_id
+            ) = await self._validation_source.capability_enablement_source_in_scope(
+                validation_id=source_validation_id,
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
             )
         except ConnectorConfigurationValidationError as error:
             raise ConnectorCapabilityEnablementError(
                 "capability_enablement_source_not_found"
             ) from error
-        profile = await self._profile_source.get_by_id(profile_id=capability_profile_id)
-        if profile is None:
-            raise ConnectorCapabilityEnablementError("capability_enablement_profile_not_found")
-        policy = await self._policy_source.get_by_id(policy_id=enablement_policy_id)
-        if policy is None:
-            raise ConnectorCapabilityEnablementError("capability_enablement_policy_not_found")
+        self._require_source_scope(actor, validation.organization_id, validation.environment_id)
+        profile = await self._profile_source.get_by_id_in_scope(
+            profile_id=capability_profile_id,
+            organization_id=validation.organization_id,
+            environment_id=validation.environment_id,
+        )
+        policy = await self._policy_source.get_by_id_in_scope(
+            policy_id=enablement_policy_id,
+            organization_id=validation.organization_id,
+            environment_id=validation.environment_id,
+        )
+        if profile is None or policy is None:
+            raise ConnectorCapabilityEnablementError("capability_enablement_invalid")
         self._verify_snapshot(profile, "profile")
         self._verify_snapshot(policy, "policy")
-        self._require_scope(actor, validation.organization_id, validation.environment_id)
         now = self._clock()
         self._verify_enablement(
             actor=actor,
@@ -152,8 +180,10 @@ class ConnectorCapabilityEnablementService:
             raise ConnectorCapabilityEnablementError("capability_enablement_separation_required")
 
         async with self._mutation_lock:
-            prior = await self._repository.get_by_validation(
-                source_validation_id=validation.validation_id
+            prior = await self._repository.get_by_validation_in_scope(
+                source_validation_id=validation.validation_id,
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
             )
             if prior is not None:
                 if (
@@ -173,7 +203,13 @@ class ConnectorCapabilityEnablementService:
                 (("capability_profile_digest", profile.canonical_digest),),
             )
             seed = self._digest(
-                [validation.validation_id, profile.profile_id, profile.canonical_digest]
+                [
+                    validation.organization_id,
+                    validation.environment_id,
+                    validation.validation_id,
+                    profile.profile_id,
+                    profile.canonical_digest,
+                ]
             )
             record = ConnectorCapabilityEnablementRecord(
                 enablement_id=f"connector-capability-enablement.{seed[:24]}",
@@ -223,8 +259,11 @@ class ConnectorCapabilityEnablementService:
                 (("instance_state", record.instance_state),),
             )
             if not await self._repository.add(record):
-                raced = await self._repository.get_by_create_key(
-                    enabled_by=actor.subject_id, idempotency_key=idempotency_key
+                raced = await self._repository.get_by_create_key_in_scope(
+                    enabled_by=actor.subject_id,
+                    idempotency_key=idempotency_key,
+                    organization_id=actor.organization_id,
+                    environment_id=self._environment_id,
                 )
                 if raced is None or raced.request_fingerprint != fingerprint:
                     raise ConnectorCapabilityEnablementError(
@@ -238,7 +277,11 @@ class ConnectorCapabilityEnablementService:
         self, *, actor: AuthenticatedSubject, enablement_id: str, correlation_id: str
     ) -> ConnectorCapabilityEnablementRecord:
         self._require_human(actor)
-        record = await self._repository.get(enablement_id=enablement_id)
+        record = await self._repository.get_in_scope(
+            enablement_id=enablement_id,
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+        )
         if record is None:
             raise ConnectorCapabilityEnablementError("capability_enablement_record_not_found")
         self._verify_record(record)
@@ -253,6 +296,141 @@ class ConnectorCapabilityEnablementService:
             permission_id=CAPABILITY_ENABLEMENT_READ_PERMISSION,
         )
         return record
+
+    async def list_enablements(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        source_validation_id: str | None,
+        correlation_id: str,
+    ) -> tuple[ConnectorCapabilityEnablementRecord, ...]:
+        self._require_human(actor)
+        if source_validation_id is None:
+            candidates = await self._repository.list_scope(
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+            )
+        else:
+            candidate = await self._repository.get_by_validation_in_scope(
+                source_validation_id=source_validation_id,
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+            )
+            candidates = (candidate,) if candidate is not None else ()
+        visible: list[ConnectorCapabilityEnablementRecord] = []
+        for record in candidates:
+            self._verify_record(record)
+            self._require_scope(actor, record.organization_id, record.environment_id)
+            visible.append(record)
+        visible.sort(key=lambda item: item.enablement_id)
+        await self._audit(
+            actor,
+            correlation_id,
+            "connector_capability_enablements_listed",
+            source_validation_id or self._environment_id,
+            None,
+            (("count", str(len(visible))),),
+            permission_id=CAPABILITY_ENABLEMENT_READ_PERMISSION,
+        )
+        return tuple(visible)
+
+    async def list_options(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        source_validation_id: str,
+        correlation_id: str,
+    ) -> tuple[ConnectorCapabilityEnablementOption, ...]:
+        self._require_human(actor)
+        try:
+            (
+                validation,
+                registration,
+                source_actors,
+            ) = await self._validation_source.capability_enablement_source_in_scope(
+                validation_id=source_validation_id,
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+            )
+        except ConnectorConfigurationValidationError as error:
+            raise ConnectorCapabilityEnablementError(
+                "capability_enablement_source_not_found"
+            ) from error
+        self._require_source_scope(actor, validation.organization_id, validation.environment_id)
+        existing = await self._repository.get_by_validation_in_scope(
+            source_validation_id=validation.validation_id,
+            organization_id=validation.organization_id,
+            environment_id=validation.environment_id,
+        )
+        if existing is not None:
+            self._verify_record(existing)
+            options: list[ConnectorCapabilityEnablementOption] = []
+        else:
+            profiles = await self._profile_source.list_scope(
+                organization_id=validation.organization_id,
+                environment_id=validation.environment_id,
+            )
+            policies = await self._policy_source.list_scope(
+                organization_id=validation.organization_id,
+                environment_id=validation.environment_id,
+            )
+            now = self._clock()
+            options = []
+            for profile in profiles:
+                for policy in policies:
+                    try:
+                        self._verify_snapshot(profile, "profile")
+                        self._verify_snapshot(policy, "policy")
+                        self._verify_enablement(
+                            actor=actor,
+                            validation=validation,
+                            registration=registration,
+                            profile=profile,
+                            policy=policy,
+                            source_validation_digest=validation.canonical_digest,
+                            package_digest=validation.package_digest,
+                            capability_profile_digest=profile.canonical_digest,
+                            enablement_policy_digest=policy.canonical_digest,
+                            now=now,
+                        )
+                    except ConnectorCapabilityEnablementError:
+                        continue
+                    if actor.subject_id in source_actors | {profile.signed_by, policy.signed_by}:
+                        continue
+                    options.append(
+                        ConnectorCapabilityEnablementOption(
+                            source_validation_id=validation.validation_id,
+                            source_validation_digest=validation.canonical_digest,
+                            package_digest=validation.package_digest,
+                            capability_profile_id=profile.profile_id,
+                            capability_profile_digest=profile.canonical_digest,
+                            capabilities=profile.capabilities,
+                            capability_profile_expires_at=profile.expires_at,
+                            enablement_policy_id=policy.policy_id,
+                            enablement_policy_digest=policy.canonical_digest,
+                            enablement_policy_version=policy.policy_version,
+                            enablement_policy_expires_at=policy.expires_at,
+                            required_assurance_level=policy.required_assurance_level,
+                        )
+                    )
+        options.sort(
+            key=lambda item: (
+                item.capability_profile_id,
+                item.capability_profile_digest,
+                item.enablement_policy_id,
+                item.enablement_policy_digest,
+            )
+        )
+        await self._audit(
+            actor,
+            correlation_id,
+            "connector_capability_enablement_options_listed",
+            validation.instance_id,
+            None,
+            (("count", str(len(options))),),
+            permission_id=CAPABILITY_ENABLEMENT_READ_PERMISSION,
+        )
+        return tuple(options)
 
     async def runtime_trust_source(
         self, *, enablement_id: str
@@ -313,7 +491,9 @@ class ConnectorCapabilityEnablementService:
             or profile.package_digest != record.package_digest
             or profile.manifest_digest != record.manifest_digest
             or profile.instance_id != record.instance_id
-            or selected != registered
+            or not selected
+            or len(selected) != len(set(selected))
+            or any(item not in registered for item in selected)
             or record.instance_state != ENABLED_CAPABILITIES_GOVERNED
             or not record.eligible_for_runtime_trust
             or not record.connector_enabled
@@ -410,7 +590,9 @@ class ConnectorCapabilityEnablementService:
             or profile.instance_id != validation.instance_id
             or profile.target_type != validation.target_type
             or registration.manifest.manifest_digest != validation.manifest_digest
-            or selected != registered
+            or not selected
+            or len(selected) != len(set(selected))
+            or any(item not in registered for item in selected)
             or len(selected) > policy.maximum_capabilities
             or any(item[1] not in policy.allowed_capability_classes for item in selected)
             or validation.target_product not in registration.manifest.target_products
@@ -420,6 +602,7 @@ class ConnectorCapabilityEnablementService:
             or validation.credentials_resolved
             or not policy.issued_at <= now < policy.expires_at
             or not profile.issued_at <= now < profile.expires_at
+            or validation.validated_at > now
             or now - validation.validated_at > timedelta(hours=policy.maximum_validation_age_hours)
             or now - profile.issued_at > timedelta(hours=policy.maximum_profile_age_hours)
             or not assurance_satisfies_policy(
@@ -472,6 +655,12 @@ class ConnectorCapabilityEnablementService:
     ) -> None:
         if actor.organization_id != organization_id or self._environment_id != environment_id:
             raise ConnectorCapabilityEnablementError("capability_enablement_record_not_found")
+
+    def _require_source_scope(
+        self, actor: AuthenticatedSubject, organization_id: str, environment_id: str
+    ) -> None:
+        if actor.organization_id != organization_id or self._environment_id != environment_id:
+            raise ConnectorCapabilityEnablementError("capability_enablement_source_not_found")
 
     async def _audit(
         self,
