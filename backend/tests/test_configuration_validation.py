@@ -4,10 +4,11 @@ import asyncio
 from dataclasses import asdict, replace
 from datetime import timedelta
 from pathlib import Path
+from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import Table, UniqueConstraint
 from test_browser_sessions import BasicTestIdentityProvider, login, settings
 from test_credential_assignment import (
     assign_credential,
@@ -415,9 +416,10 @@ async def test_validation_uniqueness_is_scoped_in_memory_and_postgres_contract()
         == second
     )
 
+    table = cast(Table, ConnectorConfigurationValidationModel.__table__)
     constraints = {
         constraint.name: tuple(column.name for column in constraint.columns)
-        for constraint in ConnectorConfigurationValidationModel.__table__.constraints
+        for constraint in table.constraints
         if isinstance(constraint, UniqueConstraint)
     }
     assert constraints["uq_connector_configuration_validations_assignment"] == (
