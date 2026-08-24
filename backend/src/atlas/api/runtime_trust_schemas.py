@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from atlas.api.schemas import ResponseMeta
+from atlas.modules.connectors.application.runtime_trust import ConnectorRuntimeTrustOption
 from atlas.modules.connectors.domain.runtime_trust import ConnectorRuntimeTrustGrantRecord
 
 STABLE_ID = r"^[a-z][a-z0-9_.:-]{2,127}$"
@@ -26,75 +28,143 @@ class ConnectorRuntimeTrustInput(BaseModel):
     acknowledged_trust_grants_no_runtime_start_secret_target_execution_or_deployment_authority: bool
 
 
-class ConnectorRuntimeTrustData(BaseModel):
+class ConnectorRuntimeTrustInventoryData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     grant_id: str
-    schema_version: str
-    version: int
     source_enablement_id: str
-    source_enablement_digest: str
-    organization_id: str
-    environment_id: str
-    package_digest: str
     connector_id: str
     release_version: str
-    manifest_digest: str
     instance_id: str
-    instance_key: str
     display_name: str
     capability_profile_id: str
-    capability_profile_digest: str
     capability_count: int
     runtime_profile_id: str
-    runtime_profile_digest: str
     sdk_profile: str
     runner_runtime_id: str
-    runner_pool_id: str
     runner_image_digest: str
     runner_workload_identity_id: str
     isolation_profile_id: str
     filesystem_policy_id: str
     egress_policy_id: str
-    secret_delivery_policy_id: str
+    telemetry_policy_id: str
+    resource_limit_profile_id: str
+    trust_policy_id: str
+    trust_policy_version: str
+    trust_version: int
+    instance_state: Literal["enabled_runtime_trusted"]
+    granted_by: str
+    purpose: str
+    granted_at: datetime
+    configuration_validated: Literal[True]
+    connectivity_evidence_verified: Literal[True]
+    capability_governance_applied: Literal[True]
+    connector_enabled: Literal[True]
+    eligible_for_runtime_trust: Literal[True]
+    runtime_boundary_bound: Literal[True]
+    runtime_trust_granted: Literal[True]
+    eligible_for_secret_brokerage: Literal[True]
+    runner_started: Literal[False]
+    package_loaded: Literal[False]
+    credential_resolution_authorized: Literal[False]
+    credentials_resolved: Literal[False]
+    target_connection_authorized: Literal[False]
+    capability_invocation_authorized: Literal[False]
+    execution_authorized: Literal[False]
+    deployment_approved: Literal[False]
+    infrastructure_mutation_performed: Literal[False]
+
+    @classmethod
+    def from_domain(
+        cls, record: ConnectorRuntimeTrustGrantRecord
+    ) -> ConnectorRuntimeTrustInventoryData:
+        return cls(**{field: getattr(record, field) for field in cls.model_fields})
+
+
+class ConnectorRuntimeTrustInventoryResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: tuple[ConnectorRuntimeTrustInventoryData, ...]
+    meta: ResponseMeta
+
+
+class ConnectorRuntimeTrustViewResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: ConnectorRuntimeTrustInventoryData
+    meta: ResponseMeta
+
+
+class ConnectorRuntimeTrustOptionData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_enablement_id: str
+    source_enablement_digest: str
+    package_digest: str
+    runtime_profile_id: str
+    runtime_profile_digest: str
+    runtime_profile_expires_at: datetime
+    sdk_profile: str
+    runner_runtime_id: str
+    runner_image_digest: str
+    runner_workload_identity_id: str
+    isolation_profile_id: str
+    filesystem_policy_id: str
+    egress_policy_id: str
     telemetry_policy_id: str
     resource_limit_profile_id: str
     trust_policy_id: str
     trust_policy_digest: str
     trust_policy_version: str
-    trust_version: int
-    instance_state: str
-    granted_by: str
-    purpose: str
-    granted_at: datetime
-    canonical_digest: str
-    configuration_validated: bool
-    connectivity_evidence_verified: bool
-    capability_governance_applied: bool
-    connector_enabled: bool
-    eligible_for_runtime_trust: bool
-    runtime_boundary_bound: bool
-    runtime_trust_granted: bool
-    eligible_for_secret_brokerage: bool
-    promotion_blocked: bool
-    runner_started: bool
-    package_loaded: bool
-    credential_resolution_authorized: bool
-    credentials_resolved: bool
-    target_connection_authorized: bool
-    capability_invocation_authorized: bool
-    execution_authorized: bool
-    deployment_approved: bool
-    infrastructure_mutation_performed: bool
-    reused: bool
+    trust_policy_expires_at: datetime
+    required_assurance_level: str
+    resulting_instance_state: Literal["enabled_runtime_trusted"]
+    runtime_boundary_bound: Literal[True]
+    runtime_trust_granted: Literal[True]
+    eligible_for_secret_brokerage: Literal[True]
+    runner_started: Literal[False]
+    package_loaded: Literal[False]
+    credential_resolution_authorized: Literal[False]
+    credentials_resolved: Literal[False]
+    target_connection_authorized: Literal[False]
+    capability_invocation_authorized: Literal[False]
+    execution_authorized: Literal[False]
+    deployment_approved: Literal[False]
+    infrastructure_mutation_performed: Literal[False]
 
     @classmethod
-    def from_domain(cls, record: ConnectorRuntimeTrustGrantRecord) -> ConnectorRuntimeTrustData:
-        return cls.model_validate(record, from_attributes=True)
+    def from_application(
+        cls, option: ConnectorRuntimeTrustOption
+    ) -> ConnectorRuntimeTrustOptionData:
+        result_flags = {
+            "runtime_boundary_bound": True,
+            "runtime_trust_granted": True,
+            "eligible_for_secret_brokerage": True,
+            "runner_started": False,
+            "package_loaded": False,
+            "credential_resolution_authorized": False,
+            "credentials_resolved": False,
+            "target_connection_authorized": False,
+            "capability_invocation_authorized": False,
+            "execution_authorized": False,
+            "deployment_approved": False,
+            "infrastructure_mutation_performed": False,
+        }
+        return cls.model_validate(
+            {
+                **{
+                    field: getattr(option, field)
+                    for field in cls.model_fields
+                    if field not in result_flags and field != "required_assurance_level"
+                },
+                "required_assurance_level": option.required_assurance_level.value,
+                **result_flags,
+            }
+        )
 
 
-class ConnectorRuntimeTrustResponse(BaseModel):
+class ConnectorRuntimeTrustOptionsResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    data: ConnectorRuntimeTrustData
+    data: tuple[ConnectorRuntimeTrustOptionData, ...]
     meta: ResponseMeta

@@ -55,6 +55,11 @@ import {
 } from "../../api/connectorUpgradeReadiness";
 import { getConnectorPackageInstallations } from "../../api/packageInstallations";
 import {
+  createConnectorRuntimeTrustGrant,
+  getConnectorRuntimeTrustGrantOptions,
+  getConnectorRuntimeTrustGrants,
+} from "../../api/runtimeTrustGrants";
+import {
   getConnectorTargetConfigurations,
   type ConnectorTargetConfigurationBinding,
 } from "../../api/targetConfigurations";
@@ -68,6 +73,10 @@ import {
 import { credentialAssignment } from "./testCredentialAssignmentFixture";
 import { connectorInstanceRecord as instance } from "./testInstanceFixture";
 import { installationReceipt as installation } from "./testInstallationFixture";
+import {
+  runtimeTrustGrantInventoryItem as runtimeTrustGrant,
+  runtimeTrustGrantOption,
+} from "./testRuntimeTrustFixture";
 
 const policy: ConnectorInstanceCreationPolicy = {
   policy_id: "connector-instance-creation-policy.development",
@@ -812,6 +821,16 @@ vi.mock("../../api/capabilityEnablements", async (importOriginal) => {
   };
 });
 
+vi.mock("../../api/runtimeTrustGrants", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../api/runtimeTrustGrants")>();
+  return {
+    ...original,
+    createConnectorRuntimeTrustGrant: vi.fn(),
+    getConnectorRuntimeTrustGrantOptions: vi.fn(),
+    getConnectorRuntimeTrustGrants: vi.fn(),
+  };
+});
+
 vi.mock("../../api/connectorUpgradeReadiness", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/connectorUpgradeReadiness")>();
   return {
@@ -871,6 +890,9 @@ beforeEach(() => {
   vi.mocked(createConnectorCapabilityEnablement).mockResolvedValue({
     data: capabilityEnablementInventoryItem,
   });
+  vi.mocked(getConnectorRuntimeTrustGrants).mockResolvedValue([]);
+  vi.mocked(getConnectorRuntimeTrustGrantOptions).mockResolvedValue([]);
+  vi.mocked(createConnectorRuntimeTrustGrant).mockResolvedValue({ data: runtimeTrustGrant });
   vi.mocked(getConnectorUpgradeReadiness).mockResolvedValue(upgradeReadiness);
   vi.mocked(getConnectorUpgradePlan).mockResolvedValue(upgradePlan);
   vi.mocked(getConnectorUpgradeApprovalRecord).mockResolvedValue(null);
@@ -1094,6 +1116,83 @@ describe("InstalledMcpManagementWorkspace", () => {
       .toHaveTextContent("View capabilities");
     const dialog = screen.getByRole("dialog", { name: "Manage capabilities for Storage East" });
     expect(within(dialog).queryByRole("button", { name: /connect|run|execute|deploy/i })).toBeNull();
+  });
+
+  it("restores runtime-trusted state with a read-only runtime boundary", async () => {
+    vi.mocked(getConnectorTargetConfigurations).mockResolvedValue([configuredBinding]);
+    vi.mocked(getConnectorCredentialAssignments).mockResolvedValue([credentialAssignment]);
+    vi.mocked(getConnectorConfigurationValidations).mockResolvedValue([configurationValidation]);
+    vi.mocked(getConnectorCapabilityEnablements).mockResolvedValue([
+      capabilityEnablementInventoryItem,
+    ]);
+    vi.mocked(getConnectorRuntimeTrustGrants).mockResolvedValue([runtimeTrustGrant]);
+    renderWorkspace();
+
+    expect(await screen.findByText("Enabled / runtime trusted")).toBeVisible();
+    expect(screen.getByText("Runtime trusted")).toBeVisible();
+    const viewRuntime = screen.getByRole("button", {
+      name: "View runtime trust for Storage East",
+    });
+    expect(viewRuntime).toHaveTextContent("View runtime trust");
+    fireEvent.click(viewRuntime);
+    const dialog = screen.getByRole("dialog", { name: "Manage runtime trust for Storage East" });
+    expect(await within(dialog).findByText(runtimeTrustGrant.grant_id)).toBeVisible();
+    expect(within(dialog).queryByRole("button", { name: "Establish runtime trust" })).toBeNull();
+    expect(within(dialog).queryByRole("heading", { name: /secret brokerage/i })).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: /^(connect|run|invoke|execute|deploy|resolve secret)/i }))
+      .toBeNull();
+  });
+
+  it("transitions a capability-governed MCP to runtime trusted using server options", async () => {
+    vi.mocked(getConnectorTargetConfigurations).mockResolvedValue([configuredBinding]);
+    vi.mocked(getConnectorCredentialAssignments).mockResolvedValue([credentialAssignment]);
+    vi.mocked(getConnectorConfigurationValidations).mockResolvedValue([configurationValidation]);
+    vi.mocked(getConnectorCapabilityEnablements).mockResolvedValue([
+      capabilityEnablementInventoryItem,
+    ]);
+    vi.mocked(getConnectorRuntimeTrustGrantOptions).mockResolvedValue([runtimeTrustGrantOption]);
+    renderWorkspace();
+
+    expect(await screen.findByText("Enabled / capabilities governed")).toBeVisible();
+    const establish = screen.getByRole("button", {
+      name: "Establish runtime trust for Storage East",
+    });
+    fireEvent.click(establish);
+    expect(
+      await screen.findByRole("combobox", { name: "Signed runtime profile and trust policy" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("textbox", { name: /profile id|profile digest|policy id|policy digest/i }),
+    ).toBeNull();
+    fireEvent.click(screen.getByLabelText(/Trust binds only this signed isolated boundary/i));
+    fireEvent.click(screen.getByRole("button", { name: "Establish runtime trust" }));
+
+    await waitFor(() => expect(createConnectorRuntimeTrustGrant).toHaveBeenCalledOnce());
+    const input = vi.mocked(createConnectorRuntimeTrustGrant).mock.calls[0]?.[0];
+    expect(input?.enablement).toBe(capabilityEnablementInventoryItem);
+    expect(input?.option).toBe(runtimeTrustGrantOption);
+    expect(await screen.findByText("Enabled / runtime trusted")).toBeVisible();
+    expect(screen.getByRole("button", { name: "View runtime trust for Storage East" }))
+      .toHaveTextContent("View runtime trust");
+  });
+
+  it("keeps earlier lifecycle controls available when runtime trust inventory is unavailable", async () => {
+    vi.mocked(getConnectorTargetConfigurations).mockResolvedValue([configuredBinding]);
+    vi.mocked(getConnectorCredentialAssignments).mockResolvedValue([credentialAssignment]);
+    vi.mocked(getConnectorConfigurationValidations).mockResolvedValue([configurationValidation]);
+    vi.mocked(getConnectorCapabilityEnablements).mockResolvedValue([
+      capabilityEnablementInventoryItem,
+    ]);
+    vi.mocked(getConnectorRuntimeTrustGrants).mockRejectedValue(
+      new ApiRequestError("Runtime trust inventory failed", 403),
+    );
+    renderWorkspace();
+
+    expect(await screen.findByText("Enabled / capabilities governed")).toBeVisible();
+    expect(screen.getByRole("button", { name: "View target for Storage East" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "View capabilities for Storage East" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /runtime trust for Storage East/i })).toBeNull();
+    expect(screen.getByText("Runtime trust permission is required")).toBeVisible();
   });
 
   it("keeps existing lifecycle controls available when capability inventory is unavailable", async () => {

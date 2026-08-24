@@ -4,9 +4,11 @@ import asyncio
 from dataclasses import asdict, replace
 from datetime import timedelta
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import UniqueConstraint
 from test_browser_sessions import BasicTestIdentityProvider, login, settings
 from test_capability_enablement import (
     capability_enablement_fixture,
@@ -16,6 +18,7 @@ from test_instance_creation import instance_operator
 from test_package_acquisition import CollectingAuditSink, FailingAuditSink
 
 from atlas.api.app import create_app
+from atlas.core.persistence.models import ConnectorRuntimeTrustGrantModel
 from atlas.modules.connectors.adapters.runtime_trust_memory import (
     InMemoryConnectorRuntimeTrustPolicySource,
     InMemoryConnectorRuntimeTrustProfileSource,
@@ -190,6 +193,172 @@ async def test_runtime_trust_grants_only_secret_brokerage_eligibility() -> None:
         "connector_runtime_trust_requested",
         "connector_runtime_trust_completed",
     ]
+
+
+@pytest.mark.asyncio
+async def test_runtime_trust_options_are_server_selected_and_inventory_is_reloadable() -> None:
+    service, *_, enablement, profile, policy = await runtime_trust_fixture()
+    actor = runtime_trust_granter()
+
+    options = await service.list_options(
+        actor=actor,
+        source_enablement_id=enablement.enablement_id,
+        correlation_id="cor_runtime_trust_options",
+    )
+
+    assert len(options) == 1
+    option = options[0]
+    assert option.source_enablement_id == enablement.enablement_id
+    assert option.source_enablement_digest == enablement.canonical_digest
+    assert option.runtime_profile_id == profile.profile_id
+    assert option.runtime_profile_digest == profile.canonical_digest
+    assert option.trust_policy_id == policy.policy_id
+    assert option.trust_policy_digest == policy.canonical_digest
+    assert option.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    assert option.resulting_instance_state == "enabled_runtime_trusted"
+
+    record = await grant_runtime_trust(service, enablement, profile, policy, actor=actor)
+    inventory = await service.list_grants(
+        actor=actor,
+        source_enablement_id=None,
+        correlation_id="cor_runtime_trust_inventory",
+    )
+    filtered = await service.list_grants(
+        actor=actor,
+        source_enablement_id=enablement.enablement_id,
+        correlation_id="cor_runtime_trust_inventory_filtered",
+    )
+
+    assert inventory == filtered == (record,)
+    assert (
+        await service.list_options(
+            actor=actor,
+            source_enablement_id=enablement.enablement_id,
+            correlation_id="cor_runtime_trust_options_after_create",
+        )
+        == ()
+    )
+
+
+@pytest.mark.asyncio
+async def test_runtime_trust_scope_precedes_discovery_and_foreign_matches_missing() -> None:
+    (
+        service,
+        enablement_service,
+        *_,
+        enablement,
+        profile,
+        policy,
+    ) = await runtime_trust_fixture()
+    foreign = replace(
+        enablement,
+        enablement_id="connector-capability-enablement.foreign",
+        organization_id="organization.foreign",
+        enabled_by="subject.foreign-enabler",
+        idempotency_key="capability-foreign-001",
+        canonical_digest="0" * 64,
+    )
+    foreign = replace(
+        foreign,
+        canonical_digest=enablement_service._digest(enablement_service._record_payload(foreign)),
+    )
+    assert await enablement_service.repository.add(foreign)
+
+    class GuardedEnablementSource:
+        def __init__(self) -> None:
+            self.repository = enablement_service.repository
+            self.discovery_calls = 0
+
+        async def runtime_trust_source(self, *, enablement_id: str) -> NoReturn:
+            self.discovery_calls += 1
+            raise AssertionError(f"unexpected discovery for {enablement_id}")
+
+    guarded_source = GuardedEnablementSource()
+    guarded_service = ConnectorRuntimeTrustService(
+        repository=InMemoryConnectorRuntimeTrustRepository(),
+        enablement_source=guarded_source,
+        profile_source=InMemoryConnectorRuntimeTrustProfileSource((profile,)),
+        policy_source=InMemoryConnectorRuntimeTrustPolicySource((policy,)),
+        audit_sink=CollectingAuditSink(),
+        environment_id=enablement.environment_id,
+        clock=lambda: enablement.enabled_at,
+    )
+    actor = runtime_trust_granter()
+    errors: list[str] = []
+    for source_id in (
+        foreign.enablement_id,
+        "connector-capability-enablement.missing",
+    ):
+        with pytest.raises(ConnectorRuntimeTrustError) as error:
+            await guarded_service.list_options(
+                actor=actor,
+                source_enablement_id=source_id,
+                correlation_id="cor_runtime_trust_scoped_options",
+            )
+        errors.append(str(error.value))
+
+    assert errors == ["runtime_trust_source_not_found"] * 2
+    assert guarded_source.discovery_calls == 0
+    assert (
+        await service.list_grants(
+            actor=actor,
+            source_enablement_id="connector-capability-enablement.missing",
+            correlation_id="cor_runtime_trust_missing_inventory",
+        )
+        == ()
+    )
+
+
+@pytest.mark.asyncio
+async def test_runtime_trust_repository_uniqueness_is_tenant_scoped() -> None:
+    service, *_, enablement, profile, policy = await runtime_trust_fixture()
+    record = await grant_runtime_trust(service, enablement, profile, policy)
+    foreign = replace(
+        record,
+        grant_id="connector-runtime-trust-grant.foreign",
+        organization_id="organization.foreign",
+        canonical_digest="0" * 64,
+        reused=False,
+    )
+    foreign = replace(
+        foreign,
+        canonical_digest=service._digest(service._record_payload(foreign)),
+    )
+
+    assert await service.repository.add(foreign)
+    assert (
+        await service.repository.get_by_enablement_in_scope(
+            source_enablement_id=record.source_enablement_id,
+            organization_id=record.organization_id,
+            environment_id=record.environment_id,
+        )
+        == record
+    )
+    assert (
+        await service.repository.get_by_enablement_in_scope(
+            source_enablement_id=record.source_enablement_id,
+            organization_id=foreign.organization_id,
+            environment_id=foreign.environment_id,
+        )
+        == foreign
+    )
+
+    constraints = {
+        constraint.name: tuple(column.name for column in constraint.columns)
+        for constraint in ConnectorRuntimeTrustGrantModel.__table__.constraints
+        if isinstance(constraint, UniqueConstraint)
+    }
+    assert constraints["uq_connector_runtime_trust_grants_enablement"] == (
+        "organization_id",
+        "environment_id",
+        "source_enablement_id",
+    )
+    assert constraints["uq_connector_runtime_trust_grants_actor_idempotency"] == (
+        "organization_id",
+        "environment_id",
+        "granted_by",
+        "idempotency_key",
+    )
 
 
 @pytest.mark.asyncio
@@ -380,8 +549,16 @@ def test_runtime_trust_api_rejects_caller_controls_and_minimizes_response(
             runtime_trust_service=service,
         )
     ) as client:
-        login_response = login(client)
         endpoint = "/api/v1/connectors/runtime-trust-grants"
+        unauthenticated_inventory = client.get(endpoint)
+        login_response = login(client)
+        inventory_before = client.get(
+            endpoint, params={"source_enablement_id": enablement.enablement_id}
+        )
+        options_before = client.get(
+            f"{endpoint}/options",
+            params={"source_enablement_id": enablement.enablement_id},
+        )
         denied = client.post(endpoint, json=payload, headers={"Idempotency-Key": "trust-api-001"})
         forbidden = client.post(
             endpoint,
@@ -402,23 +579,78 @@ def test_runtime_trust_api_rejects_caller_controls_and_minimizes_response(
         assert created.status_code == 201, created.text
         grant_id = created.json()["data"]["grant_id"]
         read = client.get(f"{endpoint}/{grant_id}")
+        inventory_after = client.get(
+            endpoint, params={"source_enablement_id": enablement.enablement_id}
+        )
+        options_after = client.get(
+            f"{endpoint}/options",
+            params={"source_enablement_id": enablement.enablement_id},
+        )
+        missing_inventory = client.get(
+            endpoint,
+            params={"source_enablement_id": "connector-capability-enablement.missing"},
+        )
 
+    assert unauthenticated_inventory.status_code == 401
     assert denied.status_code == 403 and forbidden.status_code == 422
     assert read.status_code == 200
-    assert created.headers["Cache-Control"] == read.headers["Cache-Control"] == "no-store"
+    assert inventory_before.status_code == options_before.status_code == 200
+    assert inventory_before.json()["data"] == []
+    assert len(options_before.json()["data"]) == 1
+    option = options_before.json()["data"][0]
+    assert option["source_enablement_id"] == enablement.enablement_id
+    assert option["source_enablement_digest"] == enablement.canonical_digest
+    assert option["runtime_profile_id"] == profile.profile_id
+    assert option["runtime_profile_digest"] == profile.canonical_digest
+    assert option["trust_policy_id"] == policy.policy_id
+    assert option["trust_policy_digest"] == policy.canonical_digest
+    assert option["required_assurance_level"] == "single_factor"
+    assert option["resulting_instance_state"] == "enabled_runtime_trusted"
+    assert option["runtime_boundary_bound"] is True
+    assert option["runtime_trust_granted"] is True
+    assert option["eligible_for_secret_brokerage"] is True
+    assert option["runner_started"] is False and option["package_loaded"] is False
+    assert len(inventory_after.json()["data"]) == 1
+    inventory = inventory_after.json()["data"][0]
+    assert inventory["grant_id"] == grant_id
+    assert inventory["source_enablement_id"] == enablement.enablement_id
+    assert inventory["instance_state"] == "enabled_runtime_trusted"
+    assert inventory["runtime_boundary_bound"] is True
+    assert inventory["runtime_trust_granted"] is True
+    assert inventory["eligible_for_secret_brokerage"] is True
+    assert inventory["runner_started"] is False and inventory["package_loaded"] is False
+    assert options_after.json()["data"] == []
+    assert missing_inventory.json()["data"] == []
+    protected_responses = (
+        created,
+        read,
+        inventory_before,
+        options_before,
+        inventory_after,
+        options_after,
+        missing_inventory,
+    )
+    assert all(item.headers["Cache-Control"] == "no-store" for item in protected_responses)
     data = created.json()["data"]
     assert data["runtime_trust_granted"] is True and data["runner_started"] is False
-    rendered = created.text.lower()
+    rendered = (
+        f"{created.text}\n{read.text}\n{inventory_after.text}\n{options_before.text}"
+    ).lower()
     for hidden in (
         "endpoint_url",
         "target_profile_id",
+        "target_product",
         "credential_profile_id",
+        "credential_profile_digest",
         "secret_reference_id",
         "secret_store_profile_id",
+        "secret_delivery_policy_id",
         "request_fingerprint",
         "idempotency_key",
         "password",
         "command",
         "parameters",
+        "signature",
+        "runner_pool_id",
     ):
         assert hidden not in rendered

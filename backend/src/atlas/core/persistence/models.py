@@ -1639,10 +1639,14 @@ class ConnectorRuntimeTrustGrantModel(Base):
     __tablename__ = "connector_runtime_trust_grants"
     __table_args__ = (
         UniqueConstraint(
+            "organization_id",
+            "environment_id",
             "source_enablement_id",
             name="uq_connector_runtime_trust_grants_enablement",
         ),
         UniqueConstraint(
+            "organization_id",
+            "environment_id",
             "granted_by",
             "idempotency_key",
             name="uq_connector_runtime_trust_grants_actor_idempotency",

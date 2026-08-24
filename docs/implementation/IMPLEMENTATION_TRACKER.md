@@ -4,14 +4,77 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-237 |
-| Title | Installed MCP governed C0/C1 capability enablement |
+| Task ID | ATLAS-IMP-238 |
+| Title | Installed MCP governed runtime trust grant |
 | Status | Ready for PR |
-| Branch | `agent/installed-mcp-capability-governance` |
+| Branch | `agent/installed-mcp-runtime-trust-governance` |
 | Pull Request | Pending |
-| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-030, ATLAS-031, ATLAS-050, ATLAS-052, ADR-034, ADR-123, ADR-133, ADR-182 |
+| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-030, ATLAS-031, ATLAS-050, ATLAS-052, ADR-035, ADR-100, ADR-123, ADR-133, ADR-182 |
 | Last Updated | 2026-08-24 |
 | Next Action | Commit the reviewed slice, open a pull request and require exact-head CI before merge |
+
+### ATLAS-IMP-238 Scope Rationale
+
+- IMP-237 makes governed C0/C1 capability enablement reloadable and visible from Installed MCPs,
+  but runtime trust remains confined to a Builder-only panel with browser-embedded development
+  profile and policy identifiers and free-form digests.
+- This slice selects only a server-provided exact signed runtime profile and trust policy, persists
+  the immutable administrative admission and reloads it in Installed MCPs.
+- Runtime trust binds an approved isolated runner boundary only. It does not start a process, load a
+  package, resolve or deliver a secret, connect to a target, invoke a capability, execute a workflow,
+  deploy software or mutate infrastructure. Secret brokerage remains a later independent lifecycle.
+
+### ATLAS-IMP-238 Acceptance Criteria
+
+- Capability-governed Installed MCP rows expose `Establish runtime trust`; granted rows reload as
+  `Enabled / runtime trusted` and expose only read-only target, credential, validation, capability
+  and runtime-boundary views.
+- The browser selects only server-provided, exact-scope, enablement-compatible signed runtime
+  profile and trust policy. No profile/policy identifier or digest is hard-coded in production UI.
+- Runtime-trust inventory can be filtered by source enablement identity and survives page refresh.
+- Foreign and missing enablement filters are indistinguishable; tenant scope is enforced before
+  discovery and the complete upstream lineage, signed evidence integrity, freshness, runtime image,
+  workload identity, isolation, filesystem, egress, telemetry and resource controls are revalidated.
+- API and UI projections exclude target coordinates, credential/secret internals, commands,
+  parameters, signatures, request fingerprints, idempotency material and mutable runner controls.
+- Success sets only `runtime_boundary_bound`, `runtime_trust_granted` and
+  `eligible_for_secret_brokerage`. Runner start, package load, secret resolution, target connection,
+  invocation, execution, deployment and infrastructure mutation remain unavailable.
+- Normal username/password sessions remain sufficient unless an explicitly configured optional
+  assurance policy says otherwise; no second browser session or global MFA requirement is added.
+- Focused backend/frontend tests, targeted static checks and desktop/mobile live validation pass
+  before PR.
+
+### ATLAS-IMP-238 Verification Evidence
+
+- Tenant-scoped runtime-trust inventory/options, foreign-versus-missing equality,
+  scope-before-discovery, signed evidence revalidation, minimized create/read/list projections,
+  tenant-scoped memory/PostgreSQL uniqueness and downgrade duplicate preflight passed all `13`
+  focused backend tests. Ruff and the Alembic single-head check passed at `20260824_0157`.
+- Exact-field fail-closed parsing, server-option submission, exact boundary response parity,
+  option-key-bound acknowledgement, session/scope cache isolation, reload restoration and Installed
+  MCP lifecycle presentation passed `39` selected frontend tests. TypeScript, targeted ESLint and the
+  production build passed.
+- Independent review found and closed backend/frontend response-contract mismatch, stale option
+  acknowledgement, incomplete boundary response parity and an over-broad assurance enum. Final
+  re-review reported no findings.
+- A current-code API/web pair at `127.0.0.1:8059` and `127.0.0.1:5220` used one normal
+  `operator` / `correct-password` session. Installed MCP advanced from `Enabled / capabilities
+  governed` to `Enabled / runtime trusted`, restored after full reload and exposed only a read-only
+  runtime boundary. No MFA, second browser session, process start, package load, secret resolution,
+  target connection, capability invocation, execution, deployment or mutation control appeared.
+- Desktop `1280x720` and mobile `390x844` views had no horizontal overflow; the mobile document
+  width remained `375` pixels within the `390` pixel viewport and browser warning/error logs were
+  empty.
+
+### ATLAS-IMP-237 Delivery Evidence
+
+- Source commit `1f572a6c00a1b4facf4439b0639932e609ff8bac` passed exact-head pull-request CI
+  run `32717632980`; frontend completed in 6m56s and backend in 23m17s.
+- [PR #250](https://github.com/ozdemirumit/Project_Atlas/pull/250) was squash-merged to `main` as
+  `32d4bf2af69265b4935b13979762fa42513fcd43`.
+- The exact merge commit independently passed post-main CI run `32719742597`; frontend completed in
+  11m19s and backend in 23m38s. Local `main` and `origin/main` were synchronized before IMP-238.
 
 ### ATLAS-IMP-237 Scope Rationale
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Callable
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 from hashlib import sha256
@@ -45,6 +45,31 @@ from atlas.modules.identity.domain.models import (
 RUNTIME_TRUST_CREATE_PERMISSION = "connectors.runtime-trust-grants.create"
 RUNTIME_TRUST_READ_PERMISSION = "connectors.runtime-trust-grants.read"
 RUNTIME_TRUST_GRANT_SCHEMA = "atlas.connector-runtime-trust-grant.v1"
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectorRuntimeTrustOption:
+    source_enablement_id: str
+    source_enablement_digest: str
+    package_digest: str
+    runtime_profile_id: str
+    runtime_profile_digest: str
+    runtime_profile_expires_at: datetime
+    sdk_profile: str
+    runner_runtime_id: str
+    runner_image_digest: str
+    runner_workload_identity_id: str
+    isolation_profile_id: str
+    filesystem_policy_id: str
+    egress_policy_id: str
+    telemetry_policy_id: str
+    resource_limit_profile_id: str
+    trust_policy_id: str
+    trust_policy_digest: str
+    trust_policy_version: str
+    trust_policy_expires_at: datetime
+    required_assurance_level: AssuranceLevel
+    resulting_instance_state: str = ENABLED_RUNTIME_TRUSTED
 
 
 class ConnectorRuntimeTrustService:
@@ -106,27 +131,29 @@ class ConnectorRuntimeTrustService:
                 "purpose": purpose,
             }
         )
-        existing = await self._repository.get_by_create_key(
-            granted_by=actor.subject_id, idempotency_key=idempotency_key
+        existing = await self._repository.get_by_create_key_in_scope(
+            granted_by=actor.subject_id,
+            idempotency_key=idempotency_key,
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
         )
         if existing is not None:
             return self._reuse(existing, actor, fingerprint)
-        try:
-            (
-                enablement,
-                registration,
-                source_actors,
-            ) = await self._enablement_source.runtime_trust_source(
-                enablement_id=source_enablement_id
-            )
-        except ConnectorCapabilityEnablementError as error:
-            raise ConnectorRuntimeTrustError("runtime_trust_source_not_found") from error
-        profile = await self._profile_source.get_by_id(profile_id=runtime_profile_id)
-        if profile is None:
-            raise ConnectorRuntimeTrustError("runtime_trust_profile_not_found")
-        policy = await self._policy_source.get_by_id(policy_id=trust_policy_id)
-        if policy is None:
-            raise ConnectorRuntimeTrustError("runtime_trust_policy_not_found")
+        enablement, registration, source_actors = await self._source_in_scope(
+            actor=actor, source_enablement_id=source_enablement_id
+        )
+        profile = await self._profile_source.get_by_id_in_scope(
+            profile_id=runtime_profile_id,
+            organization_id=enablement.organization_id,
+            environment_id=enablement.environment_id,
+        )
+        policy = await self._policy_source.get_by_id_in_scope(
+            policy_id=trust_policy_id,
+            organization_id=enablement.organization_id,
+            environment_id=enablement.environment_id,
+        )
+        if profile is None or policy is None:
+            raise ConnectorRuntimeTrustError("runtime_trust_invalid")
         self._verify_snapshot(profile, "profile")
         self._verify_snapshot(policy, "policy")
         self._require_scope(actor, enablement.organization_id, enablement.environment_id)
@@ -147,8 +174,10 @@ class ConnectorRuntimeTrustService:
             raise ConnectorRuntimeTrustError("runtime_trust_separation_required")
 
         async with self._mutation_lock:
-            prior = await self._repository.get_by_enablement(
-                source_enablement_id=enablement.enablement_id
+            prior = await self._repository.get_by_enablement_in_scope(
+                source_enablement_id=enablement.enablement_id,
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
             )
             if prior is not None:
                 if (
@@ -166,7 +195,13 @@ class ConnectorRuntimeTrustService:
                 (("runtime_profile_digest", profile.canonical_digest),),
             )
             seed = self._digest(
-                [enablement.enablement_id, profile.profile_id, profile.canonical_digest]
+                [
+                    enablement.organization_id,
+                    enablement.environment_id,
+                    enablement.enablement_id,
+                    profile.profile_id,
+                    profile.canonical_digest,
+                ]
             )
             record = ConnectorRuntimeTrustGrantRecord(
                 grant_id=f"connector-runtime-trust-grant.{seed[:24]}",
@@ -229,8 +264,11 @@ class ConnectorRuntimeTrustService:
                 (("instance_state", record.instance_state),),
             )
             if not await self._repository.add(record):
-                raced = await self._repository.get_by_create_key(
-                    granted_by=actor.subject_id, idempotency_key=idempotency_key
+                raced = await self._repository.get_by_create_key_in_scope(
+                    granted_by=actor.subject_id,
+                    idempotency_key=idempotency_key,
+                    organization_id=actor.organization_id,
+                    environment_id=self._environment_id,
                 )
                 if raced is None or raced.request_fingerprint != fingerprint:
                     raise ConnectorRuntimeTrustError("runtime_trust_record_conflict")
@@ -242,7 +280,11 @@ class ConnectorRuntimeTrustService:
         self, *, actor: AuthenticatedSubject, grant_id: str, correlation_id: str
     ) -> ConnectorRuntimeTrustGrantRecord:
         self._require_human(actor)
-        record = await self._repository.get(grant_id=grant_id)
+        record = await self._repository.get_in_scope(
+            grant_id=grant_id,
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+        )
         if record is None:
             raise ConnectorRuntimeTrustError("runtime_trust_record_not_found")
         self._verify_record(record)
@@ -257,6 +299,170 @@ class ConnectorRuntimeTrustService:
             permission_id=RUNTIME_TRUST_READ_PERMISSION,
         )
         return record
+
+    async def list_grants(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        source_enablement_id: str | None,
+        correlation_id: str,
+    ) -> tuple[ConnectorRuntimeTrustGrantRecord, ...]:
+        self._require_human(actor)
+        if source_enablement_id is None:
+            candidates = await self._repository.list_scope(
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+            )
+        else:
+            candidate = await self._repository.get_by_enablement_in_scope(
+                source_enablement_id=source_enablement_id,
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+            )
+            candidates = (candidate,) if candidate is not None else ()
+        visible: list[ConnectorRuntimeTrustGrantRecord] = []
+        for record in candidates:
+            self._verify_record(record)
+            self._require_scope(actor, record.organization_id, record.environment_id)
+            visible.append(record)
+        visible.sort(key=lambda item: item.grant_id)
+        await self._audit(
+            actor,
+            correlation_id,
+            "connector_runtime_trust_grants_listed",
+            source_enablement_id or self._environment_id,
+            None,
+            (("count", str(len(visible))),),
+            permission_id=RUNTIME_TRUST_READ_PERMISSION,
+        )
+        return tuple(visible)
+
+    async def list_options(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        source_enablement_id: str,
+        correlation_id: str,
+    ) -> tuple[ConnectorRuntimeTrustOption, ...]:
+        self._require_human(actor)
+        enablement, registration, source_actors = await self._source_in_scope(
+            actor=actor, source_enablement_id=source_enablement_id
+        )
+        existing = await self._repository.get_by_enablement_in_scope(
+            source_enablement_id=enablement.enablement_id,
+            organization_id=enablement.organization_id,
+            environment_id=enablement.environment_id,
+        )
+        if existing is not None:
+            self._verify_record(existing)
+            options: list[ConnectorRuntimeTrustOption] = []
+        else:
+            profiles = await self._profile_source.list_scope(
+                organization_id=enablement.organization_id,
+                environment_id=enablement.environment_id,
+            )
+            policies = await self._policy_source.list_scope(
+                organization_id=enablement.organization_id,
+                environment_id=enablement.environment_id,
+            )
+            now = self._clock()
+            options = []
+            for profile in profiles:
+                for policy in policies:
+                    try:
+                        self._verify_snapshot(profile, "profile")
+                        self._verify_snapshot(policy, "policy")
+                        self._verify_trust(
+                            actor=actor,
+                            enablement=enablement,
+                            registration=registration,
+                            profile=profile,
+                            policy=policy,
+                            source_enablement_digest=enablement.canonical_digest,
+                            package_digest=enablement.package_digest,
+                            runtime_profile_digest=profile.canonical_digest,
+                            trust_policy_digest=policy.canonical_digest,
+                            now=now,
+                        )
+                    except ConnectorRuntimeTrustError:
+                        continue
+                    if actor.subject_id in source_actors | {profile.signed_by, policy.signed_by}:
+                        continue
+                    options.append(
+                        ConnectorRuntimeTrustOption(
+                            source_enablement_id=enablement.enablement_id,
+                            source_enablement_digest=enablement.canonical_digest,
+                            package_digest=enablement.package_digest,
+                            runtime_profile_id=profile.profile_id,
+                            runtime_profile_digest=profile.canonical_digest,
+                            runtime_profile_expires_at=profile.expires_at,
+                            sdk_profile=profile.sdk_profile,
+                            runner_runtime_id=profile.runner_runtime_id,
+                            runner_image_digest=profile.runner_image_digest,
+                            runner_workload_identity_id=profile.runner_workload_identity_id,
+                            isolation_profile_id=profile.isolation_profile_id,
+                            filesystem_policy_id=profile.filesystem_policy_id,
+                            egress_policy_id=profile.egress_policy_id,
+                            telemetry_policy_id=profile.telemetry_policy_id,
+                            resource_limit_profile_id=profile.resource_limit_profile_id,
+                            trust_policy_id=policy.policy_id,
+                            trust_policy_digest=policy.canonical_digest,
+                            trust_policy_version=policy.policy_version,
+                            trust_policy_expires_at=policy.expires_at,
+                            required_assurance_level=policy.required_assurance_level,
+                        )
+                    )
+        options.sort(
+            key=lambda item: (
+                item.runtime_profile_id,
+                item.runtime_profile_digest,
+                item.trust_policy_id,
+                item.trust_policy_digest,
+            )
+        )
+        await self._audit(
+            actor,
+            correlation_id,
+            "connector_runtime_trust_options_listed",
+            enablement.instance_id,
+            None,
+            (("count", str(len(options))),),
+            permission_id=RUNTIME_TRUST_READ_PERMISSION,
+        )
+        return tuple(options)
+
+    async def _source_in_scope(
+        self, *, actor: AuthenticatedSubject, source_enablement_id: str
+    ) -> tuple[
+        ConnectorCapabilityEnablementRecord,
+        ConnectorPackageRegistrationRecord,
+        frozenset[str],
+    ]:
+        scoped = await self._enablement_source.repository.get_in_scope(
+            enablement_id=source_enablement_id,
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+        )
+        if scoped is None:
+            raise ConnectorRuntimeTrustError("runtime_trust_source_not_found")
+        try:
+            (
+                enablement,
+                registration,
+                source_actors,
+            ) = await self._enablement_source.runtime_trust_source(
+                enablement_id=source_enablement_id
+            )
+        except ConnectorCapabilityEnablementError as error:
+            raise ConnectorRuntimeTrustError("runtime_trust_source_not_found") from error
+        if (
+            enablement.enablement_id != scoped.enablement_id
+            or enablement.canonical_digest != scoped.canonical_digest
+            or enablement.organization_id != actor.organization_id
+            or enablement.environment_id != self._environment_id
+        ):
+            raise ConnectorRuntimeTrustError("runtime_trust_source_not_found")
+        return enablement, registration, source_actors
 
     async def secret_brokerage_source(
         self, *, grant_id: str
@@ -389,6 +595,7 @@ class ConnectorRuntimeTrustService:
             or not enablement.eligible_for_runtime_trust
             or enablement.runtime_trust_granted
             or enablement.credentials_resolved
+            or enablement.enabled_at > now
             or not policy.issued_at <= now < policy.expires_at
             or not profile.issued_at <= now < profile.expires_at
             or now - enablement.enabled_at > timedelta(hours=policy.maximum_enablement_age_hours)
