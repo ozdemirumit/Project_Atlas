@@ -1170,6 +1170,8 @@ export function OperationalApplication({
       queryClient.removeQueries({ queryKey: ["connector-runtime-trust-grant-options"] });
       queryClient.removeQueries({ queryKey: ["connector-secret-brokerage-authorizations"] });
       queryClient.removeQueries({ queryKey: ["connector-secret-brokerage-authorization-options"] });
+      queryClient.removeQueries({ queryKey: ["connector-runtime-activations"] });
+      queryClient.removeQueries({ queryKey: ["connector-runtime-activation-options"] });
       setApprovalRequestId(null);
       setTechnicalReportId(null);
       const url = new URL(window.location.href);

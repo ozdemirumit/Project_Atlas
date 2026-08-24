@@ -328,6 +328,21 @@ async def test_assignment_options_and_inventory_are_verified_scope_bound_and_rel
 
 
 @pytest.mark.asyncio
+async def test_downstream_assignment_source_revalidates_current_profile_and_policy() -> None:
+    service, _, _, _, _, binding, profile, policy = await credential_assignment_fixture()
+    record = await assign_credential(service, binding, profile, policy)
+    service._clock = lambda: profile.expires_at + timedelta(seconds=1)
+
+    with pytest.raises(ConnectorCredentialAssignmentError, match="assignment_invalid"):
+        await service.configuration_validation_source(assignment_id=record.assignment_id)
+    with pytest.raises(ConnectorCredentialAssignmentError, match="assignment_invalid"):
+        await service.secret_brokerage_source(
+            credential_profile_id=record.credential_profile_id,
+            instance_id=record.instance_id,
+        )
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "required_assurance_level",
     (AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED),

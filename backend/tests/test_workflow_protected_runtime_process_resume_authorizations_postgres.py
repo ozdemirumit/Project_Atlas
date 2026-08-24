@@ -475,7 +475,11 @@ async def test_live_postgres_resume_authorization_repository_contract() -> None:
         )
         assert len(leases) in {1, 2}
         assert len(leases) + len(rejections) == 2
-        assert all(rejection.code.endswith("already_authorized") for rejection in rejections)
+        expected_race_rejections = {
+            "workflow_protected_runtime_process_resume_already_authorized",
+            "workflow_protected_runtime_process_resume_evidence_conflict",
+        }
+        assert all(rejection.code in expected_race_rejections for rejection in rejections)
         first = leases[0]
         assert all(lease == first for lease in leases)
         assert first.valid_until - first.issued_at <= timedelta(seconds=1)

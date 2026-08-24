@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol
 
 from atlas.modules.connectors.domain.capability_enablement import (
@@ -7,6 +8,7 @@ from atlas.modules.connectors.domain.capability_enablement import (
 )
 from atlas.modules.connectors.domain.credential_assignment import ConnectorCredentialProfileSnapshot
 from atlas.modules.connectors.domain.runtime_activation import (
+    ConnectorRuntimeActivationClaim,
     ConnectorRuntimeActivationInstruction,
     ConnectorRuntimeActivationPolicySnapshot,
     ConnectorRuntimeActivationProfileSnapshot,
@@ -23,7 +25,20 @@ class ConnectorRuntimeActivationError(RuntimeError):
     pass
 
 
+class ConnectorRuntimeActivationBrokerageRepository(Protocol):
+    async def get_in_scope(
+        self,
+        *,
+        authorization_id: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> ConnectorSecretBrokerageAuthorizationRecord | None: ...
+
+
 class ConnectorRuntimeActivationSource(Protocol):
+    @property
+    def repository(self) -> ConnectorRuntimeActivationBrokerageRepository: ...
+
     async def runtime_activation_source(
         self, *, authorization_id: str
     ) -> tuple[
@@ -49,11 +64,35 @@ class ConnectorRuntimeActivationProfileSource(Protocol):
         self, *, profile_id: str
     ) -> ConnectorRuntimeActivationProfileSnapshot | None: ...
 
+    async def get_by_id_in_scope(
+        self,
+        *,
+        profile_id: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> ConnectorRuntimeActivationProfileSnapshot | None: ...
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorRuntimeActivationProfileSnapshot, ...]: ...
+
 
 class ConnectorRuntimeActivationPolicySource(Protocol):
     async def get_by_id(
         self, *, policy_id: str
     ) -> ConnectorRuntimeActivationPolicySnapshot | None: ...
+
+    async def get_by_id_in_scope(
+        self,
+        *,
+        policy_id: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> ConnectorRuntimeActivationPolicySnapshot | None: ...
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorRuntimeActivationPolicySnapshot, ...]: ...
 
 
 class ConnectorRuntimeActivator(Protocol):
@@ -61,19 +100,78 @@ class ConnectorRuntimeActivator(Protocol):
         self, instruction: ConnectorRuntimeActivationInstruction
     ) -> ConnectorRuntimeActivationReceipt: ...
 
-    async def compensate(self, *, activation_id: str) -> None: ...
+    async def compensate(self, *, activation_attempt_id: str) -> None: ...
 
 
 class ConnectorRuntimeActivationRepository(Protocol):
     async def get(self, *, activation_id: str) -> ConnectorRuntimeActivationRecord | None: ...
 
+    async def get_in_scope(
+        self,
+        *,
+        activation_id: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> ConnectorRuntimeActivationRecord | None: ...
+
     async def get_by_brokerage_authorization(
         self, *, source_brokerage_authorization_id: str
     ) -> ConnectorRuntimeActivationRecord | None: ...
 
-    async def get_by_create_key(
-        self, *, activated_by: str, idempotency_key: str
+    async def get_by_brokerage_authorization_in_scope(
+        self,
+        *,
+        source_brokerage_authorization_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> ConnectorRuntimeActivationRecord | None: ...
+
+    async def get_by_create_key_in_scope(
+        self,
+        *,
+        activated_by: str,
+        idempotency_key: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> ConnectorRuntimeActivationRecord | None: ...
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorRuntimeActivationRecord, ...]: ...
+
+    async def get_claim_by_source_in_scope(
+        self,
+        *,
+        source_brokerage_authorization_id: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> ConnectorRuntimeActivationClaim | None: ...
+
+    async def claim(self, claim: ConnectorRuntimeActivationClaim) -> bool: ...
+
+    async def fence_expired_claim(
+        self,
+        *,
+        claim: ConnectorRuntimeActivationClaim,
+        recovery_attempt_id: str,
+        now: datetime,
+    ) -> bool: ...
+
+    async def release_claim(
+        self,
+        claim: ConnectorRuntimeActivationClaim,
+        *,
+        now: datetime,
+        recovery_attempt_id: str | None = None,
+    ) -> bool: ...
+
+    async def publish(
+        self,
+        *,
+        claim: ConnectorRuntimeActivationClaim,
+        record: ConnectorRuntimeActivationRecord,
+        now: datetime,
+    ) -> bool: ...
 
     async def add(self, record: ConnectorRuntimeActivationRecord) -> bool: ...
 
