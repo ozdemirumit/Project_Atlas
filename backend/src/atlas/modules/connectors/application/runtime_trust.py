@@ -483,6 +483,7 @@ class ConnectorRuntimeTrustService:
             )
         except ConnectorCapabilityEnablementError as error:
             raise ConnectorRuntimeTrustError("runtime_trust_source_not_found") from error
+        now = self._clock()
         if (
             record.source_enablement_digest != enablement.canonical_digest
             or record.package_digest != enablement.package_digest
@@ -492,6 +493,44 @@ class ConnectorRuntimeTrustService:
             or record.capability_profile_digest != enablement.capability_profile_digest
             or record.runtime_profile_digest != profile.canonical_digest
             or record.trust_policy_digest != policy.canonical_digest
+            or profile.organization_id != record.organization_id
+            or profile.environment_id != record.environment_id
+            or policy.organization_id != record.organization_id
+            or policy.environment_id != record.environment_id
+            or profile.package_digest != record.package_digest
+            or profile.connector_id != record.connector_id
+            or profile.release_version != record.release_version
+            or profile.manifest_digest != record.manifest_digest
+            or profile.instance_id != record.instance_id
+            or profile.source_enablement_digest != record.source_enablement_digest
+            or profile.capability_profile_digest != record.capability_profile_digest
+            or profile.sdk_profile != record.sdk_profile
+            or profile.runner_runtime_id != record.runner_runtime_id
+            or profile.runner_pool_id != record.runner_pool_id
+            or profile.runner_image_digest != record.runner_image_digest
+            or profile.runner_workload_identity_id != record.runner_workload_identity_id
+            or profile.isolation_profile_id != record.isolation_profile_id
+            or profile.filesystem_policy_id != record.filesystem_policy_id
+            or profile.egress_policy_id != record.egress_policy_id
+            or profile.secret_delivery_policy_id != record.secret_delivery_policy_id
+            or profile.telemetry_policy_id != record.telemetry_policy_id
+            or profile.resource_limit_profile_id != record.resource_limit_profile_id
+            or profile.signed_by != policy.required_profile_signer_id
+            or profile.sdk_profile not in policy.allowed_sdk_profiles
+            or profile.runner_runtime_id not in policy.allowed_runner_runtime_ids
+            or profile.runner_pool_id not in policy.allowed_runner_pool_ids
+            or profile.runner_image_digest not in policy.allowed_runner_image_digests
+            or profile.runner_workload_identity_id != policy.required_runner_workload_identity_id
+            or profile.isolation_profile_id != policy.required_isolation_profile_id
+            or profile.filesystem_policy_id != policy.required_filesystem_policy_id
+            or profile.egress_policy_id != policy.required_egress_policy_id
+            or profile.secret_delivery_policy_id != policy.required_secret_delivery_policy_id
+            or profile.telemetry_policy_id != policy.required_telemetry_policy_id
+            or profile.resource_limit_profile_id != policy.required_resource_limit_profile_id
+            or not policy.issued_at <= now < policy.expires_at
+            or not profile.issued_at <= now < profile.expires_at
+            or now - enablement.enabled_at > timedelta(hours=policy.maximum_enablement_age_hours)
+            or now - profile.issued_at > timedelta(hours=policy.maximum_profile_age_hours)
         ):
             raise ConnectorRuntimeTrustError("runtime_trust_source_invalid")
         return (

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Callable
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 from hashlib import sha256
@@ -51,6 +51,26 @@ from atlas.modules.identity.domain.models import (
 SECRET_BROKERAGE_CREATE_PERMISSION = "connectors.secret-brokerage-authorizations.create"
 SECRET_BROKERAGE_READ_PERMISSION = "connectors.secret-brokerage-authorizations.read"
 SECRET_BROKERAGE_AUTHORIZATION_SCHEMA = "atlas.connector-secret-brokerage-authorization.v1"
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectorSecretBrokerageOption:
+    source_runtime_trust_grant_id: str
+    source_runtime_trust_digest: str
+    package_digest: str
+    brokerage_profile_id: str
+    brokerage_profile_digest: str
+    brokerage_profile_expires_at: datetime
+    delivery_policy_id: str
+    lease_policy_id: str
+    maximum_lease_seconds: int
+    revocation_policy_id: str
+    brokerage_policy_id: str
+    brokerage_policy_digest: str
+    brokerage_policy_version: str
+    brokerage_policy_expires_at: datetime
+    required_assurance_level: AssuranceLevel
+    resulting_instance_state: str = ENABLED_SECRET_BROKERAGE_GOVERNED
 
 
 class ConnectorSecretBrokerageService:
@@ -114,30 +134,33 @@ class ConnectorSecretBrokerageService:
                 "purpose": purpose,
             }
         )
-        existing = await self._repository.get_by_create_key(
-            authorized_by=actor.subject_id, idempotency_key=idempotency_key
+        (
+            runtime_trust,
+            runtime_actors,
+            assignment,
+            credential_profile,
+            credential_actors,
+        ) = await self._source_in_scope(
+            actor=actor, source_runtime_trust_grant_id=source_runtime_trust_grant_id
+        )
+        existing = await self._repository.get_by_create_key_in_scope(
+            authorized_by=actor.subject_id,
+            idempotency_key=idempotency_key,
+            organization_id=runtime_trust.organization_id,
+            environment_id=runtime_trust.environment_id,
         )
         if existing is not None:
             return self._reuse(existing, actor, fingerprint)
-        try:
-            (
-                runtime_trust,
-                runtime_actors,
-            ) = await self._runtime_trust_source.secret_brokerage_source(
-                grant_id=source_runtime_trust_grant_id
-            )
-            (
-                assignment,
-                credential_profile,
-                credential_actors,
-            ) = await self._credential_source.secret_brokerage_source(
-                credential_profile_id=runtime_trust.credential_profile_id,
-                instance_id=runtime_trust.instance_id,
-            )
-        except (ConnectorRuntimeTrustError, ConnectorCredentialAssignmentError) as error:
-            raise ConnectorSecretBrokerageError("secret_brokerage_source_not_found") from error
-        profile = await self._profile_source.get_by_id(profile_id=brokerage_profile_id)
-        policy = await self._policy_source.get_by_id(policy_id=brokerage_policy_id)
+        profile = await self._profile_source.get_by_id_in_scope(
+            profile_id=brokerage_profile_id,
+            organization_id=runtime_trust.organization_id,
+            environment_id=runtime_trust.environment_id,
+        )
+        policy = await self._policy_source.get_by_id_in_scope(
+            policy_id=brokerage_policy_id,
+            organization_id=runtime_trust.organization_id,
+            environment_id=runtime_trust.environment_id,
+        )
         if profile is None or policy is None:
             raise ConnectorSecretBrokerageError("secret_brokerage_evidence_not_found")
         self._verify_snapshot(profile, "profile")
@@ -163,8 +186,10 @@ class ConnectorSecretBrokerageService:
             raise ConnectorSecretBrokerageError("secret_brokerage_separation_required")
 
         async with self._mutation_lock:
-            prior = await self._repository.get_by_runtime_trust(
-                source_runtime_trust_grant_id=runtime_trust.grant_id
+            prior = await self._repository.get_by_runtime_trust_in_scope(
+                source_runtime_trust_grant_id=runtime_trust.grant_id,
+                organization_id=runtime_trust.organization_id,
+                environment_id=runtime_trust.environment_id,
             )
             if prior is not None:
                 if (
@@ -178,11 +203,16 @@ class ConnectorSecretBrokerageService:
                 correlation_id,
                 "connector_secret_brokerage_requested",
                 runtime_trust.instance_id,
-                idempotency_key,
                 (("brokerage_profile_digest", profile.canonical_digest),),
             )
             seed = self._digest(
-                [runtime_trust.grant_id, profile.profile_id, profile.canonical_digest]
+                [
+                    runtime_trust.organization_id,
+                    runtime_trust.environment_id,
+                    runtime_trust.grant_id,
+                    profile.profile_id,
+                    profile.canonical_digest,
+                ]
             )
             record = ConnectorSecretBrokerageAuthorizationRecord(
                 authorization_id=f"connector-secret-brokerage-authorization.{seed[:24]}",
@@ -237,12 +267,14 @@ class ConnectorSecretBrokerageService:
                 correlation_id,
                 "connector_secret_brokerage_completed",
                 record.authorization_id,
-                idempotency_key,
                 (("instance_state", record.instance_state),),
             )
             if not await self._repository.add(record):
-                raced = await self._repository.get_by_create_key(
-                    authorized_by=actor.subject_id, idempotency_key=idempotency_key
+                raced = await self._repository.get_by_create_key_in_scope(
+                    authorized_by=actor.subject_id,
+                    idempotency_key=idempotency_key,
+                    organization_id=runtime_trust.organization_id,
+                    environment_id=runtime_trust.environment_id,
                 )
                 if raced is None or raced.request_fingerprint != fingerprint:
                     raise ConnectorSecretBrokerageError("secret_brokerage_record_conflict")
@@ -254,21 +286,213 @@ class ConnectorSecretBrokerageService:
         self, *, actor: AuthenticatedSubject, authorization_id: str, correlation_id: str
     ) -> ConnectorSecretBrokerageAuthorizationRecord:
         self._require_human(actor)
-        record = await self._repository.get(authorization_id=authorization_id)
+        record = await self._repository.get_in_scope(
+            authorization_id=authorization_id,
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+        )
         if record is None:
             raise ConnectorSecretBrokerageError("secret_brokerage_record_not_found")
         self._verify_record(record)
         self._require_scope(actor, record.organization_id, record.environment_id)
+        current, *_ = await self.runtime_activation_source(authorization_id=record.authorization_id)
+        if current.canonical_digest != record.canonical_digest:
+            raise ConnectorSecretBrokerageError("secret_brokerage_source_invalid")
         await self._audit(
             actor,
             correlation_id,
             "connector_secret_brokerage_read",
             record.authorization_id,
-            None,
             (),
             permission_id=SECRET_BROKERAGE_READ_PERMISSION,
         )
-        return record
+        return current
+
+    async def list_authorizations(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        source_runtime_trust_grant_id: str | None,
+        correlation_id: str,
+    ) -> tuple[ConnectorSecretBrokerageAuthorizationRecord, ...]:
+        self._require_human(actor)
+        if source_runtime_trust_grant_id is None:
+            candidates = await self._repository.list_scope(
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+            )
+        else:
+            candidate = await self._repository.get_by_runtime_trust_in_scope(
+                source_runtime_trust_grant_id=source_runtime_trust_grant_id,
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+            )
+            candidates = (candidate,) if candidate is not None else ()
+        visible: list[ConnectorSecretBrokerageAuthorizationRecord] = []
+        for record in candidates:
+            self._verify_record(record)
+            self._require_scope(actor, record.organization_id, record.environment_id)
+            current, *_ = await self.runtime_activation_source(
+                authorization_id=record.authorization_id
+            )
+            if current.canonical_digest != record.canonical_digest:
+                raise ConnectorSecretBrokerageError("secret_brokerage_source_invalid")
+            visible.append(current)
+        visible.sort(key=lambda item: item.authorization_id)
+        await self._audit(
+            actor,
+            correlation_id,
+            "connector_secret_brokerage_authorizations_listed",
+            source_runtime_trust_grant_id or self._environment_id,
+            (("count", str(len(visible))),),
+            permission_id=SECRET_BROKERAGE_READ_PERMISSION,
+        )
+        return tuple(visible)
+
+    async def list_options(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        source_runtime_trust_grant_id: str,
+        correlation_id: str,
+    ) -> tuple[ConnectorSecretBrokerageOption, ...]:
+        self._require_human(actor)
+        (
+            runtime_trust,
+            runtime_actors,
+            assignment,
+            credential_profile,
+            credential_actors,
+        ) = await self._source_in_scope(
+            actor=actor,
+            source_runtime_trust_grant_id=source_runtime_trust_grant_id,
+        )
+        existing = await self._repository.get_by_runtime_trust_in_scope(
+            source_runtime_trust_grant_id=runtime_trust.grant_id,
+            organization_id=runtime_trust.organization_id,
+            environment_id=runtime_trust.environment_id,
+        )
+        options: list[ConnectorSecretBrokerageOption] = []
+        if existing is not None:
+            self._verify_record(existing)
+        else:
+            profiles = await self._profile_source.list_scope(
+                organization_id=runtime_trust.organization_id,
+                environment_id=runtime_trust.environment_id,
+            )
+            policies = await self._policy_source.list_scope(
+                organization_id=runtime_trust.organization_id,
+                environment_id=runtime_trust.environment_id,
+            )
+            now = self._clock()
+            for profile in profiles:
+                for policy in policies:
+                    try:
+                        self._verify_snapshot(profile, "profile")
+                        self._verify_snapshot(policy, "policy")
+                        self._verify_authorization(
+                            actor=actor,
+                            runtime_trust=runtime_trust,
+                            assignment=assignment,
+                            credential_profile=credential_profile,
+                            profile=profile,
+                            policy=policy,
+                            source_runtime_trust_digest=runtime_trust.canonical_digest,
+                            package_digest=runtime_trust.package_digest,
+                            brokerage_profile_digest=profile.canonical_digest,
+                            brokerage_policy_digest=policy.canonical_digest,
+                            now=now,
+                        )
+                    except ConnectorSecretBrokerageError:
+                        continue
+                    if actor.subject_id in (
+                        runtime_actors | credential_actors | {profile.signed_by, policy.signed_by}
+                    ):
+                        continue
+                    options.append(
+                        ConnectorSecretBrokerageOption(
+                            source_runtime_trust_grant_id=runtime_trust.grant_id,
+                            source_runtime_trust_digest=runtime_trust.canonical_digest,
+                            package_digest=runtime_trust.package_digest,
+                            brokerage_profile_id=profile.profile_id,
+                            brokerage_profile_digest=profile.canonical_digest,
+                            brokerage_profile_expires_at=profile.expires_at,
+                            delivery_policy_id=profile.delivery_policy_id,
+                            lease_policy_id=profile.lease_policy_id,
+                            maximum_lease_seconds=profile.maximum_lease_seconds,
+                            revocation_policy_id=profile.revocation_policy_id,
+                            brokerage_policy_id=policy.policy_id,
+                            brokerage_policy_digest=policy.canonical_digest,
+                            brokerage_policy_version=policy.policy_version,
+                            brokerage_policy_expires_at=policy.expires_at,
+                            required_assurance_level=policy.required_assurance_level,
+                        )
+                    )
+        options.sort(
+            key=lambda item: (
+                item.brokerage_profile_id,
+                item.brokerage_profile_digest,
+                item.brokerage_policy_id,
+                item.brokerage_policy_digest,
+            )
+        )
+        await self._audit(
+            actor,
+            correlation_id,
+            "connector_secret_brokerage_options_listed",
+            runtime_trust.instance_id,
+            (("count", str(len(options))),),
+            permission_id=SECRET_BROKERAGE_READ_PERMISSION,
+        )
+        return tuple(options)
+
+    async def _source_in_scope(
+        self, *, actor: AuthenticatedSubject, source_runtime_trust_grant_id: str
+    ) -> tuple[
+        ConnectorRuntimeTrustGrantRecord,
+        frozenset[str],
+        ConnectorCredentialAssignmentRecord,
+        ConnectorCredentialProfileSnapshot,
+        frozenset[str],
+    ]:
+        scoped = await self._runtime_trust_source.repository.get_in_scope(
+            grant_id=source_runtime_trust_grant_id,
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+        )
+        if scoped is None:
+            raise ConnectorSecretBrokerageError("secret_brokerage_source_not_found")
+        try:
+            (
+                runtime_trust,
+                runtime_actors,
+            ) = await self._runtime_trust_source.secret_brokerage_source(
+                grant_id=source_runtime_trust_grant_id
+            )
+            (
+                assignment,
+                credential_profile,
+                credential_actors,
+            ) = await self._credential_source.secret_brokerage_source(
+                credential_profile_id=runtime_trust.credential_profile_id,
+                instance_id=runtime_trust.instance_id,
+            )
+        except (ConnectorRuntimeTrustError, ConnectorCredentialAssignmentError) as error:
+            raise ConnectorSecretBrokerageError("secret_brokerage_source_not_found") from error
+        if (
+            runtime_trust.grant_id != scoped.grant_id
+            or runtime_trust.canonical_digest != scoped.canonical_digest
+            or runtime_trust.organization_id != actor.organization_id
+            or runtime_trust.environment_id != self._environment_id
+        ):
+            raise ConnectorSecretBrokerageError("secret_brokerage_source_not_found")
+        return (
+            runtime_trust,
+            runtime_actors,
+            assignment,
+            credential_profile,
+            credential_actors,
+        )
 
     async def runtime_activation_source(
         self, *, authorization_id: str
@@ -292,6 +516,25 @@ class ConnectorSecretBrokerageService:
         ) = await self._credential_source.secret_brokerage_source(
             credential_profile_id=record.credential_profile_id,
             instance_id=record.instance_id,
+        )
+        profile = await self._profile_source.get_by_id(profile_id=record.brokerage_profile_id)
+        policy = await self._policy_source.get_by_id(policy_id=record.brokerage_policy_id)
+        if profile is None or policy is None:
+            raise ConnectorSecretBrokerageError("secret_brokerage_runtime_activation_invalid")
+        self._verify_snapshot(profile, "profile")
+        self._verify_snapshot(policy, "policy")
+        self._verify_authorization(
+            actor=None,
+            runtime_trust=runtime_trust,
+            assignment=assignment,
+            credential_profile=credential_profile,
+            profile=profile,
+            policy=policy,
+            source_runtime_trust_digest=record.source_runtime_trust_digest,
+            package_digest=record.package_digest,
+            brokerage_profile_digest=record.brokerage_profile_digest,
+            brokerage_policy_digest=record.brokerage_policy_digest,
+            now=self._clock(),
         )
         if (
             record.source_runtime_trust_digest != runtime_trust.canonical_digest
@@ -377,7 +620,7 @@ class ConnectorSecretBrokerageService:
     @staticmethod
     def _verify_authorization(
         *,
-        actor: AuthenticatedSubject,
+        actor: AuthenticatedSubject | None,
         runtime_trust: ConnectorRuntimeTrustGrantRecord,
         assignment: ConnectorCredentialAssignmentRecord,
         credential_profile: ConnectorCredentialProfileSnapshot,
@@ -424,10 +667,17 @@ class ConnectorSecretBrokerageService:
             or credential_profile.canonical_digest != assignment.credential_profile_digest
             or credential_profile.secret_store_profile_id != profile.secret_store_profile_id
             or credential_profile.privilege_class != policy.required_privilege_class
+            or credential_profile.privilege_class != "privilege.read-only"
             or credential_profile.rotation_state != policy.required_rotation_state
+            or credential_profile.rotation_state != "rotation.current"
             or credential_profile.revocation_state != policy.required_revocation_state
+            or credential_profile.revocation_state != "revocation.active"
             or credential_profile.next_rotation_at
             <= now + timedelta(hours=policy.minimum_rotation_window_hours)
+            or profile.delivery_policy_id
+            != "secret-delivery-policy.ephemeral-disabled-until-brokered"
+            or profile.lease_policy_id != "secret-lease-policy.single-use-non-renewable"
+            or profile.revocation_policy_id != "secret-revocation-policy.check-before-issue-and-use"
             or runtime_trust.instance_state != ENABLED_RUNTIME_TRUSTED
             or not runtime_trust.runtime_trust_granted
             or not runtime_trust.eligible_for_secret_brokerage
@@ -445,8 +695,11 @@ class ConnectorSecretBrokerageService:
             or now - runtime_trust.granted_at
             > timedelta(hours=policy.maximum_runtime_trust_age_hours)
             or now - profile.issued_at > timedelta(hours=policy.maximum_profile_age_hours)
-            or not assurance_satisfies_policy(
-                actor.assurance_level, policy.required_assurance_level
+            or (
+                actor is not None
+                and not assurance_satisfies_policy(
+                    actor.assurance_level, policy.required_assurance_level
+                )
             )
         ):
             raise ConnectorSecretBrokerageError("secret_brokerage_invalid")
@@ -502,7 +755,6 @@ class ConnectorSecretBrokerageService:
         correlation_id: str,
         result_code: str,
         scope_reference: str,
-        idempotency_key: str | None,
         metadata: tuple[tuple[str, str], ...],
         *,
         permission_id: str = SECRET_BROKERAGE_CREATE_PERMISSION,
@@ -526,7 +778,7 @@ class ConnectorSecretBrokerageService:
                 decision_id=None,
                 outcome="succeeded",
                 result_code=result_code,
-                idempotency_key=idempotency_key,
+                idempotency_key=None,
                 target_metadata=metadata,
             )
         )

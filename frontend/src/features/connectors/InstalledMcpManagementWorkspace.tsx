@@ -87,6 +87,10 @@ import {
   type ConnectorRuntimeTrustGrantInventoryItem,
 } from "../../api/runtimeTrustGrants";
 import {
+  getConnectorSecretBrokerageAuthorizations,
+  type ConnectorSecretBrokerageAuthorizationInventoryItem,
+} from "../../api/secretBrokerageAuthorizations";
+import {
   getConnectorTargetConfigurations,
   type ConnectorTargetConfigurationBinding,
 } from "../../api/targetConfigurations";
@@ -94,6 +98,7 @@ import { CredentialAssignmentPanel } from "./CredentialAssignmentPanel";
 import { CapabilityEnablementPanel } from "./CapabilityEnablementPanel";
 import { ConfigurationValidationPanel } from "./ConfigurationValidationPanel";
 import { RuntimeTrustPanel } from "./RuntimeTrustPanel";
+import { SecretBrokeragePanel } from "./SecretBrokeragePanel";
 import { TargetConfigurationPanel } from "./TargetConfigurationPanel";
 
 type LifecycleFilter = "active" | "retired" | "all";
@@ -564,6 +569,69 @@ function RuntimeTrustDialog({
           enablement={enablement}
           existingGrant={grant}
           onGrantCreated={onGrantCreated}
+          onRequestEnterpriseLogin={onRequestEnterpriseLogin}
+          sessionScopeKey={sessionScopeKey}
+        />
+        <footer>
+          <button type="button" className="secondary-button" onClick={onCancel}>Close</button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+function SecretBrokerageDialog({
+  authorization,
+  instance,
+  onAuthorizationCreated,
+  onCancel,
+  onRequestEnterpriseLogin,
+  runtimeTrust,
+  sessionScopeKey,
+}: {
+  authorization?: ConnectorSecretBrokerageAuthorizationInventoryItem;
+  instance: ConnectorInstanceRecord;
+  onAuthorizationCreated: (
+    authorization: ConnectorSecretBrokerageAuthorizationInventoryItem,
+  ) => void;
+  onCancel: () => void;
+  onRequestEnterpriseLogin?: () => void;
+  runtimeTrust: ConnectorRuntimeTrustGrantInventoryItem;
+  sessionScopeKey: string;
+}) {
+  return (
+    <div className="installed-mcp-dialog-backdrop" role="presentation">
+      <section
+        className="installed-mcp-dialog secret-brokerage-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="secret-brokerage-mcp-title"
+      >
+        <header>
+          <div>
+            <p className="eyebrow">GOVERNED SECRET BROKERAGE</p>
+            <h3 id="secret-brokerage-mcp-title">
+              Manage secret brokerage for {instance.display_name}
+            </h3>
+          </div>
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Close secret brokerage"
+            onClick={onCancel}
+          >
+            <X size={17} />
+          </button>
+        </header>
+        <p className="muted-copy">
+          Atlas authorizes only a server-provided signed brokerage profile and policy for this exact
+          runtime trust grant. It does not resolve or deliver a secret, issue a lease, start a
+          connector, connect, invoke, execute, deploy or mutate infrastructure.
+        </p>
+        <SecretBrokeragePanel
+          runtimeTrust={runtimeTrust}
+          existingAuthorization={authorization}
+          onAuthorizationCreated={onAuthorizationCreated}
           onRequestEnterpriseLogin={onRequestEnterpriseLogin}
           sessionScopeKey={sessionScopeKey}
         />
@@ -1159,6 +1227,8 @@ export default function InstalledMcpManagementWorkspace({
     useState<ConnectorInstanceRecord | null>(null);
   const [establishingRuntimeTrust, setEstablishingRuntimeTrust] =
     useState<ConnectorInstanceRecord | null>(null);
+  const [authorizingSecretBrokerage, setAuthorizingSecretBrokerage] =
+    useState<ConnectorInstanceRecord | null>(null);
   const sessionScopeKey = JSON.stringify([subjectId, organizationId, environmentId]);
   const packageQuery = useQuery({
     queryKey: ["connector-package-installations", subjectId],
@@ -1198,6 +1268,11 @@ export default function InstalledMcpManagementWorkspace({
   const runtimeTrustQuery = useQuery({
     queryKey: ["connector-runtime-trust-grants", sessionScopeKey],
     queryFn: () => getConnectorRuntimeTrustGrants(),
+    enabled: Boolean(subjectId),
+  });
+  const secretBrokerageQuery = useQuery({
+    queryKey: ["connector-secret-brokerage-authorizations", sessionScopeKey],
+    queryFn: () => getConnectorSecretBrokerageAuthorizations(),
     enabled: Boolean(subjectId),
   });
   const signingTrustQuery = useQuery({
@@ -1264,9 +1339,18 @@ export default function InstalledMcpManagementWorkspace({
   const enablementByValidation = new Map(
     capabilityEnablements.map((enablement) => [enablement.source_validation_id, enablement]),
   );
-  const runtimeTrustGrants = runtimeTrustQuery.data ?? [];
+  const runtimeTrustGrants = runtimeTrustQuery.isError ? [] : (runtimeTrustQuery.data ?? []);
   const runtimeTrustByEnablement = new Map(
     runtimeTrustGrants.map((grant) => [grant.source_enablement_id, grant]),
+  );
+  const secretBrokerageAuthorizations = secretBrokerageQuery.isError
+    ? []
+    : (secretBrokerageQuery.data ?? []);
+  const secretBrokerageByRuntimeTrust = new Map(
+    secretBrokerageAuthorizations.map((authorization) => [
+      authorization.source_runtime_trust_grant_id,
+      authorization,
+    ]),
   );
   const packages = packageQuery.data ?? [];
   const policies = policyQuery.data ?? [];
@@ -1308,6 +1392,8 @@ export default function InstalledMcpManagementWorkspace({
     void assignmentQuery.refetch();
     void validationQuery.refetch();
     void enablementQuery.refetch();
+    void runtimeTrustQuery.refetch();
+    void secretBrokerageQuery.refetch();
     void signingTrustQuery.refetch();
     void signingConformanceQuery.refetch();
     void signingOnboardingQuery.refetch();
@@ -1635,6 +1721,35 @@ export default function InstalledMcpManagementWorkspace({
           ) : null}
         </div>
       )}
+      {secretBrokerageQuery.isError && (
+        <div className="installed-mcp-status error-state" role="alert">
+          {hasStatus(secretBrokerageQuery.error, 401)
+            ? <LogIn size={18} />
+            : <AlertTriangle size={18} />}
+          <div>
+            <strong>
+              {hasStatus(secretBrokerageQuery.error, 401)
+                ? "Your signed-in session has expired"
+                : hasStatus(secretBrokerageQuery.error, 403)
+                  ? "Secret brokerage permission is required"
+                  : "Secret brokerage inventory is unavailable"}
+            </strong>
+            <span>
+              Existing lifecycle and runtime trust evidence remains available. Secret brokerage
+              controls stay hidden until this scoped inventory can be read.
+            </span>
+          </div>
+          {hasStatus(secretBrokerageQuery.error, 401) && onRequestEnterpriseLogin ? (
+            <button type="button" onClick={onRequestEnterpriseLogin}>
+              <LogIn size={15} /> Sign in again
+            </button>
+          ) : !hasStatus(secretBrokerageQuery.error, 403) ? (
+            <button type="button" onClick={() => void secretBrokerageQuery.refetch()}>
+              <RefreshCw size={15} /> Retry
+            </button>
+          ) : null}
+        </div>
+      )}
       {instanceQuery.isLoading && (
         <div className="installed-mcp-status" role="status"><RefreshCw className="spin" size={18} /><span>Loading MCP lifecycle inventory...</span></div>
       )}
@@ -1700,6 +1815,10 @@ export default function InstalledMcpManagementWorkspace({
                   ? runtimeTrustByEnablement.get(enablement.enablement_id)
                   : undefined;
                 const runtimeTrusted = Boolean(runtimeTrust);
+                const secretBrokerageAuthorization = runtimeTrust
+                  ? secretBrokerageByRuntimeTrust.get(runtimeTrust.grant_id)
+                  : undefined;
+                const secretBrokerageGoverned = Boolean(secretBrokerageAuthorization);
                 return (
                   <tr key={instance.record_id}>
                     <td><strong>{instance.display_name}</strong><code>{instance.instance_key}</code></td>
@@ -1708,12 +1827,14 @@ export default function InstalledMcpManagementWorkspace({
                       <span className={`state-badge ${
                         instance.instance_state === "retired"
                           ? "neutral"
-                          : runtimeTrusted || capabilitiesGoverned
+                          : secretBrokerageGoverned || runtimeTrusted || capabilitiesGoverned
                             ? "success"
                             : "pending"
                       }`}>
                         {instance.instance_state === "retired"
                           ? "Retired"
+                          : secretBrokerageGoverned
+                            ? "Enabled / secret brokerage governed"
                           : runtimeTrusted
                             ? "Enabled / runtime trusted"
                             : capabilitiesGoverned
@@ -1732,6 +1853,8 @@ export default function InstalledMcpManagementWorkspace({
                       <span className="installed-mcp-event-label">
                         {instance.instance_state === "retired"
                           ? "Retired"
+                          : secretBrokerageAuthorization
+                            ? "Secret brokerage governed"
                           : runtimeTrust
                             ? "Runtime trusted"
                             : enablement
@@ -1744,7 +1867,7 @@ export default function InstalledMcpManagementWorkspace({
                               ? "Target bound"
                               : "Created"}
                       </span>
-                      {new Date(runtimeTrust?.granted_at ?? enablement?.enabled_at ?? validation?.validated_at ?? assignment?.assigned_at ?? binding?.bound_at ?? instance.retired_at ?? instance.created_at).toLocaleString()}
+                      {new Date(secretBrokerageAuthorization?.authorized_at ?? runtimeTrust?.granted_at ?? enablement?.enabled_at ?? validation?.validated_at ?? assignment?.assigned_at ?? binding?.bound_at ?? instance.retired_at ?? instance.created_at).toLocaleString()}
                     </td>
                     <td>
                       {instance.instance_state === "disabled_unconfigured" &&
@@ -1813,6 +1936,22 @@ export default function InstalledMcpManagementWorkspace({
                               <span>{runtimeTrusted ? "View runtime trust" : "Establish runtime trust"}</span>
                             </button>
                           )}
+                          {runtimeTrust && secretBrokerageQuery.isSuccess && (
+                            <button
+                              className="secondary-button installed-mcp-row-action"
+                              type="button"
+                              title={secretBrokerageGoverned
+                                ? "View governed secret brokerage boundary"
+                                : "Authorize governed secret brokerage boundary"}
+                              aria-label={`${secretBrokerageGoverned ? "View" : "Authorize"} secret brokerage for ${instance.display_name}`}
+                              onClick={() => setAuthorizingSecretBrokerage(instance)}
+                            >
+                              <KeyRound size={15} />
+                              <span>{secretBrokerageGoverned
+                                ? "View secret brokerage"
+                                : "Authorize secret brokerage"}</span>
+                            </button>
+                          )}
                           <button className="secondary-button installed-mcp-row-action" type="button" title="Review governed update evidence" aria-label={`Review update for ${instance.display_name}`} onClick={() => setReviewing(instance)}><ArrowUpCircle size={15} /><span>Review update</span></button>
                           {!configured && !credentialsAssigned && (
                             <button className="secondary-button installed-mcp-row-action danger" type="button" title="Remove from active management and preserve history" aria-label={`Remove ${instance.display_name}`} onClick={() => { retireMutation.reset(); setRetiring(instance); }}><Archive size={15} /><span>Remove</span></button>
@@ -1827,7 +1966,7 @@ export default function InstalledMcpManagementWorkspace({
           </table>
         </div>
       ) : null}
-      <div className="installed-mcp-footnote"><span>{activeCount} active in this result</span><span>Target, credential, validation, capability and runtime-trust records expose no secrets or operational controls. Atlas does not start processes, load packages, connect, invoke, execute, deploy or mutate infrastructure. Updates remain review-only.</span></div>
+      <div className="installed-mcp-footnote"><span>{activeCount} active in this result</span><span>Target, credential, validation, capability, runtime-trust and secret-brokerage records expose no secrets or operational controls. Atlas does not issue leases, resolve secrets, start processes, load packages, connect, invoke, execute, deploy or mutate infrastructure. Updates remain review-only.</span></div>
       {adding && <AddMcpDialog packages={packages} policies={policies} pending={createMutation.isPending} onCancel={() => setAdding(false)} onOpenBuilder={openBuilder} onSubmit={(input) => createMutation.mutate(input)} />}
       {retiring && <RetireMcpDialog instance={retiring} pending={retireMutation.isPending} onCancel={() => setRetiring(null)} onSubmit={(reason) => retireMutation.mutate({ instance: retiring, reason })} />}
       {reviewing && <UpgradeReadinessDialog instance={reviewing} subjectId={subjectId} onCancel={() => setReviewing(null)} />}
@@ -1964,6 +2103,44 @@ export default function InstalledMcpManagementWorkspace({
               );
             }}
             onCancel={() => setEstablishingRuntimeTrust(null)}
+            onRequestEnterpriseLogin={onRequestEnterpriseLogin}
+          />
+        );
+      })()}
+      {authorizingSecretBrokerage && (() => {
+        const binding = bindingByInstance.get(authorizingSecretBrokerage.record_id);
+        const assignment = binding
+          ? assignmentByBinding.get(binding.binding_id)
+          : undefined;
+        const validation = assignment
+          ? validationByAssignment.get(assignment.assignment_id)
+          : undefined;
+        const enablement = validation
+          ? enablementByValidation.get(validation.validation_id)
+          : undefined;
+        const runtimeTrust = enablement
+          ? runtimeTrustByEnablement.get(enablement.enablement_id)
+          : undefined;
+        if (!runtimeTrust) return null;
+        return (
+          <SecretBrokerageDialog
+            instance={authorizingSecretBrokerage}
+            runtimeTrust={runtimeTrust}
+            authorization={secretBrokerageByRuntimeTrust.get(runtimeTrust.grant_id)}
+            sessionScopeKey={sessionScopeKey}
+            onAuthorizationCreated={(authorization) => {
+              queryClient.setQueryData<ConnectorSecretBrokerageAuthorizationInventoryItem[]>(
+                ["connector-secret-brokerage-authorizations", sessionScopeKey],
+                (current = []) => [
+                  ...current.filter(
+                    (item) => item.source_runtime_trust_grant_id !==
+                      authorization.source_runtime_trust_grant_id,
+                  ),
+                  authorization,
+                ],
+              );
+            }}
+            onCancel={() => setAuthorizingSecretBrokerage(null)}
             onRequestEnterpriseLogin={onRequestEnterpriseLogin}
           />
         );

@@ -318,6 +318,17 @@ class ConnectorConfigurationValidationService:
             raise ConnectorConfigurationValidationError("configuration_validation_source_not_found")
         self._verify_snapshot(evidence, "evidence")
         self._verify_snapshot(policy, "policy")
+        self._verify_validation(
+            actor=None,
+            assignment=assignment,
+            evidence=evidence,
+            policy=policy,
+            source_assignment_digest=record.source_assignment_digest,
+            package_digest=record.package_digest,
+            evidence_digest=record.evidence_digest,
+            validation_policy_digest=record.validation_policy_digest,
+            now=self._clock(),
+        )
         if (
             record.source_assignment_digest != assignment.canonical_digest
             or record.package_digest != assignment.package_digest
@@ -550,7 +561,7 @@ class ConnectorConfigurationValidationService:
     @staticmethod
     def _verify_validation(
         *,
-        actor: AuthenticatedSubject,
+        actor: AuthenticatedSubject | None,
         assignment: ConnectorCredentialAssignmentRecord,
         evidence: ConnectorConfigurationEvidenceSnapshot,
         policy: ConnectorConfigurationValidationPolicySnapshot,
@@ -599,8 +610,11 @@ class ConnectorConfigurationValidationService:
             or now - assignment.assigned_at > timedelta(hours=policy.maximum_assignment_age_hours)
             or now - evidence.observed_at
             > timedelta(minutes=policy.maximum_observation_age_minutes)
-            or not assurance_satisfies_policy(
-                actor.assurance_level, policy.required_assurance_level
+            or (
+                actor is not None
+                and not assurance_satisfies_policy(
+                    actor.assurance_level, policy.required_assurance_level
+                )
             )
         ):
             raise ConnectorConfigurationValidationError("configuration_validation_invalid")

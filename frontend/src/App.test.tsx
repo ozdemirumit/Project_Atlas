@@ -1759,6 +1759,14 @@ describe("Atlas application shell", () => {
       ],
       { devices: [{ device_id: "inventory-device.previous-user" }] },
     );
+    client.setQueryData(
+      ["connector-secret-brokerage-authorizations", "previous-session-scope"],
+      [{ authorization_id: "connector-secret-brokerage-authorization.previous-user" }],
+    );
+    client.setQueryData(
+      ["connector-secret-brokerage-authorization-options", "previous-session-scope"],
+      [{ brokerage_profile_id: "connector-secret-brokerage-profile.previous-user" }],
+    );
     render(
       <QueryClientProvider client={client}>
         <App />
@@ -1810,6 +1818,12 @@ describe("Atlas application shell", () => {
     expect(logoutRequest?.method).toBe("DELETE");
     expect(logoutHeaders.get("X-CSRF-Token")).toBe("csrf_browser_test");
     expect(client.getQueriesData({ queryKey: ["inventory-devices"] })).toEqual([]);
+    expect(client.getQueriesData({
+      queryKey: ["connector-secret-brokerage-authorizations"],
+    })).toEqual([]);
+    expect(client.getQueriesData({
+      queryKey: ["connector-secret-brokerage-authorization-options"],
+    })).toEqual([]);
   }, 15_000);
 
   it("discovers authorized identity governance and revokes exact foreign access", async () => {

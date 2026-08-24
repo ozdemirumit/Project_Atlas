@@ -33,6 +33,23 @@ class PostgreSQLConnectorSecretBrokerageRepository:
             row = await session.get(ConnectorSecretBrokerageAuthorizationModel, authorization_id)
             return self._to_domain(row.payload) if row else None
 
+    async def get_in_scope(
+        self,
+        *,
+        authorization_id: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> ConnectorSecretBrokerageAuthorizationRecord | None:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(ConnectorSecretBrokerageAuthorizationModel).where(
+                    ConnectorSecretBrokerageAuthorizationModel.authorization_id == authorization_id,
+                    ConnectorSecretBrokerageAuthorizationModel.organization_id == organization_id,
+                    ConnectorSecretBrokerageAuthorizationModel.environment_id == environment_id,
+                )
+            )
+            return self._to_domain(row.payload) if row else None
+
     async def get_by_runtime_trust(
         self, *, source_runtime_trust_grant_id: str
     ) -> ConnectorSecretBrokerageAuthorizationRecord | None:
@@ -45,6 +62,41 @@ class PostgreSQLConnectorSecretBrokerageRepository:
             )
             return self._to_domain(row.payload) if row else None
 
+    async def get_by_runtime_trust_in_scope(
+        self,
+        *,
+        source_runtime_trust_grant_id: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> ConnectorSecretBrokerageAuthorizationRecord | None:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(ConnectorSecretBrokerageAuthorizationModel).where(
+                    ConnectorSecretBrokerageAuthorizationModel.source_runtime_trust_grant_id
+                    == source_runtime_trust_grant_id,
+                    ConnectorSecretBrokerageAuthorizationModel.organization_id == organization_id,
+                    ConnectorSecretBrokerageAuthorizationModel.environment_id == environment_id,
+                )
+            )
+            return self._to_domain(row.payload) if row else None
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorSecretBrokerageAuthorizationRecord, ...]:
+        async with self._sessions() as session:
+            rows = (
+                await session.scalars(
+                    select(ConnectorSecretBrokerageAuthorizationModel)
+                    .where(
+                        ConnectorSecretBrokerageAuthorizationModel.organization_id
+                        == organization_id,
+                        ConnectorSecretBrokerageAuthorizationModel.environment_id == environment_id,
+                    )
+                    .order_by(ConnectorSecretBrokerageAuthorizationModel.authorization_id)
+                )
+            ).all()
+            return tuple(self._to_domain(row.payload) for row in rows)
+
     async def get_by_create_key(
         self, *, authorized_by: str, idempotency_key: str
     ) -> ConnectorSecretBrokerageAuthorizationRecord | None:
@@ -53,6 +105,25 @@ class PostgreSQLConnectorSecretBrokerageRepository:
                 select(ConnectorSecretBrokerageAuthorizationModel).where(
                     ConnectorSecretBrokerageAuthorizationModel.authorized_by == authorized_by,
                     ConnectorSecretBrokerageAuthorizationModel.idempotency_key == idempotency_key,
+                )
+            )
+            return self._to_domain(row.payload) if row else None
+
+    async def get_by_create_key_in_scope(
+        self,
+        *,
+        authorized_by: str,
+        idempotency_key: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> ConnectorSecretBrokerageAuthorizationRecord | None:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(ConnectorSecretBrokerageAuthorizationModel).where(
+                    ConnectorSecretBrokerageAuthorizationModel.authorized_by == authorized_by,
+                    ConnectorSecretBrokerageAuthorizationModel.idempotency_key == idempotency_key,
+                    ConnectorSecretBrokerageAuthorizationModel.organization_id == organization_id,
+                    ConnectorSecretBrokerageAuthorizationModel.environment_id == environment_id,
                 )
             )
             return self._to_domain(row.payload) if row else None
