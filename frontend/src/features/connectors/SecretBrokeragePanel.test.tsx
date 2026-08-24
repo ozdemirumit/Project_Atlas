@@ -1,122 +1,166 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ConnectorSecretBrokerageAuthorization } from "../../api/secretBrokerageAuthorizations";
+import {
+  createConnectorSecretBrokerageAuthorization,
+  getConnectorSecretBrokerageAuthorizationOptions,
+  getConnectorSecretBrokerageAuthorizations,
+} from "../../api/secretBrokerageAuthorizations";
 import { SecretBrokeragePanel } from "./SecretBrokeragePanel";
-import { runtimeTrustGrant } from "./testRuntimeTrustFixture";
+import { runtimeTrustGrantInventoryItem as runtimeTrust } from "./testRuntimeTrustFixture";
+import {
+  secretBrokerageAuthorizationInventoryItem as authorization,
+  secretBrokerageAuthorizationOption as option,
+} from "./testSecretBrokerageFixture";
 
-const profileDigest = "f".repeat(64);
-const policyDigest = "be0056e233010d40f427b23cd80f6089e52264adf8a503d39c0d130fa85ced59";
-const authorization = {
-  authorization_id: "connector-secret-brokerage-authorization.test",
-  schema_version: "atlas.connector-secret-brokerage-authorization.v1",
-  version: 1,
-  source_runtime_trust_grant_id: runtimeTrustGrant.grant_id,
-  source_runtime_trust_digest: runtimeTrustGrant.canonical_digest,
-  organization_id: runtimeTrustGrant.organization_id,
-  environment_id: runtimeTrustGrant.environment_id,
-  package_digest: runtimeTrustGrant.package_digest,
-  connector_id: runtimeTrustGrant.connector_id,
-  release_version: runtimeTrustGrant.release_version,
-  manifest_digest: runtimeTrustGrant.manifest_digest,
-  instance_id: runtimeTrustGrant.instance_id,
-  instance_key: runtimeTrustGrant.instance_key,
-  display_name: runtimeTrustGrant.display_name,
-  credential_class: "credential.api-token",
-  authentication_method: "auth.api-token",
-  privilege_class: "privilege.read-only",
-  rotation_state: "rotation.current",
-  revocation_state: "revocation.active",
-  next_rotation_at: "2026-08-09T13:00:00Z",
-  runtime_profile_id: runtimeTrustGrant.runtime_profile_id,
-  runtime_profile_digest: runtimeTrustGrant.runtime_profile_digest,
-  runner_workload_identity_id: runtimeTrustGrant.runner_workload_identity_id,
-  secret_delivery_policy_id: runtimeTrustGrant.secret_delivery_policy_id,
-  brokerage_profile_id: "connector-secret-brokerage-profile.development-memory-only",
-  brokerage_profile_digest: profileDigest,
-  delivery_policy_id: runtimeTrustGrant.secret_delivery_policy_id,
-  lease_policy_id: "secret-lease-policy.single-use-non-renewable",
-  maximum_lease_seconds: 300,
-  revocation_policy_id: "secret-revocation-policy.check-before-issue-and-use",
-  brokerage_policy_id: "connector-secret-brokerage-policy.development",
-  brokerage_policy_digest: policyDigest,
-  brokerage_policy_version: "policy-v1",
-  authorization_version: 1,
-  instance_state: "enabled_secret_brokerage_governed",
-  authorized_by: "subject.connector-secret-brokerage-authorizer",
-  purpose: "Authorize exact future memory-only secret brokerage without issuing a lease.",
-  authorized_at: "2026-08-06T00:00:00Z",
-  canonical_digest: "9".repeat(64),
-  runtime_boundary_bound: true,
-  runtime_trust_granted: true,
-  eligible_for_secret_brokerage: true,
-  secret_brokerage_governed: true,
-  credential_resolution_authorized: true,
-  eligible_for_runtime_activation: true,
-  promotion_blocked: false,
-  secret_lease_issued: false,
-  credentials_resolved: false,
-  runner_started: false,
-  package_loaded: false,
-  target_connection_authorized: false,
-  capability_invocation_authorized: false,
-  execution_authorized: false,
-  deployment_approved: false,
-  infrastructure_mutation_performed: false,
-  reused: false,
-} satisfies ConnectorSecretBrokerageAuthorization;
+vi.mock("../../api/secretBrokerageAuthorizations", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../api/secretBrokerageAuthorizations")>();
+  return {
+    ...original,
+    createConnectorSecretBrokerageAuthorization: vi.fn(),
+    getConnectorSecretBrokerageAuthorizationOptions: vi.fn(),
+    getConnectorSecretBrokerageAuthorizations: vi.fn(),
+  };
+});
 
-afterEach(() => vi.unstubAllGlobals());
+const sessionScopeKey = JSON.stringify(["subject.operator", "org.atlas", "env.atlas"]);
+
+function renderPanel(existingAuthorization = undefined as typeof authorization | undefined) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  const rendered = render(
+    <QueryClientProvider client={client}>
+      <SecretBrokeragePanel
+        runtimeTrust={runtimeTrust}
+        existingAuthorization={existingAuthorization}
+        sessionScopeKey={sessionScopeKey}
+      />
+    </QueryClientProvider>,
+  );
+  return { ...rendered, client };
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(getConnectorSecretBrokerageAuthorizations).mockResolvedValue([]);
+  vi.mocked(getConnectorSecretBrokerageAuthorizationOptions).mockResolvedValue([option]);
+  vi.mocked(createConnectorSecretBrokerageAuthorization).mockResolvedValue({ data: authorization });
+});
+
+afterEach(() => cleanup());
 
 describe("SecretBrokeragePanel", () => {
-  it("authorizes exact signed brokerage evidence without secret or lease controls", async () => {
-    document.cookie = "atlas_csrf=test-csrf; path=/";
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(JSON.stringify({ data: authorization }), { status: 201 }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
-    render(<QueryClientProvider client={client}><SecretBrokeragePanel runtimeTrust={runtimeTrustGrant} /></QueryClientProvider>);
+  it("uses only server-provided exact brokerage evidence and grants no operational authority", async () => {
+    renderPanel();
 
-    expect(screen.queryByRole("textbox", { name: /secret reference|secret store|broker id|lease ttl|lease seconds|workload identity|delivery policy|target|host|port|command|parameter/i })).toBeNull();
-    fireEvent.change(screen.getByRole("textbox", { name: "Brokerage profile digest" }), { target: { value: profileDigest } });
-    fireEvent.click(screen.getByLabelText(/Authorization grants no lease issuance/));
-    fireEvent.click(screen.getByRole("button", { name: "Authorize brokerage" }));
+    expect(await screen.findByRole("combobox", { name: "Signed brokerage profile and policy" }))
+      .toBeVisible();
+    expect(screen.queryByRole("textbox", {
+      name: /profile id|profile digest|policy id|policy digest|broker|store|secret|delivery|lease|workload/i,
+    })).toBeNull();
+    expect(screen.queryByRole("button", {
+      name: /^(resolve|lease|connect|run|invoke|execute|deploy)/i,
+    })).toBeNull();
+    fireEvent.click(screen.getByLabelText(/Authorization governs only a future memory-only/i));
+    fireEvent.click(screen.getByRole("button", { name: "Authorize secret brokerage" }));
 
+    await waitFor(() => expect(createConnectorSecretBrokerageAuthorization).toHaveBeenCalledOnce());
+    const input = vi.mocked(createConnectorSecretBrokerageAuthorization).mock.calls[0]?.[0];
+    expect(input?.runtimeTrust).toBe(runtimeTrust);
+    expect(input?.option).toBe(option);
+    expect(input?.purpose).toMatch(/memory-only secret brokerage boundary/i);
     expect(await screen.findByText(authorization.authorization_id)).toBeVisible();
-    expect(screen.getByText(authorization.instance_state)).toBeVisible();
     expect(screen.getByText("not issued")).toBeVisible();
     expect(screen.getByText("not resolved")).toBeVisible();
-    expect(screen.getByText("not started")).toBeVisible();
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
-    const init = fetchMock.mock.calls[0]?.[1];
-    const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as Record<string, unknown>;
-    expect(body).toMatchObject({
-      source_runtime_trust_grant_id: runtimeTrustGrant.grant_id,
-      source_runtime_trust_digest: runtimeTrustGrant.canonical_digest,
-      package_digest: runtimeTrustGrant.package_digest,
-      brokerage_profile_id: authorization.brokerage_profile_id,
-      brokerage_profile_digest: profileDigest,
-      brokerage_policy_id: authorization.brokerage_policy_id,
-      brokerage_policy_digest: policyDigest,
-      acknowledged_authorization_grants_no_lease_secret_runtime_target_execution_or_deployment: true,
-    });
-    for (const forbidden of ["credential_profile_id", "secret_reference_id", "secret_store_profile_id", "broker_id", "lease_policy_id", "maximum_lease_seconds", "runner_workload_identity_id", "delivery_policy_id", "target_profile_id", "endpoint_url", "host", "port", "command", "parameters", "execution_authorized", "deployment_approved"]) expect(body).not.toHaveProperty(forbidden);
-    expect(new Headers(init?.headers).get("X-CSRF-Token")).toBe("test-csrf");
   });
 
-  it("reports delivery policy failures without presenting MFA as a prerequisite", async () => {
-    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockRejectedValue(new Error("policy rejected")));
-    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
-    render(<QueryClientProvider client={client}><SecretBrokeragePanel runtimeTrust={runtimeTrustGrant} /></QueryClientProvider>);
+  it("restores an existing authorization as minimized read-only evidence", async () => {
+    vi.mocked(getConnectorSecretBrokerageAuthorizations).mockResolvedValue([authorization]);
+    renderPanel(authorization);
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Brokerage profile digest" }), { target: { value: profileDigest } });
-    fireEvent.click(screen.getByLabelText(/Authorization grants no lease issuance/));
-    fireEvent.click(screen.getByRole("button", { name: "Authorize brokerage" }));
+    expect(await screen.findByText(authorization.authorization_id)).toBeVisible();
+    expect(screen.getByText(authorization.brokerage_profile_id)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Authorize secret brokerage" })).toBeNull();
+    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(getConnectorSecretBrokerageAuthorizationOptions).not.toHaveBeenCalled();
+  });
+
+  it("treats an authoritative empty response as newer than an existing authorization prop", async () => {
+    renderPanel(authorization);
+
+    expect(await screen.findByRole("combobox", { name: "Signed brokerage profile and policy" }))
+      .toBeVisible();
+    expect(screen.queryByText(authorization.authorization_id)).toBeNull();
+    expect(getConnectorSecretBrokerageAuthorizationOptions).toHaveBeenCalledOnce();
+  });
+
+  it("hides previously valid authorization evidence when freshness refetch fails", async () => {
+    vi.mocked(getConnectorSecretBrokerageAuthorizations).mockResolvedValue([authorization]);
+    const { client } = renderPanel(authorization);
+    expect(await screen.findByText(authorization.authorization_id)).toBeVisible();
+    vi.mocked(getConnectorSecretBrokerageAuthorizations).mockRejectedValue(
+      new Error("freshness rejected"),
+    );
+
+    await act(async () => {
+      await client.refetchQueries({
+        queryKey: [
+          "connector-secret-brokerage-authorizations",
+          sessionScopeKey,
+          runtimeTrust.grant_id,
+        ],
+      });
+    });
+
+    expect(await screen.findByRole("alert")).toBeVisible();
+    expect(screen.queryByText(authorization.authorization_id)).toBeNull();
+  });
+
+  it("invalidates acknowledgement when refreshed server options change", async () => {
+    const { client } = renderPanel();
+    const select = await screen.findByRole("combobox", {
+      name: "Signed brokerage profile and policy",
+    });
+    fireEvent.click(screen.getByLabelText(/Authorization governs only a future memory-only/i));
+    expect(screen.getByRole("button", { name: "Authorize secret brokerage" })).toBeEnabled();
+
+    const replacement = {
+      ...option,
+      brokerage_profile_id: "connector-secret-brokerage-profile.memory-only-replacement",
+      brokerage_profile_digest: "6".repeat(64),
+    };
+    act(() => {
+      client.setQueryData(
+        ["connector-secret-brokerage-authorization-options", sessionScopeKey, runtimeTrust.grant_id],
+        [replacement],
+      );
+    });
+
+    await waitFor(() => expect(select).toHaveValue(JSON.stringify([
+      replacement.source_runtime_trust_grant_id,
+      replacement.source_runtime_trust_digest,
+      replacement.brokerage_profile_id,
+      replacement.brokerage_profile_digest,
+      replacement.brokerage_policy_id,
+      replacement.brokerage_policy_digest,
+    ])));
+    expect(screen.getByRole("button", { name: "Authorize secret brokerage" })).toBeDisabled();
+  });
+
+  it("reports policy failure without requiring MFA or a second browser session", async () => {
+    vi.mocked(createConnectorSecretBrokerageAuthorization).mockRejectedValue(
+      new Error("policy rejected"),
+    );
+    renderPanel();
+
+    await screen.findByRole("combobox", { name: "Signed brokerage profile and policy" });
+    fireEvent.click(screen.getByLabelText(/Authorization governs only a future memory-only/i));
+    fireEvent.click(screen.getByRole("button", { name: "Authorize secret brokerage" }));
 
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent(/credential posture.*signed delivery-policy evidence.*requested scope.*separation of duties/i);
-    expect(alert).not.toHaveTextContent(/MFA|multi[- ]factor|hardware|assurance/i);
+    expect(alert).toHaveTextContent(/runtime lineage.*credential posture.*signed profile and policy.*freshness.*scope.*separation/i);
+    expect(alert).not.toHaveTextContent(/MFA|multi[- ]factor|second browser|hardware/i);
   });
 });

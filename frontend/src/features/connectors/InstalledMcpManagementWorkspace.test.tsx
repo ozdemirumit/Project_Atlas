@@ -60,6 +60,11 @@ import {
   getConnectorRuntimeTrustGrants,
 } from "../../api/runtimeTrustGrants";
 import {
+  createConnectorSecretBrokerageAuthorization,
+  getConnectorSecretBrokerageAuthorizationOptions,
+  getConnectorSecretBrokerageAuthorizations,
+} from "../../api/secretBrokerageAuthorizations";
+import {
   getConnectorTargetConfigurations,
   type ConnectorTargetConfigurationBinding,
 } from "../../api/targetConfigurations";
@@ -77,6 +82,10 @@ import {
   runtimeTrustGrantInventoryItem as runtimeTrustGrant,
   runtimeTrustGrantOption,
 } from "./testRuntimeTrustFixture";
+import {
+  secretBrokerageAuthorizationInventoryItem as secretBrokerageAuthorization,
+  secretBrokerageAuthorizationOption,
+} from "./testSecretBrokerageFixture";
 
 const policy: ConnectorInstanceCreationPolicy = {
   policy_id: "connector-instance-creation-policy.development",
@@ -831,6 +840,16 @@ vi.mock("../../api/runtimeTrustGrants", async (importOriginal) => {
   };
 });
 
+vi.mock("../../api/secretBrokerageAuthorizations", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../api/secretBrokerageAuthorizations")>();
+  return {
+    ...original,
+    createConnectorSecretBrokerageAuthorization: vi.fn(),
+    getConnectorSecretBrokerageAuthorizationOptions: vi.fn(),
+    getConnectorSecretBrokerageAuthorizations: vi.fn(),
+  };
+});
+
 vi.mock("../../api/connectorUpgradeReadiness", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/connectorUpgradeReadiness")>();
   return {
@@ -893,6 +912,11 @@ beforeEach(() => {
   vi.mocked(getConnectorRuntimeTrustGrants).mockResolvedValue([]);
   vi.mocked(getConnectorRuntimeTrustGrantOptions).mockResolvedValue([]);
   vi.mocked(createConnectorRuntimeTrustGrant).mockResolvedValue({ data: runtimeTrustGrant });
+  vi.mocked(getConnectorSecretBrokerageAuthorizations).mockResolvedValue([]);
+  vi.mocked(getConnectorSecretBrokerageAuthorizationOptions).mockResolvedValue([]);
+  vi.mocked(createConnectorSecretBrokerageAuthorization).mockResolvedValue({
+    data: secretBrokerageAuthorization,
+  });
   vi.mocked(getConnectorUpgradeReadiness).mockResolvedValue(upgradeReadiness);
   vi.mocked(getConnectorUpgradePlan).mockResolvedValue(upgradePlan);
   vi.mocked(getConnectorUpgradeApprovalRecord).mockResolvedValue(null);
@@ -942,6 +966,22 @@ afterEach(() => {
 });
 
 describe("InstalledMcpManagementWorkspace", () => {
+  it("refreshes runtime trust and secret brokerage inventory with the MCP lifecycle", async () => {
+    renderWorkspace();
+
+    await screen.findByRole("heading", { name: "Installed MCPs" });
+    await waitFor(() => {
+      expect(getConnectorRuntimeTrustGrants).toHaveBeenCalledOnce();
+      expect(getConnectorSecretBrokerageAuthorizations).toHaveBeenCalledOnce();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Refresh MCP inventory" }));
+
+    await waitFor(() => {
+      expect(getConnectorRuntimeTrustGrants).toHaveBeenCalledTimes(2);
+      expect(getConnectorSecretBrokerageAuthorizations).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it("shows installed MCP inventory with visible add and reversible retirement controls", async () => {
     renderWorkspace();
 
@@ -1174,6 +1214,95 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(await screen.findByText("Enabled / runtime trusted")).toBeVisible();
     expect(screen.getByRole("button", { name: "View runtime trust for Storage East" }))
       .toHaveTextContent("View runtime trust");
+  });
+
+  it("transitions a runtime-trusted MCP to governed secret brokerage using server options", async () => {
+    vi.mocked(getConnectorTargetConfigurations).mockResolvedValue([configuredBinding]);
+    vi.mocked(getConnectorCredentialAssignments).mockResolvedValue([credentialAssignment]);
+    vi.mocked(getConnectorConfigurationValidations).mockResolvedValue([configurationValidation]);
+    vi.mocked(getConnectorCapabilityEnablements).mockResolvedValue([
+      capabilityEnablementInventoryItem,
+    ]);
+    vi.mocked(getConnectorRuntimeTrustGrants).mockResolvedValue([runtimeTrustGrant]);
+    vi.mocked(getConnectorSecretBrokerageAuthorizationOptions).mockResolvedValue([
+      secretBrokerageAuthorizationOption,
+    ]);
+    renderWorkspace();
+
+    expect(await screen.findByText("Enabled / runtime trusted")).toBeVisible();
+    const authorize = screen.getByRole("button", {
+      name: "Authorize secret brokerage for Storage East",
+    });
+    fireEvent.click(authorize);
+    expect(await screen.findByRole("combobox", {
+      name: "Signed brokerage profile and policy",
+    })).toBeVisible();
+    expect(screen.queryByRole("textbox", {
+      name: /profile id|profile digest|policy id|policy digest|broker|store|secret|delivery|lease|workload/i,
+    })).toBeNull();
+    fireEvent.click(screen.getByLabelText(/Authorization governs only a future memory-only/i));
+    fireEvent.click(screen.getByRole("button", { name: "Authorize secret brokerage" }));
+
+    await waitFor(() => expect(createConnectorSecretBrokerageAuthorization).toHaveBeenCalledOnce());
+    const input = vi.mocked(createConnectorSecretBrokerageAuthorization).mock.calls[0]?.[0];
+    expect(input?.runtimeTrust).toBe(runtimeTrustGrant);
+    expect(input?.option).toBe(secretBrokerageAuthorizationOption);
+    expect(await screen.findByText("Enabled / secret brokerage governed")).toBeVisible();
+    expect(screen.getByText("Secret brokerage governed")).toBeVisible();
+    expect(screen.getByRole("button", { name: "View secret brokerage for Storage East" }))
+      .toHaveTextContent("View secret brokerage");
+  });
+
+  it("restores governed secret brokerage as read-only minimized evidence", async () => {
+    vi.mocked(getConnectorTargetConfigurations).mockResolvedValue([configuredBinding]);
+    vi.mocked(getConnectorCredentialAssignments).mockResolvedValue([credentialAssignment]);
+    vi.mocked(getConnectorConfigurationValidations).mockResolvedValue([configurationValidation]);
+    vi.mocked(getConnectorCapabilityEnablements).mockResolvedValue([
+      capabilityEnablementInventoryItem,
+    ]);
+    vi.mocked(getConnectorRuntimeTrustGrants).mockResolvedValue([runtimeTrustGrant]);
+    vi.mocked(getConnectorSecretBrokerageAuthorizations).mockResolvedValue([
+      secretBrokerageAuthorization,
+    ]);
+    renderWorkspace();
+
+    expect(await screen.findByText("Enabled / secret brokerage governed")).toBeVisible();
+    const view = screen.getByRole("button", { name: "View secret brokerage for Storage East" });
+    fireEvent.click(view);
+    const dialog = screen.getByRole("dialog", {
+      name: "Manage secret brokerage for Storage East",
+    });
+    expect(await within(dialog).findByText(secretBrokerageAuthorization.authorization_id))
+      .toBeVisible();
+    expect(within(dialog).queryByRole("button", { name: "Authorize secret brokerage" })).toBeNull();
+    expect(within(dialog).queryByRole("combobox")).toBeNull();
+    expect(within(dialog).queryByRole("button", {
+      name: /^(resolve|lease|connect|run|invoke|execute|deploy)/i,
+    })).toBeNull();
+  });
+
+  it("removes stale brokerage state when authoritative inventory refresh fails", async () => {
+    vi.mocked(getConnectorTargetConfigurations).mockResolvedValue([configuredBinding]);
+    vi.mocked(getConnectorCredentialAssignments).mockResolvedValue([credentialAssignment]);
+    vi.mocked(getConnectorConfigurationValidations).mockResolvedValue([configurationValidation]);
+    vi.mocked(getConnectorCapabilityEnablements).mockResolvedValue([
+      capabilityEnablementInventoryItem,
+    ]);
+    vi.mocked(getConnectorRuntimeTrustGrants).mockResolvedValue([runtimeTrustGrant]);
+    vi.mocked(getConnectorSecretBrokerageAuthorizations).mockResolvedValue([
+      secretBrokerageAuthorization,
+    ]);
+    renderWorkspace();
+    expect(await screen.findByText("Enabled / secret brokerage governed")).toBeVisible();
+    vi.mocked(getConnectorSecretBrokerageAuthorizations).mockRejectedValue(
+      new ApiRequestError("Secret brokerage evidence expired", 422),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh MCP inventory" }));
+
+    expect(await screen.findByText("Secret brokerage inventory is unavailable")).toBeVisible();
+    expect(screen.queryByText("Enabled / secret brokerage governed")).toBeNull();
+    expect(screen.getByText("Enabled / runtime trusted")).toBeVisible();
   });
 
   it("keeps earlier lifecycle controls available when runtime trust inventory is unavailable", async () => {

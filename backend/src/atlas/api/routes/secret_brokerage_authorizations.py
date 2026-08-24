@@ -3,14 +3,17 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated, NoReturn
 
-from fastapi import APIRouter, Depends, Header, Path, Request, Response
+from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response
 
 from atlas.api.errors import AtlasError
 from atlas.api.schemas import ResponseMeta
 from atlas.api.secret_brokerage_schemas import (
-    ConnectorSecretBrokerageData,
     ConnectorSecretBrokerageInput,
-    ConnectorSecretBrokerageResponse,
+    ConnectorSecretBrokerageInventoryData,
+    ConnectorSecretBrokerageInventoryResponse,
+    ConnectorSecretBrokerageOptionData,
+    ConnectorSecretBrokerageOptionsResponse,
+    ConnectorSecretBrokerageViewResponse,
 )
 from atlas.api.security import (
     authorize_connector_secret_brokerage_create,
@@ -57,17 +60,73 @@ def _response(
     record: ConnectorSecretBrokerageAuthorizationRecord,
     request: Request,
     response: Response,
-) -> ConnectorSecretBrokerageResponse:
+) -> ConnectorSecretBrokerageViewResponse:
     response.headers["Cache-Control"] = "no-store"
-    return ConnectorSecretBrokerageResponse(
-        data=ConnectorSecretBrokerageData.from_domain(record),
+    return ConnectorSecretBrokerageViewResponse(
+        data=ConnectorSecretBrokerageInventoryData.from_domain(record),
         meta=ResponseMeta(
             correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
         ),
     )
 
 
-@router.post("", response_model=ConnectorSecretBrokerageResponse, status_code=201)
+@router.get("", response_model=ConnectorSecretBrokerageInventoryResponse)
+async def list_connector_secret_brokerage_authorizations(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[AuthorizationDecision, Depends(authorize_connector_secret_brokerage_read)],
+    source_runtime_trust_grant_id: Annotated[
+        str | None, Query(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")
+    ] = None,
+) -> ConnectorSecretBrokerageInventoryResponse:
+    service: ConnectorSecretBrokerageService = request.app.state.secret_brokerage_service
+    try:
+        records = await service.list_authorizations(
+            actor=subject,
+            source_runtime_trust_grant_id=source_runtime_trust_grant_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ConnectorSecretBrokerageError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorSecretBrokerageInventoryResponse(
+        data=tuple(ConnectorSecretBrokerageInventoryData.from_domain(record) for record in records),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.get("/options", response_model=ConnectorSecretBrokerageOptionsResponse)
+async def list_connector_secret_brokerage_options(
+    source_runtime_trust_grant_id: Annotated[str, Query(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[AuthorizationDecision, Depends(authorize_connector_secret_brokerage_read)],
+) -> ConnectorSecretBrokerageOptionsResponse:
+    service: ConnectorSecretBrokerageService = request.app.state.secret_brokerage_service
+    try:
+        options = await service.list_options(
+            actor=subject,
+            source_runtime_trust_grant_id=source_runtime_trust_grant_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ConnectorSecretBrokerageError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorSecretBrokerageOptionsResponse(
+        data=tuple(
+            ConnectorSecretBrokerageOptionData.from_application(option) for option in options
+        ),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.post("", response_model=ConnectorSecretBrokerageViewResponse, status_code=201)
 async def create_connector_secret_brokerage(
     payload: ConnectorSecretBrokerageInput,
     request: Request,
@@ -77,7 +136,7 @@ async def create_connector_secret_brokerage(
         AuthorizationDecision, Depends(authorize_connector_secret_brokerage_create)
     ],
     idempotency_key: Annotated[str, IDEMPOTENCY],
-) -> ConnectorSecretBrokerageResponse:
+) -> ConnectorSecretBrokerageViewResponse:
     service: ConnectorSecretBrokerageService = request.app.state.secret_brokerage_service
     try:
         record = await service.create(
@@ -101,14 +160,14 @@ async def create_connector_secret_brokerage(
     return _response(record, request, response)
 
 
-@router.get("/{authorization_id}", response_model=ConnectorSecretBrokerageResponse)
+@router.get("/{authorization_id}", response_model=ConnectorSecretBrokerageViewResponse)
 async def get_connector_secret_brokerage(
     authorization_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
     request: Request,
     response: Response,
     subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
     _decision: Annotated[AuthorizationDecision, Depends(authorize_connector_secret_brokerage_read)],
-) -> ConnectorSecretBrokerageResponse:
+) -> ConnectorSecretBrokerageViewResponse:
     service: ConnectorSecretBrokerageService = request.app.state.secret_brokerage_service
     try:
         record = await service.get(

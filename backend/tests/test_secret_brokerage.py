@@ -186,6 +186,16 @@ async def test_secret_brokerage_authorizes_only_future_runtime_activation() -> N
     assert record.eligible_for_runtime_activation
     assert record.instance_state == "enabled_secret_brokerage_governed"
     assert repeated.reused and repeated.authorization_id == record.authorization_id
+    tenant_scoped_seed = service._digest(
+        [
+            runtime_trust.organization_id,
+            runtime_trust.environment_id,
+            runtime_trust.grant_id,
+            profile.profile_id,
+            profile.canonical_digest,
+        ]
+    )
+    assert record.authorization_id.endswith(tenant_scoped_seed[:24])
     assert not record.secret_lease_issued and not record.credentials_resolved
     assert not record.runner_started and not record.package_loaded
     assert not record.target_connection_authorized and not record.capability_invocation_authorized
@@ -194,6 +204,7 @@ async def test_secret_brokerage_authorizes_only_future_runtime_activation() -> N
         "connector_secret_brokerage_requested",
         "connector_secret_brokerage_completed",
     ]
+    assert all(item.idempotency_key is None for item in audit.records)
 
 
 @pytest.mark.asyncio
@@ -337,6 +348,92 @@ async def test_secret_brokerage_postgres_payload_round_trip_excludes_secret_mate
         assert hidden not in rendered
 
 
+@pytest.mark.asyncio
+async def test_secret_brokerage_memory_repository_scopes_uniqueness_and_idempotency() -> None:
+    service, _, runtime_trust, profile, policy = await secret_brokerage_fixture()
+    record = await authorize_secret_brokerage(service, runtime_trust, profile, policy)
+    repository = InMemoryConnectorSecretBrokerageRepository()
+    other = replace(
+        record,
+        authorization_id="connector-secret-brokerage-authorization.other-tenant",
+        organization_id="organization.other",
+        environment_id="environment.other",
+    )
+
+    assert await repository.add(record) is True
+    assert await repository.add(other) is True
+    assert (
+        await repository.get_by_runtime_trust_in_scope(
+            source_runtime_trust_grant_id=record.source_runtime_trust_grant_id,
+            organization_id=record.organization_id,
+            environment_id=record.environment_id,
+        )
+        == record
+    )
+    assert (
+        await repository.get_by_runtime_trust_in_scope(
+            source_runtime_trust_grant_id=other.source_runtime_trust_grant_id,
+            organization_id=other.organization_id,
+            environment_id=other.environment_id,
+        )
+        == other
+    )
+    assert await repository.list_scope(
+        organization_id=record.organization_id,
+        environment_id=record.environment_id,
+    ) == (record,)
+
+
+@pytest.mark.asyncio
+async def test_secret_brokerage_options_fail_closed_for_expired_runtime_evidence() -> None:
+    service, runtime_fixture, runtime_trust, _, _ = await secret_brokerage_fixture()
+    runtime_fixture[0]._clock = lambda: runtime_trust.granted_at + timedelta(days=11)
+
+    with pytest.raises(ConnectorSecretBrokerageError, match="source_not_found"):
+        await service.list_options(
+            actor=secret_brokerage_authorizer(),
+            source_runtime_trust_grant_id=runtime_trust.grant_id,
+            correlation_id="cor_expired_runtime",
+        )
+
+
+@pytest.mark.asyncio
+async def test_secret_brokerage_options_fail_closed_for_expired_configuration_evidence() -> None:
+    service, runtime_fixture, runtime_trust, _, _ = await secret_brokerage_fixture()
+    runtime_fixture[2]._clock = lambda: runtime_trust.granted_at + timedelta(days=11)
+
+    with pytest.raises(ConnectorSecretBrokerageError, match="source_not_found"):
+        await service.list_options(
+            actor=secret_brokerage_authorizer(),
+            source_runtime_trust_grant_id=runtime_trust.grant_id,
+            correlation_id="cor_expired_configuration",
+        )
+
+
+@pytest.mark.asyncio
+async def test_secret_brokerage_inventory_and_downstream_fail_closed_when_evidence_expires() -> (
+    None
+):
+    service, _, runtime_trust, profile, policy = await secret_brokerage_fixture()
+    record = await authorize_secret_brokerage(service, runtime_trust, profile, policy)
+    service._clock = lambda: runtime_trust.granted_at + timedelta(days=11)
+
+    with pytest.raises(ConnectorSecretBrokerageError, match="invalid"):
+        await service.list_authorizations(
+            actor=secret_brokerage_authorizer(),
+            source_runtime_trust_grant_id=runtime_trust.grant_id,
+            correlation_id="cor_expired_brokerage_inventory",
+        )
+    with pytest.raises(ConnectorSecretBrokerageError, match="invalid"):
+        await service.runtime_activation_source(authorization_id=record.authorization_id)
+    with pytest.raises(ConnectorSecretBrokerageError, match="invalid"):
+        await service.get(
+            actor=secret_brokerage_authorizer(),
+            authorization_id=record.authorization_id,
+            correlation_id="cor_expired_brokerage_get",
+        )
+
+
 def test_secret_brokerage_api_rejects_caller_controls_and_minimizes_response(
     tmp_path: Path,
 ) -> None:
@@ -354,6 +451,13 @@ def test_secret_brokerage_api_rejects_caller_controls_and_minimizes_response(
         registration_service,
         *_rest,
     ) = runtime_fixture
+    foreign_runtime_trust = replace(
+        runtime_trust,
+        grant_id="connector-runtime-trust-grant.foreign",
+        organization_id="organization.foreign",
+        environment_id="environment.foreign",
+    )
+    assert asyncio.run(runtime_service.repository.add(foreign_runtime_trust)) is True
     subject = secret_brokerage_authorizer()
     app_settings = settings(
         development_subject_id=subject.subject_id,
@@ -386,12 +490,21 @@ def test_secret_brokerage_api_rejects_caller_controls_and_minimizes_response(
             secret_brokerage_service=service,
         )
     ) as client:
-        login_response = login(client)
         endpoint = "/api/v1/connectors/secret-brokerage-authorizations"
+        unauthenticated_inventory = client.get(endpoint)
+        login_response = login(client)
+        inventory_before = client.get(
+            endpoint,
+            params={"source_runtime_trust_grant_id": runtime_trust.grant_id},
+        )
+        options_before = client.get(
+            f"{endpoint}/options",
+            params={"source_runtime_trust_grant_id": runtime_trust.grant_id},
+        )
         denied = client.post(endpoint, json=payload, headers={"Idempotency-Key": "broker-api-001"})
         forbidden = client.post(
             endpoint,
-            json={**payload, "secret_reference_id": "secret.attacker"},
+            json={**payload, "broker_id": "secret-broker.attacker"},
             headers={
                 "Idempotency-Key": "broker-api-002",
                 "X-CSRF-Token": login_response.headers["X-CSRF-Token"],
@@ -408,19 +521,82 @@ def test_secret_brokerage_api_rejects_caller_controls_and_minimizes_response(
         assert created.status_code == 201, created.text
         authorization_id = created.json()["data"]["authorization_id"]
         read = client.get(f"{endpoint}/{authorization_id}")
+        inventory_after = client.get(
+            endpoint,
+            params={"source_runtime_trust_grant_id": runtime_trust.grant_id},
+        )
+        options_after = client.get(
+            f"{endpoint}/options",
+            params={"source_runtime_trust_grant_id": runtime_trust.grant_id},
+        )
+        missing_inventory = client.get(
+            endpoint,
+            params={"source_runtime_trust_grant_id": "connector-runtime-trust-grant.missing"},
+        )
+        foreign_inventory = client.get(
+            endpoint,
+            params={"source_runtime_trust_grant_id": foreign_runtime_trust.grant_id},
+        )
+        foreign_options = client.get(
+            f"{endpoint}/options",
+            params={"source_runtime_trust_grant_id": foreign_runtime_trust.grant_id},
+        )
+        missing_options = client.get(
+            f"{endpoint}/options",
+            params={"source_runtime_trust_grant_id": "connector-runtime-trust-grant.missing"},
+        )
 
+    assert unauthenticated_inventory.status_code == 401
     assert denied.status_code == 403 and forbidden.status_code == 422
     assert read.status_code == 200
-    assert created.headers["Cache-Control"] == read.headers["Cache-Control"] == "no-store"
+    assert inventory_before.status_code == options_before.status_code == 200
+    assert inventory_before.json()["data"] == []
+    assert len(options_before.json()["data"]) == 1
+    option = options_before.json()["data"][0]
+    assert option["source_runtime_trust_grant_id"] == runtime_trust.grant_id
+    assert option["source_runtime_trust_digest"] == runtime_trust.canonical_digest
+    assert option["brokerage_profile_id"] == profile.profile_id
+    assert option["brokerage_profile_digest"] == profile.canonical_digest
+    assert option["brokerage_policy_id"] == policy.policy_id
+    assert option["brokerage_policy_digest"] == policy.canonical_digest
+    assert option["required_assurance_level"] == "single_factor"
+    assert option["resulting_instance_state"] == "enabled_secret_brokerage_governed"
+    assert option["secret_brokerage_governed"] is True
+    assert option["secret_lease_issued"] is False
+    assert len(inventory_after.json()["data"]) == 1
+    inventory = inventory_after.json()["data"][0]
+    assert inventory["authorization_id"] == authorization_id
+    assert inventory["source_runtime_trust_grant_id"] == runtime_trust.grant_id
+    assert inventory["instance_state"] == "enabled_secret_brokerage_governed"
+    assert inventory["secret_brokerage_governed"] is True
+    assert inventory["credentials_resolved"] is False
+    assert options_after.json()["data"] == []
+    assert missing_inventory.json()["data"] == []
+    assert foreign_inventory.json()["data"] == missing_inventory.json()["data"]
+    assert foreign_options.status_code == missing_options.status_code == 404
+    assert foreign_options.json()["code"] == missing_options.json()["code"]
+    protected_responses = (
+        created,
+        read,
+        inventory_before,
+        options_before,
+        inventory_after,
+        options_after,
+        missing_inventory,
+        foreign_inventory,
+    )
+    assert all(item.headers["Cache-Control"] == "no-store" for item in protected_responses)
     data = created.json()["data"]
     assert data["credential_resolution_authorized"] is True
     assert data["secret_lease_issued"] is False and data["credentials_resolved"] is False
-    rendered = created.text.lower()
+    rendered = f"{created.text}\n{read.text}\n{inventory_after.text}\n{options_before.text}".lower()
     for hidden in (
         "credential_profile_id",
+        "credential_profile_digest",
         "secret_reference_id",
         "secret_store_profile_id",
         "broker_id",
+        "runner_workload_identity_id",
         "lease_handle",
         "request_fingerprint",
         "idempotency_key",

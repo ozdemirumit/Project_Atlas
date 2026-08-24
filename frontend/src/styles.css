@@ -925,7 +925,8 @@ textarea:focus-visible {
 .installed-mcp-dialog.credential-assignment-dialog,
 .installed-mcp-dialog.configuration-validation-dialog,
 .installed-mcp-dialog.capability-enablement-dialog,
-.installed-mcp-dialog.runtime-trust-dialog {
+.installed-mcp-dialog.runtime-trust-dialog,
+.installed-mcp-dialog.secret-brokerage-dialog {
   width: min(100%, 760px);
 }
 
@@ -933,7 +934,8 @@ textarea:focus-visible {
 .credential-assignment-dialog .target-configuration-panel,
 .configuration-validation-dialog .target-configuration-panel,
 .capability-enablement-dialog .target-configuration-panel,
-.runtime-trust-dialog .target-configuration-panel {
+.runtime-trust-dialog .target-configuration-panel,
+.secret-brokerage-dialog .target-configuration-panel {
   margin-top: 0;
   padding-top: 0;
   border-top: 0;
@@ -1625,7 +1627,8 @@ textarea:focus-visible {
   .installed-mcp-dialog.credential-assignment-dialog,
   .installed-mcp-dialog.configuration-validation-dialog,
   .installed-mcp-dialog.capability-enablement-dialog,
-  .installed-mcp-dialog.runtime-trust-dialog {
+  .installed-mcp-dialog.runtime-trust-dialog,
+  .installed-mcp-dialog.secret-brokerage-dialog {
     width: 100%;
     max-height: 100vh;
     border: 0;

@@ -1669,10 +1669,14 @@ class ConnectorSecretBrokerageAuthorizationModel(Base):
     __tablename__ = "connector_secret_brokerage_authorizations"
     __table_args__ = (
         UniqueConstraint(
+            "organization_id",
+            "environment_id",
             "source_runtime_trust_grant_id",
             name="uq_connector_secret_brokerage_authorizations_runtime_trust",
         ),
         UniqueConstraint(
+            "organization_id",
+            "environment_id",
             "authorized_by",
             "idempotency_key",
             name="uq_connector_secret_brokerage_authorizations_actor_idempotency",

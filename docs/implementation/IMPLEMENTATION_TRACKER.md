@@ -4,14 +4,82 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-238 |
-| Title | Installed MCP governed runtime trust grant |
+| Task ID | ATLAS-IMP-239 |
+| Title | Installed MCP governed secret-brokerage authorization |
 | Status | Ready for PR |
-| Branch | `agent/installed-mcp-runtime-trust-governance` |
+| Branch | `agent/installed-mcp-secret-brokerage-governance` |
 | Pull Request | Pending |
-| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-030, ATLAS-031, ATLAS-050, ATLAS-052, ADR-035, ADR-100, ADR-123, ADR-133, ADR-182 |
+| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-030, ATLAS-031, ATLAS-050, ATLAS-052, ADR-036, ADR-100, ADR-123, ADR-133, ADR-182 |
 | Last Updated | 2026-08-24 |
 | Next Action | Commit the reviewed slice, open a pull request and require exact-head CI before merge |
+
+### ATLAS-IMP-239 Scope Rationale
+
+- IMP-238 makes governed runtime trust reloadable and visible from Installed MCPs, but the existing
+  secret-brokerage authorization remains outside that operator lifecycle and accepts caller-supplied
+  profile and policy evidence.
+- This slice selects only a server-provided exact signed brokerage profile and policy, persists the
+  immutable authorization and reloads its minimized evidence in Installed MCPs.
+- Brokerage authorization does not resolve, fetch, return or deliver a secret. It creates no lease,
+  starts no runner, loads no package, connects to no target, invokes no capability, executes no
+  workflow, deploys no software and mutates no infrastructure.
+
+### ATLAS-IMP-239 Acceptance Criteria
+
+- Runtime-trusted Installed MCP rows expose `Authorize secret brokerage`; authorized rows reload as
+  `Enabled / secret brokerage governed` and expose only read-only upstream and brokerage-boundary
+  evidence.
+- The browser selects only server-provided, exact-scope, runtime-trust-compatible signed brokerage
+  profile and policy. No brokerage identifier, digest, broker, store, secret reference, delivery
+  channel, lease control or workload identity is hard-coded or freely editable in production UI.
+- Authorization inventory can be filtered by source runtime-trust identity and survives refresh.
+- Foreign and missing runtime-trust filters are indistinguishable; tenant scope is enforced before
+  discovery and the complete upstream lineage, signed evidence, freshness, revocation, read-only
+  privilege, broker/store policy, workload identity and memory-only delivery boundary are
+  independently revalidated.
+- API and UI projections exclude credential-profile identity, secret reference/value, store
+  identity/path, broker internals, target coordinates, signatures, request fingerprints,
+  idempotency material, lease material and mutable runner controls.
+- Success sets only `secret_brokerage_governed`, `credential_resolution_authorized` and
+  `eligible_for_runtime_activation`. Secret lease issuance, credential resolution/delivery, runner
+  start, package load, target connection, invocation, execution, deployment and mutation remain
+  unavailable.
+- Normal username/password sessions remain sufficient under the default `SINGLE_FACTOR` policy;
+  optional named step-up policy remains fail-closed without adding global MFA or a second session.
+- Focused backend/frontend tests, targeted static checks, independent review and desktop/mobile live
+  validation pass before PR.
+
+### ATLAS-IMP-239 Verification Evidence
+
+- Tenant-scoped authorization inventory/options, foreign-versus-missing equality,
+  scope-before-discovery, complete upstream and signed brokerage evidence revalidation, expiry and
+  refetch fail-closed behavior, audit minimization, deterministic tenant identity, memory/PostgreSQL
+  persistence and migration safety passed `59` focused backend lifecycle tests plus `34` migration
+  persistence tests. Alembic reports the single head `20260824_0158`.
+- Exact-field fail-closed parsing, server-option-only submission, minimized read-only evidence,
+  refresh coverage, authoritative-empty and refetch-error cache handling, login/session isolation
+  and Installed MCP state transitions passed `58` selected frontend tests.
+- Ruff, Ruff format, full MyPy (`1466` source files), TypeScript, targeted ESLint, production build
+  and `git diff --check` passed. The only build note is the existing large `App.tsx` Babel/chunk
+  advisory.
+- Independent security review found and closed stale brokerage/configuration evidence, audit
+  idempotency exposure, incomplete refresh, stale-query fallback and single-record GET freshness
+  gaps. Final re-review reported no findings and confirmed that no secret, lease, runner, package,
+  target, invocation, execution, deployment or infrastructure-mutation authority is granted.
+- A current-code API/web pair at `127.0.0.1:8060` and `127.0.0.1:5221` accepted the normal
+  `operator` / `correct-password` session and rendered Installed MCP inventory without horizontal
+  overflow (`763` px viewport, `748` px document width). Fresh-state live behavior remained
+  advisory-only; runtime-trust-to-brokerage success and reload behavior were exercised through the
+  focused API/UI integration suite rather than reusing incompatible stale in-memory preview data.
+
+### ATLAS-IMP-238 Delivery Evidence
+
+- Source commit `2034415788dea29340840133faf438f4665dcc73` passed exact-head pull-request CI run
+  `32726929663`; frontend completed in 10m43s and backend in 21m47s.
+- [PR #251](https://github.com/ozdemirumit/Project_Atlas/pull/251) was squash-merged to `main` as
+  `01bb3b33649ee6595a511d305875e86210e93d0e`.
+- The exact merge commit independently passed post-main CI run `32728924410`; frontend completed in
+  9m27s and backend in 13m32s. Local `main` and `origin/main` were synchronized before IMP-239.
 
 ### ATLAS-IMP-238 Scope Rationale
 
