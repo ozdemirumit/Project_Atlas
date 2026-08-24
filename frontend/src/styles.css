@@ -922,15 +922,48 @@ textarea:focus-visible {
 }
 
 .installed-mcp-dialog.target-configuration-dialog,
-.installed-mcp-dialog.credential-assignment-dialog {
+.installed-mcp-dialog.credential-assignment-dialog,
+.installed-mcp-dialog.configuration-validation-dialog {
   width: min(100%, 760px);
 }
 
 .target-configuration-dialog .target-configuration-panel,
-.credential-assignment-dialog .target-configuration-panel {
+.credential-assignment-dialog .target-configuration-panel,
+.configuration-validation-dialog .target-configuration-panel {
   margin-top: 0;
   padding-top: 0;
   border-top: 0;
+}
+
+.configuration-validation-record code,
+.configuration-validation-record strong,
+.configuration-validation-option-facts strong {
+  overflow-wrap: anywhere;
+}
+
+.configuration-validation-record .section-heading > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.configuration-validation-record .section-heading strong,
+.configuration-validation-record .section-heading code {
+  display: block;
+}
+
+.configuration-validation-record .credential-assignment-lineage {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 130px) minmax(0, 1fr);
+  gap: 6px 12px;
+}
+
+.configuration-validation-record .credential-assignment-lineage span {
+  color: #71807c;
+  font-size: 10px;
+  font-weight: 720;
+  text-transform: uppercase;
 }
 
 .installed-mcp-dialog header {
@@ -1499,7 +1532,8 @@ textarea:focus-visible {
   .installed-mcp-dialog.retirement,
   .installed-mcp-dialog.upgrade-review,
   .installed-mcp-dialog.target-configuration-dialog,
-  .installed-mcp-dialog.credential-assignment-dialog {
+  .installed-mcp-dialog.credential-assignment-dialog,
+  .installed-mcp-dialog.configuration-validation-dialog {
     width: 100%;
     max-height: 100vh;
     border: 0;
@@ -1511,6 +1545,14 @@ textarea:focus-visible {
   }
 
   .target-configuration-option-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .configuration-validation-option-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .configuration-validation-record .credential-assignment-lineage {
     grid-template-columns: 1fr;
   }
 

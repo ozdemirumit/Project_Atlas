@@ -31,6 +31,23 @@ class PostgreSQLConnectorConfigurationValidationRepository:
             row = await session.get(ConnectorConfigurationValidationModel, validation_id)
             return self._to_domain(row.payload) if row else None
 
+    async def get_in_scope(
+        self,
+        *,
+        validation_id: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> ConnectorConfigurationValidationRecord | None:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(ConnectorConfigurationValidationModel).where(
+                    ConnectorConfigurationValidationModel.validation_id == validation_id,
+                    ConnectorConfigurationValidationModel.organization_id == organization_id,
+                    ConnectorConfigurationValidationModel.environment_id == environment_id,
+                )
+            )
+            return self._to_domain(row.payload) if row else None
+
     async def get_by_assignment(
         self, *, source_assignment_id: str
     ) -> ConnectorConfigurationValidationRecord | None:
@@ -43,6 +60,40 @@ class PostgreSQLConnectorConfigurationValidationRepository:
             )
             return self._to_domain(row.payload) if row else None
 
+    async def get_by_assignment_in_scope(
+        self,
+        *,
+        source_assignment_id: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> ConnectorConfigurationValidationRecord | None:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(ConnectorConfigurationValidationModel).where(
+                    ConnectorConfigurationValidationModel.source_assignment_id
+                    == source_assignment_id,
+                    ConnectorConfigurationValidationModel.organization_id == organization_id,
+                    ConnectorConfigurationValidationModel.environment_id == environment_id,
+                )
+            )
+            return self._to_domain(row.payload) if row else None
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorConfigurationValidationRecord, ...]:
+        async with self._sessions() as session:
+            rows = (
+                await session.scalars(
+                    select(ConnectorConfigurationValidationModel)
+                    .where(
+                        ConnectorConfigurationValidationModel.organization_id == organization_id,
+                        ConnectorConfigurationValidationModel.environment_id == environment_id,
+                    )
+                    .order_by(ConnectorConfigurationValidationModel.validation_id)
+                )
+            ).all()
+            return tuple(self._to_domain(row.payload) for row in rows)
+
     async def get_by_create_key(
         self, *, validated_by: str, idempotency_key: str
     ) -> ConnectorConfigurationValidationRecord | None:
@@ -51,6 +102,25 @@ class PostgreSQLConnectorConfigurationValidationRepository:
                 select(ConnectorConfigurationValidationModel).where(
                     ConnectorConfigurationValidationModel.validated_by == validated_by,
                     ConnectorConfigurationValidationModel.idempotency_key == idempotency_key,
+                )
+            )
+            return self._to_domain(row.payload) if row else None
+
+    async def get_by_create_key_in_scope(
+        self,
+        *,
+        validated_by: str,
+        idempotency_key: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> ConnectorConfigurationValidationRecord | None:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(ConnectorConfigurationValidationModel).where(
+                    ConnectorConfigurationValidationModel.validated_by == validated_by,
+                    ConnectorConfigurationValidationModel.idempotency_key == idempotency_key,
+                    ConnectorConfigurationValidationModel.organization_id == organization_id,
+                    ConnectorConfigurationValidationModel.environment_id == environment_id,
                 )
             )
             return self._to_domain(row.payload) if row else None

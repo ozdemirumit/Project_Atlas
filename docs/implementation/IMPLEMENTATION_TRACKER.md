@@ -4,14 +4,76 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-235 |
-| Title | Installed MCP governed credential-reference assignment |
+| Task ID | ATLAS-IMP-236 |
+| Title | Installed MCP governed configuration-evidence validation |
 | Status | Ready for PR |
-| Branch | `agent/installed-mcp-credential-assignment` |
+| Branch | `agent/installed-mcp-configuration-validation` |
 | Pull Request | Pending |
-| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-030, ATLAS-031, ATLAS-050, ATLAS-052, ADR-032, ADR-123, ADR-133, ADR-182 |
+| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-030, ATLAS-031, ATLAS-050, ATLAS-052, ADR-033, ADR-123, ADR-133, ADR-182 |
 | Last Updated | 2026-08-24 |
-| Next Action | Commit the reviewed slice, run exact-head PR CI and merge only after all required jobs pass |
+| Next Action | Open the exact-head PR, complete CI, merge and verify the resulting `main` commit |
+
+### ATLAS-IMP-236 Scope Rationale
+
+- IMP-235 makes governed credential-reference assignment reloadable and visible from Installed MCPs,
+  but configuration validation remains confined to a Builder-only panel.
+- The existing validation panel embeds development evidence and policy identifiers/digests in the
+  browser and loses its result after refresh.
+- This slice exposes only server-selected compatible signed probe evidence and validation policy,
+  persistent validation inventory and an Installed MCP `Validate configuration` flow. Atlas verifies
+  separately produced evidence; it does not resolve credentials, connect to a target or run a probe.
+
+### ATLAS-IMP-236 Acceptance Criteria
+
+- Credential-assigned Installed MCP rows expose `Validate configuration`; validated rows reload as
+  `Disabled / configuration validated` and expose only read-only target, credential and validation
+  views.
+- The browser selects only server-provided, exact-scope, assignment-compatible signed probe evidence
+  and validation policy. No evidence or policy identifier/digest is hard-coded in production UI.
+- Validation inventory can be filtered by source assignment identity and survives page refresh.
+- Foreign and missing assignment filters are indistinguishable; evidence and policy are revalidated
+  for lineage, scope, signature, freshness, bounded read-only results, assurance and separation.
+- API and UI projections exclude target coordinates, secrets and references, credential material,
+  sessions, raw probe output, signatures, request fingerprints and idempotency material.
+- Success advances only to `disabled_configuration_validated`; credential resolution, capability
+  enablement, runtime activation, connector invocation, AI execution and infrastructure mutation
+  remain outside this slice.
+- Focused backend/frontend tests, targeted static checks and desktop/mobile live validation pass
+  before PR.
+
+### ATLAS-IMP-236 Verification Evidence
+
+- Backend Ruff formatting and lint passed across the affected API, application, adapter, model,
+  migration and test files. Scope-safe inventory/options, signed evidence validation, foreign versus
+  missing source equality, tenant-scoped assignment/idempotency uniqueness and bounded persistence
+  passed all `15` focused backend tests. The pinned local MyPy native extension was blocked by
+  Windows Application Control; pull-request CI remains authoritative for the Linux MyPy run.
+- Frontend TypeScript, targeted ESLint and production build passed. Exact-field fail-closed parsing,
+  bounded classifications, no-authority enforcement, minimized mutation-cache projection,
+  session-scoped query keys, evidence-selection refresh behavior and Installed MCP lifecycle
+  presentation passed `45` selected tests across three files.
+- Independent review found and closed four P2 risks: cross-tenant uniqueness interference, full
+  create-response leakage into minimized inventory cache, stale evidence selection after refetch and
+  permissive client parsing. Database and in-memory uniqueness now include organization/environment;
+  logout clears validation caches and every query key carries subject/scope; the UI submits the
+  visibly selected server option; response parsers require exact allowlisted fields.
+- A current-code API/web pair at `127.0.0.1:8057` and `127.0.0.1:5218` used one normal
+  `operator` / `correct-password` session. The Installed MCP advanced from `Disabled / credentials
+  assigned` to `Disabled / configuration validated`, exposed only `View validation`, restored the
+  result after a full reload and never requested MFA, step-up or a second browser session.
+- The live dialog exposed one server-selected evidence/policy pair, no free evidence/digest input and
+  no enable, connect, execute or deploy control. Desktop `1280x720` and mobile `390x844` layouts had
+  no document, dialog, fact-grid, identifier or lineage overflow; browser warning/error logs were
+  empty. API route tests verify `Cache-Control: no-store` and minimized inventory/options contracts.
+
+### ATLAS-IMP-235 Delivery Evidence
+
+- Source commit `fb501d62e92c6dd73239ab00727f014c6403fa17` passed exact-head pull-request CI
+  run `32700819731`; frontend completed in 10m57s and backend in 21m24s.
+- [PR #248](https://github.com/ozdemirumit/Project_Atlas/pull/248) was squash-merged to `main` as
+  `db8102b4e412117e0dd1afa54f01f394ea10088d`.
+- The exact merge commit independently passed post-main CI run `32702472321`; frontend completed in
+  10m47s and backend in 19m26s. Local `main` and `origin/main` were synchronized before IMP-236.
 
 ### ATLAS-IMP-235 Scope Rationale
 

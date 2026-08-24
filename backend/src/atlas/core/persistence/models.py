@@ -1579,10 +1579,14 @@ class ConnectorConfigurationValidationModel(Base):
     __tablename__ = "connector_configuration_validations"
     __table_args__ = (
         UniqueConstraint(
+            "organization_id",
+            "environment_id",
             "source_assignment_id",
             name="uq_connector_configuration_validations_assignment",
         ),
         UniqueConstraint(
+            "organization_id",
+            "environment_id",
             "validated_by",
             "idempotency_key",
             name="uq_connector_configuration_validations_actor_idempotency",

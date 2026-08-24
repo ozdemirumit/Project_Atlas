@@ -23,6 +23,12 @@ import { useState, type FormEvent } from "react";
 
 import { ApiRequestError } from "../../api/client";
 import {
+  getConnectorConfigurationValidations,
+  toConnectorConfigurationValidationInventoryItem,
+  type ConnectorConfigurationValidation,
+  type ConnectorConfigurationValidationInventoryItem,
+} from "../../api/configurationValidations";
+import {
   getConnectorCredentialAssignments,
   type ConnectorCredentialAssignment,
   type ConnectorCredentialAssignmentInventoryItem,
@@ -77,6 +83,7 @@ import {
   type ConnectorTargetConfigurationBinding,
 } from "../../api/targetConfigurations";
 import { CredentialAssignmentPanel } from "./CredentialAssignmentPanel";
+import { ConfigurationValidationPanel } from "./ConfigurationValidationPanel";
 import { TargetConfigurationPanel } from "./TargetConfigurationPanel";
 
 type LifecycleFilter = "active" | "retired" | "all";
@@ -366,6 +373,67 @@ function CredentialAssignmentDialog({
           existingAssignment={assignment}
           onAssignmentCreated={onAssignmentCreated}
           onRequestEnterpriseLogin={onRequestEnterpriseLogin}
+        />
+        <footer>
+          <button type="button" className="secondary-button" onClick={onCancel}>
+            Close
+          </button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+function ConfigurationValidationDialog({
+  assignment,
+  instance,
+  onValidationCreated,
+  onCancel,
+  onRequestEnterpriseLogin,
+  validation,
+  sessionScopeKey,
+}: {
+  assignment: ConnectorCredentialAssignmentInventoryItem;
+  instance: ConnectorInstanceRecord;
+  onValidationCreated: (validation: ConnectorConfigurationValidation) => void;
+  onCancel: () => void;
+  onRequestEnterpriseLogin?: () => void;
+  validation?: ConnectorConfigurationValidationInventoryItem;
+  sessionScopeKey: string;
+}) {
+  return (
+    <div className="installed-mcp-dialog-backdrop" role="presentation">
+      <section
+        className="installed-mcp-dialog configuration-validation-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="validation-mcp-title"
+      >
+        <header>
+          <div>
+            <p className="eyebrow">GOVERNED PROBE EVIDENCE</p>
+            <h3 id="validation-mcp-title">Validate configuration for {instance.display_name}</h3>
+          </div>
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Close configuration validation"
+            onClick={onCancel}
+          >
+            <X size={17} />
+          </button>
+        </header>
+        <p className="muted-copy">
+          Atlas verifies separately produced signed, read-only probe evidence. It does not resolve
+          credentials, connect to the target, run a probe, enable capabilities, or grant runtime
+          authority.
+        </p>
+        <ConfigurationValidationPanel
+          assignment={assignment}
+          existingValidation={validation}
+          onValidationCreated={onValidationCreated}
+          onRequestEnterpriseLogin={onRequestEnterpriseLogin}
+          sessionScopeKey={sessionScopeKey}
         />
         <footer>
           <button type="button" className="secondary-button" onClick={onCancel}>
@@ -939,10 +1007,14 @@ export default function InstalledMcpManagementWorkspace({
   onOpenBuilder,
   onRequestEnterpriseLogin,
   subjectId,
+  organizationId,
+  environmentId,
 }: {
   onOpenBuilder?: () => void;
   onRequestEnterpriseLogin?: () => void;
   subjectId: string;
+  organizationId: string;
+  environmentId: string;
 }) {
   const queryClient = useQueryClient();
   const [lifecycle, setLifecycle] = useState<LifecycleFilter>("active");
@@ -952,6 +1024,8 @@ export default function InstalledMcpManagementWorkspace({
   const [reviewing, setReviewing] = useState<ConnectorInstanceRecord | null>(null);
   const [targeting, setTargeting] = useState<ConnectorInstanceRecord | null>(null);
   const [credentialing, setCredentialing] = useState<ConnectorInstanceRecord | null>(null);
+  const [validating, setValidating] = useState<ConnectorInstanceRecord | null>(null);
+  const sessionScopeKey = `${subjectId}:${organizationId}:${environmentId}`;
   const packageQuery = useQuery({
     queryKey: ["connector-package-installations", subjectId],
     queryFn: getConnectorPackageInstallations,
@@ -975,6 +1049,11 @@ export default function InstalledMcpManagementWorkspace({
   const assignmentQuery = useQuery({
     queryKey: ["connector-credential-assignments", subjectId],
     queryFn: () => getConnectorCredentialAssignments(),
+    enabled: Boolean(subjectId),
+  });
+  const validationQuery = useQuery({
+    queryKey: ["connector-configuration-validations", sessionScopeKey],
+    queryFn: () => getConnectorConfigurationValidations(),
     enabled: Boolean(subjectId),
   });
   const signingTrustQuery = useQuery({
@@ -1033,6 +1112,10 @@ export default function InstalledMcpManagementWorkspace({
   const assignmentByBinding = new Map(
     credentialAssignments.map((assignment) => [assignment.source_target_binding_id, assignment]),
   );
+  const configurationValidations = validationQuery.data ?? [];
+  const validationByAssignment = new Map(
+    configurationValidations.map((validation) => [validation.source_assignment_id, validation]),
+  );
   const packages = packageQuery.data ?? [];
   const policies = policyQuery.data ?? [];
   const activeCount = instances.filter(
@@ -1042,6 +1125,7 @@ export default function InstalledMcpManagementWorkspace({
     instanceQuery.error,
     bindingQuery.error,
     assignmentQuery.error,
+    validationQuery.error,
     packageQuery.error,
     policyQuery.error,
   ].filter((error) => error !== null);
@@ -1070,6 +1154,7 @@ export default function InstalledMcpManagementWorkspace({
     void instanceQuery.refetch();
     void bindingQuery.refetch();
     void assignmentQuery.refetch();
+    void validationQuery.refetch();
     void signingTrustQuery.refetch();
     void signingConformanceQuery.refetch();
     void signingOnboardingQuery.refetch();
@@ -1392,6 +1477,10 @@ export default function InstalledMcpManagementWorkspace({
                   ? assignmentByBinding.get(binding.binding_id)
                   : undefined;
                 const credentialsAssigned = Boolean(assignment);
+                const validation = assignment
+                  ? validationByAssignment.get(assignment.assignment_id)
+                  : undefined;
+                const configurationValidated = Boolean(validation);
                 return (
                   <tr key={instance.record_id}>
                     <td><strong>{instance.display_name}</strong><code>{instance.instance_key}</code></td>
@@ -1400,7 +1489,9 @@ export default function InstalledMcpManagementWorkspace({
                       <span className={`state-badge ${instance.instance_state === "retired" ? "neutral" : "pending"}`}>
                         {instance.instance_state === "retired"
                           ? "Retired"
-                          : credentialsAssigned
+                          : configurationValidated
+                            ? "Disabled / configuration validated"
+                            : credentialsAssigned
                             ? "Disabled / credentials assigned"
                             : configured
                               ? "Disabled / target configured"
@@ -1412,18 +1503,21 @@ export default function InstalledMcpManagementWorkspace({
                       <span className="installed-mcp-event-label">
                         {instance.instance_state === "retired"
                           ? "Retired"
-                          : assignment
+                          : validation
+                            ? "Configuration validated"
+                            : assignment
                             ? "Credentials assigned"
                             : binding
                               ? "Target bound"
                               : "Created"}
                       </span>
-                      {new Date(assignment?.assigned_at ?? binding?.bound_at ?? instance.retired_at ?? instance.created_at).toLocaleString()}
+                      {new Date(validation?.validated_at ?? assignment?.assigned_at ?? binding?.bound_at ?? instance.retired_at ?? instance.created_at).toLocaleString()}
                     </td>
                     <td>
                       {instance.instance_state === "disabled_unconfigured" &&
                         bindingQuery.isSuccess &&
-                        assignmentQuery.isSuccess && (
+                        assignmentQuery.isSuccess &&
+                        validationQuery.isSuccess && (
                         <div className="installed-mcp-row-actions">
                           <button
                             className="secondary-button installed-mcp-row-action"
@@ -1445,6 +1539,17 @@ export default function InstalledMcpManagementWorkspace({
                               <KeyRound size={15} /><span>{credentialsAssigned ? "View credentials" : "Manage credentials"}</span>
                             </button>
                           )}
+                          {assignment && (
+                            <button
+                              className="secondary-button installed-mcp-row-action"
+                              type="button"
+                              title={configurationValidated ? "View governed configuration evidence" : "Verify governed configuration evidence"}
+                              aria-label={`${configurationValidated ? "View" : "Validate"} configuration for ${instance.display_name}`}
+                              onClick={() => setValidating(instance)}
+                            >
+                              <ShieldCheck size={15} /><span>{configurationValidated ? "View validation" : "Validate configuration"}</span>
+                            </button>
+                          )}
                           <button className="secondary-button installed-mcp-row-action" type="button" title="Review governed update evidence" aria-label={`Review update for ${instance.display_name}`} onClick={() => setReviewing(instance)}><ArrowUpCircle size={15} /><span>Review update</span></button>
                           {!configured && !credentialsAssigned && (
                             <button className="secondary-button installed-mcp-row-action danger" type="button" title="Remove from active management and preserve history" aria-label={`Remove ${instance.display_name}`} onClick={() => { retireMutation.reset(); setRetiring(instance); }}><Archive size={15} /><span>Remove</span></button>
@@ -1459,7 +1564,7 @@ export default function InstalledMcpManagementWorkspace({
           </table>
         </div>
       ) : null}
-      <div className="installed-mcp-footnote"><span>{activeCount} active in this result</span><span>Target and credential bindings remain disabled metadata. Remove preserves history. Updates remain review-only.</span></div>
+      <div className="installed-mcp-footnote"><span>{activeCount} active in this result</span><span>Target, credential and validation records remain disabled evidence. Atlas does not run probes or contact infrastructure. Updates remain review-only.</span></div>
       {adding && <AddMcpDialog packages={packages} policies={policies} pending={createMutation.isPending} onCancel={() => setAdding(false)} onOpenBuilder={openBuilder} onSubmit={(input) => createMutation.mutate(input)} />}
       {retiring && <RetireMcpDialog instance={retiring} pending={retireMutation.isPending} onCancel={() => setRetiring(null)} onSubmit={(reason) => retireMutation.mutate({ instance: retiring, reason })} />}
       {reviewing && <UpgradeReadinessDialog instance={reviewing} subjectId={subjectId} onCancel={() => setReviewing(null)} />}
@@ -1503,6 +1608,34 @@ export default function InstalledMcpManagementWorkspace({
               );
             }}
             onCancel={() => setCredentialing(null)}
+            onRequestEnterpriseLogin={onRequestEnterpriseLogin}
+          />
+        );
+      })()}
+      {validating && (() => {
+        const binding = bindingByInstance.get(validating.record_id);
+        const assignment = binding
+          ? assignmentByBinding.get(binding.binding_id)
+          : undefined;
+        if (!assignment) return null;
+        return (
+          <ConfigurationValidationDialog
+            instance={validating}
+            assignment={assignment}
+            validation={validationByAssignment.get(assignment.assignment_id)}
+            sessionScopeKey={sessionScopeKey}
+            onValidationCreated={(validation) => {
+              queryClient.setQueryData<ConnectorConfigurationValidationInventoryItem[]>(
+                ["connector-configuration-validations", sessionScopeKey],
+                (current = []) => [
+                  ...current.filter(
+                    (item) => item.source_assignment_id !== validation.source_assignment_id,
+                  ),
+                  toConnectorConfigurationValidationInventoryItem(validation),
+                ],
+              );
+            }}
+            onCancel={() => setValidating(null)}
             onRequestEnterpriseLogin={onRequestEnterpriseLogin}
           />
         );
