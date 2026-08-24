@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Callable
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 from hashlib import sha256
@@ -45,6 +45,32 @@ from atlas.modules.identity.domain.models import (
 CONFIGURATION_VALIDATION_CREATE_PERMISSION = "connectors.configuration-validations.create"
 CONFIGURATION_VALIDATION_READ_PERMISSION = "connectors.configuration-validations.read"
 CONFIGURATION_VALIDATION_SCHEMA = "atlas.connector-configuration-validation.v1"
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectorConfigurationValidationOption:
+    source_assignment_id: str
+    source_assignment_digest: str
+    package_digest: str
+    evidence_id: str
+    evidence_digest: str
+    evidence_observed_at: datetime
+    evidence_expires_at: datetime
+    configuration_result: str
+    connectivity_result: str
+    tls_result: str
+    endpoint_identity_result: str
+    authentication_result: str
+    authorization_result: str
+    product_identity_result: str
+    latency_band: str
+    completed_checks: tuple[str, ...]
+    validation_policy_id: str
+    validation_policy_digest: str
+    validation_policy_version: str
+    validation_policy_expires_at: datetime
+    required_assurance_level: AssuranceLevel
+    resulting_instance_state: str = DISABLED_CONFIGURATION_VALIDATED
 
 
 class ConnectorConfigurationValidationService:
@@ -108,8 +134,11 @@ class ConnectorConfigurationValidationService:
                 "purpose": purpose,
             }
         )
-        existing = await self._repository.get_by_create_key(
-            validated_by=actor.subject_id, idempotency_key=idempotency_key
+        existing = await self._repository.get_by_create_key_in_scope(
+            validated_by=actor.subject_id,
+            idempotency_key=idempotency_key,
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
         )
         if existing is not None:
             return self._reuse(existing, actor, fingerprint)
@@ -125,17 +154,21 @@ class ConnectorConfigurationValidationService:
             raise ConnectorConfigurationValidationError(
                 "configuration_validation_source_not_found"
             ) from error
-        evidence = await self._evidence_source.get_by_id(evidence_id=evidence_id)
-        if evidence is None:
-            raise ConnectorConfigurationValidationError(
-                "configuration_validation_evidence_not_found"
-            )
-        policy = await self._policy_source.get_by_id(policy_id=validation_policy_id)
-        if policy is None:
-            raise ConnectorConfigurationValidationError("configuration_validation_policy_not_found")
+        self._require_source_scope(actor, assignment.organization_id, assignment.environment_id)
+        evidence = await self._evidence_source.get_by_id_in_scope(
+            evidence_id=evidence_id,
+            organization_id=assignment.organization_id,
+            environment_id=assignment.environment_id,
+        )
+        policy = await self._policy_source.get_by_id_in_scope(
+            policy_id=validation_policy_id,
+            organization_id=assignment.organization_id,
+            environment_id=assignment.environment_id,
+        )
+        if evidence is None or policy is None:
+            raise ConnectorConfigurationValidationError("configuration_validation_invalid")
         self._verify_snapshot(evidence, "evidence")
         self._verify_snapshot(policy, "policy")
-        self._require_scope(actor, assignment.organization_id, assignment.environment_id)
         now = self._clock()
         self._verify_validation(
             actor=actor,
@@ -154,8 +187,10 @@ class ConnectorConfigurationValidationService:
             )
 
         async with self._mutation_lock:
-            prior = await self._repository.get_by_assignment(
-                source_assignment_id=assignment.assignment_id
+            prior = await self._repository.get_by_assignment_in_scope(
+                source_assignment_id=assignment.assignment_id,
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
             )
             if prior is not None:
                 if (
@@ -240,8 +275,11 @@ class ConnectorConfigurationValidationService:
                 (("instance_state", record.instance_state),),
             )
             if not await self._repository.add(record):
-                raced = await self._repository.get_by_create_key(
-                    validated_by=actor.subject_id, idempotency_key=idempotency_key
+                raced = await self._repository.get_by_create_key_in_scope(
+                    validated_by=actor.subject_id,
+                    idempotency_key=idempotency_key,
+                    organization_id=actor.organization_id,
+                    environment_id=self._environment_id,
                 )
                 if raced is None or raced.request_fingerprint != fingerprint:
                     raise ConnectorConfigurationValidationError(
@@ -298,7 +336,11 @@ class ConnectorConfigurationValidationService:
         self, *, actor: AuthenticatedSubject, validation_id: str, correlation_id: str
     ) -> ConnectorConfigurationValidationRecord:
         self._require_human(actor)
-        record = await self._repository.get(validation_id=validation_id)
+        record = await self._repository.get_in_scope(
+            validation_id=validation_id,
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+        )
         if record is None:
             raise ConnectorConfigurationValidationError("configuration_validation_record_not_found")
         self._verify_record(record)
@@ -313,6 +355,147 @@ class ConnectorConfigurationValidationService:
             permission_id=CONFIGURATION_VALIDATION_READ_PERMISSION,
         )
         return record
+
+    async def list_validations(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        source_assignment_id: str | None,
+        correlation_id: str,
+    ) -> tuple[ConnectorConfigurationValidationRecord, ...]:
+        self._require_human(actor)
+        if source_assignment_id is None:
+            candidates = await self._repository.list_scope(
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+            )
+        else:
+            candidate = await self._repository.get_by_assignment_in_scope(
+                source_assignment_id=source_assignment_id,
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+            )
+            candidates = (candidate,) if candidate is not None else ()
+        visible: list[ConnectorConfigurationValidationRecord] = []
+        for record in candidates:
+            self._verify_record(record)
+            self._require_scope(actor, record.organization_id, record.environment_id)
+            visible.append(record)
+        visible.sort(key=lambda item: item.validation_id)
+        await self._audit(
+            actor,
+            correlation_id,
+            "connector_configuration_validations_listed",
+            source_assignment_id or self._environment_id,
+            None,
+            (("count", str(len(visible))),),
+            permission_id=CONFIGURATION_VALIDATION_READ_PERMISSION,
+        )
+        return tuple(visible)
+
+    async def list_options(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        source_assignment_id: str,
+        correlation_id: str,
+    ) -> tuple[ConnectorConfigurationValidationOption, ...]:
+        self._require_human(actor)
+        try:
+            (
+                assignment,
+                _registration,
+                source_actors,
+            ) = await self._assignment_source.configuration_validation_source(
+                assignment_id=source_assignment_id
+            )
+        except ConnectorCredentialAssignmentError as error:
+            raise ConnectorConfigurationValidationError(
+                "configuration_validation_source_not_found"
+            ) from error
+        self._require_source_scope(actor, assignment.organization_id, assignment.environment_id)
+        existing = await self._repository.get_by_assignment_in_scope(
+            source_assignment_id=assignment.assignment_id,
+            organization_id=assignment.organization_id,
+            environment_id=assignment.environment_id,
+        )
+        if existing is not None:
+            self._verify_record(existing)
+            options: list[ConnectorConfigurationValidationOption] = []
+        else:
+            evidence_snapshots = await self._evidence_source.list_scope(
+                organization_id=assignment.organization_id,
+                environment_id=assignment.environment_id,
+            )
+            policies = await self._policy_source.list_scope(
+                organization_id=assignment.organization_id,
+                environment_id=assignment.environment_id,
+            )
+            now = self._clock()
+            options = []
+            for evidence in evidence_snapshots:
+                for policy in policies:
+                    try:
+                        self._verify_snapshot(evidence, "evidence")
+                        self._verify_snapshot(policy, "policy")
+                        self._verify_validation(
+                            actor=actor,
+                            assignment=assignment,
+                            evidence=evidence,
+                            policy=policy,
+                            source_assignment_digest=assignment.canonical_digest,
+                            package_digest=assignment.package_digest,
+                            evidence_digest=evidence.canonical_digest,
+                            validation_policy_digest=policy.canonical_digest,
+                            now=now,
+                        )
+                    except ConnectorConfigurationValidationError:
+                        continue
+                    if actor.subject_id in source_actors | {evidence.signed_by, policy.signed_by}:
+                        continue
+                    options.append(
+                        ConnectorConfigurationValidationOption(
+                            source_assignment_id=assignment.assignment_id,
+                            source_assignment_digest=assignment.canonical_digest,
+                            package_digest=assignment.package_digest,
+                            evidence_id=evidence.evidence_id,
+                            evidence_digest=evidence.canonical_digest,
+                            evidence_observed_at=evidence.observed_at,
+                            evidence_expires_at=evidence.expires_at,
+                            configuration_result=evidence.configuration_result,
+                            connectivity_result=evidence.connectivity_result,
+                            tls_result=evidence.tls_result,
+                            endpoint_identity_result=evidence.endpoint_identity_result,
+                            authentication_result=evidence.authentication_result,
+                            authorization_result=evidence.authorization_result,
+                            product_identity_result=evidence.product_identity_result,
+                            latency_band=evidence.latency_band,
+                            completed_checks=evidence.completed_checks,
+                            validation_policy_id=policy.policy_id,
+                            validation_policy_digest=policy.canonical_digest,
+                            validation_policy_version=policy.policy_version,
+                            validation_policy_expires_at=policy.expires_at,
+                            required_assurance_level=policy.required_assurance_level,
+                        )
+                    )
+        options.sort(
+            key=lambda item: (
+                item.evidence_id,
+                item.evidence_digest,
+                item.validation_policy_id,
+                item.validation_policy_digest,
+            )
+        )
+        await self._audit(
+            actor,
+            correlation_id,
+            "connector_configuration_validation_options_listed",
+            assignment.instance_id,
+            None,
+            (("count", str(len(options))),),
+            permission_id=CONFIGURATION_VALIDATION_READ_PERMISSION,
+        )
+        return tuple(options)
 
     async def close(self) -> None:
         await self._repository.close()
@@ -446,6 +629,12 @@ class ConnectorConfigurationValidationService:
     ) -> None:
         if actor.organization_id != organization_id or self._environment_id != environment_id:
             raise ConnectorConfigurationValidationError("configuration_validation_record_not_found")
+
+    def _require_source_scope(
+        self, actor: AuthenticatedSubject, organization_id: str, environment_id: str
+    ) -> None:
+        if actor.organization_id != organization_id or self._environment_id != environment_id:
+            raise ConnectorConfigurationValidationError("configuration_validation_source_not_found")
 
     async def _audit(
         self,

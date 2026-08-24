@@ -3,11 +3,15 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated, NoReturn
 
-from fastapi import APIRouter, Depends, Header, Path, Request, Response
+from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response
 
 from atlas.api.configuration_validation_schemas import (
     ConnectorConfigurationValidationData,
     ConnectorConfigurationValidationInput,
+    ConnectorConfigurationValidationInventoryData,
+    ConnectorConfigurationValidationInventoryResponse,
+    ConnectorConfigurationValidationOptionData,
+    ConnectorConfigurationValidationOptionsResponse,
     ConnectorConfigurationValidationResponse,
 )
 from atlas.api.errors import AtlasError
@@ -59,6 +63,73 @@ def _response(
     response.headers["Cache-Control"] = "no-store"
     return ConnectorConfigurationValidationResponse(
         data=ConnectorConfigurationValidationData.from_domain(record),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.get("", response_model=ConnectorConfigurationValidationInventoryResponse)
+async def list_connector_configuration_validations(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_connector_configuration_validation_read)
+    ],
+    source_assignment_id: Annotated[
+        str | None, Query(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")
+    ] = None,
+) -> ConnectorConfigurationValidationInventoryResponse:
+    service: ConnectorConfigurationValidationService = (
+        request.app.state.configuration_validation_service
+    )
+    try:
+        records = await service.list_validations(
+            actor=subject,
+            source_assignment_id=source_assignment_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ConnectorConfigurationValidationError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorConfigurationValidationInventoryResponse(
+        data=tuple(
+            ConnectorConfigurationValidationInventoryData.from_domain(record) for record in records
+        ),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.get("/options", response_model=ConnectorConfigurationValidationOptionsResponse)
+async def list_connector_configuration_validation_options(
+    source_assignment_id: Annotated[str, Query(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_connector_configuration_validation_read)
+    ],
+) -> ConnectorConfigurationValidationOptionsResponse:
+    service: ConnectorConfigurationValidationService = (
+        request.app.state.configuration_validation_service
+    )
+    try:
+        options = await service.list_options(
+            actor=subject,
+            source_assignment_id=source_assignment_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ConnectorConfigurationValidationError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorConfigurationValidationOptionsResponse(
+        data=tuple(
+            ConnectorConfigurationValidationOptionData.from_application(option)
+            for option in options
+        ),
         meta=ResponseMeta(
             correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
         ),

@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiRequestError } from "../../api/client";
+import { getConnectorConfigurationValidations } from "../../api/configurationValidations";
 import { getConnectorCredentialAssignments } from "../../api/credentialAssignments";
 import {
   createConnectorInstance,
@@ -53,6 +54,7 @@ import {
   type ConnectorTargetConfigurationBinding,
 } from "../../api/targetConfigurations";
 import InstalledMcpManagementWorkspace from "./InstalledMcpManagementWorkspace";
+import { configurationValidation } from "./testConfigurationValidationFixture";
 import { credentialAssignment } from "./testCredentialAssignmentFixture";
 import { connectorInstanceRecord as instance } from "./testInstanceFixture";
 import { installationReceipt as installation } from "./testInstallationFixture";
@@ -785,6 +787,11 @@ vi.mock("../../api/credentialAssignments", async (importOriginal) => {
   return { ...original, getConnectorCredentialAssignments: vi.fn() };
 });
 
+vi.mock("../../api/configurationValidations", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../api/configurationValidations")>();
+  return { ...original, getConnectorConfigurationValidations: vi.fn() };
+});
+
 vi.mock("../../api/connectorUpgradeReadiness", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/connectorUpgradeReadiness")>();
   return {
@@ -825,6 +832,8 @@ function renderWorkspace(
         onOpenBuilder={onOpenBuilder}
         onRequestEnterpriseLogin={onRequestEnterpriseLogin}
         subjectId={subjectId}
+        organizationId="org.atlas"
+        environmentId="env.atlas"
       />
     </QueryClientProvider>,
   );
@@ -836,6 +845,7 @@ beforeEach(() => {
   vi.mocked(getConnectorInstances).mockResolvedValue([instance]);
   vi.mocked(getConnectorTargetConfigurations).mockResolvedValue([]);
   vi.mocked(getConnectorCredentialAssignments).mockResolvedValue([]);
+  vi.mocked(getConnectorConfigurationValidations).mockResolvedValue([]);
   vi.mocked(getConnectorUpgradeReadiness).mockResolvedValue(upgradeReadiness);
   vi.mocked(getConnectorUpgradePlan).mockResolvedValue(upgradePlan);
   vi.mocked(getConnectorUpgradeApprovalRecord).mockResolvedValue(null);
@@ -966,6 +976,31 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(screen.getByText(credentialAssignment.assignment_id)).toBeVisible();
     expect(screen.queryByRole("button", { name: "Assign credential profile" })).toBeNull();
     expect(screen.queryByRole("button", { name: /enable|execute|deploy/i })).toBeNull();
+  });
+
+  it("restores configuration-validated state as read-only evidence", async () => {
+    vi.mocked(getConnectorTargetConfigurations).mockResolvedValue([configuredBinding]);
+    vi.mocked(getConnectorCredentialAssignments).mockResolvedValue([credentialAssignment]);
+    vi.mocked(getConnectorConfigurationValidations).mockResolvedValue([configurationValidation]);
+    renderWorkspace();
+
+    expect(await screen.findByText("Disabled / configuration validated")).toBeVisible();
+    expect(screen.getByText("Configuration validated")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Remove Storage East" })).toBeNull();
+    expect(screen.getByRole("button", { name: "View target for Storage East" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "View credentials for Storage East" })).toBeVisible();
+    const viewValidation = screen.getByRole("button", {
+      name: "View configuration for Storage East",
+    });
+    expect(viewValidation).toHaveTextContent("View validation");
+    fireEvent.click(viewValidation);
+
+    expect(
+      screen.getByRole("dialog", { name: "Validate configuration for Storage East" }),
+    ).toBeVisible();
+    expect(screen.getByText(configurationValidation.validation_id)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Verify signed evidence" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /enable|execute|deploy|connect/i })).toBeNull();
   });
 
   it("runs a bounded provider assessment without exposing signing or key controls", async () => {

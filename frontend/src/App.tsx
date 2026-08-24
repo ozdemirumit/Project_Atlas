@@ -1162,6 +1162,8 @@ export function OperationalApplication({
       queryClient.removeQueries({ queryKey: ["connector-package-installations"] });
       queryClient.removeQueries({ queryKey: ["connector-instance-creation-policies"] });
       queryClient.removeQueries({ queryKey: ["connector-instances"] });
+      queryClient.removeQueries({ queryKey: ["connector-configuration-validations"] });
+      queryClient.removeQueries({ queryKey: ["connector-configuration-validation-options"] });
       setApprovalRequestId(null);
       setTechnicalReportId(null);
       const url = new URL(window.location.href);
@@ -2226,6 +2228,8 @@ export function OperationalApplication({
                         onNavigateConnectorView("builder");
                       }}
                       subjectId={identity?.subject_id ?? ""}
+                      organizationId={identity?.scope.organization_id ?? ""}
+                      environmentId={identity?.scope.environment_id ?? ""}
                     />
                   </Suspense>
                 </WorkspaceLoadBoundary>
