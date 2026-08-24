@@ -8,10 +8,10 @@
 | Title | Installed MCP governed target-session verification and connectivity evidence |
 | Status | Ready for PR |
 | Branch | `agent/installed-mcp-target-session-governance` |
-| Pull Request | Pending |
+| Pull Request | [#254](https://github.com/ozdemirumit/Project_Atlas/pull/254) |
 | Governing Documents | ATLAS-003, ATLAS-020, ATLAS-030, ATLAS-031, ATLAS-050, ATLAS-052, ADR-038, ADR-100, ADR-123, ADR-133, ADR-182 |
 | Last Updated | 2026-08-24 |
-| Next Action | Open the pull request and complete exact-head CI, squash merge and post-main CI |
+| Next Action | Complete exact-head CI, squash merge and post-main CI |
 
 ### ATLAS-IMP-241 Scope Rationale
 
