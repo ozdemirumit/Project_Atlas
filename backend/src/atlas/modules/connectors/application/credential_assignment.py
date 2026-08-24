@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Callable
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 from hashlib import sha256
@@ -45,6 +45,27 @@ from atlas.modules.identity.domain.models import (
 CREDENTIAL_ASSIGNMENT_CREATE_PERMISSION = "connectors.credential-assignments.create"
 CREDENTIAL_ASSIGNMENT_READ_PERMISSION = "connectors.credential-assignments.read"
 CREDENTIAL_ASSIGNMENT_SCHEMA = "atlas.connector-credential-assignment.v1"
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectorCredentialAssignmentOption:
+    source_target_binding_id: str
+    credential_profile_id: str
+    credential_profile_digest: str
+    credential_class: str
+    authentication_method: str
+    vendor_role: str
+    privilege_class: str
+    rotation_state: str
+    revocation_state: str
+    next_rotation_at: datetime
+    credential_profile_expires_at: datetime
+    credential_policy_id: str
+    credential_policy_digest: str
+    credential_policy_version: str
+    credential_policy_expires_at: datetime
+    required_assurance_level: AssuranceLevel
+    resulting_instance_state: str = DISABLED_CREDENTIALS_ASSIGNED
 
 
 class ConnectorCredentialAssignmentService:
@@ -251,6 +272,141 @@ class ConnectorCredentialAssignmentService:
             permission_id=CREDENTIAL_ASSIGNMENT_READ_PERMISSION,
         )
         return record
+
+    async def list_assignments(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        source_target_binding_id: str | None,
+        correlation_id: str,
+    ) -> tuple[ConnectorCredentialAssignmentRecord, ...]:
+        self._require_human(actor)
+        if source_target_binding_id is None:
+            candidates = await self._repository.list_scope(
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+            )
+        else:
+            candidate = await self._repository.get_by_target_binding_in_scope(
+                source_target_binding_id=source_target_binding_id,
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+            )
+            candidates = (candidate,) if candidate is not None else ()
+        visible: list[ConnectorCredentialAssignmentRecord] = []
+        for record in candidates:
+            self._verify_record(record)
+            self._require_scope(actor, record.organization_id, record.environment_id)
+            visible.append(record)
+        visible.sort(key=lambda item: item.assignment_id)
+        await self._audit(
+            actor,
+            correlation_id,
+            "connector_credential_assignments_listed",
+            source_target_binding_id or self._environment_id,
+            None,
+            (("count", str(len(visible))),),
+            permission_id=CREDENTIAL_ASSIGNMENT_READ_PERMISSION,
+        )
+        return tuple(visible)
+
+    async def list_options(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        source_target_binding_id: str,
+        correlation_id: str,
+    ) -> tuple[ConnectorCredentialAssignmentOption, ...]:
+        self._require_human(actor)
+        try:
+            (
+                binding,
+                _registration,
+                source_actors,
+            ) = await self._target_source.credential_assignment_source(
+                binding_id=source_target_binding_id
+            )
+        except ConnectorTargetConfigurationError as error:
+            raise ConnectorCredentialAssignmentError(
+                "credential_assignment_source_not_found"
+            ) from error
+        self._require_scope(actor, binding.organization_id, binding.environment_id)
+        existing = await self._repository.get_by_target_binding(
+            source_target_binding_id=source_target_binding_id
+        )
+        if existing is not None:
+            self._verify_record(existing)
+            self._require_scope(actor, existing.organization_id, existing.environment_id)
+            options: list[ConnectorCredentialAssignmentOption] = []
+        else:
+            profiles = await self._credential_profile_source.list_scope(
+                organization_id=binding.organization_id,
+                environment_id=binding.environment_id,
+            )
+            policies = await self._policy_source.list_scope(
+                organization_id=binding.organization_id,
+                environment_id=binding.environment_id,
+            )
+            now = self._clock()
+            options = []
+            for profile in profiles:
+                for policy in policies:
+                    try:
+                        self._verify_profile(profile)
+                        self._verify_policy(policy)
+                        self._verify_assignment(
+                            actor=actor,
+                            binding=binding,
+                            profile=profile,
+                            policy=policy,
+                            source_target_binding_digest=binding.canonical_digest,
+                            package_digest=binding.package_digest,
+                            credential_profile_digest=profile.canonical_digest,
+                            credential_policy_digest=policy.canonical_digest,
+                            now=now,
+                        )
+                    except ConnectorCredentialAssignmentError:
+                        continue
+                    if actor.subject_id in source_actors | {profile.signed_by, policy.signed_by}:
+                        continue
+                    options.append(
+                        ConnectorCredentialAssignmentOption(
+                            source_target_binding_id=binding.binding_id,
+                            credential_profile_id=profile.profile_id,
+                            credential_profile_digest=profile.canonical_digest,
+                            credential_class=profile.credential_class,
+                            authentication_method=profile.authentication_method,
+                            vendor_role=profile.vendor_role,
+                            privilege_class=profile.privilege_class,
+                            rotation_state=profile.rotation_state,
+                            revocation_state=profile.revocation_state,
+                            next_rotation_at=profile.next_rotation_at,
+                            credential_profile_expires_at=profile.expires_at,
+                            credential_policy_id=policy.policy_id,
+                            credential_policy_digest=policy.canonical_digest,
+                            credential_policy_version=policy.policy_version,
+                            credential_policy_expires_at=policy.expires_at,
+                            required_assurance_level=policy.required_assurance_level,
+                        )
+                    )
+        options.sort(
+            key=lambda item: (
+                item.credential_class,
+                item.privilege_class,
+                item.credential_profile_id,
+                item.credential_policy_id,
+            )
+        )
+        await self._audit(
+            actor,
+            correlation_id,
+            "connector_credential_assignment_options_listed",
+            binding.instance_id,
+            None,
+            (("count", str(len(options))),),
+            permission_id=CREDENTIAL_ASSIGNMENT_READ_PERMISSION,
+        )
+        return tuple(options)
 
     async def configuration_validation_source(
         self, *, assignment_id: str

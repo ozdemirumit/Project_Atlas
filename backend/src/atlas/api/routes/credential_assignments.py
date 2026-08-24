@@ -3,11 +3,15 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated, NoReturn
 
-from fastapi import APIRouter, Depends, Header, Path, Request, Response
+from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response
 
 from atlas.api.credential_assignment_schemas import (
     ConnectorCredentialAssignmentData,
     ConnectorCredentialAssignmentInput,
+    ConnectorCredentialAssignmentInventoryData,
+    ConnectorCredentialAssignmentInventoryResponse,
+    ConnectorCredentialAssignmentOptionData,
+    ConnectorCredentialAssignmentOptionsResponse,
     ConnectorCredentialAssignmentResponse,
 )
 from atlas.api.errors import AtlasError
@@ -59,6 +63,68 @@ def _response(
     response.headers["Cache-Control"] = "no-store"
     return ConnectorCredentialAssignmentResponse(
         data=ConnectorCredentialAssignmentData.from_domain(record),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.get("", response_model=ConnectorCredentialAssignmentInventoryResponse)
+async def list_connector_credential_assignments(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_connector_credential_assignment_read)
+    ],
+    source_target_binding_id: Annotated[
+        str | None, Query(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")
+    ] = None,
+) -> ConnectorCredentialAssignmentInventoryResponse:
+    service: ConnectorCredentialAssignmentService = request.app.state.credential_assignment_service
+    try:
+        assignments = await service.list_assignments(
+            actor=subject,
+            source_target_binding_id=source_target_binding_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ConnectorCredentialAssignmentError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorCredentialAssignmentInventoryResponse(
+        data=tuple(
+            ConnectorCredentialAssignmentInventoryData.from_domain(item) for item in assignments
+        ),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.get("/options", response_model=ConnectorCredentialAssignmentOptionsResponse)
+async def list_connector_credential_assignment_options(
+    source_target_binding_id: Annotated[str, Query(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_connector_credential_assignment_read)
+    ],
+) -> ConnectorCredentialAssignmentOptionsResponse:
+    service: ConnectorCredentialAssignmentService = request.app.state.credential_assignment_service
+    try:
+        options = await service.list_options(
+            actor=subject,
+            source_target_binding_id=source_target_binding_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ConnectorCredentialAssignmentError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorCredentialAssignmentOptionsResponse(
+        data=tuple(
+            ConnectorCredentialAssignmentOptionData.from_application(item) for item in options
+        ),
         meta=ResponseMeta(
             correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
         ),

@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiRequestError } from "../../api/client";
+import { getConnectorCredentialAssignments } from "../../api/credentialAssignments";
 import {
   createConnectorInstance,
   getConnectorInstanceCreationPolicies,
@@ -52,6 +53,7 @@ import {
   type ConnectorTargetConfigurationBinding,
 } from "../../api/targetConfigurations";
 import InstalledMcpManagementWorkspace from "./InstalledMcpManagementWorkspace";
+import { credentialAssignment } from "./testCredentialAssignmentFixture";
 import { connectorInstanceRecord as instance } from "./testInstanceFixture";
 import { installationReceipt as installation } from "./testInstallationFixture";
 
@@ -778,6 +780,11 @@ vi.mock("../../api/targetConfigurations", async (importOriginal) => {
   return { ...original, getConnectorTargetConfigurations: vi.fn() };
 });
 
+vi.mock("../../api/credentialAssignments", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../api/credentialAssignments")>();
+  return { ...original, getConnectorCredentialAssignments: vi.fn() };
+});
+
 vi.mock("../../api/connectorUpgradeReadiness", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/connectorUpgradeReadiness")>();
   return {
@@ -828,6 +835,7 @@ beforeEach(() => {
   vi.mocked(getConnectorInstanceCreationPolicies).mockResolvedValue([policy]);
   vi.mocked(getConnectorInstances).mockResolvedValue([instance]);
   vi.mocked(getConnectorTargetConfigurations).mockResolvedValue([]);
+  vi.mocked(getConnectorCredentialAssignments).mockResolvedValue([]);
   vi.mocked(getConnectorUpgradeReadiness).mockResolvedValue(upgradeReadiness);
   vi.mocked(getConnectorUpgradePlan).mockResolvedValue(upgradePlan);
   vi.mocked(getConnectorUpgradeApprovalRecord).mockResolvedValue(null);
@@ -936,6 +944,28 @@ describe("InstalledMcpManagementWorkspace", () => {
     ).toBeVisible();
     expect(screen.getByText(configuredBinding.binding_id)).toBeVisible();
     expect(screen.queryByRole("button", { name: "Bind governed target" })).toBeNull();
+  });
+
+  it("restores credential-assigned state without target mutation or retirement controls", async () => {
+    vi.mocked(getConnectorTargetConfigurations).mockResolvedValue([configuredBinding]);
+    vi.mocked(getConnectorCredentialAssignments).mockResolvedValue([credentialAssignment]);
+    renderWorkspace();
+
+    expect(await screen.findByText("Disabled / credentials assigned")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Remove Storage East" })).toBeNull();
+    expect(screen.getByRole("button", { name: "View target for Storage East" })).toBeVisible();
+    const viewCredentials = screen.getByRole("button", {
+      name: "View credentials for Storage East",
+    });
+    expect(viewCredentials).toBeVisible();
+    fireEvent.click(viewCredentials);
+
+    expect(
+      screen.getByRole("dialog", { name: "Manage credentials for Storage East" }),
+    ).toBeVisible();
+    expect(screen.getByText(credentialAssignment.assignment_id)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Assign credential profile" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /enable|execute|deploy/i })).toBeNull();
   });
 
   it("runs a bounded provider assessment without exposing signing or key controls", async () => {
