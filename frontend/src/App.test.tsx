@@ -1767,6 +1767,14 @@ describe("Atlas application shell", () => {
       ["connector-secret-brokerage-authorization-options", "previous-session-scope"],
       [{ brokerage_profile_id: "connector-secret-brokerage-profile.previous-user" }],
     );
+    client.setQueryData(
+      ["connector-runtime-activations", "previous-session-scope"],
+      [{ activation_id: "connector-runtime-activation.previous-user" }],
+    );
+    client.setQueryData(
+      ["connector-runtime-activation-options", "previous-session-scope"],
+      [{ activation_profile_id: "connector-runtime-activation-profile.previous-user" }],
+    );
     render(
       <QueryClientProvider client={client}>
         <App />
@@ -1823,6 +1831,10 @@ describe("Atlas application shell", () => {
     })).toEqual([]);
     expect(client.getQueriesData({
       queryKey: ["connector-secret-brokerage-authorization-options"],
+    })).toEqual([]);
+    expect(client.getQueriesData({ queryKey: ["connector-runtime-activations"] })).toEqual([]);
+    expect(client.getQueriesData({
+      queryKey: ["connector-runtime-activation-options"],
     })).toEqual([]);
   }, 15_000);
 

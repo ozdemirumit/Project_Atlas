@@ -4,14 +4,90 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-239 |
-| Title | Installed MCP governed secret-brokerage authorization |
-| Status | Ready for PR |
-| Branch | `agent/installed-mcp-secret-brokerage-governance` |
-| Pull Request | [#252](https://github.com/ozdemirumit/Project_Atlas/pull/252) |
-| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-030, ATLAS-031, ATLAS-050, ATLAS-052, ADR-036, ADR-100, ADR-123, ADR-133, ADR-182 |
+| Task ID | ATLAS-IMP-240 |
+| Title | Installed MCP governed runtime activation and local health evidence |
+| Status | Ready to Merge |
+| Branch | `agent/installed-mcp-runtime-activation-governance` |
+| Pull Request | [PR #253](https://github.com/ozdemirumit/Project_Atlas/pull/253) |
+| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-030, ATLAS-031, ATLAS-050, ATLAS-052, ADR-037, ADR-100, ADR-123, ADR-133, ADR-182 |
 | Last Updated | 2026-08-24 |
-| Next Action | Require exact-head pull-request CI before merge |
+| Next Action | Squash merge PR #253 with its exact head and verify the exact merge commit on `main` |
+
+### ATLAS-IMP-240 Scope Rationale
+
+- IMP-239 makes governed secret-brokerage authorization reloadable in Installed MCPs, but runtime
+  activation remains a separate Builder-only form with browser-embedded profile/policy identifiers
+  and freely entered digests.
+- This slice selects only a server-provided exact signed activation profile and policy, invokes the
+  separately trusted adapter after explicit human acknowledgement, and reloads minimized signed
+  local-health evidence in Installed MCPs.
+- Production remains fail-closed without a trusted adapter. The development adapter is synthetic:
+  it reads no secret store, starts no external process and makes no network request. No target
+  session, capability invocation, workflow execution, deployment or infrastructure mutation is
+  authorized by this slice.
+
+### ATLAS-IMP-240 Acceptance Criteria
+
+- Secret-brokerage-governed Installed MCP rows expose `Activate runtime`; healthy rows reload as
+  `Enabled / runtime healthy` with minimized read-only activation and local-probe evidence.
+- The browser selects only server-provided exact-scope signed activation options. Profile/policy
+  identifiers or digests, runner/image/workload controls, delivery/lease controls, health commands,
+  targets, commands and parameters are neither hard-coded nor freely editable in production UI.
+- Runtime activation inventory can be filtered by source brokerage authorization and survives
+  refresh; foreign and missing filters are indistinguishable and tenant scope precedes discovery.
+- Complete package-to-brokerage lineage, signed evidence, freshness, credential revocation/rotation,
+  immutable runner controls, trusted adapter receipt, local-only probes, separation and no-later-
+  authority flags are independently revalidated on create/read/list and downstream use.
+- API/UI projections exclude credential-profile identity, secret/store/broker/lease internals,
+  workload tokens, delivery internals, target coordinates, process/raw-health output, signatures,
+  request fingerprints, idempotency material and mutable runner controls.
+- Successful evidence may describe the bounded ADR-037 runtime result but target connection,
+  invocation, execution, deployment and infrastructure mutation remain false and unavailable.
+- Normal username/password sessions satisfy the default `SINGLE_FACTOR` policy; optional named
+  step-up remains fail-closed without global MFA or a second browser session.
+- Focused backend/frontend tests, targeted static checks, independent review and live responsive
+  validation pass before PR.
+
+### ATLAS-IMP-240 Verification Evidence
+
+- The focused runtime-activation security suite passed `37` tests, including stale receipt replay,
+  attempt-scoped compensation, cross-service coordination, DB-time publication expiry, leased
+  expired-claim recovery and takeover, required uncertainty audits, malformed and expired receipt,
+  timeout and signed-evidence failure cases. Its live two-engine PostgreSQL case is present and
+  skipped locally only because `ATLAS_TEST_POSTGRES_DSN` is not configured.
+- The integrated governed connector lifecycle suite passed `100` backend tests. Runtime activation
+  and the five affected persistence-contract suites passed `57` tests. Alembic reports the single
+  head `20260824_0159`; only dependency deprecation warnings remain.
+- Full backend MyPy passed across `1466` source and test files. Ruff formatting/lint and repository
+  diff validation passed across the affected backend files.
+- The focused frontend API, application shell, Installed MCP workspace and runtime activation panel
+  suites passed `74` tests. TypeScript, ESLint and the production build passed; the build emitted
+  only the existing large-chunk advisory.
+- Independent review findings covering schema alignment, downstream credential freshness, receipt
+  time validation, authoritative refresh behavior, cross-attempt receipt replay, distributed
+  activation races, atomic audit-before-publication, commit reconciliation, stale-claim recovery and
+  persistence minimization were fixed and protected with regression coverage. Closure fixes add
+  expiring recovery ownership with exact-attempt takeover, source plus actor/idempotency locks,
+  application-compatible legacy digest migration under an exclusive table lock, and required safe
+  audit events for claim, recovery, compensation and persistence uncertainty. The final independent
+  closure review reported no remaining P0, P1 or P2 finding after the downgrade path was also made
+  fail-closed and concurrency-safe for minimized legacy data.
+- Live current-code validation used the normal `operator` / `correct-password` session. Installed
+  MCP management rendered its authoritative fresh empty state without console errors or horizontal
+  overflow at both `1280x720` desktop and `390x844` mobile viewports.
+- Source commit `c77cee238da48d45fd234475a8252d8dccb83434` passed exact-head pull-request CI run
+  `32752920079`; frontend completed in 10m42s and backend in 22m25s. The backend run included
+  formatting, lint, MyPy, migration upgrade and round-trip, all live PostgreSQL integration tests,
+  and the complete backend regression suite.
+
+### ATLAS-IMP-239 Delivery Evidence
+
+- Source commit `a4538037244879f66fb84e8f195289e611632054` passed exact-head pull-request CI run
+  `32735589906`; frontend completed in 10m52s and backend in 17m9s.
+- [PR #252](https://github.com/ozdemirumit/Project_Atlas/pull/252) was squash-merged to `main` as
+  `f578cfc63b3ed57e0e1647de9118ad23ab32430c`.
+- The exact merge commit independently passed post-main CI run `32737386671`; frontend completed in
+  10m50s and backend in 14m39s. Local `main` and `origin/main` were synchronized before IMP-240.
 
 ### ATLAS-IMP-239 Scope Rationale
 

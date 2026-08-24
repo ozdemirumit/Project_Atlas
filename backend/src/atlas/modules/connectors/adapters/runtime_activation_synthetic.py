@@ -18,20 +18,23 @@ from atlas.modules.connectors.domain.runtime_activation import (
 class SyntheticConnectorRuntimeActivator:
     def __init__(self, *, clock=None) -> None:  # type: ignore[no-untyped-def]
         self._clock = clock or (lambda: datetime.now(UTC))
+        self.activated: set[str] = set()
         self.compensated: set[str] = set()
 
     async def activate(
         self, instruction: ConnectorRuntimeActivationInstruction
     ) -> ConnectorRuntimeActivationReceipt:
+        self.activated.add(instruction.activation_attempt_id)
         now = self._clock()
         receipt = ConnectorRuntimeActivationReceipt(
             receipt_id=(
                 "connector-runtime-activation-receipt."
-                f"{instruction.activation_id.rsplit('.', 1)[-1]}"
+                f"{instruction.activation_attempt_id.rsplit('.', 1)[-1]}"
             ),
             schema_version="atlas.connector-runtime-activation-receipt.v1",
             version=1,
             activation_id=instruction.activation_id,
+            activation_attempt_id=instruction.activation_attempt_id,
             organization_id=instruction.organization_id,
             environment_id=instruction.environment_id,
             source_brokerage_authorization_digest=(
@@ -64,8 +67,8 @@ class SyntheticConnectorRuntimeActivator:
         )
         return replace(receipt, canonical_digest=self._digest(receipt))
 
-    async def compensate(self, *, activation_id: str) -> None:
-        self.compensated.add(activation_id)
+    async def compensate(self, *, activation_attempt_id: str) -> None:
+        self.compensated.add(activation_attempt_id)
 
     @staticmethod
     def _digest(receipt: ConnectorRuntimeActivationReceipt) -> str:
@@ -85,5 +88,5 @@ class UnavailableConnectorRuntimeActivator:
         del instruction
         raise ConnectorRuntimeActivationError("runtime_activation_adapter_unavailable")
 
-    async def compensate(self, *, activation_id: str) -> None:
-        del activation_id
+    async def compensate(self, *, activation_attempt_id: str) -> None:
+        del activation_attempt_id

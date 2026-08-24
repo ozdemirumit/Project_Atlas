@@ -3,13 +3,16 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated, NoReturn
 
-from fastapi import APIRouter, Depends, Header, Path, Request, Response
+from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response
 
 from atlas.api.errors import AtlasError
 from atlas.api.runtime_activation_schemas import (
-    ConnectorRuntimeActivationData,
     ConnectorRuntimeActivationInput,
-    ConnectorRuntimeActivationResponse,
+    ConnectorRuntimeActivationInventoryData,
+    ConnectorRuntimeActivationInventoryResponse,
+    ConnectorRuntimeActivationOptionData,
+    ConnectorRuntimeActivationOptionsResponse,
+    ConnectorRuntimeActivationViewResponse,
 )
 from atlas.api.schemas import ResponseMeta
 from atlas.api.security import (
@@ -55,17 +58,79 @@ def _response(
     record: ConnectorRuntimeActivationRecord,
     request: Request,
     response: Response,
-) -> ConnectorRuntimeActivationResponse:
+) -> ConnectorRuntimeActivationViewResponse:
     response.headers["Cache-Control"] = "no-store"
-    return ConnectorRuntimeActivationResponse(
-        data=ConnectorRuntimeActivationData.from_domain(record),
+    return ConnectorRuntimeActivationViewResponse(
+        data=ConnectorRuntimeActivationInventoryData.from_domain(record),
         meta=ResponseMeta(
             correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
         ),
     )
 
 
-@router.post("", response_model=ConnectorRuntimeActivationResponse, status_code=201)
+@router.get("", response_model=ConnectorRuntimeActivationInventoryResponse)
+async def list_connector_runtime_activations(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_connector_runtime_activation_read)
+    ],
+    source_brokerage_authorization_id: Annotated[
+        str | None, Query(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")
+    ] = None,
+) -> ConnectorRuntimeActivationInventoryResponse:
+    service: ConnectorRuntimeActivationService = request.app.state.runtime_activation_service
+    try:
+        records = await service.list_activations(
+            actor=subject,
+            source_brokerage_authorization_id=source_brokerage_authorization_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ConnectorRuntimeActivationError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorRuntimeActivationInventoryResponse(
+        data=tuple(
+            ConnectorRuntimeActivationInventoryData.from_domain(record) for record in records
+        ),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.get("/options", response_model=ConnectorRuntimeActivationOptionsResponse)
+async def list_connector_runtime_activation_options(
+    source_brokerage_authorization_id: Annotated[str, Query(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_connector_runtime_activation_read)
+    ],
+) -> ConnectorRuntimeActivationOptionsResponse:
+    service: ConnectorRuntimeActivationService = request.app.state.runtime_activation_service
+    try:
+        options = await service.list_options(
+            actor=subject,
+            source_brokerage_authorization_id=source_brokerage_authorization_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ConnectorRuntimeActivationError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorRuntimeActivationOptionsResponse(
+        data=tuple(
+            ConnectorRuntimeActivationOptionData.from_application(option) for option in options
+        ),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.post("", response_model=ConnectorRuntimeActivationViewResponse, status_code=201)
 async def create_connector_runtime_activation(
     payload: ConnectorRuntimeActivationInput,
     request: Request,
@@ -75,7 +140,7 @@ async def create_connector_runtime_activation(
         AuthorizationDecision, Depends(authorize_connector_runtime_activation_create)
     ],
     idempotency_key: Annotated[str, IDEMPOTENCY],
-) -> ConnectorRuntimeActivationResponse:
+) -> ConnectorRuntimeActivationViewResponse:
     service: ConnectorRuntimeActivationService = request.app.state.runtime_activation_service
     try:
         record = await service.create(
@@ -99,7 +164,7 @@ async def create_connector_runtime_activation(
     return _response(record, request, response)
 
 
-@router.get("/{activation_id}", response_model=ConnectorRuntimeActivationResponse)
+@router.get("/{activation_id}", response_model=ConnectorRuntimeActivationViewResponse)
 async def get_connector_runtime_activation(
     activation_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
     request: Request,
@@ -108,7 +173,7 @@ async def get_connector_runtime_activation(
     _decision: Annotated[
         AuthorizationDecision, Depends(authorize_connector_runtime_activation_read)
     ],
-) -> ConnectorRuntimeActivationResponse:
+) -> ConnectorRuntimeActivationViewResponse:
     service: ConnectorRuntimeActivationService = request.app.state.runtime_activation_service
     try:
         record = await service.get(

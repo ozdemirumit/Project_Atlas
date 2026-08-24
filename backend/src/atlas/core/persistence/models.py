@@ -2096,28 +2096,86 @@ class ConnectorRuntimeActivationModel(Base):
     __tablename__ = "connector_runtime_activations"
     __table_args__ = (
         UniqueConstraint(
+            "activation_attempt_id",
+            name="uq_connector_runtime_activations_activation_attempt",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "environment_id",
             "source_brokerage_authorization_id",
             name="uq_connector_runtime_activations_brokerage_authorization",
         ),
         UniqueConstraint(
-            "activated_by",
-            "idempotency_key",
+            "organization_id",
+            "environment_id",
+            "activated_by_digest",
+            "idempotency_digest",
             name="uq_connector_runtime_activations_actor_idempotency",
         ),
     )
 
     activation_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    activation_attempt_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     source_brokerage_authorization_id: Mapped[str] = mapped_column(
         String(128), nullable=False, index=True
     )
     instance_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     activation_profile_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     activated_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
-    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    activated_by_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    replay_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class ConnectorRuntimeActivationClaimModel(Base):
+    __tablename__ = "connector_runtime_activation_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "environment_id",
+            "source_brokerage_authorization_id",
+            name="uq_connector_runtime_activation_claims_source",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "environment_id",
+            "activated_by_digest",
+            "idempotency_digest",
+            name="uq_connector_runtime_activation_claims_actor_idempotency",
+        ),
+        CheckConstraint(
+            "(state = 'active' AND recovery_owner_attempt_id IS NULL AND "
+            "recovery_lease_expires_at IS NULL) OR "
+            "(state = 'recovering' AND recovery_owner_attempt_id IS NOT NULL AND "
+            "recovery_lease_expires_at IS NOT NULL)",
+            name="ck_connector_runtime_activation_claims_recovery_state",
+        ),
+        Index(
+            "ix_connector_rt_activation_claims_source",
+            "source_brokerage_authorization_id",
+        ),
+    )
+
+    activation_attempt_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    activation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    source_brokerage_authorization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    activated_by_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    replay_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    claimed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    state: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
+    recovery_owner_attempt_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    recovery_lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
 
 
 class ConnectorTargetSessionVerificationModel(Base):

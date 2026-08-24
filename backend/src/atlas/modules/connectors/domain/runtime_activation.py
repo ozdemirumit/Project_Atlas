@@ -180,6 +180,7 @@ class ConnectorRuntimeActivationPolicySnapshot:
 @dataclass(frozen=True, slots=True)
 class ConnectorRuntimeActivationInstruction:
     activation_id: str
+    activation_attempt_id: str
     organization_id: str
     environment_id: str
     source_brokerage_authorization_id: str
@@ -197,6 +198,7 @@ class ConnectorRuntimeActivationInstruction:
     def __post_init__(self) -> None:
         _validate_ids(
             self.activation_id,
+            self.activation_attempt_id,
             self.organization_id,
             self.environment_id,
             self.source_brokerage_authorization_id,
@@ -219,11 +221,51 @@ class ConnectorRuntimeActivationInstruction:
 
 
 @dataclass(frozen=True, slots=True)
+class ConnectorRuntimeActivationClaim:
+    activation_attempt_id: str
+    activation_id: str
+    source_brokerage_authorization_id: str
+    organization_id: str
+    environment_id: str
+    activated_by_digest: str
+    idempotency_digest: str
+    replay_digest: str
+    claimed_at: datetime
+    expires_at: datetime
+    canonical_digest: str
+
+    def __post_init__(self) -> None:
+        _validate_ids(
+            self.activation_attempt_id,
+            self.activation_id,
+            self.source_brokerage_authorization_id,
+            self.organization_id,
+            self.environment_id,
+        )
+        if (
+            self.claimed_at.tzinfo is None
+            or self.expires_at.tzinfo is None
+            or self.expires_at <= self.claimed_at
+            or any(
+                _DIGEST.fullmatch(item) is None
+                for item in (
+                    self.activated_by_digest,
+                    self.idempotency_digest,
+                    self.replay_digest,
+                    self.canonical_digest,
+                )
+            )
+        ):
+            raise ValueError("Connector runtime activation claim is invalid")
+
+
+@dataclass(frozen=True, slots=True)
 class ConnectorRuntimeActivationReceipt:
     receipt_id: str
     schema_version: str
     version: int
     activation_id: str
+    activation_attempt_id: str
     organization_id: str
     environment_id: str
     source_brokerage_authorization_digest: str
@@ -254,6 +296,7 @@ class ConnectorRuntimeActivationReceipt:
             self.receipt_id,
             self.schema_version,
             self.activation_id,
+            self.activation_attempt_id,
             self.organization_id,
             self.environment_id,
             self.activation_adapter_id,
@@ -326,8 +369,8 @@ class ConnectorRuntimeActivationRecord:
     activated_at: datetime
     healthy_at: datetime
     canonical_digest: str
-    request_fingerprint: str
-    idempotency_key: str
+    replay_digest: str
+    idempotency_digest: str
     runtime_boundary_bound: bool = True
     runtime_trust_granted: bool = True
     secret_brokerage_governed: bool = True
@@ -379,13 +422,13 @@ class ConnectorRuntimeActivationRecord:
             self.activation_profile_digest,
             self.activation_policy_digest,
             self.canonical_digest,
-            self.request_fingerprint,
+            self.replay_digest,
+            self.idempotency_digest,
         )
         if (
             self.version != 1
             or self.instance_state != ENABLED_RUNTIME_HEALTHY
             or not 20 <= len(self.purpose.strip()) <= 1000
-            or not 8 <= len(self.idempotency_key) <= 128
             or self.activated_at.tzinfo is None
             or self.healthy_at.tzinfo is None
             or self.healthy_at < self.activated_at

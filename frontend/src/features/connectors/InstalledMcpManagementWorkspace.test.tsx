@@ -60,6 +60,11 @@ import {
   getConnectorRuntimeTrustGrants,
 } from "../../api/runtimeTrustGrants";
 import {
+  createConnectorRuntimeActivation,
+  getConnectorRuntimeActivationOptions,
+  getConnectorRuntimeActivations,
+} from "../../api/runtimeActivations";
+import {
   createConnectorSecretBrokerageAuthorization,
   getConnectorSecretBrokerageAuthorizationOptions,
   getConnectorSecretBrokerageAuthorizations,
@@ -86,6 +91,10 @@ import {
   secretBrokerageAuthorizationInventoryItem as secretBrokerageAuthorization,
   secretBrokerageAuthorizationOption,
 } from "./testSecretBrokerageFixture";
+import {
+  runtimeActivationInventoryItem,
+  runtimeActivationOption,
+} from "./testRuntimeActivationFixture";
 
 const policy: ConnectorInstanceCreationPolicy = {
   policy_id: "connector-instance-creation-policy.development",
@@ -850,6 +859,16 @@ vi.mock("../../api/secretBrokerageAuthorizations", async (importOriginal) => {
   };
 });
 
+vi.mock("../../api/runtimeActivations", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../api/runtimeActivations")>();
+  return {
+    ...original,
+    createConnectorRuntimeActivation: vi.fn(),
+    getConnectorRuntimeActivationOptions: vi.fn(),
+    getConnectorRuntimeActivations: vi.fn(),
+  };
+});
+
 vi.mock("../../api/connectorUpgradeReadiness", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/connectorUpgradeReadiness")>();
   return {
@@ -917,6 +936,11 @@ beforeEach(() => {
   vi.mocked(createConnectorSecretBrokerageAuthorization).mockResolvedValue({
     data: secretBrokerageAuthorization,
   });
+  vi.mocked(getConnectorRuntimeActivations).mockResolvedValue([]);
+  vi.mocked(getConnectorRuntimeActivationOptions).mockResolvedValue([]);
+  vi.mocked(createConnectorRuntimeActivation).mockResolvedValue({
+    data: runtimeActivationInventoryItem,
+  });
   vi.mocked(getConnectorUpgradeReadiness).mockResolvedValue(upgradeReadiness);
   vi.mocked(getConnectorUpgradePlan).mockResolvedValue(upgradePlan);
   vi.mocked(getConnectorUpgradeApprovalRecord).mockResolvedValue(null);
@@ -966,19 +990,21 @@ afterEach(() => {
 });
 
 describe("InstalledMcpManagementWorkspace", () => {
-  it("refreshes runtime trust and secret brokerage inventory with the MCP lifecycle", async () => {
+  it("refreshes runtime trust, secret brokerage and runtime activation inventory", async () => {
     renderWorkspace();
 
     await screen.findByRole("heading", { name: "Installed MCPs" });
     await waitFor(() => {
       expect(getConnectorRuntimeTrustGrants).toHaveBeenCalledOnce();
       expect(getConnectorSecretBrokerageAuthorizations).toHaveBeenCalledOnce();
+      expect(getConnectorRuntimeActivations).toHaveBeenCalledOnce();
     });
     fireEvent.click(screen.getByRole("button", { name: "Refresh MCP inventory" }));
 
     await waitFor(() => {
       expect(getConnectorRuntimeTrustGrants).toHaveBeenCalledTimes(2);
       expect(getConnectorSecretBrokerageAuthorizations).toHaveBeenCalledTimes(2);
+      expect(getConnectorRuntimeActivations).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -1303,6 +1329,98 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(await screen.findByText("Secret brokerage inventory is unavailable")).toBeVisible();
     expect(screen.queryByText("Enabled / secret brokerage governed")).toBeNull();
     expect(screen.getByText("Enabled / runtime trusted")).toBeVisible();
+  });
+
+  it("transitions governed secret brokerage to a healthy runtime using server options", async () => {
+    vi.mocked(getConnectorTargetConfigurations).mockResolvedValue([configuredBinding]);
+    vi.mocked(getConnectorCredentialAssignments).mockResolvedValue([credentialAssignment]);
+    vi.mocked(getConnectorConfigurationValidations).mockResolvedValue([configurationValidation]);
+    vi.mocked(getConnectorCapabilityEnablements).mockResolvedValue([
+      capabilityEnablementInventoryItem,
+    ]);
+    vi.mocked(getConnectorRuntimeTrustGrants).mockResolvedValue([runtimeTrustGrant]);
+    vi.mocked(getConnectorSecretBrokerageAuthorizations).mockResolvedValue([
+      secretBrokerageAuthorization,
+    ]);
+    vi.mocked(getConnectorRuntimeActivationOptions).mockResolvedValue([runtimeActivationOption]);
+    renderWorkspace();
+
+    expect(await screen.findByText("Enabled / secret brokerage governed")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", {
+      name: "Activate runtime for Storage East",
+    }));
+    expect(await screen.findByRole("combobox", {
+      name: "Signed activation profile and policy",
+    })).toBeVisible();
+    expect(screen.queryByRole("textbox", {
+      name: /profile id|profile digest|policy id|policy digest|runner|image|workload|delivery|lease|health command|target|command/i,
+    })).toBeNull();
+    fireEvent.click(screen.getByLabelText(/Activation starts only the exact isolated runtime/i));
+    fireEvent.click(screen.getByRole("button", { name: "Activate runtime" }));
+
+    await waitFor(() => expect(createConnectorRuntimeActivation).toHaveBeenCalledOnce());
+    const input = vi.mocked(createConnectorRuntimeActivation).mock.calls[0]?.[0];
+    expect(input?.brokerage).toBe(secretBrokerageAuthorization);
+    expect(input?.option).toBe(runtimeActivationOption);
+    expect(await screen.findByText("Enabled / runtime healthy")).toBeVisible();
+    expect(screen.getAllByText("Runtime healthy")).toHaveLength(2);
+    expect(screen.getByRole("button", {
+      name: "View runtime activation for Storage East",
+    })).toHaveTextContent("View runtime activation");
+  });
+
+  it("restores runtime health as minimized read-only local probe evidence", async () => {
+    vi.mocked(getConnectorTargetConfigurations).mockResolvedValue([configuredBinding]);
+    vi.mocked(getConnectorCredentialAssignments).mockResolvedValue([credentialAssignment]);
+    vi.mocked(getConnectorConfigurationValidations).mockResolvedValue([configurationValidation]);
+    vi.mocked(getConnectorCapabilityEnablements).mockResolvedValue([
+      capabilityEnablementInventoryItem,
+    ]);
+    vi.mocked(getConnectorRuntimeTrustGrants).mockResolvedValue([runtimeTrustGrant]);
+    vi.mocked(getConnectorSecretBrokerageAuthorizations).mockResolvedValue([
+      secretBrokerageAuthorization,
+    ]);
+    vi.mocked(getConnectorRuntimeActivations).mockResolvedValue([runtimeActivationInventoryItem]);
+    renderWorkspace();
+
+    expect(await screen.findByText("Enabled / runtime healthy")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", {
+      name: "View runtime activation for Storage East",
+    }));
+    const dialog = screen.getByRole("dialog", {
+      name: "Manage runtime activation for Storage East",
+    });
+    expect(await within(dialog).findByText(runtimeActivationInventoryItem.activation_id)).toBeVisible();
+    expect(within(dialog).getAllByText("passed")).toHaveLength(2);
+    expect(within(dialog).queryByRole("combobox")).toBeNull();
+    expect(within(dialog).queryByRole("button", {
+      name: /^(connect|run|invoke|execute|deploy|mutate)/i,
+    })).toBeNull();
+  });
+
+  it("removes stale runtime-health state when authoritative refresh fails", async () => {
+    vi.mocked(getConnectorTargetConfigurations).mockResolvedValue([configuredBinding]);
+    vi.mocked(getConnectorCredentialAssignments).mockResolvedValue([credentialAssignment]);
+    vi.mocked(getConnectorConfigurationValidations).mockResolvedValue([configurationValidation]);
+    vi.mocked(getConnectorCapabilityEnablements).mockResolvedValue([
+      capabilityEnablementInventoryItem,
+    ]);
+    vi.mocked(getConnectorRuntimeTrustGrants).mockResolvedValue([runtimeTrustGrant]);
+    vi.mocked(getConnectorSecretBrokerageAuthorizations).mockResolvedValue([
+      secretBrokerageAuthorization,
+    ]);
+    vi.mocked(getConnectorRuntimeActivations).mockResolvedValue([runtimeActivationInventoryItem]);
+    renderWorkspace();
+    expect(await screen.findByText("Enabled / runtime healthy")).toBeVisible();
+    vi.mocked(getConnectorRuntimeActivations).mockRejectedValue(
+      new ApiRequestError("Runtime activation evidence expired", 422),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh MCP inventory" }));
+
+    expect(await screen.findByText("Runtime activation inventory is unavailable")).toBeVisible();
+    expect(screen.queryByText("Enabled / runtime healthy")).toBeNull();
+    expect(screen.getByText("Enabled / secret brokerage governed")).toBeVisible();
   });
 
   it("keeps earlier lifecycle controls available when runtime trust inventory is unavailable", async () => {

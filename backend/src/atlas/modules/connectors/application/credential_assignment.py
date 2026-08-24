@@ -439,6 +439,17 @@ class ConnectorCredentialAssignmentService:
             raise ConnectorCredentialAssignmentError(
                 "credential_assignment_source_not_found"
             ) from error
+        self._verify_assignment(
+            actor=None,
+            binding=binding,
+            profile=profile,
+            policy=policy,
+            source_target_binding_digest=record.source_target_binding_digest,
+            package_digest=record.package_digest,
+            credential_profile_digest=record.credential_profile_digest,
+            credential_policy_digest=record.credential_policy_digest,
+            now=self._clock(),
+        )
         if (
             record.source_target_binding_digest != binding.canonical_digest
             or record.package_digest != binding.package_digest
@@ -526,7 +537,7 @@ class ConnectorCredentialAssignmentService:
     @staticmethod
     def _verify_assignment(
         *,
-        actor: AuthenticatedSubject,
+        actor: AuthenticatedSubject | None,
         binding: ConnectorTargetConfigurationBinding,
         profile: ConnectorCredentialProfileSnapshot,
         policy: ConnectorCredentialAssignmentPolicySnapshot,
@@ -572,8 +583,11 @@ class ConnectorCredentialAssignmentService:
             > timedelta(hours=policy.maximum_credential_profile_age_hours)
             or profile.next_rotation_at - now
             < timedelta(hours=policy.minimum_rotation_window_hours)
-            or not assurance_satisfies_policy(
-                actor.assurance_level, policy.required_assurance_level
+            or (
+                actor is not None
+                and not assurance_satisfies_policy(
+                    actor.assurance_level, policy.required_assurance_level
+                )
             )
         ):
             raise ConnectorCredentialAssignmentError("credential_assignment_invalid")

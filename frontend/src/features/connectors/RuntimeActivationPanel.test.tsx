@@ -1,181 +1,203 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ConnectorRuntimeActivation } from "../../api/runtimeActivations";
-import type { ConnectorSecretBrokerageAuthorization } from "../../api/secretBrokerageAuthorizations";
+import {
+  createConnectorRuntimeActivation,
+  getConnectorRuntimeActivationOptions,
+  getConnectorRuntimeActivations,
+} from "../../api/runtimeActivations";
 import { RuntimeActivationPanel } from "./RuntimeActivationPanel";
-import { runtimeTrustGrant } from "./testRuntimeTrustFixture";
+import { secretBrokerageAuthorizationInventoryItem as brokerage } from "./testSecretBrokerageFixture";
+import {
+  runtimeActivationInventoryItem as activation,
+  runtimeActivationOption as option,
+} from "./testRuntimeActivationFixture";
 
-const profileDigest = "e".repeat(64);
-const policyDigest = "08fa8725d665a3f670d665385c90af861e1eedb7b1898b693cc2b265fdbca337";
-const brokerage = {
-  authorization_id: "connector-secret-brokerage-authorization.test",
-  schema_version: "atlas.connector-secret-brokerage-authorization.v1",
-  version: 1,
-  source_runtime_trust_grant_id: runtimeTrustGrant.grant_id,
-  source_runtime_trust_digest: runtimeTrustGrant.canonical_digest,
-  organization_id: runtimeTrustGrant.organization_id,
-  environment_id: runtimeTrustGrant.environment_id,
-  package_digest: runtimeTrustGrant.package_digest,
-  connector_id: runtimeTrustGrant.connector_id,
-  release_version: runtimeTrustGrant.release_version,
-  manifest_digest: runtimeTrustGrant.manifest_digest,
-  instance_id: runtimeTrustGrant.instance_id,
-  instance_key: runtimeTrustGrant.instance_key,
-  display_name: runtimeTrustGrant.display_name,
-  credential_class: "credential.api-token",
-  authentication_method: "auth.api-token",
-  privilege_class: "privilege.read-only",
-  rotation_state: "rotation.current",
-  revocation_state: "revocation.active",
-  next_rotation_at: "2026-08-09T13:00:00Z",
-  runtime_profile_id: runtimeTrustGrant.runtime_profile_id,
-  runtime_profile_digest: runtimeTrustGrant.runtime_profile_digest,
-  runner_workload_identity_id: runtimeTrustGrant.runner_workload_identity_id,
-  secret_delivery_policy_id: runtimeTrustGrant.secret_delivery_policy_id,
-  brokerage_profile_id: "connector-secret-brokerage-profile.development-memory-only",
-  brokerage_profile_digest: "f".repeat(64),
-  delivery_policy_id: runtimeTrustGrant.secret_delivery_policy_id,
-  lease_policy_id: "secret-lease-policy.single-use-non-renewable",
-  maximum_lease_seconds: 300,
-  revocation_policy_id: "secret-revocation-policy.check-before-issue-and-use",
-  brokerage_policy_id: "connector-secret-brokerage-policy.development",
-  brokerage_policy_digest: "a".repeat(64),
-  brokerage_policy_version: "policy-v1",
-  authorization_version: 1,
-  instance_state: "enabled_secret_brokerage_governed",
-  authorized_by: "subject.connector-secret-brokerage-authorizer",
-  purpose: "Authorize exact future memory-only secret brokerage without issuing a lease.",
-  authorized_at: "2026-08-06T00:00:00Z",
-  canonical_digest: "9".repeat(64),
-  runtime_boundary_bound: true,
-  runtime_trust_granted: true,
-  eligible_for_secret_brokerage: true,
-  secret_brokerage_governed: true,
-  credential_resolution_authorized: true,
-  eligible_for_runtime_activation: true,
-  promotion_blocked: false,
-  secret_lease_issued: false,
-  credentials_resolved: false,
-  runner_started: false,
-  package_loaded: false,
-  target_connection_authorized: false,
-  capability_invocation_authorized: false,
-  execution_authorized: false,
-  deployment_approved: false,
-  infrastructure_mutation_performed: false,
-  reused: false,
-} satisfies ConnectorSecretBrokerageAuthorization;
+vi.mock("../../api/runtimeActivations", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../api/runtimeActivations")>();
+  return {
+    ...original,
+    createConnectorRuntimeActivation: vi.fn(),
+    getConnectorRuntimeActivationOptions: vi.fn(),
+    getConnectorRuntimeActivations: vi.fn(),
+  };
+});
 
-const activation = {
-  activation_id: "connector-runtime-activation.test",
-  schema_version: "atlas.connector-runtime-activation.v1",
-  version: 1,
-  source_brokerage_authorization_id: brokerage.authorization_id,
-  source_brokerage_authorization_digest: brokerage.canonical_digest,
-  organization_id: brokerage.organization_id,
-  environment_id: brokerage.environment_id,
-  package_digest: brokerage.package_digest,
-  connector_id: brokerage.connector_id,
-  release_version: brokerage.release_version,
-  manifest_digest: brokerage.manifest_digest,
-  instance_id: brokerage.instance_id,
-  instance_key: brokerage.instance_key,
-  display_name: brokerage.display_name,
-  runtime_profile_digest: brokerage.runtime_profile_digest,
-  runner_identity_digest: "1".repeat(64),
-  image_digest: "2".repeat(64),
-  workload_identity_digest: "3".repeat(64),
-  activation_profile_id: "connector-runtime-activation-profile.development-synthetic",
-  activation_profile_digest: profileDigest,
-  activation_policy_id: "connector-runtime-activation-policy.development",
-  activation_policy_digest: policyDigest,
-  activation_policy_version: "policy-v1",
-  activation_adapter_id: "connector-runtime-activator.synthetic",
-  health_probe_results: [
-    { probe_id: "health.package-loaded", outcome: "health.passed" },
-    { probe_id: "health.runtime-responsive", outcome: "health.passed" },
-  ],
-  instance_state: "enabled_runtime_healthy",
-  activated_by: "subject.connector-runtime-activation-operator",
-  purpose: "Activate the exact isolated connector runtime and verify local health only.",
-  activated_at: "2026-08-06T00:00:00Z",
-  healthy_at: "2026-08-06T00:00:01Z",
-  canonical_digest: "8".repeat(64),
-  runtime_boundary_bound: true,
-  runtime_trust_granted: true,
-  secret_brokerage_governed: true,
-  credential_resolution_authorized: true,
-  secret_lease_issued: true,
-  credentials_resolved: true,
-  runner_started: true,
-  package_loaded: true,
-  runtime_health_verified: true,
-  lease_delivery_completed: true,
-  delivery_channel_closed: true,
-  lease_revocation_confirmed: true,
-  eligible_for_target_session_authorization: true,
-  target_connected: false,
-  target_connection_authorized: false,
-  capability_invocation_authorized: false,
-  capability_invoked: false,
-  execution_authorized: false,
-  deployment_approved: false,
-  infrastructure_mutation_performed: false,
-  reused: false,
-} satisfies ConnectorRuntimeActivation;
+const sessionScopeKey = JSON.stringify(["subject.operator", "org.atlas", "env.atlas"]);
 
-afterEach(() => vi.unstubAllGlobals());
+function renderPanel(existingActivation = undefined as typeof activation | undefined) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  const rendered = render(
+    <QueryClientProvider client={client}>
+      <RuntimeActivationPanel
+        brokerage={brokerage}
+        existingActivation={existingActivation}
+        sessionScopeKey={sessionScopeKey}
+      />
+    </QueryClientProvider>,
+  );
+  return { ...rendered, client };
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(getConnectorRuntimeActivations).mockResolvedValue([]);
+  vi.mocked(getConnectorRuntimeActivationOptions).mockResolvedValue([option]);
+  vi.mocked(createConnectorRuntimeActivation).mockResolvedValue({ data: activation });
+});
+
+afterEach(() => cleanup());
 
 describe("RuntimeActivationPanel", () => {
-  it("activates exact signed runtime evidence without target or command controls", async () => {
-    document.cookie = "atlas_csrf=test-csrf; path=/";
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(JSON.stringify({ data: activation }), { status: 201 }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
-    render(<QueryClientProvider client={client}><RuntimeActivationPanel brokerage={brokerage} /></QueryClientProvider>);
+  it("uses only server-provided evidence and exposes no later operational controls", async () => {
+    renderPanel();
 
-    expect(screen.queryByRole("textbox", { name: /secret reference|secret store|broker id|lease handle|lease ttl|workload identity|runner image|environment variable|health command|target|host|port|command|parameter/i })).toBeNull();
-    fireEvent.change(screen.getByRole("textbox", { name: "Activation profile digest" }), { target: { value: profileDigest } });
-    fireEvent.click(screen.getByLabelText(/Activation starts only the exact isolated runtime/));
+    expect(await screen.findByRole("combobox", { name: "Signed activation profile and policy" }))
+      .toBeVisible();
+    expect(screen.queryByRole("textbox", {
+      name: /profile id|profile digest|policy id|policy digest|runner|image|workload|delivery|lease|health command|target|command/i,
+    })).toBeNull();
+    expect(screen.queryByRole("button", {
+      name: /^(connect|run|invoke|execute|deploy|mutate)/i,
+    })).toBeNull();
+    fireEvent.click(screen.getByLabelText(/Activation starts only the exact isolated runtime/i));
     fireEvent.click(screen.getByRole("button", { name: "Activate runtime" }));
 
+    await waitFor(() => expect(createConnectorRuntimeActivation).toHaveBeenCalledOnce());
+    const input = vi.mocked(createConnectorRuntimeActivation).mock.calls[0]?.[0];
+    expect(input?.brokerage).toBe(brokerage);
+    expect(input?.option).toBe(option);
     expect(await screen.findByText(activation.activation_id)).toBeVisible();
-    expect(screen.getByText("started")).toBeVisible();
-    expect(screen.getByText("loaded")).toBeVisible();
-    expect(screen.getByText("closed")).toBeVisible();
+    expect(screen.getAllByText("passed")).toHaveLength(2);
     expect(screen.getByText("not connected")).toBeVisible();
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
-    const init = fetchMock.mock.calls[0]?.[1];
-    const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as Record<string, unknown>;
-    expect(body).toMatchObject({
-      source_brokerage_authorization_id: brokerage.authorization_id,
-      source_brokerage_authorization_digest: brokerage.canonical_digest,
-      package_digest: brokerage.package_digest,
-      activation_profile_id: activation.activation_profile_id,
-      activation_profile_digest: profileDigest,
-      activation_policy_id: activation.activation_policy_id,
-      activation_policy_digest: policyDigest,
-      acknowledged_activation_grants_no_target_connection_invocation_execution_or_deployment: true,
-    });
-    for (const forbidden of ["credential_profile_id", "secret_reference_id", "secret_store_profile_id", "broker_id", "lease_handle", "lease_ttl", "runner_workload_identity_id", "runner_image", "environment_variables", "health_command", "target_profile_id", "endpoint_url", "host", "port", "command", "parameters", "execution_authorized", "deployment_approved"]) expect(body).not.toHaveProperty(forbidden);
-    expect(new Headers(init?.headers).get("X-CSRF-Token")).toBe("test-csrf");
+    expect(screen.queryByText(/target session authorization/i)).toBeNull();
   });
 
-  it("reports activation policy failures without presenting MFA as a prerequisite", async () => {
-    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockRejectedValue(new Error("policy rejected")));
-    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
-    render(<QueryClientProvider client={client}><RuntimeActivationPanel brokerage={brokerage} /></QueryClientProvider>);
+  it("restores minimized read-only activation evidence", async () => {
+    vi.mocked(getConnectorRuntimeActivations).mockResolvedValue([activation]);
+    renderPanel(activation);
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Activation profile digest" }), { target: { value: profileDigest } });
-    fireEvent.click(screen.getByLabelText(/Activation starts only the exact isolated runtime/));
+    expect(await screen.findByText(activation.activation_id)).toBeVisible();
+    expect(screen.getByText(activation.activation_profile_id)).toBeVisible();
+    expect(screen.getByText(activation.health_probe_results[0]?.probe_id ?? "missing-probe"))
+      .toBeVisible();
+    expect(screen.queryByRole("button", { name: "Activate runtime" })).toBeNull();
+    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(getConnectorRuntimeActivationOptions).not.toHaveBeenCalled();
+  });
+
+  it("treats an authoritative empty response as newer than the existing activation prop", async () => {
+    renderPanel(activation);
+
+    expect(await screen.findByRole("combobox", { name: "Signed activation profile and policy" }))
+      .toBeVisible();
+    expect(screen.queryByText(activation.activation_id)).toBeNull();
+    expect(getConnectorRuntimeActivationOptions).toHaveBeenCalledOnce();
+  });
+
+  it("hides stale activation evidence when a freshness refetch fails", async () => {
+    vi.mocked(getConnectorRuntimeActivations).mockResolvedValue([activation]);
+    const { client } = renderPanel(activation);
+    expect(await screen.findByText(activation.activation_id)).toBeVisible();
+    vi.mocked(getConnectorRuntimeActivations).mockRejectedValue(new Error("freshness rejected"));
+
+    await act(async () => {
+      await client.refetchQueries({
+        queryKey: [
+          "connector-runtime-activations",
+          sessionScopeKey,
+          brokerage.authorization_id,
+        ],
+      });
+    });
+
+    expect(await screen.findByRole("alert")).toBeVisible();
+    expect(screen.queryByText(activation.activation_id)).toBeNull();
+  });
+
+  it("suppresses a mutation success after the authoritative inventory becomes empty", async () => {
+    const { client } = renderPanel();
+    await screen.findByRole("combobox", { name: "Signed activation profile and policy" });
+    fireEvent.click(screen.getByLabelText(/Activation starts only the exact isolated runtime/i));
+    fireEvent.click(screen.getByRole("button", { name: "Activate runtime" }));
+    expect(await screen.findByText(activation.activation_id)).toBeVisible();
+
+    act(() => {
+      client.setQueryData(
+        ["connector-runtime-activations", sessionScopeKey, brokerage.authorization_id],
+        [],
+      );
+    });
+
+    expect(await screen.findByRole("combobox", { name: "Signed activation profile and policy" }))
+      .toBeVisible();
+    expect(screen.queryByText(activation.activation_id)).toBeNull();
+  });
+
+  it("suppresses a mutation success after authoritative freshness refetch fails", async () => {
+    const { client } = renderPanel();
+    await screen.findByRole("combobox", { name: "Signed activation profile and policy" });
+    fireEvent.click(screen.getByLabelText(/Activation starts only the exact isolated runtime/i));
+    fireEvent.click(screen.getByRole("button", { name: "Activate runtime" }));
+    expect(await screen.findByText(activation.activation_id)).toBeVisible();
+    vi.mocked(getConnectorRuntimeActivations).mockRejectedValue(new Error("freshness rejected"));
+
+    await act(async () => {
+      await client.refetchQueries({
+        queryKey: [
+          "connector-runtime-activations",
+          sessionScopeKey,
+          brokerage.authorization_id,
+        ],
+      });
+    });
+
+    expect(await screen.findByRole("alert")).toBeVisible();
+    expect(screen.queryByText(activation.activation_id)).toBeNull();
+  });
+
+  it("invalidates acknowledgement when refreshed server options change", async () => {
+    const { client } = renderPanel();
+    const select = await screen.findByRole("combobox", { name: "Signed activation profile and policy" });
+    fireEvent.click(screen.getByLabelText(/Activation starts only the exact isolated runtime/i));
+    expect(screen.getByRole("button", { name: "Activate runtime" })).toBeEnabled();
+
+    const replacement = {
+      ...option,
+      activation_profile_id: "connector-runtime-activation-profile.replacement",
+      activation_profile_digest: "a".repeat(64),
+    };
+    act(() => {
+      client.setQueryData(
+        ["connector-runtime-activation-options", sessionScopeKey, brokerage.authorization_id],
+        [replacement],
+      );
+    });
+
+    await waitFor(() => expect(select).toHaveValue(JSON.stringify([
+      replacement.source_brokerage_authorization_id,
+      replacement.source_brokerage_authorization_digest,
+      replacement.activation_profile_id,
+      replacement.activation_profile_digest,
+      replacement.activation_policy_id,
+      replacement.activation_policy_digest,
+    ])));
+    expect(screen.getByRole("button", { name: "Activate runtime" })).toBeDisabled();
+  });
+
+  it("uses the signed-in username/password session without MFA or a second session", async () => {
+    vi.mocked(createConnectorRuntimeActivation).mockRejectedValue(new Error("policy rejected"));
+    renderPanel();
+
+    await screen.findByRole("combobox", { name: "Signed activation profile and policy" });
+    fireEvent.click(screen.getByLabelText(/Activation starts only the exact isolated runtime/i));
     fireEvent.click(screen.getByRole("button", { name: "Activate runtime" }));
 
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent(/signed activation-policy controls.*runtime health evidence.*requested scope.*separation of duties/i);
-    expect(alert).not.toHaveTextContent(/MFA|multi[- ]factor|hardware|assurance/i);
+    expect(alert).toHaveTextContent(/brokerage lineage.*signed activation profile and policy.*freshness.*scope.*separation.*local health/i);
+    expect(alert).not.toHaveTextContent(/MFA|multi[- ]factor|second browser|hardware/i);
   });
 });
