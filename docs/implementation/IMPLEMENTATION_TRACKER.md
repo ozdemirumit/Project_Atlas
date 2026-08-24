@@ -4,14 +4,75 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-234 |
-| Title | Installed MCP governed target configuration |
-| Status | Implementation Complete - PR Pending |
-| Branch | `agent/installed-mcp-target-configuration` |
+| Task ID | ATLAS-IMP-235 |
+| Title | Installed MCP governed credential-reference assignment |
+| Status | Ready for PR |
+| Branch | `agent/installed-mcp-credential-assignment` |
 | Pull Request | Pending |
-| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-050, ATLAS-052, ADR-031, ADR-123, ADR-133, ADR-182 |
-| Last Updated | 2026-08-21 |
-| Next Action | Commit the reviewed slice, open the pull request and complete exact-head CI |
+| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-030, ATLAS-031, ATLAS-050, ATLAS-052, ADR-032, ADR-123, ADR-133, ADR-182 |
+| Last Updated | 2026-08-24 |
+| Next Action | Commit the reviewed slice, run exact-head PR CI and merge only after all required jobs pass |
+
+### ATLAS-IMP-235 Scope Rationale
+
+- IMP-234 makes a governed target binding reloadable and visible from Installed MCPs, but the next
+  credential-governance state remains confined to a Builder-only panel.
+- The existing credential panel embeds development profile and policy digests in the browser and
+  cannot rediscover an assignment after refresh.
+- This slice exposes server-selected compatible credential-profile and assignment-policy evidence,
+  persistent assignment inventory and an Installed MCP `Manage credentials` flow. It binds metadata
+  only and never resolves or reveals a secret reference.
+
+### ATLAS-IMP-235 Acceptance Criteria
+
+- Target-configured Installed MCP rows expose `Manage credentials`; assigned rows reload as
+  `Disabled / credentials assigned` and no longer expose target mutation or retirement.
+- The browser selects only server-provided, exact-scope, target-compatible signed credential profile
+  and assignment policy evidence. No profile or policy digest is hard-coded in production UI.
+- Assignment inventory can be filtered by source target-binding identity and survives page refresh.
+- The create request contains exact target-binding/profile/policy lineage, a bounded purpose and an
+  explicit no-secret/no-authority acknowledgement; normal username/password sessions remain enough.
+- API and UI projections exclude secret-reference/store identifiers, vault paths, usernames,
+  passwords, tokens, keys, certificates, target coordinates, signatures and idempotency material.
+- Success advances only to `disabled_credentials_assigned`; secret access or resolution,
+  connectivity validation, capability enablement, runtime activation, connector invocation, AI
+  execution and infrastructure mutation remain outside this slice.
+- Focused backend/frontend tests, targeted static checks and desktop/mobile live validation pass
+  before PR.
+
+### ATLAS-IMP-235 Verification Evidence
+
+- Backend Ruff passed across the seven affected source/test files. Targeted MyPy passed the seven
+  source files through the pure-Python Windows fallback after local application control blocked the
+  pinned native extension; pull-request CI remains authoritative for the pinned Linux toolchain.
+  Credential assignment scope, compatibility, separation, minimized API inventory/options,
+  reload and create behavior passed all `11` focused backend tests.
+- Frontend TypeScript and targeted ESLint passed. Safe inventory/option parsing, HTTP status
+  preservation, server-selected assignment, collision-free profile/policy selection, refresh
+  restoration and Installed MCP lifecycle presentation passed `13` selected tests across three
+  files; unrelated frontend tests remain
+  assigned to pull-request CI.
+- Independent final review found and closed cross-tenant filtered-inventory existence disclosure and
+  legal identifier-pair key collision risks. Repository-level scope filtering now makes foreign and
+  absent bindings indistinguishable, while profile/policy option values use collision-free tuples.
+- A current-code API and web pair at `127.0.0.1:8056` and `localhost:5217` used one normal
+  `operator` / `correct-password` test identity session. The Installed MCP row exposed one
+  server-provided compatible credential profile, advanced only to `Disabled / credentials
+  assigned`, removed retirement, retained read-only target/credential views and restored the
+  assignment after a full page reload. No MFA, step-up or second browser session was requested.
+- Live API inventory and options returned `200` with `Cache-Control: no-store` and excluded secret,
+  store, target-coordinate, signature and idempotency internals. Desktop `1280x720` and mobile
+  `390x844` layouts had no document, dialog, fact-grid or action-row horizontal overflow. The
+  current-page browser console contained no warnings or errors.
+
+### ATLAS-IMP-234 Delivery Evidence
+
+- Source commit `8af46ef3728a9f25146f494b89e66e19cdc6fdb0` passed exact-head pull-request CI
+  run `32513712355`; frontend completed in 10m20s and backend in 14m49s.
+- [PR #247](https://github.com/ozdemirumit/Project_Atlas/pull/247) was squash-merged to
+  `main` as `df1426a9d1d2f0fd3c5bd36c37a9bf61c6b226eb`.
+- The exact merge commit independently passed post-main CI run `32515063442`; frontend completed in
+  10m46s and backend in 22m49s. Local `main` and `origin/main` were synchronized before IMP-235.
 
 ### ATLAS-IMP-234 Scope Rationale
 

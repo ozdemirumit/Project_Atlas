@@ -30,11 +30,19 @@ class ConnectorCredentialTargetSource(Protocol):
 class ConnectorCredentialProfileSource(Protocol):
     async def get_by_id(self, *, profile_id: str) -> ConnectorCredentialProfileSnapshot | None: ...
 
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorCredentialProfileSnapshot, ...]: ...
+
 
 class ConnectorCredentialAssignmentPolicySource(Protocol):
     async def get_by_id(
         self, *, policy_id: str
     ) -> ConnectorCredentialAssignmentPolicySnapshot | None: ...
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorCredentialAssignmentPolicySnapshot, ...]: ...
 
 
 class ConnectorCredentialAssignmentRepository(Protocol):
@@ -46,6 +54,18 @@ class ConnectorCredentialAssignmentRepository(Protocol):
     async def get_by_target_binding(
         self, *, source_target_binding_id: str
     ) -> ConnectorCredentialAssignmentRecord | None: ...
+
+    async def get_by_target_binding_in_scope(
+        self,
+        *,
+        source_target_binding_id: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> ConnectorCredentialAssignmentRecord | None: ...
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorCredentialAssignmentRecord, ...]: ...
 
     async def get_by_profile_and_instance(
         self, *, credential_profile_id: str, instance_id: str

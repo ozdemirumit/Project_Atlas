@@ -47,6 +47,40 @@ class PostgreSQLConnectorCredentialAssignmentRepository:
             )
             return self._to_domain(row.payload) if row else None
 
+    async def get_by_target_binding_in_scope(
+        self,
+        *,
+        source_target_binding_id: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> ConnectorCredentialAssignmentRecord | None:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(ConnectorCredentialAssignmentModel).where(
+                    ConnectorCredentialAssignmentModel.source_target_binding_id
+                    == source_target_binding_id,
+                    ConnectorCredentialAssignmentModel.organization_id == organization_id,
+                    ConnectorCredentialAssignmentModel.environment_id == environment_id,
+                )
+            )
+            return self._to_domain(row.payload) if row else None
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorCredentialAssignmentRecord, ...]:
+        async with self._sessions() as session:
+            rows = (
+                await session.scalars(
+                    select(ConnectorCredentialAssignmentModel)
+                    .where(
+                        ConnectorCredentialAssignmentModel.organization_id == organization_id,
+                        ConnectorCredentialAssignmentModel.environment_id == environment_id,
+                    )
+                    .order_by(ConnectorCredentialAssignmentModel.assignment_id)
+                )
+            ).all()
+            return tuple(self._to_domain(row.payload) for row in rows)
+
     async def get_by_profile_and_instance(
         self, *, credential_profile_id: str, instance_id: str
     ) -> ConnectorCredentialAssignmentRecord | None:

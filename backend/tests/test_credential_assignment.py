@@ -186,6 +186,148 @@ async def test_assignment_default_policy_accepts_development_password_human() ->
 
 
 @pytest.mark.asyncio
+async def test_assignment_options_and_inventory_are_verified_scope_bound_and_reloadable() -> None:
+    (
+        _,
+        target_service,
+        _,
+        _,
+        _,
+        binding,
+        profile,
+        policy,
+    ) = await credential_assignment_fixture()
+    actor = credential_assigner()
+
+    incompatible = replace(
+        profile,
+        profile_id="connector-credential-profile.incompatible",
+        allowed_connector_ids=("connector.other",),
+        canonical_digest="0" * 64,
+    )
+    incompatible = replace(incompatible, canonical_digest=_signed_snapshot(incompatible))
+    stale = replace(
+        profile,
+        profile_id="connector-credential-profile.stale",
+        issued_at=binding.bound_at - timedelta(hours=200),
+        next_rotation_at=binding.bound_at + timedelta(hours=48),
+        expires_at=binding.bound_at + timedelta(hours=96),
+        canonical_digest="0" * 64,
+    )
+    stale = replace(stale, canonical_digest=_signed_snapshot(stale))
+    tampered = replace(
+        profile,
+        profile_id="connector-credential-profile.tampered",
+        canonical_digest="f" * 64,
+    )
+    wrong_scope = replace(
+        profile,
+        profile_id="connector-credential-profile.wrong-scope",
+        organization_id="organization.other",
+        canonical_digest="0" * 64,
+    )
+    wrong_scope = replace(wrong_scope, canonical_digest=_signed_snapshot(wrong_scope))
+    separated = replace(
+        profile,
+        profile_id="connector-credential-profile.separated",
+        signed_by=actor.subject_id,
+        canonical_digest="0" * 64,
+    )
+    separated = replace(separated, canonical_digest=_signed_snapshot(separated))
+    separation_policy = replace(
+        policy,
+        policy_id="connector-credential-assignment-policy.separated",
+        required_credential_profile_signer_id=actor.subject_id,
+        canonical_digest="0" * 64,
+    )
+    separation_policy = replace(
+        separation_policy,
+        canonical_digest=_signed_snapshot(separation_policy),
+    )
+    wrong_scope_policy = replace(
+        policy,
+        policy_id="connector-credential-assignment-policy.wrong-scope",
+        environment_id="environment.other",
+        canonical_digest="0" * 64,
+    )
+    wrong_scope_policy = replace(
+        wrong_scope_policy,
+        canonical_digest=_signed_snapshot(wrong_scope_policy),
+    )
+    service = ConnectorCredentialAssignmentService(
+        repository=InMemoryConnectorCredentialAssignmentRepository(),
+        target_source=target_service,
+        credential_profile_source=InMemoryConnectorCredentialProfileSource(
+            (profile, incompatible, stale, tampered, wrong_scope, separated)
+        ),
+        policy_source=InMemoryConnectorCredentialAssignmentPolicySource(
+            (policy, separation_policy, wrong_scope_policy)
+        ),
+        audit_sink=CollectingAuditSink(),
+        environment_id=binding.environment_id,
+        clock=lambda: binding.bound_at,
+    )
+
+    options = await service.list_options(
+        actor=actor,
+        source_target_binding_id=binding.binding_id,
+        correlation_id="cor_credential_options",
+    )
+
+    assert len(options) == 1
+    option = options[0]
+    assert option.credential_profile_id == profile.profile_id
+    assert option.credential_profile_digest == profile.canonical_digest
+    assert option.credential_policy_id == policy.policy_id
+    assert option.credential_policy_digest == policy.canonical_digest
+    assert option.resulting_instance_state == "disabled_credentials_assigned"
+
+    with pytest.raises(ConnectorCredentialAssignmentError, match="record_not_found"):
+        await service.list_options(
+            actor=replace(actor, organization_id="organization.other"),
+            source_target_binding_id=binding.binding_id,
+            correlation_id="cor_credential_options_wrong_scope",
+        )
+
+    assignment = await assign_credential(service, binding, profile, policy, actor=actor)
+    inventory = await service.list_assignments(
+        actor=actor,
+        source_target_binding_id=binding.binding_id,
+        correlation_id="cor_credential_inventory",
+    )
+    all_assignments = await service.list_assignments(
+        actor=actor,
+        source_target_binding_id=None,
+        correlation_id="cor_credential_inventory_all",
+    )
+    exhausted = await service.list_options(
+        actor=actor,
+        source_target_binding_id=binding.binding_id,
+        correlation_id="cor_credential_options_after_assignment",
+    )
+    foreign_repository = InMemoryConnectorCredentialAssignmentRepository()
+    await foreign_repository.add(replace(assignment, organization_id="organization.other"))
+    foreign_service = ConnectorCredentialAssignmentService(
+        repository=foreign_repository,
+        target_source=target_service,
+        credential_profile_source=InMemoryConnectorCredentialProfileSource((profile,)),
+        policy_source=InMemoryConnectorCredentialAssignmentPolicySource((policy,)),
+        audit_sink=CollectingAuditSink(),
+        environment_id=binding.environment_id,
+        clock=lambda: binding.bound_at,
+    )
+    foreign_inventory = await foreign_service.list_assignments(
+        actor=actor,
+        source_target_binding_id=binding.binding_id,
+        correlation_id="cor_credential_inventory_foreign_scope",
+    )
+
+    assert inventory == all_assignments == (assignment,)
+    assert exhausted == ()
+    assert foreign_inventory == ()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "required_assurance_level",
     (AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED),
@@ -338,8 +480,16 @@ def test_assignment_api_rejects_secret_input_and_minimizes_response(tmp_path: Pa
             credential_assignment_service=service,
         )
     ) as client:
-        login_response = login(client)
         endpoint = "/api/v1/connectors/credential-assignments"
+        unauthenticated_options = client.get(
+            f"{endpoint}/options",
+            params={"source_target_binding_id": binding.binding_id},
+        )
+        login_response = login(client)
+        options = client.get(
+            f"{endpoint}/options",
+            params={"source_target_binding_id": binding.binding_id},
+        )
         denied = client.post(endpoint, json=payload, headers={"Idempotency-Key": "cred-api-001"})
         forbidden = client.post(
             endpoint,
@@ -360,10 +510,42 @@ def test_assignment_api_rejects_secret_input_and_minimizes_response(tmp_path: Pa
         assert created.status_code == 201, created.text
         assignment_id = created.json()["data"]["assignment_id"]
         read = client.get(f"{endpoint}/{assignment_id}")
+        inventory = client.get(
+            endpoint,
+            params={"source_target_binding_id": binding.binding_id},
+        )
+        unmatched = client.get(
+            endpoint,
+            params={"source_target_binding_id": "connector-target-configuration.missing"},
+        )
+        exhausted = client.get(
+            f"{endpoint}/options",
+            params={"source_target_binding_id": binding.binding_id},
+        )
 
+    assert unauthenticated_options.status_code == 401
     assert denied.status_code == 403 and forbidden.status_code == 422
-    assert read.status_code == 200
-    assert created.headers["Cache-Control"] == read.headers["Cache-Control"] == "no-store"
+    assert (
+        options.status_code
+        == read.status_code
+        == inventory.status_code
+        == unmatched.status_code
+        == exhausted.status_code
+        == 200
+    )
+    assert len(options.json()["data"]) == len(inventory.json()["data"]) == 1
+    assert options.json()["data"][0]["credential_profile_id"] == profile.profile_id
+    assert inventory.json()["data"][0]["assignment_id"] == assignment_id
+    assert unmatched.json()["data"] == exhausted.json()["data"] == []
+    assert (
+        created.headers["Cache-Control"]
+        == read.headers["Cache-Control"]
+        == inventory.headers["Cache-Control"]
+        == unmatched.headers["Cache-Control"]
+        == options.headers["Cache-Control"]
+        == exhausted.headers["Cache-Control"]
+        == "no-store"
+    )
     assert created.json()["data"]["credentials_resolved"] is False
     rendered = created.text.lower()
     for hidden in (
@@ -378,3 +560,47 @@ def test_assignment_api_rejects_secret_input_and_minimizes_response(tmp_path: Pa
         "access_token",
     ):
         assert hidden not in rendered
+
+    minimized_responses = (options, inventory, unmatched, exhausted)
+    minimized = "".join(item.text for item in minimized_responses).lower()
+    exposed_keys = {
+        key for item in minimized_responses for record in item.json()["data"] for key in record
+    }
+    for hidden_key in (
+        "secret_reference",
+        "secret_reference_id",
+        "secret_store",
+        "secret_store_profile_id",
+        "vault",
+        "user",
+        "username",
+        "password",
+        "token",
+        "token_value",
+        "access_token",
+        "key",
+        "private_key",
+        "cert",
+        "certificate",
+        "endpoint",
+        "host",
+        "ip_address",
+        "port",
+        "target_id",
+        "target_profile_id",
+        "target_profile_digest",
+        "site_id",
+        "target_type",
+        "target_product",
+        "signed_by",
+        "signature",
+        "request_fingerprint",
+        "idempotency_key",
+        "endpoint_origin",
+    ):
+        assert hidden_key not in exposed_keys
+    for hidden_value in (
+        "secret-reference.connector.storage-reader",
+        "secret-store-profile.enterprise",
+    ):
+        assert hidden_value not in minimized

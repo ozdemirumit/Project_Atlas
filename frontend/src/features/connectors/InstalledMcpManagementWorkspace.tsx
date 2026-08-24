@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Download,
   FileCheck2,
+  KeyRound,
   Link2,
   LogIn,
   PackagePlus,
@@ -21,6 +22,11 @@ import {
 import { useState, type FormEvent } from "react";
 
 import { ApiRequestError } from "../../api/client";
+import {
+  getConnectorCredentialAssignments,
+  type ConnectorCredentialAssignment,
+  type ConnectorCredentialAssignmentInventoryItem,
+} from "../../api/credentialAssignments";
 import {
   assessConnectorUpgradeSigningProviderConformance,
   createConnectorUpgradeApprovalRequest,
@@ -70,6 +76,7 @@ import {
   getConnectorTargetConfigurations,
   type ConnectorTargetConfigurationBinding,
 } from "../../api/targetConfigurations";
+import { CredentialAssignmentPanel } from "./CredentialAssignmentPanel";
 import { TargetConfigurationPanel } from "./TargetConfigurationPanel";
 
 type LifecycleFilter = "active" | "retired" | "all";
@@ -300,6 +307,64 @@ function TargetConfigurationDialog({
           existingBinding={binding}
           instance={instance}
           onBindingCreated={onBindingCreated}
+          onRequestEnterpriseLogin={onRequestEnterpriseLogin}
+        />
+        <footer>
+          <button type="button" className="secondary-button" onClick={onCancel}>
+            Close
+          </button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+function CredentialAssignmentDialog({
+  assignment,
+  binding,
+  instance,
+  onAssignmentCreated,
+  onCancel,
+  onRequestEnterpriseLogin,
+}: {
+  assignment?: ConnectorCredentialAssignmentInventoryItem;
+  binding: ConnectorTargetConfigurationBinding;
+  instance: ConnectorInstanceRecord;
+  onAssignmentCreated: (assignment: ConnectorCredentialAssignment) => void;
+  onCancel: () => void;
+  onRequestEnterpriseLogin?: () => void;
+}) {
+  return (
+    <div className="installed-mcp-dialog-backdrop" role="presentation">
+      <section
+        className="installed-mcp-dialog credential-assignment-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="credential-mcp-title"
+      >
+        <header>
+          <div>
+            <p className="eyebrow">GOVERNED CREDENTIAL METADATA</p>
+            <h3 id="credential-mcp-title">Manage credentials for {instance.display_name}</h3>
+          </div>
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Close credential assignment"
+            onClick={onCancel}
+          >
+            <X size={17} />
+          </button>
+        </header>
+        <p className="muted-copy">
+          This boundary assigns only signed credential metadata. It does not expose or resolve
+          secrets, test connectivity, enable the connector, grant runtime authority, or contact
+          infrastructure.
+        </p>
+        <CredentialAssignmentPanel
+          binding={binding}
+          existingAssignment={assignment}
+          onAssignmentCreated={onAssignmentCreated}
           onRequestEnterpriseLogin={onRequestEnterpriseLogin}
         />
         <footer>
@@ -886,6 +951,7 @@ export default function InstalledMcpManagementWorkspace({
   const [retiring, setRetiring] = useState<ConnectorInstanceRecord | null>(null);
   const [reviewing, setReviewing] = useState<ConnectorInstanceRecord | null>(null);
   const [targeting, setTargeting] = useState<ConnectorInstanceRecord | null>(null);
+  const [credentialing, setCredentialing] = useState<ConnectorInstanceRecord | null>(null);
   const packageQuery = useQuery({
     queryKey: ["connector-package-installations", subjectId],
     queryFn: getConnectorPackageInstallations,
@@ -904,6 +970,11 @@ export default function InstalledMcpManagementWorkspace({
   const bindingQuery = useQuery({
     queryKey: ["connector-target-bindings", subjectId],
     queryFn: () => getConnectorTargetConfigurations(),
+    enabled: Boolean(subjectId),
+  });
+  const assignmentQuery = useQuery({
+    queryKey: ["connector-credential-assignments", subjectId],
+    queryFn: () => getConnectorCredentialAssignments(),
     enabled: Boolean(subjectId),
   });
   const signingTrustQuery = useQuery({
@@ -958,6 +1029,10 @@ export default function InstalledMcpManagementWorkspace({
   const bindingByInstance = new Map(
     targetBindings.map((binding) => [binding.source_instance_record_id, binding]),
   );
+  const credentialAssignments = assignmentQuery.data ?? [];
+  const assignmentByBinding = new Map(
+    credentialAssignments.map((assignment) => [assignment.source_target_binding_id, assignment]),
+  );
   const packages = packageQuery.data ?? [];
   const policies = policyQuery.data ?? [];
   const activeCount = instances.filter(
@@ -966,6 +1041,7 @@ export default function InstalledMcpManagementWorkspace({
   const lifecycleQueryErrors = [
     instanceQuery.error,
     bindingQuery.error,
+    assignmentQuery.error,
     packageQuery.error,
     policyQuery.error,
   ].filter((error) => error !== null);
@@ -993,6 +1069,7 @@ export default function InstalledMcpManagementWorkspace({
     void policyQuery.refetch();
     void instanceQuery.refetch();
     void bindingQuery.refetch();
+    void assignmentQuery.refetch();
     void signingTrustQuery.refetch();
     void signingConformanceQuery.refetch();
     void signingOnboardingQuery.refetch();
@@ -1311,6 +1388,10 @@ export default function InstalledMcpManagementWorkspace({
               {instances.map((instance) => {
                 const binding = bindingByInstance.get(instance.record_id);
                 const configured = Boolean(binding);
+                const assignment = binding
+                  ? assignmentByBinding.get(binding.binding_id)
+                  : undefined;
+                const credentialsAssigned = Boolean(assignment);
                 return (
                   <tr key={instance.record_id}>
                     <td><strong>{instance.display_name}</strong><code>{instance.instance_key}</code></td>
@@ -1319,9 +1400,11 @@ export default function InstalledMcpManagementWorkspace({
                       <span className={`state-badge ${instance.instance_state === "retired" ? "neutral" : "pending"}`}>
                         {instance.instance_state === "retired"
                           ? "Retired"
-                          : configured
-                            ? "Disabled / target configured"
-                            : "Disabled / unconfigured"}
+                          : credentialsAssigned
+                            ? "Disabled / credentials assigned"
+                            : configured
+                              ? "Disabled / target configured"
+                              : "Disabled / unconfigured"}
                       </span>
                     </td>
                     <td>{instance.owner_id}</td>
@@ -1329,14 +1412,18 @@ export default function InstalledMcpManagementWorkspace({
                       <span className="installed-mcp-event-label">
                         {instance.instance_state === "retired"
                           ? "Retired"
-                          : binding
-                            ? "Target bound"
-                            : "Created"}
+                          : assignment
+                            ? "Credentials assigned"
+                            : binding
+                              ? "Target bound"
+                              : "Created"}
                       </span>
-                      {new Date(binding?.bound_at ?? instance.retired_at ?? instance.created_at).toLocaleString()}
+                      {new Date(assignment?.assigned_at ?? binding?.bound_at ?? instance.retired_at ?? instance.created_at).toLocaleString()}
                     </td>
                     <td>
-                      {instance.instance_state === "disabled_unconfigured" && bindingQuery.isSuccess && (
+                      {instance.instance_state === "disabled_unconfigured" &&
+                        bindingQuery.isSuccess &&
+                        assignmentQuery.isSuccess && (
                         <div className="installed-mcp-row-actions">
                           <button
                             className="secondary-button installed-mcp-row-action"
@@ -1347,8 +1434,19 @@ export default function InstalledMcpManagementWorkspace({
                           >
                             <Link2 size={15} /><span>{configured ? "View target" : "Manage target"}</span>
                           </button>
+                          {binding && (
+                            <button
+                              className="secondary-button installed-mcp-row-action"
+                              type="button"
+                              title={credentialsAssigned ? "View governed credential metadata" : "Assign governed credential metadata"}
+                              aria-label={`${credentialsAssigned ? "View" : "Manage"} credentials for ${instance.display_name}`}
+                              onClick={() => setCredentialing(instance)}
+                            >
+                              <KeyRound size={15} /><span>{credentialsAssigned ? "View credentials" : "Manage credentials"}</span>
+                            </button>
+                          )}
                           <button className="secondary-button installed-mcp-row-action" type="button" title="Review governed update evidence" aria-label={`Review update for ${instance.display_name}`} onClick={() => setReviewing(instance)}><ArrowUpCircle size={15} /><span>Review update</span></button>
-                          {!configured && (
+                          {!configured && !credentialsAssigned && (
                             <button className="secondary-button installed-mcp-row-action danger" type="button" title="Remove from active management and preserve history" aria-label={`Remove ${instance.display_name}`} onClick={() => { retireMutation.reset(); setRetiring(instance); }}><Archive size={15} /><span>Remove</span></button>
                           )}
                         </div>
@@ -1361,7 +1459,7 @@ export default function InstalledMcpManagementWorkspace({
           </table>
         </div>
       ) : null}
-      <div className="installed-mcp-footnote"><span>{activeCount} active in this result</span><span>Target bindings remain disabled metadata. Remove preserves history. Updates remain review-only.</span></div>
+      <div className="installed-mcp-footnote"><span>{activeCount} active in this result</span><span>Target and credential bindings remain disabled metadata. Remove preserves history. Updates remain review-only.</span></div>
       {adding && <AddMcpDialog packages={packages} policies={policies} pending={createMutation.isPending} onCancel={() => setAdding(false)} onOpenBuilder={openBuilder} onSubmit={(input) => createMutation.mutate(input)} />}
       {retiring && <RetireMcpDialog instance={retiring} pending={retireMutation.isPending} onCancel={() => setRetiring(null)} onSubmit={(reason) => retireMutation.mutate({ instance: retiring, reason })} />}
       {reviewing && <UpgradeReadinessDialog instance={reviewing} subjectId={subjectId} onCancel={() => setReviewing(null)} />}
@@ -1384,6 +1482,31 @@ export default function InstalledMcpManagementWorkspace({
           onRequestEnterpriseLogin={onRequestEnterpriseLogin}
         />
       )}
+      {credentialing && (() => {
+        const binding = bindingByInstance.get(credentialing.record_id);
+        if (!binding) return null;
+        return (
+          <CredentialAssignmentDialog
+            instance={credentialing}
+            binding={binding}
+            assignment={assignmentByBinding.get(binding.binding_id)}
+            onAssignmentCreated={(assignment) => {
+              queryClient.setQueryData<ConnectorCredentialAssignmentInventoryItem[]>(
+                ["connector-credential-assignments", subjectId],
+                (current = []) => [
+                  ...current.filter(
+                    (item) =>
+                      item.source_target_binding_id !== assignment.source_target_binding_id,
+                  ),
+                  assignment,
+                ],
+              );
+            }}
+            onCancel={() => setCredentialing(null)}
+            onRequestEnterpriseLogin={onRequestEnterpriseLogin}
+          />
+        );
+      })()}
     </section>
   );
 }

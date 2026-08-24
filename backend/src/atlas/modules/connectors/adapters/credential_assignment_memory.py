@@ -33,6 +33,37 @@ class InMemoryConnectorCredentialAssignmentRepository:
             None,
         )
 
+    async def get_by_target_binding_in_scope(
+        self,
+        *,
+        source_target_binding_id: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> ConnectorCredentialAssignmentRecord | None:
+        record = await self.get_by_target_binding(source_target_binding_id=source_target_binding_id)
+        if (
+            record is None
+            or record.organization_id != organization_id
+            or record.environment_id != environment_id
+        ):
+            return None
+        return record
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorCredentialAssignmentRecord, ...]:
+        return tuple(
+            sorted(
+                (
+                    item
+                    for item in self._records.values()
+                    if item.organization_id == organization_id
+                    and item.environment_id == environment_id
+                ),
+                key=lambda item: item.assignment_id,
+            )
+        )
+
     async def get_by_profile_and_instance(
         self, *, credential_profile_id: str, instance_id: str
     ) -> ConnectorCredentialAssignmentRecord | None:
@@ -85,6 +116,21 @@ class InMemoryConnectorCredentialProfileSource:
     async def get_by_id(self, *, profile_id: str) -> ConnectorCredentialProfileSnapshot | None:
         return self._profiles.get(profile_id)
 
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorCredentialProfileSnapshot, ...]:
+        return tuple(
+            sorted(
+                (
+                    item
+                    for item in self._profiles.values()
+                    if item.organization_id == organization_id
+                    and item.environment_id == environment_id
+                ),
+                key=lambda item: item.profile_id,
+            )
+        )
+
 
 class InMemoryConnectorCredentialAssignmentPolicySource:
     def __init__(self, policies: tuple[ConnectorCredentialAssignmentPolicySnapshot, ...]) -> None:
@@ -94,3 +140,18 @@ class InMemoryConnectorCredentialAssignmentPolicySource:
         self, *, policy_id: str
     ) -> ConnectorCredentialAssignmentPolicySnapshot | None:
         return self._policies.get(policy_id)
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorCredentialAssignmentPolicySnapshot, ...]:
+        return tuple(
+            sorted(
+                (
+                    item
+                    for item in self._policies.values()
+                    if item.organization_id == organization_id
+                    and item.environment_id == environment_id
+                ),
+                key=lambda item: item.policy_id,
+            )
+        )

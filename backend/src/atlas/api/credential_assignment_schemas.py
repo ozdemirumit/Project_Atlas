@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from atlas.api.schemas import ResponseMeta
+from atlas.modules.connectors.application.credential_assignment import (
+    ConnectorCredentialAssignmentOption,
+)
 from atlas.modules.connectors.domain.credential_assignment import (
     ConnectorCredentialAssignmentRecord,
 )
@@ -97,4 +101,117 @@ class ConnectorCredentialAssignmentResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     data: ConnectorCredentialAssignmentData
+    meta: ResponseMeta
+
+
+class ConnectorCredentialAssignmentInventoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    assignment_id: str
+    source_target_binding_id: str
+    connector_id: str
+    release_version: str
+    instance_id: str
+    display_name: str
+    credential_profile_id: str
+    credential_profile_digest: str
+    credential_class: str
+    authentication_method: str
+    vendor_role: str
+    privilege_class: str
+    rotation_state: str
+    revocation_state: str
+    next_rotation_at: datetime
+    credential_policy_id: str
+    credential_policy_digest: str
+    credential_policy_version: str
+    instance_state: Literal["disabled_credentials_assigned"]
+    assigned_by: str
+    purpose: str
+    assigned_at: datetime
+    credential_references_assigned: Literal[True]
+    eligible_for_configuration_validation: Literal[True]
+    credentials_resolved: Literal[False]
+    connector_enabled: Literal[False]
+    runtime_trust_granted: Literal[False]
+    execution_authorized: Literal[False]
+    infrastructure_mutation_performed: Literal[False]
+
+    @classmethod
+    def from_domain(
+        cls, record: ConnectorCredentialAssignmentRecord
+    ) -> ConnectorCredentialAssignmentInventoryData:
+        return cls(**{field: getattr(record, field) for field in cls.model_fields})
+
+
+class ConnectorCredentialAssignmentInventoryResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: tuple[ConnectorCredentialAssignmentInventoryData, ...]
+    meta: ResponseMeta
+
+
+class ConnectorCredentialAssignmentOptionData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_target_binding_id: str
+    credential_profile_id: str
+    credential_profile_digest: str
+    credential_class: str
+    authentication_method: str
+    vendor_role: str
+    privilege_class: str
+    rotation_state: str
+    revocation_state: str
+    next_rotation_at: datetime
+    credential_profile_expires_at: datetime
+    credential_policy_id: str
+    credential_policy_digest: str
+    credential_policy_version: str
+    credential_policy_expires_at: datetime
+    required_assurance_level: str
+    resulting_instance_state: Literal["disabled_credentials_assigned"]
+    resulting_credential_references_assigned: Literal[True]
+    eligible_for_configuration_validation: Literal[True]
+    credentials_resolved: Literal[False]
+    connector_enabled: Literal[False]
+    runtime_trust_granted: Literal[False]
+    execution_authorized: Literal[False]
+    infrastructure_mutation_performed: Literal[False]
+
+    @classmethod
+    def from_application(
+        cls, option: ConnectorCredentialAssignmentOption
+    ) -> ConnectorCredentialAssignmentOptionData:
+        return cls(
+            **{
+                field: getattr(option, field)
+                for field in cls.model_fields
+                if field
+                not in {
+                    "required_assurance_level",
+                    "resulting_credential_references_assigned",
+                    "eligible_for_configuration_validation",
+                    "credentials_resolved",
+                    "connector_enabled",
+                    "runtime_trust_granted",
+                    "execution_authorized",
+                    "infrastructure_mutation_performed",
+                }
+            },
+            required_assurance_level=option.required_assurance_level.value,
+            resulting_credential_references_assigned=True,
+            eligible_for_configuration_validation=True,
+            credentials_resolved=False,
+            connector_enabled=False,
+            runtime_trust_granted=False,
+            execution_authorized=False,
+            infrastructure_mutation_performed=False,
+        )
+
+
+class ConnectorCredentialAssignmentOptionsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: tuple[ConnectorCredentialAssignmentOptionData, ...]
     meta: ResponseMeta
