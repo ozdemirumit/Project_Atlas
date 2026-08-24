@@ -4,11 +4,11 @@ import asyncio
 from dataclasses import asdict, replace
 from datetime import timedelta
 from pathlib import Path
-from typing import NoReturn
+from typing import NoReturn, cast
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import Table, UniqueConstraint
 from test_browser_sessions import BasicTestIdentityProvider, login, settings
 from test_capability_enablement import (
     capability_enablement_fixture,
@@ -343,9 +343,10 @@ async def test_runtime_trust_repository_uniqueness_is_tenant_scoped() -> None:
         == foreign
     )
 
+    runtime_trust_table = cast(Table, ConnectorRuntimeTrustGrantModel.__table__)
     constraints = {
         constraint.name: tuple(column.name for column in constraint.columns)
-        for constraint in ConnectorRuntimeTrustGrantModel.__table__.constraints
+        for constraint in runtime_trust_table.constraints
         if isinstance(constraint, UniqueConstraint)
     }
     assert constraints["uq_connector_runtime_trust_grants_enablement"] == (
