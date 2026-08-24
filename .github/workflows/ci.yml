@@ -95,6 +95,8 @@ jobs:
           tests/test_workflow_protected_runtime_process_scheduling_consumptions_postgres.py
           tests/test_workflow_protected_runtime_process_scheduling_authorizations_postgres.py
           tests/test_workflow_protected_runtime_process_resume_authorizations_postgres.py
+          tests/test_bounded_invocation.py
+          tests/test_invocation_evidence.py
           -k live_postgres
       - name: Test
         working-directory: backend

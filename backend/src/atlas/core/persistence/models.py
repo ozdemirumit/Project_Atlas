@@ -2301,10 +2301,14 @@ class ConnectorInvocationConsumptionClaimModel(Base):
     __tablename__ = "connector_invocation_consumption_claims"
     __table_args__ = (
         UniqueConstraint(
+            "organization_id",
+            "environment_id",
             "source_authorization_id",
             name="uq_connector_invocation_claims_authorization",
         ),
         UniqueConstraint(
+            "organization_id",
+            "environment_id",
             "claimed_by",
             "idempotency_digest",
             name="uq_connector_invocation_claims_actor_idempotency",
@@ -2316,8 +2320,12 @@ class ConnectorInvocationConsumptionClaimModel(Base):
     invocation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     claimed_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     idempotency_digest: Mapped[str] = mapped_column(String(64), nullable=False)
-    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
-    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(
+        String(128), primary_key=True, nullable=False, index=True
+    )
+    environment_id: Mapped[str] = mapped_column(
+        String(128), primary_key=True, nullable=False, index=True
+    )
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
@@ -2326,10 +2334,14 @@ class ConnectorBoundedInvocationModel(Base):
     __tablename__ = "connector_bounded_invocations"
     __table_args__ = (
         UniqueConstraint(
+            "organization_id",
+            "environment_id",
             "source_authorization_id",
             name="uq_connector_bounded_invocations_authorization",
         ),
         UniqueConstraint(
+            "organization_id",
+            "environment_id",
             "consumption_claim_id",
             name="uq_connector_bounded_invocations_claim",
         ),
@@ -2341,8 +2353,12 @@ class ConnectorBoundedInvocationModel(Base):
     instance_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     capability_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     invoked_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
-    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
-    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(
+        String(128), primary_key=True, nullable=False, index=True
+    )
+    environment_id: Mapped[str] = mapped_column(
+        String(128), primary_key=True, nullable=False, index=True
+    )
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
@@ -2351,10 +2367,14 @@ class ConnectorInvocationEvidenceClaimModel(Base):
     __tablename__ = "connector_invocation_evidence_claims"
     __table_args__ = (
         UniqueConstraint(
+            "organization_id",
+            "environment_id",
             "source_invocation_id",
             name="uq_connector_invocation_evidence_claims_source",
         ),
         UniqueConstraint(
+            "organization_id",
+            "environment_id",
             "claimed_by",
             "idempotency_digest",
             name="uq_connector_invocation_evidence_claims_actor_idempotency",
@@ -2366,8 +2386,12 @@ class ConnectorInvocationEvidenceClaimModel(Base):
     ingestion_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     claimed_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     idempotency_digest: Mapped[str] = mapped_column(String(64), nullable=False)
-    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
-    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(
+        String(128), primary_key=True, nullable=False, index=True
+    )
+    environment_id: Mapped[str] = mapped_column(
+        String(128), primary_key=True, nullable=False, index=True
+    )
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
@@ -2376,10 +2400,14 @@ class ConnectorInvocationEvidenceModel(Base):
     __tablename__ = "connector_invocation_evidence_ingestions"
     __table_args__ = (
         UniqueConstraint(
+            "organization_id",
+            "environment_id",
             "source_invocation_id",
             name="uq_connector_invocation_evidence_source",
         ),
         UniqueConstraint(
+            "organization_id",
+            "environment_id",
             "claim_id",
             name="uq_connector_invocation_evidence_claim",
         ),
@@ -2392,8 +2420,12 @@ class ConnectorInvocationEvidenceModel(Base):
     capability_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     evidence_package_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     ingested_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
-    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
-    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(
+        String(128), primary_key=True, nullable=False, index=True
+    )
+    environment_id: Mapped[str] = mapped_column(
+        String(128), primary_key=True, nullable=False, index=True
+    )
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 

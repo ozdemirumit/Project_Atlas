@@ -30,42 +30,69 @@ class PostgreSQLConnectorInvocationEvidenceRepository:
     def from_url(cls, database_url: str) -> PostgreSQLConnectorInvocationEvidenceRepository:
         return cls(create_async_engine(database_url))
 
-    async def get(self, *, ingestion_id: str) -> ConnectorInvocationEvidenceRecord | None:
-        async with self._sessions() as session:
-            row = await session.get(ConnectorInvocationEvidenceModel, ingestion_id)
-            return self._record_to_domain(row.payload) if row else None
-
-    async def get_by_invocation(
-        self, *, source_invocation_id: str
+    async def get_in_scope(
+        self, *, ingestion_id: str, organization_id: str, environment_id: str
     ) -> ConnectorInvocationEvidenceRecord | None:
         async with self._sessions() as session:
             row = await session.scalar(
                 select(ConnectorInvocationEvidenceModel).where(
-                    ConnectorInvocationEvidenceModel.source_invocation_id == source_invocation_id
+                    ConnectorInvocationEvidenceModel.ingestion_id == ingestion_id,
+                    ConnectorInvocationEvidenceModel.organization_id == organization_id,
+                    ConnectorInvocationEvidenceModel.environment_id == environment_id,
                 )
             )
             return self._record_to_domain(row.payload) if row else None
 
-    async def get_claim_by_invocation(
-        self, *, source_invocation_id: str
+    async def get_by_invocation_in_scope(
+        self,
+        *,
+        source_invocation_id: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> ConnectorInvocationEvidenceRecord | None:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(ConnectorInvocationEvidenceModel).where(
+                    ConnectorInvocationEvidenceModel.source_invocation_id == source_invocation_id,
+                    ConnectorInvocationEvidenceModel.organization_id == organization_id,
+                    ConnectorInvocationEvidenceModel.environment_id == environment_id,
+                )
+            )
+            return self._record_to_domain(row.payload) if row else None
+
+    async def get_claim_by_invocation_in_scope(
+        self,
+        *,
+        source_invocation_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> ConnectorInvocationEvidenceClaim | None:
         async with self._sessions() as session:
             row = await session.scalar(
                 select(ConnectorInvocationEvidenceClaimModel).where(
                     ConnectorInvocationEvidenceClaimModel.source_invocation_id
-                    == source_invocation_id
+                    == source_invocation_id,
+                    ConnectorInvocationEvidenceClaimModel.organization_id == organization_id,
+                    ConnectorInvocationEvidenceClaimModel.environment_id == environment_id,
                 )
             )
             return self._claim_to_domain(row.payload) if row else None
 
-    async def get_claim_by_idempotency(
-        self, *, claimed_by: str, idempotency_digest: str
+    async def get_claim_by_idempotency_in_scope(
+        self,
+        *,
+        claimed_by: str,
+        idempotency_digest: str,
+        organization_id: str,
+        environment_id: str,
     ) -> ConnectorInvocationEvidenceClaim | None:
         async with self._sessions() as session:
             row = await session.scalar(
                 select(ConnectorInvocationEvidenceClaimModel).where(
                     ConnectorInvocationEvidenceClaimModel.claimed_by == claimed_by,
                     ConnectorInvocationEvidenceClaimModel.idempotency_digest == idempotency_digest,
+                    ConnectorInvocationEvidenceClaimModel.organization_id == organization_id,
+                    ConnectorInvocationEvidenceClaimModel.environment_id == environment_id,
                 )
             )
             return self._claim_to_domain(row.payload) if row else None

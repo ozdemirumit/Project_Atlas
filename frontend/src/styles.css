@@ -929,7 +929,8 @@ textarea:focus-visible {
 .installed-mcp-dialog.secret-brokerage-dialog,
 .installed-mcp-dialog.runtime-activation-dialog,
 .installed-mcp-dialog.target-session-dialog,
-.installed-mcp-dialog.invocation-authorization-dialog {
+.installed-mcp-dialog.invocation-authorization-dialog,
+.installed-mcp-dialog.bounded-invocation-dialog {
   width: min(100%, 760px);
 }
 
@@ -941,10 +942,17 @@ textarea:focus-visible {
 .secret-brokerage-dialog .target-configuration-panel,
 .runtime-activation-dialog .target-configuration-panel,
 .target-session-dialog .target-configuration-panel,
-.invocation-authorization-dialog .target-configuration-panel {
+.invocation-authorization-dialog .target-configuration-panel,
+.bounded-invocation-dialog .target-configuration-panel {
   margin-top: 0;
   padding-top: 0;
   border-top: 0;
+}
+
+.bounded-invocation-record code,
+.bounded-invocation-record strong,
+.bounded-invocation-option-facts strong {
+  overflow-wrap: anywhere;
 }
 
 .runtime-health-probe-list {

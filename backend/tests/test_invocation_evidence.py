@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from dataclasses import asdict, replace
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import delete
+from sqlalchemy.ext.asyncio import create_async_engine
 from test_bounded_invocation import bounded_fixture, invoke_bounded
 from test_browser_sessions import BasicTestIdentityProvider, login, settings
 from test_package_acquisition import CollectingAuditSink
@@ -18,6 +22,10 @@ from test_target_session import (
 )
 
 from atlas.api.app import create_app
+from atlas.core.persistence.models import (
+    ConnectorInvocationEvidenceClaimModel,
+    ConnectorInvocationEvidenceModel,
+)
 from atlas.modules.authorization.application.service import AuthorizationService
 from atlas.modules.authorization.domain.models import PermissionDefinition
 from atlas.modules.connectors.adapters.invocation_evidence_memory import (
@@ -227,6 +235,289 @@ async def test_invocation_evidence_is_immutable_minimized_and_idempotent() -> No
 
 
 @pytest.mark.asyncio
+async def test_invocation_evidence_binds_idempotency_and_reads_to_tenant_scope() -> None:
+    service, invocation, policy, _, adapter, _ = await evidence_fixture()
+    actor = target_session_operator("subject.connector-independent-evidence-ingestor")
+    record = await ingest_evidence(service, invocation, policy, actor=actor)
+    claim = await service.repository.get_claim_by_invocation_in_scope(
+        source_invocation_id=invocation.invocation_id,
+        organization_id=invocation.organization_id,
+        environment_id=invocation.environment_id,
+    )
+    assert claim is not None
+    assert claim.request_binding_digest == service._digest(
+        {
+            "actor_id": actor.subject_id,
+            "organization_id": actor.organization_id,
+            "environment_id": invocation.environment_id,
+            "source_invocation_id": invocation.invocation_id,
+            "source_invocation_digest": invocation.canonical_digest,
+            "ingestion_policy_id": policy.policy_id,
+            "ingestion_policy_digest": policy.canonical_digest,
+            "purpose": "Preserve the exact governed connector observations as immutable evidence.",
+        }
+    )
+    assert claim.idempotency_digest == service._digest(
+        [
+            actor.subject_id,
+            actor.organization_id,
+            invocation.environment_id,
+            "invocation-evidence-001",
+        ]
+    )
+
+    assert (
+        await service.repository.get_in_scope(
+            ingestion_id=record.ingestion_id,
+            organization_id="org-foreign",
+            environment_id=invocation.environment_id,
+        )
+        is None
+    )
+    assert (
+        await service.repository.get_claim_by_invocation_in_scope(
+            source_invocation_id=invocation.invocation_id,
+            organization_id="org-foreign",
+            environment_id=invocation.environment_id,
+        )
+        is None
+    )
+    assert (
+        await service.repository.get_claim_by_idempotency_in_scope(
+            claimed_by=actor.subject_id,
+            idempotency_digest=claim.idempotency_digest,
+            organization_id="org-foreign",
+            environment_id=invocation.environment_id,
+        )
+        is None
+    )
+
+    foreign_actor = replace(actor, organization_id="org-foreign")
+    with pytest.raises(ConnectorInvocationEvidenceError, match="source_not_found"):
+        await ingest_evidence(
+            service,
+            invocation,
+            policy,
+            actor=foreign_actor,
+        )
+    assert isinstance(adapter, SyntheticConnectorInvocationEvidenceAdapter)
+    assert len(adapter.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_invocation_evidence_memory_contract_allows_same_ids_in_separate_tenants() -> None:
+    service, invocation, policy, _, _, _ = await evidence_fixture()
+    record = await ingest_evidence(service, invocation, policy)
+    claim = await service.repository.get_claim_by_invocation_in_scope(
+        source_invocation_id=invocation.invocation_id,
+        organization_id=invocation.organization_id,
+        environment_id=invocation.environment_id,
+    )
+    assert claim is not None
+
+    assert not await service.repository.add(
+        replace(
+            record,
+            claim_id="connector-invocation-evidence-claim.missing",
+            ingestion_id="connector-invocation-evidence-ingestion.missing",
+            source_invocation_id="connector-bounded-invocation.missing",
+        )
+    )
+    assert not await service.repository.claim(
+        replace(
+            claim,
+            source_invocation_id="connector-bounded-invocation.duplicate-claim-id",
+            ingestion_id="connector-invocation-evidence-ingestion.duplicate-claim-id",
+            idempotency_digest="1" * 64,
+        )
+    )
+
+    foreign_claim = replace(
+        claim,
+        organization_id="org-foreign",
+        environment_id="env-foreign",
+    )
+    foreign_record = replace(
+        record,
+        organization_id="org-foreign",
+        environment_id="env-foreign",
+    )
+    assert await service.repository.claim(foreign_claim)
+    assert await service.repository.add(foreign_record)
+    assert not await service.repository.add(
+        replace(
+            foreign_record,
+            ingestion_id="connector-invocation-evidence-ingestion.second-completion",
+        )
+    )
+
+    duplicate_ingestion_claim = replace(
+        foreign_claim,
+        claim_id="connector-invocation-evidence-claim.duplicate-ingestion",
+        source_invocation_id="connector-bounded-invocation.duplicate-ingestion",
+        idempotency_digest="2" * 64,
+    )
+    assert await service.repository.claim(duplicate_ingestion_claim)
+    assert not await service.repository.add(
+        replace(
+            foreign_record,
+            claim_id=duplicate_ingestion_claim.claim_id,
+            source_invocation_id=duplicate_ingestion_claim.source_invocation_id,
+        )
+    )
+    assert (
+        await service.repository.get_in_scope(
+            ingestion_id=record.ingestion_id,
+            organization_id="org-foreign",
+            environment_id="env-foreign",
+        )
+        == foreign_record
+    )
+
+    policy_source = InMemoryConnectorInvocationEvidencePolicySource(
+        (
+            policy,
+            replace(
+                policy,
+                organization_id="org-foreign",
+                environment_id="env-foreign",
+            ),
+        )
+    )
+    assert (
+        await policy_source.get_by_id_in_scope(
+            policy_id=policy.policy_id,
+            organization_id=policy.organization_id,
+            environment_id=policy.environment_id,
+        )
+        == policy
+    )
+    assert (
+        await policy_source.get_by_id_in_scope(
+            policy_id=policy.policy_id,
+            organization_id="org-missing",
+            environment_id="env-foreign",
+        )
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_live_postgres_invocation_evidence_isolates_same_identifiers_by_tenant() -> None:
+    database_url = os.getenv("ATLAS_TEST_POSTGRES_DSN")
+    if not database_url:
+        pytest.skip("ATLAS_TEST_POSTGRES_DSN is not configured")
+    service, invocation, policy, _, _, _ = await evidence_fixture()
+    base_record = await ingest_evidence(service, invocation, policy)
+    base_claim = await service.repository.get_claim_by_invocation_in_scope(
+        source_invocation_id=invocation.invocation_id,
+        organization_id=invocation.organization_id,
+        environment_id=invocation.environment_id,
+    )
+    assert base_claim is not None
+    suffix = uuid4().hex[:12]
+    source_invocation_id = f"connector-bounded-invocation.scoped-evidence-{suffix}"
+
+    first_claim = replace(
+        base_claim,
+        claim_id=f"connector-invocation-evidence-claim.scoped-{suffix}",
+        source_invocation_id=source_invocation_id,
+        ingestion_id=f"connector-invocation-evidence-ingestion.scoped-{suffix}",
+        canonical_digest="0" * 64,
+    )
+    first_claim = replace(
+        first_claim,
+        canonical_digest=service._digest(service._claim_payload(first_claim)),
+    )
+    second_claim = replace(
+        first_claim,
+        organization_id="organization.foreign",
+        canonical_digest="0" * 64,
+    )
+    second_claim = replace(
+        second_claim,
+        canonical_digest=service._digest(service._claim_payload(second_claim)),
+    )
+    first_record = replace(
+        base_record,
+        ingestion_id=first_claim.ingestion_id,
+        claim_id=first_claim.claim_id,
+        source_invocation_id=source_invocation_id,
+        canonical_digest="0" * 64,
+    )
+    first_record = replace(
+        first_record,
+        canonical_digest=service._digest(service._record_payload(first_record)),
+    )
+    second_record = replace(
+        first_record,
+        organization_id=second_claim.organization_id,
+        canonical_digest="0" * 64,
+    )
+    second_record = replace(
+        second_record,
+        canonical_digest=service._digest(service._record_payload(second_record)),
+    )
+
+    first_engine = create_async_engine(database_url)
+    second_engine = create_async_engine(database_url)
+    first_repository = PostgreSQLConnectorInvocationEvidenceRepository(first_engine)
+    second_repository = PostgreSQLConnectorInvocationEvidenceRepository(second_engine)
+    try:
+        assert await first_repository.claim(first_claim)
+        assert await second_repository.claim(second_claim)
+        assert await first_repository.add(first_record)
+        assert await second_repository.add(second_record)
+        assert (
+            await first_repository.get_in_scope(
+                ingestion_id=first_record.ingestion_id,
+                organization_id=first_record.organization_id,
+                environment_id=first_record.environment_id,
+            )
+            == first_record
+        )
+        assert (
+            await second_repository.get_in_scope(
+                ingestion_id=second_record.ingestion_id,
+                organization_id=second_record.organization_id,
+                environment_id=second_record.environment_id,
+            )
+            == second_record
+        )
+        assert (
+            await second_repository.get_claim_by_invocation_in_scope(
+                source_invocation_id=source_invocation_id,
+                organization_id=second_record.organization_id,
+                environment_id=second_record.environment_id,
+            )
+            == second_claim
+        )
+        assert (
+            await second_repository.get_in_scope(
+                ingestion_id=first_record.ingestion_id,
+                organization_id="organization.missing",
+                environment_id=second_record.environment_id,
+            )
+            is None
+        )
+    finally:
+        async with first_engine.begin() as connection:
+            await connection.execute(
+                delete(ConnectorInvocationEvidenceModel).where(
+                    ConnectorInvocationEvidenceModel.source_invocation_id == source_invocation_id
+                )
+            )
+            await connection.execute(
+                delete(ConnectorInvocationEvidenceClaimModel).where(
+                    ConnectorInvocationEvidenceClaimModel.source_invocation_id
+                    == source_invocation_id
+                )
+            )
+        await first_repository.close()
+        await second_repository.close()
+
+
+@pytest.mark.asyncio
 async def test_invocation_evidence_accepts_development_identity_under_default_policy() -> None:
     service, invocation, policy, _, _, _ = await evidence_fixture()
     actor = development_target_session_operator("subject.connector-independent-evidence-ingestor")
@@ -311,8 +602,10 @@ async def test_invocation_evidence_denies_actor_reuse_and_permission_before_clai
             actor=target_session_operator(invocation.invoked_by),
         )
     assert (
-        await service.repository.get_claim_by_invocation(
-            source_invocation_id=invocation.invocation_id
+        await service.repository.get_claim_by_invocation_in_scope(
+            source_invocation_id=invocation.invocation_id,
+            organization_id=invocation.organization_id,
+            environment_id=invocation.environment_id,
         )
         is None
     )
@@ -323,8 +616,10 @@ async def test_invocation_evidence_denies_actor_reuse_and_permission_before_clai
     with pytest.raises(ConnectorInvocationEvidenceError, match="permission_denied"):
         await ingest_evidence(denied_service, invocation, policy)
     assert (
-        await denied_service.repository.get_claim_by_invocation(
-            source_invocation_id=invocation.invocation_id
+        await denied_service.repository.get_claim_by_invocation_in_scope(
+            source_invocation_id=invocation.invocation_id,
+            organization_id=invocation.organization_id,
+            environment_id=invocation.environment_id,
         )
         is None
     )
@@ -371,8 +666,10 @@ async def test_invocation_evidence_uncertain_or_invalid_receipt_stays_claimed() 
         await ingest_evidence(service, invocation, policy)
     assert uncertain.calls == 1
     assert (
-        await service.repository.get_claim_by_invocation(
-            source_invocation_id=invocation.invocation_id
+        await service.repository.get_claim_by_invocation_in_scope(
+            source_invocation_id=invocation.invocation_id,
+            organization_id=invocation.organization_id,
+            environment_id=invocation.environment_id,
         )
         is not None
     )
@@ -395,8 +692,10 @@ async def test_invocation_evidence_claim_audit_failure_stays_claimed() -> None:
     with pytest.raises(RuntimeError, match="audit unavailable"):
         await ingest_evidence(service, invocation, policy)
     assert (
-        await service.repository.get_claim_by_invocation(
-            source_invocation_id=invocation.invocation_id
+        await service.repository.get_claim_by_invocation_in_scope(
+            source_invocation_id=invocation.invocation_id,
+            organization_id=invocation.organization_id,
+            environment_id=invocation.environment_id,
         )
         is not None
     )
@@ -408,8 +707,10 @@ async def test_invocation_evidence_claim_audit_failure_stays_claimed() -> None:
 async def test_invocation_evidence_postgres_round_trip_excludes_content() -> None:
     service, invocation, policy, _, _, _ = await evidence_fixture()
     record = await ingest_evidence(service, invocation, policy)
-    claim = await service.repository.get_claim_by_invocation(
-        source_invocation_id=invocation.invocation_id
+    claim = await service.repository.get_claim_by_invocation_in_scope(
+        source_invocation_id=invocation.invocation_id,
+        organization_id=invocation.organization_id,
+        environment_id=invocation.environment_id,
     )
     assert claim is not None
     raw_claim = ConnectorInvocationEvidenceService._normalize(asdict(claim))

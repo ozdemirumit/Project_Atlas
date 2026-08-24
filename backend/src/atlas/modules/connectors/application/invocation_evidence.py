@@ -95,6 +95,9 @@ class ConnectorInvocationEvidenceService:
             raise ConnectorInvocationEvidenceError("invocation_evidence_request_invalid")
         request_binding_digest = self._digest(
             {
+                "actor_id": actor.subject_id,
+                "organization_id": actor.organization_id,
+                "environment_id": self._environment_id,
                 "source_invocation_id": source_invocation_id,
                 "source_invocation_digest": source_invocation_digest,
                 "ingestion_policy_id": ingestion_policy_id,
@@ -102,9 +105,19 @@ class ConnectorInvocationEvidenceService:
                 "purpose": purpose,
             }
         )
-        idempotency_digest = self._digest([actor.subject_id, idempotency_key])
-        existing_claim = await self._repository.get_claim_by_idempotency(
-            claimed_by=actor.subject_id, idempotency_digest=idempotency_digest
+        idempotency_digest = self._digest(
+            [
+                actor.subject_id,
+                actor.organization_id,
+                self._environment_id,
+                idempotency_key,
+            ]
+        )
+        existing_claim = await self._repository.get_claim_by_idempotency_in_scope(
+            claimed_by=actor.subject_id,
+            idempotency_digest=idempotency_digest,
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
         )
         if existing_claim is not None:
             return await self._reuse(
@@ -115,13 +128,19 @@ class ConnectorInvocationEvidenceService:
             )
         try:
             source, source_actors = await self._source.evidence_ingestion_source(
-                invocation_id=source_invocation_id
+                invocation_id=source_invocation_id,
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
             )
         except ConnectorBoundedInvocationError as error:
             raise ConnectorInvocationEvidenceError(
                 "invocation_evidence_source_not_found"
             ) from error
-        policy = await self._policy_source.get_by_id(policy_id=ingestion_policy_id)
+        policy = await self._policy_source.get_by_id_in_scope(
+            policy_id=ingestion_policy_id,
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+        )
         if policy is None:
             raise ConnectorInvocationEvidenceError("invocation_evidence_policy_not_found")
         self._verify_snapshot(policy)
@@ -151,6 +170,9 @@ class ConnectorInvocationEvidenceService:
         )
         seed = self._digest(
             [
+                source.organization_id,
+                source.environment_id,
+                actor.subject_id,
                 source.invocation_id,
                 policy.canonical_digest,
                 source.normalized_redacted_result_digest,
@@ -182,8 +204,10 @@ class ConnectorInvocationEvidenceService:
         )
         claim = replace(claim, canonical_digest=self._digest(self._claim_payload(claim)))
         if not await self._repository.claim(claim):
-            prior = await self._repository.get_claim_by_invocation(
-                source_invocation_id=source.invocation_id
+            prior = await self._repository.get_claim_by_invocation_in_scope(
+                source_invocation_id=source.invocation_id,
+                organization_id=source.organization_id,
+                environment_id=source.environment_id,
             )
             if prior is None:
                 raise ConnectorInvocationEvidenceUncertainError(
@@ -323,8 +347,10 @@ class ConnectorInvocationEvidenceService:
             (("instance_state", record.instance_state),),
         )
         if not await self._repository.add(record):
-            raced = await self._repository.get_by_invocation(
-                source_invocation_id=source.invocation_id
+            raced = await self._repository.get_by_invocation_in_scope(
+                source_invocation_id=source.invocation_id,
+                organization_id=source.organization_id,
+                environment_id=source.environment_id,
             )
             if raced is None or raced.canonical_digest != record.canonical_digest:
                 raise ConnectorInvocationEvidenceUncertainError(
@@ -337,7 +363,11 @@ class ConnectorInvocationEvidenceService:
         self, *, actor: AuthenticatedSubject, ingestion_id: str, correlation_id: str
     ) -> ConnectorInvocationEvidenceRecord:
         self._require_enterprise_human(actor)
-        record = await self._repository.get(ingestion_id=ingestion_id)
+        record = await self._repository.get_in_scope(
+            ingestion_id=ingestion_id,
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+        )
         if record is None:
             raise ConnectorInvocationEvidenceError("invocation_evidence_record_not_found")
         self._verify_record(record)
@@ -353,21 +383,29 @@ class ConnectorInvocationEvidenceService:
         return record
 
     async def knowledge_draft_source(
-        self, *, ingestion_id: str
+        self, *, ingestion_id: str, organization_id: str, environment_id: str
     ) -> tuple[ConnectorInvocationEvidenceRecord, frozenset[str]]:
-        record = await self._repository.get(ingestion_id=ingestion_id)
+        record = await self._repository.get_in_scope(
+            ingestion_id=ingestion_id,
+            organization_id=organization_id,
+            environment_id=environment_id,
+        )
         if record is None:
             raise ConnectorInvocationEvidenceError("invocation_evidence_record_not_found")
         self._verify_record(record)
-        claim = await self._repository.get_claim_by_invocation(
-            source_invocation_id=record.source_invocation_id
+        claim = await self._repository.get_claim_by_invocation_in_scope(
+            source_invocation_id=record.source_invocation_id,
+            organization_id=organization_id,
+            environment_id=environment_id,
         )
         if claim is None:
             raise ConnectorInvocationEvidenceError("invocation_evidence_claim_not_found")
         self._verify_claim(claim)
         try:
             source, source_actors = await self._source.evidence_ingestion_source(
-                invocation_id=record.source_invocation_id
+                invocation_id=record.source_invocation_id,
+                organization_id=record.organization_id,
+                environment_id=record.environment_id,
             )
         except ConnectorInvocationEvidenceError:
             raise
@@ -375,12 +413,20 @@ class ConnectorInvocationEvidenceService:
             raise ConnectorInvocationEvidenceError(
                 "invocation_evidence_source_not_found"
             ) from error
-        policy = await self._policy_source.get_by_id(policy_id=record.ingestion_policy_id)
+        policy = await self._policy_source.get_by_id_in_scope(
+            policy_id=record.ingestion_policy_id,
+            organization_id=organization_id,
+            environment_id=environment_id,
+        )
         if policy is None:
             raise ConnectorInvocationEvidenceError("invocation_evidence_policy_not_found")
         self._verify_snapshot(policy)
         if (
-            source.canonical_digest != record.source_invocation_digest
+            record.organization_id != organization_id
+            or record.environment_id != environment_id
+            or claim.organization_id != organization_id
+            or claim.environment_id != environment_id
+            or source.canonical_digest != record.source_invocation_digest
             or source.package_digest != record.package_digest
             or source.connector_id != record.connector_id
             or source.instance_id != record.instance_id
@@ -436,7 +482,11 @@ class ConnectorInvocationEvidenceService:
         ):
             raise ConnectorInvocationEvidenceError("invocation_evidence_idempotency_conflict")
         self._require_scope(actor, claim.organization_id, claim.environment_id)
-        record = await self._repository.get(ingestion_id=claim.ingestion_id)
+        record = await self._repository.get_in_scope(
+            ingestion_id=claim.ingestion_id,
+            organization_id=claim.organization_id,
+            environment_id=claim.environment_id,
+        )
         if record is None:
             raise ConnectorInvocationEvidenceError("invocation_evidence_already_claimed")
         self._verify_record(record)

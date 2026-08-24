@@ -23,7 +23,7 @@ class OperationalEvidenceKnowledgeDraftUncertainError(OperationalEvidenceKnowled
 
 class OperationalEvidenceKnowledgeDraftSource(Protocol):
     async def knowledge_draft_source(
-        self, *, ingestion_id: str
+        self, *, ingestion_id: str, organization_id: str, environment_id: str
     ) -> tuple[ConnectorInvocationEvidenceRecord, frozenset[str]]: ...
 
 

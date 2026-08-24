@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from dataclasses import asdict, replace
+from contextlib import suppress
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 from hashlib import sha256
@@ -46,6 +47,24 @@ BOUNDED_INVOCATION_CREATE_PERMISSION = "connectors.bounded-invocations.create"
 BOUNDED_INVOCATION_READ_PERMISSION = "connectors.bounded-invocations.read"
 BOUNDED_INVOCATION_SCHEMA = "atlas.connector-bounded-invocation.v1"
 CONSUMPTION_CLAIM_SCHEMA = "atlas.connector-invocation-consumption-claim.v1"
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectorBoundedInvocationOption:
+    source_authorization_id: str
+    source_authorization_digest: str
+    package_digest: str
+    capability_id: str
+    capability_class: str
+    required_permission: str
+    invocation_policy_id: str
+    invocation_policy_digest: str
+    invocation_policy_version: str
+    invocation_policy_expires_at: datetime
+    required_assurance_level: AssuranceLevel
+    maximum_timeout_seconds: int
+    maximum_output_bytes: int
+    maximum_observations: int
 
 
 class ConnectorBoundedInvocationService:
@@ -96,6 +115,9 @@ class ConnectorBoundedInvocationService:
             raise ConnectorBoundedInvocationError("bounded_invocation_request_invalid")
         request_binding_digest = self._digest(
             {
+                "organization_id": actor.organization_id,
+                "environment_id": self._environment_id,
+                "actor_subject_id": actor.subject_id,
                 "source_authorization_id": source_authorization_id,
                 "source_authorization_digest": source_authorization_digest,
                 "package_digest": package_digest,
@@ -104,9 +126,14 @@ class ConnectorBoundedInvocationService:
                 "purpose": purpose,
             }
         )
-        idempotency_digest = self._digest([actor.subject_id, idempotency_key])
-        existing_claim = await self._repository.get_claim_by_idempotency(
-            claimed_by=actor.subject_id, idempotency_digest=idempotency_digest
+        idempotency_digest = self._digest(
+            [actor.organization_id, self._environment_id, actor.subject_id, idempotency_key]
+        )
+        existing_claim = await self._repository.get_claim_by_idempotency_in_scope(
+            claimed_by=actor.subject_id,
+            idempotency_digest=idempotency_digest,
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
         )
         if existing_claim is not None:
             return await self._reuse(
@@ -114,6 +141,7 @@ class ConnectorBoundedInvocationService:
                 actor,
                 request_binding_digest,
                 idempotency_digest,
+                correlation_id,
             )
         try:
             source, source_actors = await self._source.bounded_invocation_source(
@@ -123,7 +151,11 @@ class ConnectorBoundedInvocationService:
             )
         except ConnectorInvocationAuthorizationError as error:
             raise ConnectorBoundedInvocationError("bounded_invocation_source_not_found") from error
-        policy = await self._policy_source.get_by_id(policy_id=invocation_policy_id)
+        policy = await self._policy_source.get_by_id_in_scope(
+            policy_id=invocation_policy_id,
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+        )
         if policy is None:
             raise ConnectorBoundedInvocationError("bounded_invocation_policy_not_found")
         self._verify_snapshot(policy)
@@ -153,7 +185,13 @@ class ConnectorBoundedInvocationService:
             correlation_id=correlation_id,
         )
         seed = self._digest(
-            [source.authorization_id, policy.canonical_digest, source.input_envelope_digest]
+            [
+                source.organization_id,
+                source.environment_id,
+                source.authorization_id,
+                policy.canonical_digest,
+                source.input_envelope_digest,
+            ]
         )
         invocation_id = f"connector-bounded-invocation.{seed[:24]}"
         await self._audit(
@@ -180,9 +218,17 @@ class ConnectorBoundedInvocationService:
             canonical_digest="0" * 64,
         )
         claim = replace(claim, canonical_digest=self._digest(self._claim_payload(claim)))
-        if not await self._repository.claim(claim):
-            prior = await self._repository.get_claim_by_authorization(
-                source_authorization_id=source.authorization_id
+        try:
+            claimed = await self._repository.claim(claim)
+        except Exception as error:
+            raise ConnectorBoundedInvocationUncertainError(
+                "bounded_invocation_consumption_uncertain"
+            ) from error
+        if not claimed:
+            prior = await self._repository.get_claim_by_authorization_in_scope(
+                source_authorization_id=source.authorization_id,
+                organization_id=source.organization_id,
+                environment_id=source.environment_id,
             )
             if prior is None:
                 raise ConnectorBoundedInvocationUncertainError(
@@ -193,7 +239,44 @@ class ConnectorBoundedInvocationService:
                 actor,
                 request_binding_digest,
                 idempotency_digest,
+                correlation_id,
             )
+        try:
+            return await self._complete_claimed_invocation(
+                actor=actor,
+                source=source,
+                policy=policy,
+                claim=claim,
+                invocation_id=invocation_id,
+                purpose=purpose,
+                correlation_id=correlation_id,
+            )
+        except Exception as error:
+            with suppress(Exception):
+                await self._audit(
+                    actor,
+                    correlation_id,
+                    "connector_bounded_invocation_uncertain",
+                    invocation_id,
+                    (("authorization_consumed", "true"),),
+                )
+            if isinstance(error, ConnectorBoundedInvocationUncertainError):
+                raise
+            raise ConnectorBoundedInvocationUncertainError(
+                "bounded_invocation_post_claim_outcome_uncertain"
+            ) from error
+
+    async def _complete_claimed_invocation(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        source: ConnectorInvocationAuthorizationRecord,
+        policy: ConnectorBoundedInvocationPolicySnapshot,
+        claim: ConnectorInvocationConsumptionClaim,
+        invocation_id: str,
+        purpose: str,
+        correlation_id: str,
+    ) -> ConnectorBoundedInvocationRecord:
         await self._audit(
             actor,
             correlation_id,
@@ -230,44 +313,8 @@ class ConnectorBoundedInvocationService:
             maximum_observations=policy.maximum_observations,
             invocation_policy_digest=policy.canonical_digest,
         )
-        try:
-            receipt = await self._adapter.invoke(instruction)
-        except ConnectorBoundedInvocationError as error:
-            result_code = (
-                "connector_bounded_invocation_uncertain"
-                if isinstance(error, ConnectorBoundedInvocationUncertainError)
-                else "connector_bounded_invocation_failed"
-            )
-            await self._audit(
-                actor,
-                correlation_id,
-                result_code,
-                invocation_id,
-                (("authorization_consumed", "true"),),
-            )
-            raise
-        except Exception as error:
-            await self._audit(
-                actor,
-                correlation_id,
-                "connector_bounded_invocation_uncertain",
-                invocation_id,
-                (("authorization_consumed", "true"),),
-            )
-            raise ConnectorBoundedInvocationUncertainError(
-                "bounded_invocation_outcome_uncertain"
-            ) from error
-        try:
-            self._verify_receipt(instruction, receipt, policy)
-        except ConnectorBoundedInvocationUncertainError:
-            await self._audit(
-                actor,
-                correlation_id,
-                "connector_bounded_invocation_uncertain",
-                invocation_id,
-                (("authorization_consumed", "true"),),
-            )
-            raise
+        receipt = await self._adapter.invoke(instruction)
+        self._verify_receipt(instruction, receipt, policy)
         record = ConnectorBoundedInvocationRecord(
             invocation_id=invocation_id,
             schema_version=BOUNDED_INVOCATION_SCHEMA,
@@ -317,8 +364,10 @@ class ConnectorBoundedInvocationService:
             (("instance_state", record.instance_state),),
         )
         if not await self._repository.add(record):
-            raced = await self._repository.get_by_authorization(
-                source_authorization_id=source.authorization_id
+            raced = await self._repository.get_by_authorization_in_scope(
+                source_authorization_id=source.authorization_id,
+                organization_id=source.organization_id,
+                environment_id=source.environment_id,
             )
             if raced is None or raced.canonical_digest != record.canonical_digest:
                 raise ConnectorBoundedInvocationUncertainError(
@@ -331,17 +380,14 @@ class ConnectorBoundedInvocationService:
         self, *, actor: AuthenticatedSubject, invocation_id: str, correlation_id: str
     ) -> ConnectorBoundedInvocationRecord:
         self._require_enterprise_human(actor)
-        record = await self._repository.get(invocation_id=invocation_id)
+        record = await self._repository.get_in_scope(
+            invocation_id=invocation_id,
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+        )
         if record is None:
             raise ConnectorBoundedInvocationError("bounded_invocation_record_not_found")
-        self._verify_record(record)
-        claim = await self._repository.get_claim_by_authorization(
-            source_authorization_id=record.source_authorization_id
-        )
-        if claim is None:
-            raise ConnectorBoundedInvocationError("bounded_invocation_claim_not_found")
-        self._verify_claim(claim)
-        self._require_scope(actor, record.organization_id, record.environment_id)
+        record = await self._current_record(record, actor=actor, correlation_id=correlation_id)
         await self._audit(
             actor,
             correlation_id,
@@ -352,15 +398,156 @@ class ConnectorBoundedInvocationService:
         )
         return record
 
+    async def list_invocations(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        source_authorization_id: str | None,
+        correlation_id: str,
+    ) -> tuple[ConnectorBoundedInvocationRecord, ...]:
+        self._require_enterprise_human(actor)
+        if source_authorization_id is None:
+            candidates = await self._repository.list_scope(
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+            )
+        else:
+            candidate = await self._repository.get_by_authorization_in_scope(
+                source_authorization_id=source_authorization_id,
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+            )
+            candidates = (candidate,) if candidate is not None else ()
+        visible = [
+            await self._current_record(record, actor=actor, correlation_id=correlation_id)
+            for record in candidates
+        ]
+        visible.sort(key=lambda item: item.invocation_id)
+        await self._audit(
+            actor,
+            correlation_id,
+            "connector_bounded_invocations_listed",
+            source_authorization_id or self._environment_id,
+            (("count", str(len(visible))),),
+            permission_id=BOUNDED_INVOCATION_READ_PERMISSION,
+        )
+        return tuple(visible)
+
+    async def list_options(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        source_authorization_id: str,
+        correlation_id: str,
+    ) -> tuple[ConnectorBoundedInvocationOption, ...]:
+        self._require_enterprise_human(actor)
+        try:
+            source, source_actors = await self._source.bounded_invocation_source(
+                authorization_id=source_authorization_id,
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+            )
+        except ConnectorInvocationAuthorizationError as error:
+            raise ConnectorBoundedInvocationError("bounded_invocation_source_not_found") from error
+        self._require_scope(actor, source.organization_id, source.environment_id)
+        claim = await self._repository.get_claim_by_authorization_in_scope(
+            source_authorization_id=source.authorization_id,
+            organization_id=source.organization_id,
+            environment_id=source.environment_id,
+        )
+        options: list[ConnectorBoundedInvocationOption] = []
+        if claim is not None:
+            self._verify_claim(claim)
+            completed = await self._repository.get_by_authorization_in_scope(
+                source_authorization_id=source.authorization_id,
+                organization_id=source.organization_id,
+                environment_id=source.environment_id,
+            )
+            if completed is not None:
+                await self._current_record(completed, actor=actor, correlation_id=correlation_id)
+        else:
+            policies = await self._policy_source.list_scope(
+                organization_id=source.organization_id,
+                environment_id=source.environment_id,
+            )
+            now = self._clock()
+            for policy in policies:
+                try:
+                    self._verify_snapshot(policy)
+                    self._verify_source(
+                        actor=actor,
+                        source=source,
+                        policy=policy,
+                        source_digest=source.canonical_digest,
+                        package_digest=source.package_digest,
+                        policy_digest=policy.canonical_digest,
+                        now=now,
+                    )
+                    if actor.subject_id in source_actors | {
+                        policy.signed_by,
+                        policy.required_adapter_attestor_id,
+                    }:
+                        continue
+                    await self._permission_authorizer.authorize(
+                        actor=actor,
+                        permission_id=source.required_permission,
+                        capability_id=source.capability_id,
+                        capability_class=source.capability_class,
+                        organization_id=source.organization_id,
+                        environment_id=source.environment_id,
+                        correlation_id=correlation_id,
+                    )
+                except ConnectorBoundedInvocationError:
+                    continue
+                options.append(
+                    ConnectorBoundedInvocationOption(
+                        source_authorization_id=source.authorization_id,
+                        source_authorization_digest=source.canonical_digest,
+                        package_digest=source.package_digest,
+                        capability_id=source.capability_id,
+                        capability_class=source.capability_class,
+                        required_permission=source.required_permission,
+                        invocation_policy_id=policy.policy_id,
+                        invocation_policy_digest=policy.canonical_digest,
+                        invocation_policy_version=policy.policy_version,
+                        invocation_policy_expires_at=policy.expires_at,
+                        required_assurance_level=policy.required_assurance_level,
+                        maximum_timeout_seconds=min(
+                            source.maximum_timeout_seconds,
+                            policy.maximum_invocation_duration_seconds,
+                        ),
+                        maximum_output_bytes=min(
+                            source.maximum_output_bytes, policy.maximum_output_bytes
+                        ),
+                        maximum_observations=policy.maximum_observations,
+                    )
+                )
+        options.sort(key=lambda item: item.invocation_policy_id)
+        await self._audit(
+            actor,
+            correlation_id,
+            "connector_bounded_invocation_options_listed",
+            source.authorization_id,
+            (("count", str(len(options))),),
+            permission_id=BOUNDED_INVOCATION_READ_PERMISSION,
+        )
+        return tuple(options)
+
     async def evidence_ingestion_source(
-        self, *, invocation_id: str
+        self, *, invocation_id: str, organization_id: str, environment_id: str
     ) -> tuple[ConnectorBoundedInvocationRecord, frozenset[str]]:
-        record = await self._repository.get(invocation_id=invocation_id)
+        record = await self._repository.get_in_scope(
+            invocation_id=invocation_id,
+            organization_id=organization_id,
+            environment_id=environment_id,
+        )
         if record is None:
             raise ConnectorBoundedInvocationError("bounded_invocation_record_not_found")
         self._verify_record(record)
-        claim = await self._repository.get_claim_by_authorization(
-            source_authorization_id=record.source_authorization_id
+        claim = await self._repository.get_claim_by_authorization_in_scope(
+            source_authorization_id=record.source_authorization_id,
+            organization_id=record.organization_id,
+            environment_id=record.environment_id,
         )
         if claim is None:
             raise ConnectorBoundedInvocationError("bounded_invocation_claim_not_found")
@@ -373,20 +560,134 @@ class ConnectorBoundedInvocationService:
             )
         except ConnectorInvocationAuthorizationError as error:
             raise ConnectorBoundedInvocationError("bounded_invocation_source_not_found") from error
-        policy = await self._policy_source.get_by_id(policy_id=record.invocation_policy_id)
+        policy = await self._policy_source.get_by_id_in_scope(
+            policy_id=record.invocation_policy_id,
+            organization_id=record.organization_id,
+            environment_id=record.environment_id,
+        )
         if policy is None:
             raise ConnectorBoundedInvocationError("bounded_invocation_policy_not_found")
         self._verify_snapshot(policy)
+        self._verify_completed_lineage(
+            record=record,
+            claim=claim,
+            authorization=authorization,
+            policy=policy,
+        )
+        return record, source_actors | {
+            record.invoked_by,
+            policy.signed_by,
+            policy.required_adapter_attestor_id,
+        }
+
+    async def _current_record(
+        self,
+        record: ConnectorBoundedInvocationRecord,
+        *,
+        actor: AuthenticatedSubject,
+        correlation_id: str,
+    ) -> ConnectorBoundedInvocationRecord:
+        self._verify_record(record)
+        self._require_scope(actor, record.organization_id, record.environment_id)
+        claim = await self._repository.get_claim_by_authorization_in_scope(
+            source_authorization_id=record.source_authorization_id,
+            organization_id=record.organization_id,
+            environment_id=record.environment_id,
+        )
+        if claim is None:
+            raise ConnectorBoundedInvocationError("bounded_invocation_claim_not_found")
+        self._verify_claim(claim)
+        try:
+            authorization, _ = await self._source.bounded_invocation_source(
+                authorization_id=record.source_authorization_id,
+                organization_id=record.organization_id,
+                environment_id=record.environment_id,
+            )
+        except ConnectorInvocationAuthorizationError as error:
+            raise ConnectorBoundedInvocationError("bounded_invocation_source_not_found") from error
+        policy = await self._policy_source.get_by_id_in_scope(
+            policy_id=record.invocation_policy_id,
+            organization_id=record.organization_id,
+            environment_id=record.environment_id,
+        )
+        if policy is None:
+            raise ConnectorBoundedInvocationError("bounded_invocation_policy_not_found")
+        self._verify_snapshot(policy)
+        self._verify_completed_lineage(
+            record=record,
+            claim=claim,
+            authorization=authorization,
+            policy=policy,
+        )
+        await self._permission_authorizer.authorize(
+            actor=actor,
+            permission_id=record.required_permission,
+            capability_id=record.capability_id,
+            capability_class=record.capability_class,
+            organization_id=record.organization_id,
+            environment_id=record.environment_id,
+            correlation_id=correlation_id,
+        )
+        return record
+
+    async def close(self) -> None:
+        await self._repository.close()
+
+    async def _reuse(
+        self,
+        claim: ConnectorInvocationConsumptionClaim,
+        actor: AuthenticatedSubject,
+        request_binding_digest: str,
+        idempotency_digest: str,
+        correlation_id: str,
+    ) -> ConnectorBoundedInvocationRecord:
+        self._verify_claim(claim)
         if (
-            authorization.canonical_digest != record.source_authorization_digest
+            claim.claimed_by != actor.subject_id
+            or claim.request_binding_digest != request_binding_digest
+            or claim.idempotency_digest != idempotency_digest
+        ):
+            raise ConnectorBoundedInvocationError("bounded_invocation_idempotency_conflict")
+        self._require_scope(actor, claim.organization_id, claim.environment_id)
+        record = await self._repository.get_in_scope(
+            invocation_id=claim.invocation_id,
+            organization_id=claim.organization_id,
+            environment_id=claim.environment_id,
+        )
+        if record is None:
+            raise ConnectorBoundedInvocationError("bounded_invocation_authorization_consumed")
+        current = await self._current_record(record, actor=actor, correlation_id=correlation_id)
+        return replace(current, reused=True)
+
+    @staticmethod
+    def _verify_completed_lineage(
+        *,
+        record: ConnectorBoundedInvocationRecord,
+        claim: ConnectorInvocationConsumptionClaim,
+        authorization: ConnectorInvocationAuthorizationRecord,
+        policy: ConnectorBoundedInvocationPolicySnapshot,
+    ) -> None:
+        if (
+            authorization.organization_id != record.organization_id
+            or authorization.environment_id != record.environment_id
+            or authorization.canonical_digest != record.source_authorization_digest
             or authorization.package_digest != record.package_digest
             or authorization.connector_id != record.connector_id
             or authorization.instance_id != record.instance_id
             or authorization.capability_id != record.capability_id
+            or authorization.capability_class != record.capability_class
             or authorization.required_permission != record.required_permission
+            or authorization.invocation_profile_digest != record.invocation_profile_digest
+            or authorization.input_envelope_digest != record.input_envelope_digest
+            or authorization.input_schema_digest != record.input_schema_digest
             or authorization.output_schema_digest != record.output_schema_digest
             or authorization.result_policy_digest != record.result_policy_digest
+            or policy.organization_id != record.organization_id
+            or policy.environment_id != record.environment_id
             or policy.canonical_digest != record.invocation_policy_digest
+            or policy.policy_version != record.invocation_policy_version
+            or claim.organization_id != record.organization_id
+            or claim.environment_id != record.environment_id
             or claim.claim_id != record.consumption_claim_id
             or claim.source_authorization_id != record.source_authorization_id
             or claim.source_authorization_digest != record.source_authorization_digest
@@ -395,6 +696,7 @@ class ConnectorBoundedInvocationService:
             or claim.purpose != record.purpose
             or record.instance_state != ENABLED_BOUNDED_CAPABILITY_INVOCATION_COMPLETED
             or not record.authorization_consumed
+            or not record.target_connection_opened
             or not record.capability_invoked
             or not record.result_received
             or not record.result_validated
@@ -412,35 +714,6 @@ class ConnectorBoundedInvocationService:
             or record.observation_count < 1
         ):
             raise ConnectorBoundedInvocationError("bounded_invocation_evidence_source_invalid")
-        return record, source_actors | {
-            record.invoked_by,
-            policy.signed_by,
-            policy.required_adapter_attestor_id,
-        }
-
-    async def close(self) -> None:
-        await self._repository.close()
-
-    async def _reuse(
-        self,
-        claim: ConnectorInvocationConsumptionClaim,
-        actor: AuthenticatedSubject,
-        request_binding_digest: str,
-        idempotency_digest: str,
-    ) -> ConnectorBoundedInvocationRecord:
-        self._verify_claim(claim)
-        if (
-            claim.claimed_by != actor.subject_id
-            or claim.request_binding_digest != request_binding_digest
-            or claim.idempotency_digest != idempotency_digest
-        ):
-            raise ConnectorBoundedInvocationError("bounded_invocation_idempotency_conflict")
-        self._require_scope(actor, claim.organization_id, claim.environment_id)
-        record = await self._repository.get(invocation_id=claim.invocation_id)
-        if record is None:
-            raise ConnectorBoundedInvocationError("bounded_invocation_authorization_consumed")
-        self._verify_record(record)
-        return replace(record, reused=True)
 
     @staticmethod
     def _verify_source(
@@ -454,7 +727,10 @@ class ConnectorBoundedInvocationService:
         now: datetime,
     ) -> None:
         if (
-            source.canonical_digest != source_digest
+            source.organization_id != actor.organization_id
+            or policy.organization_id != source.organization_id
+            or policy.environment_id != source.environment_id
+            or source.canonical_digest != source_digest
             or source.package_digest != package_digest
             or policy.canonical_digest != policy_digest
             or policy.required_source_schema != source.schema_version

@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import os
 from dataclasses import asdict, replace
 from datetime import timedelta
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
+from alembic import command
+from alembic.config import Config
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, delete, inspect, text
+from sqlalchemy.ext.asyncio import create_async_engine
 from test_browser_sessions import BasicTestIdentityProvider, login, settings
 from test_invocation_authorization import (
     authorize_invocation,
@@ -21,6 +28,10 @@ from test_target_session import (
 )
 
 from atlas.api.app import create_app
+from atlas.core.persistence.models import (
+    ConnectorBoundedInvocationModel,
+    ConnectorInvocationConsumptionClaimModel,
+)
 from atlas.modules.connectors.adapters.bounded_invocation_memory import (
     InMemoryConnectorBoundedInvocationPolicySource,
     InMemoryConnectorBoundedInvocationRepository,
@@ -64,6 +75,73 @@ from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticatedSu
 ACKNOWLEDGEMENT_FIELD = (
     "acknowledged_authorization_is_consumed_once_without_retry_on_uncertain_outcome"
 )
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+COMPLETION_API_FIELDS = {
+    "invocation_id",
+    "schema_version",
+    "version",
+    "source_authorization_id",
+    "source_authorization_digest",
+    "package_digest",
+    "capability_id",
+    "capability_class",
+    "required_permission",
+    "output_schema_digest",
+    "result_policy_digest",
+    "invocation_policy_id",
+    "invocation_policy_digest",
+    "invocation_policy_version",
+    "normalized_redacted_result_digest",
+    "observation_count",
+    "output_bytes",
+    "instance_state",
+    "started_at",
+    "completed_at",
+    "canonical_digest",
+    "authorization_consumed",
+    "target_connection_opened",
+    "capability_invoked",
+    "result_received",
+    "result_validated",
+    "result_redacted",
+    "target_session_closed",
+    "delivery_channel_closed",
+    "lease_revocation_confirmed",
+    "target_connected",
+    "reusable_session_available",
+    "scheduled",
+    "evidence_ingested",
+    "execution_authorized",
+    "deployment_approved",
+    "infrastructure_mutation_performed",
+    "reused",
+}
+OPTION_API_FIELDS = {
+    "source_authorization_id",
+    "source_authorization_digest",
+    "package_digest",
+    "capability_id",
+    "capability_class",
+    "required_permission",
+    "invocation_policy_id",
+    "invocation_policy_digest",
+    "invocation_policy_version",
+    "invocation_policy_expires_at",
+    "required_assurance_level",
+    "maximum_timeout_seconds",
+    "maximum_output_bytes",
+    "maximum_observations",
+    "resulting_instance_state",
+    "irreversible_consumption_required",
+    "automatic_retry_allowed",
+    "target_connected",
+    "reusable_session_available",
+    "scheduled",
+    "evidence_ingested",
+    "execution_authorized",
+    "deployment_approved",
+    "infrastructure_mutation_performed",
+}
 
 
 class RecordingPermissionAuthorizer:
@@ -125,9 +203,27 @@ class BlockingAdapter(SyntheticConnectorBoundedInvocationAdapter):
         return await super().invoke(instruction)
 
 
+class FailThirdAuditSink:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def record(self, event: object) -> None:
+        del event
+        self.calls += 1
+        if self.calls == 3:
+            raise RuntimeError("audit unavailable")
+
+
+class PublishUncertainRepository(InMemoryConnectorBoundedInvocationRepository):
+    async def add(self, record: ConnectorBoundedInvocationRecord) -> bool:
+        del record
+        raise RuntimeError("completion persistence unavailable")
+
+
 async def bounded_fixture(
     *,
-    audit_sink: CollectingAuditSink | FailSecondAuditSink | None = None,
+    audit_sink: CollectingAuditSink | FailSecondAuditSink | FailThirdAuditSink | None = None,
+    repository: InMemoryConnectorBoundedInvocationRepository | None = None,
     permission_authorizer: RecordingPermissionAuthorizer | None = None,
     adapter: SyntheticConnectorBoundedInvocationAdapter
     | UncertainAdapter
@@ -187,7 +283,7 @@ async def bounded_fixture(
         clock=lambda: authorization.authorized_at
     )
     service = ConnectorBoundedInvocationService(
-        repository=InMemoryConnectorBoundedInvocationRepository(),
+        repository=repository or InMemoryConnectorBoundedInvocationRepository(),
         source=authorization_service,
         policy_source=InMemoryConnectorBoundedInvocationPolicySource((policy,)),
         permission_authorizer=authorizer,
@@ -256,7 +352,12 @@ async def test_bounded_invocation_consumes_once_closes_resources_and_is_idempote
             authorization.required_permission,
             authorization.capability_id,
             authorization.capability_class,
-        )
+        ),
+        (
+            authorization.required_permission,
+            authorization.capability_id,
+            authorization.capability_class,
+        ),
     ]
     assert [item.result_code for item in audit.records] == [
         "connector_bounded_invocation_requested",
@@ -361,8 +462,10 @@ async def test_bounded_invocation_rejects_actor_reuse_and_permission_before_clai
             actor=target_session_operator(authorization.authorized_by),
         )
     assert (
-        await service.repository.get_claim_by_authorization(
-            source_authorization_id=authorization.authorization_id
+        await service.repository.get_claim_by_authorization_in_scope(
+            source_authorization_id=authorization.authorization_id,
+            organization_id=authorization.organization_id,
+            environment_id=authorization.environment_id,
         )
         is None
     )
@@ -373,8 +476,10 @@ async def test_bounded_invocation_rejects_actor_reuse_and_permission_before_clai
     with pytest.raises(ConnectorBoundedInvocationError, match="permission_denied"):
         await invoke_bounded(denied_service, authorization, policy)
     assert (
-        await denied_service.repository.get_claim_by_authorization(
-            source_authorization_id=authorization.authorization_id
+        await denied_service.repository.get_claim_by_authorization_in_scope(
+            source_authorization_id=authorization.authorization_id,
+            organization_id=authorization.organization_id,
+            environment_id=authorization.environment_id,
         )
         is None
     )
@@ -406,8 +511,10 @@ async def test_bounded_invocation_uncertain_or_invalid_receipt_consumes_without_
     with pytest.raises(ConnectorBoundedInvocationUncertainError, match="receipt_invalid"):
         await invoke_bounded(altered_service, altered_authorization, altered_policy)
     assert (
-        await altered_service.repository.get_by_authorization(
-            source_authorization_id=altered_authorization.authorization_id
+        await altered_service.repository.get_by_authorization_in_scope(
+            source_authorization_id=altered_authorization.authorization_id,
+            organization_id=altered_authorization.organization_id,
+            environment_id=altered_authorization.environment_id,
         )
         is None
     )
@@ -418,30 +525,203 @@ async def test_bounded_invocation_claim_audit_failure_consumes_without_adapter_c
     service, _, _, _, _, _, authorization, policy, _, adapter = await bounded_fixture(
         audit_sink=FailSecondAuditSink()
     )
-    with pytest.raises(RuntimeError, match="audit unavailable"):
+    with pytest.raises(ConnectorBoundedInvocationUncertainError, match="post_claim"):
         await invoke_bounded(service, authorization, policy)
     assert (
-        await service.repository.get_claim_by_authorization(
-            source_authorization_id=authorization.authorization_id
+        await service.repository.get_claim_by_authorization_in_scope(
+            source_authorization_id=authorization.authorization_id,
+            organization_id=authorization.organization_id,
+            environment_id=authorization.environment_id,
         )
         is not None
     )
     assert (
-        await service.repository.get_by_authorization(
-            source_authorization_id=authorization.authorization_id
+        await service.repository.get_by_authorization_in_scope(
+            source_authorization_id=authorization.authorization_id,
+            organization_id=authorization.organization_id,
+            environment_id=authorization.environment_id,
         )
         is None
     )
     assert isinstance(adapter, SyntheticConnectorBoundedInvocationAdapter)
     assert len(adapter.calls) == 0
+    assert (
+        await service.list_options(
+            actor=target_session_operator("subject.connector-independent-bounded-invoker"),
+            source_authorization_id=authorization.authorization_id,
+            correlation_id="cor_bounded_invocation_claim_audit_options",
+        )
+        == ()
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("audit_sink", "repository"),
+    (
+        (FailThirdAuditSink(), None),
+        (None, PublishUncertainRepository()),
+    ),
+)
+async def test_bounded_invocation_completion_failures_are_uncertain_and_not_retryable(
+    audit_sink: FailThirdAuditSink | None,
+    repository: PublishUncertainRepository | None,
+) -> None:
+    service, _, _, _, _, _, authorization, policy, _, adapter = await bounded_fixture(
+        audit_sink=audit_sink,
+        repository=repository,
+    )
+
+    with pytest.raises(ConnectorBoundedInvocationUncertainError, match="post_claim"):
+        await invoke_bounded(service, authorization, policy)
+    with pytest.raises(ConnectorBoundedInvocationError, match="authorization_consumed"):
+        await invoke_bounded(service, authorization, policy)
+
+    assert isinstance(adapter, SyntheticConnectorBoundedInvocationAdapter)
+    assert len(adapter.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_bounded_invocation_options_are_exact_server_provided_and_consumed_once() -> None:
+    service, _, _, _, _, _, authorization, policy, authorizer, adapter = await bounded_fixture()
+    actor = target_session_operator("subject.connector-independent-bounded-invoker")
+
+    options = await service.list_options(
+        actor=actor,
+        source_authorization_id=authorization.authorization_id,
+        correlation_id="cor_bounded_invocation_options",
+    )
+
+    assert len(options) == 1
+    option = options[0]
+    assert option.source_authorization_id == authorization.authorization_id
+    assert option.source_authorization_digest == authorization.canonical_digest
+    assert option.package_digest == authorization.package_digest
+    assert option.capability_id == authorization.capability_id
+    assert option.capability_class == authorization.capability_class
+    assert option.capability_class in {"C0", "C1"}
+    assert option.required_permission == authorization.required_permission
+    assert option.invocation_policy_id == policy.policy_id
+    assert option.invocation_policy_digest == policy.canonical_digest
+    assert option.invocation_policy_version == policy.policy_version
+    assert option.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    assert option.maximum_timeout_seconds == min(
+        authorization.maximum_timeout_seconds,
+        policy.maximum_invocation_duration_seconds,
+    )
+    assert option.maximum_output_bytes == min(
+        authorization.maximum_output_bytes,
+        policy.maximum_output_bytes,
+    )
+    assert option.maximum_observations == policy.maximum_observations
+
+    record = await invoke_bounded(service, authorization, policy, actor=actor)
+
+    assert (
+        await service.list_options(
+            actor=actor,
+            source_authorization_id=authorization.authorization_id,
+            correlation_id="cor_bounded_invocation_options_consumed",
+        )
+        == ()
+    )
+    assert await service.list_invocations(
+        actor=actor,
+        source_authorization_id=authorization.authorization_id,
+        correlation_id="cor_bounded_invocation_inventory",
+    ) == (record,)
+    assert isinstance(adapter, SyntheticConnectorBoundedInvocationAdapter)
+    assert len(adapter.calls) == 1
+    assert len(authorizer.calls) == 4
+
+
+@pytest.mark.asyncio
+async def test_bounded_invocation_uncertain_claim_removes_options_without_adapter_retry() -> None:
+    adapter = UncertainAdapter()
+    service, _, _, _, _, _, authorization, policy, _, _ = await bounded_fixture(adapter=adapter)
+    actor = target_session_operator("subject.connector-independent-bounded-invoker")
+
+    assert (
+        len(
+            await service.list_options(
+                actor=actor,
+                source_authorization_id=authorization.authorization_id,
+                correlation_id="cor_bounded_invocation_uncertain_options_before",
+            )
+        )
+        == 1
+    )
+    with pytest.raises(ConnectorBoundedInvocationUncertainError, match="outcome_uncertain"):
+        await invoke_bounded(service, authorization, policy, actor=actor)
+
+    assert (
+        await service.list_options(
+            actor=actor,
+            source_authorization_id=authorization.authorization_id,
+            correlation_id="cor_bounded_invocation_uncertain_options_after",
+        )
+        == ()
+    )
+    with pytest.raises(ConnectorBoundedInvocationError, match="authorization_consumed"):
+        await invoke_bounded(service, authorization, policy, actor=actor)
+    assert adapter.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_bounded_invocation_inventory_is_tenant_scoped_and_revalidates_permission() -> None:
+    service, _, _, _, _, _, authorization, policy, authorizer, adapter = await bounded_fixture()
+    actor = target_session_operator("subject.connector-independent-bounded-invoker")
+    record = await invoke_bounded(service, authorization, policy, actor=actor)
+    foreign_actor = replace(actor, organization_id="organization.foreign")
+
+    assert (
+        await service.list_invocations(
+            actor=foreign_actor,
+            source_authorization_id=None,
+            correlation_id="cor_bounded_invocation_foreign_list",
+        )
+        == ()
+    )
+    assert (
+        await service.list_invocations(
+            actor=foreign_actor,
+            source_authorization_id=authorization.authorization_id,
+            correlation_id="cor_bounded_invocation_foreign_filtered_list",
+        )
+        == ()
+    )
+    with pytest.raises(ConnectorBoundedInvocationError, match="record_not_found"):
+        await service.get(
+            actor=foreign_actor,
+            invocation_id=record.invocation_id,
+            correlation_id="cor_bounded_invocation_foreign_get",
+        )
+
+    authorizer.deny = True
+    with pytest.raises(ConnectorBoundedInvocationError, match="permission_denied"):
+        await service.get(
+            actor=actor,
+            invocation_id=record.invocation_id,
+            correlation_id="cor_bounded_invocation_revoked_get",
+        )
+    with pytest.raises(ConnectorBoundedInvocationError, match="permission_denied"):
+        await service.list_invocations(
+            actor=actor,
+            source_authorization_id=None,
+            correlation_id="cor_bounded_invocation_revoked_list",
+        )
+    assert isinstance(adapter, SyntheticConnectorBoundedInvocationAdapter)
+    assert len(adapter.calls) == 1
 
 
 @pytest.mark.asyncio
 async def test_bounded_invocation_postgres_round_trip_excludes_sensitive_material() -> None:
     service, _, _, _, _, _, authorization, policy, _, _ = await bounded_fixture()
     record = await invoke_bounded(service, authorization, policy)
-    claim = await service.repository.get_claim_by_authorization(
-        source_authorization_id=authorization.authorization_id
+    claim = await service.repository.get_claim_by_authorization_in_scope(
+        source_authorization_id=authorization.authorization_id,
+        organization_id=authorization.organization_id,
+        environment_id=authorization.environment_id,
     )
     assert claim is not None
     raw_claim = ConnectorBoundedInvocationService._normalize(asdict(claim))
@@ -469,6 +749,295 @@ async def test_bounded_invocation_postgres_round_trip_excludes_sensitive_materia
         "idempotency_key",
     ):
         assert hidden not in rendered
+
+
+@pytest.mark.asyncio
+async def test_bounded_invocation_memory_allows_one_completion_per_scoped_claim() -> None:
+    service, _, _, _, _, _, authorization, policy, _, _ = await bounded_fixture()
+    record = await invoke_bounded(service, authorization, policy)
+    duplicate = replace(
+        record,
+        invocation_id="connector-bounded-invocation.duplicate-claim",
+        source_authorization_id="connector-invocation-authorization.duplicate-claim",
+        canonical_digest="0" * 64,
+    )
+    duplicate = replace(
+        duplicate,
+        canonical_digest=service._digest(service._record_payload(duplicate)),
+    )
+
+    assert not await service.repository.add(duplicate)
+
+
+@pytest.mark.asyncio
+async def test_live_postgres_bounded_invocation_isolates_same_identifiers_by_tenant() -> None:
+    database_url = os.getenv("ATLAS_TEST_POSTGRES_DSN")
+    if not database_url:
+        pytest.skip("ATLAS_TEST_POSTGRES_DSN is not configured")
+    service, _, _, _, _, _, authorization, policy, _, _ = await bounded_fixture()
+    base_record = await invoke_bounded(service, authorization, policy)
+    base_claim = await service.repository.get_claim_by_authorization_in_scope(
+        source_authorization_id=authorization.authorization_id,
+        organization_id=authorization.organization_id,
+        environment_id=authorization.environment_id,
+    )
+    assert base_claim is not None
+    suffix = uuid4().hex[:12]
+    source_id = f"connector-invocation-authorization.scoped-{suffix}"
+
+    first_claim = replace(
+        base_claim,
+        claim_id=f"connector-invocation-consumption-claim.first-{suffix}",
+        source_authorization_id=source_id,
+        invocation_id=f"connector-bounded-invocation.first-{suffix}",
+        canonical_digest="0" * 64,
+    )
+    first_claim = replace(
+        first_claim,
+        canonical_digest=service._digest(service._claim_payload(first_claim)),
+    )
+    second_claim = replace(
+        first_claim,
+        organization_id="organization.foreign",
+        canonical_digest="0" * 64,
+    )
+    second_claim = replace(
+        second_claim,
+        canonical_digest=service._digest(service._claim_payload(second_claim)),
+    )
+    first_record = replace(
+        base_record,
+        invocation_id=first_claim.invocation_id,
+        consumption_claim_id=first_claim.claim_id,
+        source_authorization_id=source_id,
+        canonical_digest="0" * 64,
+    )
+    first_record = replace(
+        first_record,
+        canonical_digest=service._digest(service._record_payload(first_record)),
+    )
+    second_record = replace(
+        first_record,
+        organization_id=second_claim.organization_id,
+        canonical_digest="0" * 64,
+    )
+    second_record = replace(
+        second_record,
+        canonical_digest=service._digest(service._record_payload(second_record)),
+    )
+
+    first_engine = create_async_engine(database_url)
+    second_engine = create_async_engine(database_url)
+    first_repository = PostgreSQLConnectorBoundedInvocationRepository(first_engine)
+    second_repository = PostgreSQLConnectorBoundedInvocationRepository(second_engine)
+    try:
+        assert await first_repository.claim(first_claim)
+        assert await second_repository.claim(second_claim)
+        assert await first_repository.add(first_record)
+        assert await second_repository.add(second_record)
+        assert (
+            await first_repository.get_by_authorization_in_scope(
+                source_authorization_id=source_id,
+                organization_id=first_record.organization_id,
+                environment_id=first_record.environment_id,
+            )
+            == first_record
+        )
+        assert (
+            await second_repository.get_by_authorization_in_scope(
+                source_authorization_id=source_id,
+                organization_id=second_record.organization_id,
+                environment_id=second_record.environment_id,
+            )
+            == second_record
+        )
+        first_scope = await first_repository.list_scope(
+            organization_id=first_record.organization_id,
+            environment_id=first_record.environment_id,
+        )
+        assert first_record in first_scope
+        assert second_record not in first_scope
+        assert (
+            await second_repository.get_in_scope(
+                invocation_id=first_record.invocation_id,
+                organization_id=second_record.organization_id,
+                environment_id=second_record.environment_id,
+            )
+            == second_record
+        )
+        assert (
+            await second_repository.get_in_scope(
+                invocation_id=first_record.invocation_id,
+                organization_id="organization.missing",
+                environment_id=second_record.environment_id,
+            )
+            is None
+        )
+    finally:
+        async with first_engine.begin() as connection:
+            await connection.execute(
+                delete(ConnectorBoundedInvocationModel).where(
+                    ConnectorBoundedInvocationModel.source_authorization_id == source_id
+                )
+            )
+            await connection.execute(
+                delete(ConnectorInvocationConsumptionClaimModel).where(
+                    ConnectorInvocationConsumptionClaimModel.source_authorization_id == source_id
+                )
+            )
+        await first_repository.close()
+        await second_repository.close()
+
+
+def test_live_postgres_populated_legacy_invocation_migration_preserves_digests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = os.getenv("ATLAS_TEST_POSTGRES_DSN")
+    if not database_url:
+        pytest.skip("ATLAS_TEST_POSTGRES_DSN is not configured")
+    monkeypatch.setenv("ATLAS_DATABASE_URL", database_url)
+    config = Config(str(BACKEND_ROOT / "alembic.ini"))
+    config.set_main_option("script_location", str(BACKEND_ROOT / "migrations"))
+    suffix = uuid4().hex[:12]
+    organization_id = f"organization.legacy-{suffix}"
+    environment_id = "environment.development"
+    claim_id = f"connector-invocation-consumption-claim.legacy-{suffix}"
+    invocation_id = f"connector-bounded-invocation.legacy-{suffix}"
+    evidence_claim_id = f"connector-invocation-evidence-claim.legacy-{suffix}"
+    ingestion_id = f"connector-invocation-evidence-ingestion.legacy-{suffix}"
+    expected_digests = {
+        "connector_invocation_consumption_claims": "1" * 64,
+        "connector_bounded_invocations": "2" * 64,
+        "connector_invocation_evidence_claims": "3" * 64,
+        "connector_invocation_evidence_ingestions": "4" * 64,
+    }
+    engine = create_engine(database_url)
+    command.downgrade(config, "20260824_0161")
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO connector_invocation_consumption_claims "
+                    "(claim_id, source_authorization_id, invocation_id, claimed_by, "
+                    "idempotency_digest, organization_id, environment_id, canonical_digest, "
+                    "payload) VALUES (:claim_id, :source_id, :invocation_id, :actor, :idem, "
+                    ":organization_id, :environment_id, :digest, CAST(:payload AS JSONB))"
+                ),
+                {
+                    "claim_id": claim_id,
+                    "source_id": f"connector-invocation-authorization.legacy-{suffix}",
+                    "invocation_id": invocation_id,
+                    "actor": f"subject.legacy-{suffix}",
+                    "idem": "5" * 64,
+                    "organization_id": organization_id,
+                    "environment_id": environment_id,
+                    "digest": expected_digests["connector_invocation_consumption_claims"],
+                    "payload": json.dumps({"legacy": "bounded-claim"}),
+                },
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO connector_bounded_invocations "
+                    "(invocation_id, consumption_claim_id, source_authorization_id, instance_id, "
+                    "capability_id, invoked_by, organization_id, environment_id, "
+                    "canonical_digest, payload) VALUES (:invocation_id, :claim_id, :source_id, "
+                    ":instance_id, :capability_id, :actor, :organization_id, :environment_id, "
+                    ":digest, CAST(:payload AS JSONB))"
+                ),
+                {
+                    "invocation_id": invocation_id,
+                    "claim_id": claim_id,
+                    "source_id": f"connector-invocation-authorization.legacy-{suffix}",
+                    "instance_id": f"connector-instance.legacy-{suffix}",
+                    "capability_id": "storage.health.read",
+                    "actor": f"subject.legacy-{suffix}",
+                    "organization_id": organization_id,
+                    "environment_id": environment_id,
+                    "digest": expected_digests["connector_bounded_invocations"],
+                    "payload": json.dumps({"legacy": "bounded-completion"}),
+                },
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO connector_invocation_evidence_claims "
+                    "(claim_id, source_invocation_id, ingestion_id, claimed_by, "
+                    "idempotency_digest, organization_id, environment_id, canonical_digest, "
+                    "payload) VALUES (:claim_id, :invocation_id, :ingestion_id, :actor, :idem, "
+                    ":organization_id, :environment_id, :digest, CAST(:payload AS JSONB))"
+                ),
+                {
+                    "claim_id": evidence_claim_id,
+                    "invocation_id": invocation_id,
+                    "ingestion_id": ingestion_id,
+                    "actor": f"subject.evidence-{suffix}",
+                    "idem": "6" * 64,
+                    "organization_id": organization_id,
+                    "environment_id": environment_id,
+                    "digest": expected_digests["connector_invocation_evidence_claims"],
+                    "payload": json.dumps({"legacy": "evidence-claim"}),
+                },
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO connector_invocation_evidence_ingestions "
+                    "(ingestion_id, claim_id, source_invocation_id, instance_id, capability_id, "
+                    "evidence_package_id, ingested_by, organization_id, environment_id, "
+                    "canonical_digest, payload) VALUES (:ingestion_id, :claim_id, :invocation_id, "
+                    ":instance_id, :capability_id, :package_id, :actor, :organization_id, "
+                    ":environment_id, :digest, CAST(:payload AS JSONB))"
+                ),
+                {
+                    "ingestion_id": ingestion_id,
+                    "claim_id": evidence_claim_id,
+                    "invocation_id": invocation_id,
+                    "instance_id": f"connector-instance.legacy-{suffix}",
+                    "capability_id": "storage.health.read",
+                    "package_id": f"evidence-package.legacy-{suffix}",
+                    "actor": f"subject.evidence-{suffix}",
+                    "organization_id": organization_id,
+                    "environment_id": environment_id,
+                    "digest": expected_digests["connector_invocation_evidence_ingestions"],
+                    "payload": json.dumps({"legacy": "evidence-ingestion"}),
+                },
+            )
+
+        command.upgrade(config, "head")
+        with engine.connect() as connection:
+            for table, expected in expected_digests.items():
+                actual = connection.execute(
+                    text(
+                        f"SELECT canonical_digest FROM {table} "
+                        "WHERE organization_id = :organization_id "
+                        "AND environment_id = :environment_id"
+                    ),
+                    {
+                        "organization_id": organization_id,
+                        "environment_id": environment_id,
+                    },
+                ).scalar_one()
+                assert actual == expected
+        inspector = inspect(engine)
+        expected_primary_keys = {
+            "connector_invocation_consumption_claims": "claim_id",
+            "connector_bounded_invocations": "invocation_id",
+            "connector_invocation_evidence_claims": "claim_id",
+            "connector_invocation_evidence_ingestions": "ingestion_id",
+        }
+        for table, identifier in expected_primary_keys.items():
+            assert inspector.get_pk_constraint(table)["constrained_columns"] == [
+                identifier,
+                "organization_id",
+                "environment_id",
+            ]
+    finally:
+        with engine.begin() as connection:
+            for table in reversed(tuple(expected_digests)):
+                connection.execute(
+                    text(f"DELETE FROM {table} WHERE organization_id = :organization_id"),
+                    {"organization_id": organization_id},
+                )
+        command.upgrade(config, "head")
+        engine.dispose()
 
 
 def test_bounded_invocation_api_is_csrf_protected_forbids_controls_and_is_minimized(
@@ -533,6 +1102,10 @@ def test_bounded_invocation_api_is_csrf_protected_forbids_controls_and_is_minimi
     ) as client:
         login_response = login(client)
         endpoint = "/api/v1/connectors/bounded-invocations"
+        options_before = client.get(
+            f"{endpoint}/options",
+            params={"source_authorization_id": authorization.authorization_id},
+        )
         denied = client.post(endpoint, json=payload, headers={"Idempotency-Key": "bounded-api-001"})
         forbidden = client.post(
             endpoint,
@@ -553,16 +1126,79 @@ def test_bounded_invocation_api_is_csrf_protected_forbids_controls_and_is_minimi
         assert created.status_code == 201, created.text
         invocation_id = created.json()["data"]["invocation_id"]
         read = client.get(f"{endpoint}/{invocation_id}")
+        inventory = client.get(endpoint)
+        filtered_inventory = client.get(
+            endpoint,
+            params={"source_authorization_id": authorization.authorization_id},
+        )
+        options_after = client.get(
+            f"{endpoint}/options",
+            params={"source_authorization_id": authorization.authorization_id},
+        )
 
     assert denied.status_code == 403 and forbidden.status_code == 422
-    assert read.status_code == 200
-    assert created.headers["Cache-Control"] == read.headers["Cache-Control"] == "no-store"
+    assert options_before.status_code == 200, options_before.text
+    assert read.status_code == inventory.status_code == filtered_inventory.status_code == 200
+    assert options_after.status_code == 200
+    assert {
+        created.headers["Cache-Control"],
+        read.headers["Cache-Control"],
+        inventory.headers["Cache-Control"],
+        filtered_inventory.headers["Cache-Control"],
+        options_before.headers["Cache-Control"],
+        options_after.headers["Cache-Control"],
+    } == {"no-store"}
+    option_data = options_before.json()["data"]
+    assert len(option_data) == 1
+    assert set(option_data[0]) == OPTION_API_FIELDS
+    assert option_data[0]["capability_id"] == authorization.capability_id
+    assert option_data[0]["capability_class"] == authorization.capability_class
+    assert option_data[0]["capability_class"] in {"C0", "C1"}
+    assert option_data[0]["required_assurance_level"] == "single_factor"
+    assert option_data[0]["irreversible_consumption_required"] is True
+    assert option_data[0]["automatic_retry_allowed"] is False
+    assert option_data[0]["target_connected"] is False
+    assert option_data[0]["reusable_session_available"] is False
+    assert option_data[0]["scheduled"] is False
+    assert option_data[0]["evidence_ingested"] is False
+    assert option_data[0]["execution_authorized"] is False
+    assert option_data[0]["deployment_approved"] is False
+    assert option_data[0]["infrastructure_mutation_performed"] is False
+    assert options_after.json()["data"] == []
     data = created.json()["data"]
+    assert set(data) == COMPLETION_API_FIELDS
+    assert set(read.json()["data"]) == COMPLETION_API_FIELDS
+    assert inventory.json()["data"] == [data]
+    assert filtered_inventory.json()["data"] == [data]
     assert data["authorization_consumed"] is True
     assert data["capability_invoked"] is True and data["result_validated"] is True
     assert data["target_connected"] is False and data["evidence_ingested"] is False
-    rendered = created.text.lower()
+    rendered = " ".join(
+        (
+            created.text,
+            read.text,
+            inventory.text,
+            filtered_inventory.text,
+            options_before.text,
+            options_after.text,
+        )
+    ).lower()
     for hidden in (
+        "organization_id",
+        "environment_id",
+        "consumption_claim_id",
+        "connector_id",
+        "release_version",
+        "manifest_digest",
+        "instance_id",
+        "instance_key",
+        "display_name",
+        "invocation_profile_id",
+        "input_envelope_id",
+        "input_schema_digest",
+        "invocation_adapter_id",
+        "invoked_by",
+        "purpose",
         "raw_input",
         "input_values",
         "raw_output",
@@ -581,5 +1217,7 @@ def test_bounded_invocation_api_is_csrf_protected_forbids_controls_and_is_minimi
         "password",
         "access_token",
         "command",
+        "handler",
+        "target_selector",
     ):
         assert hidden not in rendered
