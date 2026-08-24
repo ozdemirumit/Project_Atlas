@@ -1,6 +1,11 @@
 import type { ConnectorRuntimeActivation } from "../../api/runtimeActivations";
 import type { ConnectorSecretBrokerageAuthorization } from "../../api/secretBrokerageAuthorizations";
+import type {
+  ConnectorTargetSessionVerificationInventoryItem,
+  ConnectorTargetSessionVerificationOption,
+} from "../../api/targetSessionVerifications";
 import { runtimeTrustGrant } from "./testRuntimeTrustFixture";
+import { runtimeActivationInventoryItem } from "./testRuntimeActivationFixture";
 
 const brokerage = {
   authorization_id: "connector-secret-brokerage-authorization.test",
@@ -118,3 +123,76 @@ export const activation = {
   infrastructure_mutation_performed: false,
   reused: false,
 } satisfies ConnectorRuntimeActivation;
+
+export const targetSessionVerificationOption = {
+  source_runtime_activation_id: runtimeActivationInventoryItem.activation_id,
+  source_runtime_activation_digest: "4".repeat(64),
+  package_digest: "5".repeat(64),
+  session_profile_id: "connector-target-session-profile.synthetic-read-only",
+  session_profile_digest: "6".repeat(64),
+  session_profile_expires_at: "2030-01-01T00:00:00Z",
+  session_policy_id: "connector-target-session-policy.development",
+  session_policy_digest: "7".repeat(64),
+  session_policy_version: "policy-v1",
+  session_policy_expires_at: "2030-01-01T00:00:00Z",
+  expected_target_product: "Synthetic read-only storage",
+  protocol_classification: "protocol.https-read-only",
+  connectivity_check_ids: [
+    "connectivity.authentication",
+    "connectivity.read-only-privilege",
+    "connectivity.target-identity",
+    "connectivity.tls",
+  ],
+  required_assurance_level: "single_factor",
+  resulting_instance_state: "enabled_target_session_verified",
+  target_connection_authorized: true,
+  target_connectivity_verified: true,
+  target_identity_verified: true,
+  read_only_session_verified: true,
+  target_session_closed: true,
+  delivery_channel_closed: true,
+  lease_revocation_confirmed: true,
+  eligible_for_capability_invocation_governance: true,
+  target_connected: false,
+  capability_invocation_authorized: false,
+  capability_invoked: false,
+  execution_authorized: false,
+  deployment_approved: false,
+  infrastructure_mutation_performed: false,
+} satisfies ConnectorTargetSessionVerificationOption;
+
+export const targetSessionVerificationInventoryItem = {
+  verification_id: "connector-target-session-verification.test",
+  schema_version: "atlas.connector-target-session-verification.v1",
+  version: 1,
+  source_runtime_activation_id: runtimeActivationInventoryItem.activation_id,
+  target_identity_digest: "8".repeat(64),
+  protocol_classification: targetSessionVerificationOption.protocol_classification,
+  tls_classification: "tls.1-3-verified",
+  session_profile_digest: targetSessionVerificationOption.session_profile_digest,
+  session_policy_digest: targetSessionVerificationOption.session_policy_digest,
+  connectivity_check_results: targetSessionVerificationOption.connectivity_check_ids.map(
+    (check_id) => ({ check_id, outcome: "connectivity.passed" as const }),
+  ),
+  instance_state: "enabled_target_session_verified",
+  verified_at: "2026-08-24T00:00:02Z",
+  canonical_digest: "9".repeat(64),
+  runtime_health_verified: true,
+  secret_brokerage_governed: true,
+  target_connection_authorized: true,
+  target_connectivity_verified: true,
+  target_identity_verified: true,
+  read_only_session_verified: true,
+  target_session_established: true,
+  target_session_closed: true,
+  delivery_channel_closed: true,
+  lease_revocation_confirmed: true,
+  eligible_for_capability_invocation_governance: true,
+  target_connected: false,
+  capability_invocation_authorized: false,
+  capability_invoked: false,
+  scheduled: false,
+  execution_authorized: false,
+  deployment_approved: false,
+  infrastructure_mutation_performed: false,
+} satisfies ConnectorTargetSessionVerificationInventoryItem;

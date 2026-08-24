@@ -70,6 +70,11 @@ import {
   getConnectorSecretBrokerageAuthorizations,
 } from "../../api/secretBrokerageAuthorizations";
 import {
+  createConnectorTargetSessionVerification,
+  getConnectorTargetSessionVerificationOptions,
+  getConnectorTargetSessionVerifications,
+} from "../../api/targetSessionVerifications";
+import {
   getConnectorTargetConfigurations,
   type ConnectorTargetConfigurationBinding,
 } from "../../api/targetConfigurations";
@@ -95,6 +100,10 @@ import {
   runtimeActivationInventoryItem,
   runtimeActivationOption,
 } from "./testRuntimeActivationFixture";
+import {
+  targetSessionVerificationInventoryItem,
+  targetSessionVerificationOption,
+} from "./testTargetSessionFixture";
 
 const policy: ConnectorInstanceCreationPolicy = {
   policy_id: "connector-instance-creation-policy.development",
@@ -869,6 +878,16 @@ vi.mock("../../api/runtimeActivations", async (importOriginal) => {
   };
 });
 
+vi.mock("../../api/targetSessionVerifications", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../api/targetSessionVerifications")>();
+  return {
+    ...original,
+    createConnectorTargetSessionVerification: vi.fn(),
+    getConnectorTargetSessionVerificationOptions: vi.fn(),
+    getConnectorTargetSessionVerifications: vi.fn(),
+  };
+});
+
 vi.mock("../../api/connectorUpgradeReadiness", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/connectorUpgradeReadiness")>();
   return {
@@ -941,6 +960,11 @@ beforeEach(() => {
   vi.mocked(createConnectorRuntimeActivation).mockResolvedValue({
     data: runtimeActivationInventoryItem,
   });
+  vi.mocked(getConnectorTargetSessionVerifications).mockResolvedValue([]);
+  vi.mocked(getConnectorTargetSessionVerificationOptions).mockResolvedValue([]);
+  vi.mocked(createConnectorTargetSessionVerification).mockResolvedValue({
+    data: targetSessionVerificationInventoryItem,
+  });
   vi.mocked(getConnectorUpgradeReadiness).mockResolvedValue(upgradeReadiness);
   vi.mocked(getConnectorUpgradePlan).mockResolvedValue(upgradePlan);
   vi.mocked(getConnectorUpgradeApprovalRecord).mockResolvedValue(null);
@@ -990,7 +1014,7 @@ afterEach(() => {
 });
 
 describe("InstalledMcpManagementWorkspace", () => {
-  it("refreshes runtime trust, secret brokerage and runtime activation inventory", async () => {
+  it("refreshes runtime trust, secret brokerage, runtime activation and target session inventory", async () => {
     renderWorkspace();
 
     await screen.findByRole("heading", { name: "Installed MCPs" });
@@ -998,6 +1022,7 @@ describe("InstalledMcpManagementWorkspace", () => {
       expect(getConnectorRuntimeTrustGrants).toHaveBeenCalledOnce();
       expect(getConnectorSecretBrokerageAuthorizations).toHaveBeenCalledOnce();
       expect(getConnectorRuntimeActivations).toHaveBeenCalledOnce();
+      expect(getConnectorTargetSessionVerifications).toHaveBeenCalledOnce();
     });
     fireEvent.click(screen.getByRole("button", { name: "Refresh MCP inventory" }));
 
@@ -1005,6 +1030,7 @@ describe("InstalledMcpManagementWorkspace", () => {
       expect(getConnectorRuntimeTrustGrants).toHaveBeenCalledTimes(2);
       expect(getConnectorSecretBrokerageAuthorizations).toHaveBeenCalledTimes(2);
       expect(getConnectorRuntimeActivations).toHaveBeenCalledTimes(2);
+      expect(getConnectorTargetSessionVerifications).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -1421,6 +1447,134 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(await screen.findByText("Runtime activation inventory is unavailable")).toBeVisible();
     expect(screen.queryByText("Enabled / runtime healthy")).toBeNull();
     expect(screen.getByText("Enabled / secret brokerage governed")).toBeVisible();
+  });
+
+  it("verifies a healthy Installed MCP target session using only server options", async () => {
+    vi.mocked(getConnectorTargetConfigurations).mockResolvedValue([configuredBinding]);
+    vi.mocked(getConnectorCredentialAssignments).mockResolvedValue([credentialAssignment]);
+    vi.mocked(getConnectorConfigurationValidations).mockResolvedValue([configurationValidation]);
+    vi.mocked(getConnectorCapabilityEnablements).mockResolvedValue([
+      capabilityEnablementInventoryItem,
+    ]);
+    vi.mocked(getConnectorRuntimeTrustGrants).mockResolvedValue([runtimeTrustGrant]);
+    vi.mocked(getConnectorSecretBrokerageAuthorizations).mockResolvedValue([
+      secretBrokerageAuthorization,
+    ]);
+    vi.mocked(getConnectorRuntimeActivations).mockResolvedValue([runtimeActivationInventoryItem]);
+    vi.mocked(getConnectorTargetSessionVerificationOptions).mockResolvedValue([
+      targetSessionVerificationOption,
+    ]);
+    renderWorkspace();
+
+    expect(await screen.findByText("Enabled / runtime healthy")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", {
+      name: "Verify target session for Storage East",
+    }));
+    expect(await screen.findByRole("combobox", {
+      name: "Signed target session profile and policy",
+    })).toBeVisible();
+    expect(screen.queryByRole("textbox", {
+      name: /profile id|profile digest|policy id|policy digest|target id|address|endpoint|host|port|credential|secret|lease|session handle|certificate|command|parameter/i,
+    })).toBeNull();
+    fireEvent.click(screen.getByLabelText(/Verification permits one bounded read-only connection/i));
+    fireEvent.click(screen.getByRole("button", { name: "Verify target session" }));
+
+    await waitFor(() => expect(createConnectorTargetSessionVerification).toHaveBeenCalledOnce());
+    const input = vi.mocked(createConnectorTargetSessionVerification).mock.calls[0]?.[0];
+    expect(input?.activation).toBe(runtimeActivationInventoryItem);
+    expect(input?.option).toBe(targetSessionVerificationOption);
+    expect(await screen.findByText("Enabled / target session verified")).toBeVisible();
+    expect(screen.getByRole("button", {
+      name: "View target session for Storage East",
+    })).toHaveTextContent("View target session");
+  });
+
+  it("restores target session state as minimized read-only connectivity evidence", async () => {
+    vi.mocked(getConnectorTargetConfigurations).mockResolvedValue([configuredBinding]);
+    vi.mocked(getConnectorCredentialAssignments).mockResolvedValue([credentialAssignment]);
+    vi.mocked(getConnectorConfigurationValidations).mockResolvedValue([configurationValidation]);
+    vi.mocked(getConnectorCapabilityEnablements).mockResolvedValue([
+      capabilityEnablementInventoryItem,
+    ]);
+    vi.mocked(getConnectorRuntimeTrustGrants).mockResolvedValue([runtimeTrustGrant]);
+    vi.mocked(getConnectorSecretBrokerageAuthorizations).mockResolvedValue([
+      secretBrokerageAuthorization,
+    ]);
+    vi.mocked(getConnectorRuntimeActivations).mockResolvedValue([runtimeActivationInventoryItem]);
+    vi.mocked(getConnectorTargetSessionVerifications).mockResolvedValue([
+      targetSessionVerificationInventoryItem,
+    ]);
+    renderWorkspace();
+
+    expect(await screen.findByText("Enabled / target session verified")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", {
+      name: "View target session for Storage East",
+    }));
+    const dialog = screen.getByRole("dialog", {
+      name: "Manage target session for Storage East",
+    });
+    expect(await within(dialog).findByText(targetSessionVerificationInventoryItem.verification_id))
+      .toBeVisible();
+    expect(within(dialog).getAllByText("passed")).toHaveLength(4);
+    expect(within(dialog).queryByRole("combobox")).toBeNull();
+    expect(within(dialog).queryByRole("button", {
+      name: /^(connect|run|invoke|execute|deploy|mutate)/i,
+    })).toBeNull();
+  });
+
+  it("removes stale target-session state when authoritative refresh fails", async () => {
+    vi.mocked(getConnectorTargetConfigurations).mockResolvedValue([configuredBinding]);
+    vi.mocked(getConnectorCredentialAssignments).mockResolvedValue([credentialAssignment]);
+    vi.mocked(getConnectorConfigurationValidations).mockResolvedValue([configurationValidation]);
+    vi.mocked(getConnectorCapabilityEnablements).mockResolvedValue([
+      capabilityEnablementInventoryItem,
+    ]);
+    vi.mocked(getConnectorRuntimeTrustGrants).mockResolvedValue([runtimeTrustGrant]);
+    vi.mocked(getConnectorSecretBrokerageAuthorizations).mockResolvedValue([
+      secretBrokerageAuthorization,
+    ]);
+    vi.mocked(getConnectorRuntimeActivations).mockResolvedValue([runtimeActivationInventoryItem]);
+    vi.mocked(getConnectorTargetSessionVerifications).mockResolvedValue([
+      targetSessionVerificationInventoryItem,
+    ]);
+    renderWorkspace();
+    expect(await screen.findByText("Enabled / target session verified")).toBeVisible();
+    vi.mocked(getConnectorTargetSessionVerifications).mockRejectedValue(
+      new ApiRequestError("Target session evidence expired", 422),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh MCP inventory" }));
+
+    expect(await screen.findByText("Target session verification inventory is unavailable"))
+      .toBeVisible();
+    expect(screen.queryByText("Enabled / target session verified")).toBeNull();
+    expect(screen.getByText("Enabled / runtime healthy")).toBeVisible();
+    expect(screen.queryByRole("button", { name: /target session for Storage East/i })).toBeNull();
+  });
+
+  it("keeps earlier controls available when target session inventory is forbidden", async () => {
+    vi.mocked(getConnectorTargetConfigurations).mockResolvedValue([configuredBinding]);
+    vi.mocked(getConnectorCredentialAssignments).mockResolvedValue([credentialAssignment]);
+    vi.mocked(getConnectorConfigurationValidations).mockResolvedValue([configurationValidation]);
+    vi.mocked(getConnectorCapabilityEnablements).mockResolvedValue([
+      capabilityEnablementInventoryItem,
+    ]);
+    vi.mocked(getConnectorRuntimeTrustGrants).mockResolvedValue([runtimeTrustGrant]);
+    vi.mocked(getConnectorSecretBrokerageAuthorizations).mockResolvedValue([
+      secretBrokerageAuthorization,
+    ]);
+    vi.mocked(getConnectorRuntimeActivations).mockResolvedValue([runtimeActivationInventoryItem]);
+    vi.mocked(getConnectorTargetSessionVerifications).mockRejectedValue(
+      new ApiRequestError("Target session inventory failed", 403),
+    );
+    renderWorkspace();
+
+    expect(await screen.findByText("Enabled / runtime healthy")).toBeVisible();
+    expect(screen.getByText("Target session verification permission is required")).toBeVisible();
+    expect(screen.getByRole("button", {
+      name: "View runtime activation for Storage East",
+    })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /target session for Storage East/i })).toBeNull();
   });
 
   it("keeps earlier lifecycle controls available when runtime trust inventory is unavailable", async () => {

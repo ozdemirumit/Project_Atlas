@@ -28,6 +28,7 @@ class SyntheticConnectorTargetSessionAdapter:
             schema_version="atlas.connector-target-session-receipt.v1",
             version=1,
             verification_id=instruction.verification_id,
+            verification_attempt_id=instruction.verification_attempt_id,
             organization_id=instruction.organization_id,
             environment_id=instruction.environment_id,
             source_runtime_activation_digest=instruction.source_runtime_activation_digest,
@@ -58,8 +59,8 @@ class SyntheticConnectorTargetSessionAdapter:
         )
         return replace(receipt, canonical_digest=self._digest(receipt))
 
-    async def compensate(self, *, verification_id: str) -> None:
-        self.compensated.add(verification_id)
+    async def compensate(self, *, verification_attempt_id: str) -> None:
+        self.compensated.add(verification_attempt_id)
 
     @staticmethod
     def _digest(receipt: ConnectorTargetSessionReceipt) -> str:
@@ -78,5 +79,5 @@ class UnavailableConnectorTargetSessionAdapter:
         del instruction
         raise ConnectorTargetSessionError("target_session_adapter_unavailable")
 
-    async def compensate(self, *, verification_id: str) -> None:
-        del verification_id
+    async def compensate(self, *, verification_attempt_id: str) -> None:
+        del verification_attempt_id

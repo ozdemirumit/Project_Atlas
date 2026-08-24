@@ -118,7 +118,9 @@ async def invocation_fixture(
         target_service, activation, target_profile, target_policy
     )
     _, enablement, _ = await target_service.capability_invocation_authorization_source(
-        verification_id=target_session.verification_id
+        verification_id=target_session.verification_id,
+        organization_id=target_session.organization_id,
+        environment_id=target_session.environment_id,
     )
     capability = enablement.capabilities[0]
     profile = build_connector_invocation_profile(
