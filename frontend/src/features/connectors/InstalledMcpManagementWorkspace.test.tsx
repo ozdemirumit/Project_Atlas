@@ -1,8 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiRequestError } from "../../api/client";
+import {
+  createConnectorCapabilityEnablement,
+  getConnectorCapabilityEnablementOptions,
+  getConnectorCapabilityEnablements,
+} from "../../api/capabilityEnablements";
 import { getConnectorConfigurationValidations } from "../../api/configurationValidations";
 import { getConnectorCredentialAssignments } from "../../api/credentialAssignments";
 import {
@@ -55,6 +60,11 @@ import {
 } from "../../api/targetConfigurations";
 import InstalledMcpManagementWorkspace from "./InstalledMcpManagementWorkspace";
 import { configurationValidation } from "./testConfigurationValidationFixture";
+import {
+  capabilityEnablement,
+  capabilityEnablementInventoryItem,
+  capabilityEnablementOption,
+} from "./testCapabilityEnablementFixture";
 import { credentialAssignment } from "./testCredentialAssignmentFixture";
 import { connectorInstanceRecord as instance } from "./testInstanceFixture";
 import { installationReceipt as installation } from "./testInstallationFixture";
@@ -792,6 +802,16 @@ vi.mock("../../api/configurationValidations", async (importOriginal) => {
   return { ...original, getConnectorConfigurationValidations: vi.fn() };
 });
 
+vi.mock("../../api/capabilityEnablements", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../api/capabilityEnablements")>();
+  return {
+    ...original,
+    createConnectorCapabilityEnablement: vi.fn(),
+    getConnectorCapabilityEnablementOptions: vi.fn(),
+    getConnectorCapabilityEnablements: vi.fn(),
+  };
+});
+
 vi.mock("../../api/connectorUpgradeReadiness", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/connectorUpgradeReadiness")>();
   return {
@@ -846,6 +866,11 @@ beforeEach(() => {
   vi.mocked(getConnectorTargetConfigurations).mockResolvedValue([]);
   vi.mocked(getConnectorCredentialAssignments).mockResolvedValue([]);
   vi.mocked(getConnectorConfigurationValidations).mockResolvedValue([]);
+  vi.mocked(getConnectorCapabilityEnablements).mockResolvedValue([]);
+  vi.mocked(getConnectorCapabilityEnablementOptions).mockResolvedValue([]);
+  vi.mocked(createConnectorCapabilityEnablement).mockResolvedValue({
+    data: capabilityEnablementInventoryItem,
+  });
   vi.mocked(getConnectorUpgradeReadiness).mockResolvedValue(upgradeReadiness);
   vi.mocked(getConnectorUpgradePlan).mockResolvedValue(upgradePlan);
   vi.mocked(getConnectorUpgradeApprovalRecord).mockResolvedValue(null);
@@ -1001,6 +1026,92 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(screen.getByText(configurationValidation.validation_id)).toBeVisible();
     expect(screen.queryByRole("button", { name: "Verify signed evidence" })).toBeNull();
     expect(screen.queryByRole("button", { name: /enable|execute|deploy|connect/i })).toBeNull();
+  });
+
+  it("restores capability-governed state with read-only capability metadata", async () => {
+    vi.mocked(getConnectorTargetConfigurations).mockResolvedValue([configuredBinding]);
+    vi.mocked(getConnectorCredentialAssignments).mockResolvedValue([credentialAssignment]);
+    vi.mocked(getConnectorConfigurationValidations).mockResolvedValue([configurationValidation]);
+    vi.mocked(getConnectorCapabilityEnablements).mockResolvedValue([
+      capabilityEnablementInventoryItem,
+    ]);
+    renderWorkspace();
+
+    expect(await screen.findByText("Enabled / capabilities governed")).toBeVisible();
+    expect(screen.getByText("Capabilities governed")).toBeVisible();
+    const viewCapabilities = screen.getByRole("button", {
+      name: "View capabilities for Storage East",
+    });
+    expect(viewCapabilities).toHaveTextContent("View capabilities");
+    fireEvent.click(viewCapabilities);
+
+    const dialog = screen.getByRole("dialog", { name: "Manage capabilities for Storage East" });
+    expect(dialog).toBeVisible();
+    expect(await screen.findByText(capabilityEnablement.enablement_id)).toBeVisible();
+    expect(screen.getByText("health.read")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Enable governed capabilities" })).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: /connect|run|execute|deploy|runtime/i }))
+      .toBeNull();
+    expect(within(dialog).queryByRole("heading", { name: "Runtime trust" })).toBeNull();
+  });
+
+  it("transitions a validated MCP to capability governed using server options", async () => {
+    vi.mocked(getConnectorTargetConfigurations).mockResolvedValue([configuredBinding]);
+    vi.mocked(getConnectorCredentialAssignments).mockResolvedValue([credentialAssignment]);
+    vi.mocked(getConnectorConfigurationValidations).mockResolvedValue([configurationValidation]);
+    vi.mocked(getConnectorCapabilityEnablementOptions).mockResolvedValue([
+      capabilityEnablementOption,
+    ]);
+    renderWorkspace();
+
+    expect(await screen.findByText("Disabled / configuration validated")).toBeVisible();
+    const manageCapabilities = screen.getByRole("button", {
+      name: "Manage capabilities for Storage East",
+    });
+    expect(manageCapabilities).toHaveTextContent("Enable governed capabilities");
+    fireEvent.click(manageCapabilities);
+
+    expect(
+      await screen.findByRole("combobox", {
+        name: "Governed capability profile and policy",
+      }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("textbox", { name: /profile id|profile digest|policy id|policy digest/i }),
+    ).toBeNull();
+    fireEvent.click(screen.getByLabelText(/Enablement selects only the exact signed C0\/C1/i));
+    fireEvent.click(screen.getByRole("button", { name: "Enable governed capabilities" }));
+
+    await waitFor(() => expect(createConnectorCapabilityEnablement).toHaveBeenCalledOnce());
+    const createInput = vi.mocked(createConnectorCapabilityEnablement).mock.calls[0]?.[0];
+    expect(createInput?.validation).toBe(configurationValidation);
+    expect(createInput?.option).toBe(capabilityEnablementOption);
+    expect(createInput?.purpose).toMatch(/exact signed C0 and C1 capability policy/i);
+    expect(await screen.findByText(capabilityEnablement.enablement_id)).toBeVisible();
+    expect(screen.getByText("Enabled / capabilities governed")).toBeVisible();
+    expect(screen.getByText("Capabilities governed")).toBeVisible();
+    expect(screen.getByRole("button", { name: "View capabilities for Storage East" }))
+      .toHaveTextContent("View capabilities");
+    const dialog = screen.getByRole("dialog", { name: "Manage capabilities for Storage East" });
+    expect(within(dialog).queryByRole("button", { name: /connect|run|execute|deploy/i })).toBeNull();
+  });
+
+  it("keeps existing lifecycle controls available when capability inventory is unavailable", async () => {
+    vi.mocked(getConnectorTargetConfigurations).mockResolvedValue([configuredBinding]);
+    vi.mocked(getConnectorCredentialAssignments).mockResolvedValue([credentialAssignment]);
+    vi.mocked(getConnectorConfigurationValidations).mockResolvedValue([configurationValidation]);
+    vi.mocked(getConnectorCapabilityEnablements).mockRejectedValue(
+      new ApiRequestError("Capability enablement inventory failed", 403),
+    );
+    renderWorkspace();
+
+    expect(await screen.findByText("Disabled / configuration validated")).toBeVisible();
+    expect(screen.getByRole("button", { name: "View target for Storage East" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "View credentials for Storage East" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "View configuration for Storage East" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /capabilities for Storage East/i })).toBeNull();
+    expect(screen.getByText("Capability governance permission is required")).toBeVisible();
+    expect(screen.queryByText("Connector lifecycle permission is required")).toBeNull();
   });
 
   it("runs a bounded provider assessment without exposing signing or key controls", async () => {

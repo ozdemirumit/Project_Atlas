@@ -1164,6 +1164,8 @@ export function OperationalApplication({
       queryClient.removeQueries({ queryKey: ["connector-instances"] });
       queryClient.removeQueries({ queryKey: ["connector-configuration-validations"] });
       queryClient.removeQueries({ queryKey: ["connector-configuration-validation-options"] });
+      queryClient.removeQueries({ queryKey: ["connector-capability-enablements"] });
+      queryClient.removeQueries({ queryKey: ["connector-capability-enablement-options"] });
       setApprovalRequestId(null);
       setTechnicalReportId(null);
       const url = new URL(window.location.href);

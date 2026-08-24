@@ -23,6 +23,10 @@ import { useState, type FormEvent } from "react";
 
 import { ApiRequestError } from "../../api/client";
 import {
+  getConnectorCapabilityEnablements,
+  type ConnectorCapabilityEnablementInventoryItem,
+} from "../../api/capabilityEnablements";
+import {
   getConnectorConfigurationValidations,
   toConnectorConfigurationValidationInventoryItem,
   type ConnectorConfigurationValidation,
@@ -83,6 +87,7 @@ import {
   type ConnectorTargetConfigurationBinding,
 } from "../../api/targetConfigurations";
 import { CredentialAssignmentPanel } from "./CredentialAssignmentPanel";
+import { CapabilityEnablementPanel } from "./CapabilityEnablementPanel";
 import { ConfigurationValidationPanel } from "./ConfigurationValidationPanel";
 import { TargetConfigurationPanel } from "./TargetConfigurationPanel";
 
@@ -432,6 +437,67 @@ function ConfigurationValidationDialog({
           assignment={assignment}
           existingValidation={validation}
           onValidationCreated={onValidationCreated}
+          onRequestEnterpriseLogin={onRequestEnterpriseLogin}
+          sessionScopeKey={sessionScopeKey}
+        />
+        <footer>
+          <button type="button" className="secondary-button" onClick={onCancel}>
+            Close
+          </button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+function CapabilityEnablementDialog({
+  enablement,
+  instance,
+  onCancel,
+  onEnablementCreated,
+  onRequestEnterpriseLogin,
+  sessionScopeKey,
+  validation,
+}: {
+  enablement?: ConnectorCapabilityEnablementInventoryItem;
+  instance: ConnectorInstanceRecord;
+  onCancel: () => void;
+  onEnablementCreated: (enablement: ConnectorCapabilityEnablementInventoryItem) => void;
+  onRequestEnterpriseLogin?: () => void;
+  sessionScopeKey: string;
+  validation: ConnectorConfigurationValidationInventoryItem;
+}) {
+  return (
+    <div className="installed-mcp-dialog-backdrop" role="presentation">
+      <section
+        className="installed-mcp-dialog capability-enablement-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="capability-mcp-title"
+      >
+        <header>
+          <div>
+            <p className="eyebrow">GOVERNED C0/C1 CAPABILITIES</p>
+            <h3 id="capability-mcp-title">Manage capabilities for {instance.display_name}</h3>
+          </div>
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Close capability governance"
+            onClick={onCancel}
+          >
+            <X size={17} />
+          </button>
+        </header>
+        <p className="muted-copy">
+          Atlas applies only a server-provided signed capability profile and policy for this exact
+          validated configuration. It does not resolve credentials, contact the target, start a
+          connector, grant runtime trust, execute, or deploy anything.
+        </p>
+        <CapabilityEnablementPanel
+          validation={validation}
+          existingEnablement={enablement}
+          onEnablementCreated={onEnablementCreated}
           onRequestEnterpriseLogin={onRequestEnterpriseLogin}
           sessionScopeKey={sessionScopeKey}
         />
@@ -1025,7 +1091,9 @@ export default function InstalledMcpManagementWorkspace({
   const [targeting, setTargeting] = useState<ConnectorInstanceRecord | null>(null);
   const [credentialing, setCredentialing] = useState<ConnectorInstanceRecord | null>(null);
   const [validating, setValidating] = useState<ConnectorInstanceRecord | null>(null);
-  const sessionScopeKey = `${subjectId}:${organizationId}:${environmentId}`;
+  const [governingCapabilities, setGoverningCapabilities] =
+    useState<ConnectorInstanceRecord | null>(null);
+  const sessionScopeKey = JSON.stringify([subjectId, organizationId, environmentId]);
   const packageQuery = useQuery({
     queryKey: ["connector-package-installations", subjectId],
     queryFn: getConnectorPackageInstallations,
@@ -1054,6 +1122,11 @@ export default function InstalledMcpManagementWorkspace({
   const validationQuery = useQuery({
     queryKey: ["connector-configuration-validations", sessionScopeKey],
     queryFn: () => getConnectorConfigurationValidations(),
+    enabled: Boolean(subjectId),
+  });
+  const enablementQuery = useQuery({
+    queryKey: ["connector-capability-enablements", sessionScopeKey],
+    queryFn: () => getConnectorCapabilityEnablements(),
     enabled: Boolean(subjectId),
   });
   const signingTrustQuery = useQuery({
@@ -1116,6 +1189,10 @@ export default function InstalledMcpManagementWorkspace({
   const validationByAssignment = new Map(
     configurationValidations.map((validation) => [validation.source_assignment_id, validation]),
   );
+  const capabilityEnablements = enablementQuery.data ?? [];
+  const enablementByValidation = new Map(
+    capabilityEnablements.map((enablement) => [enablement.source_validation_id, enablement]),
+  );
   const packages = packageQuery.data ?? [];
   const policies = policyQuery.data ?? [];
   const activeCount = instances.filter(
@@ -1155,6 +1232,7 @@ export default function InstalledMcpManagementWorkspace({
     void bindingQuery.refetch();
     void assignmentQuery.refetch();
     void validationQuery.refetch();
+    void enablementQuery.refetch();
     void signingTrustQuery.refetch();
     void signingConformanceQuery.refetch();
     void signingOnboardingQuery.refetch();
@@ -1424,6 +1502,37 @@ export default function InstalledMcpManagementWorkspace({
           ) : null}
         </div>
       )}
+      {enablementQuery.isError && (
+        <div className="installed-mcp-status error-state" role="alert">
+          {hasStatus(enablementQuery.error, 401) ? (
+            <LogIn size={18} />
+          ) : (
+            <AlertTriangle size={18} />
+          )}
+          <div>
+            <strong>
+              {hasStatus(enablementQuery.error, 401)
+                ? "Your signed-in session has expired"
+                : hasStatus(enablementQuery.error, 403)
+                  ? "Capability governance permission is required"
+                  : "Capability governance inventory is unavailable"}
+            </strong>
+            <span>
+              Existing connector lifecycle evidence remains available. Capability controls stay
+              hidden until this scoped inventory can be read.
+            </span>
+          </div>
+          {hasStatus(enablementQuery.error, 401) && onRequestEnterpriseLogin ? (
+            <button type="button" onClick={onRequestEnterpriseLogin}>
+              <LogIn size={15} /> Sign in again
+            </button>
+          ) : !hasStatus(enablementQuery.error, 403) ? (
+            <button type="button" onClick={() => void enablementQuery.refetch()}>
+              <RefreshCw size={15} /> Retry
+            </button>
+          ) : null}
+        </div>
+      )}
       {instanceQuery.isLoading && (
         <div className="installed-mcp-status" role="status"><RefreshCw className="spin" size={18} /><span>Loading MCP lifecycle inventory...</span></div>
       )}
@@ -1481,15 +1590,27 @@ export default function InstalledMcpManagementWorkspace({
                   ? validationByAssignment.get(assignment.assignment_id)
                   : undefined;
                 const configurationValidated = Boolean(validation);
+                const enablement = validation
+                  ? enablementByValidation.get(validation.validation_id)
+                  : undefined;
+                const capabilitiesGoverned = Boolean(enablement);
                 return (
                   <tr key={instance.record_id}>
                     <td><strong>{instance.display_name}</strong><code>{instance.instance_key}</code></td>
                     <td><strong>{instance.connector_id}</strong><span>{instance.release_version}</span></td>
                     <td>
-                      <span className={`state-badge ${instance.instance_state === "retired" ? "neutral" : "pending"}`}>
+                      <span className={`state-badge ${
+                        instance.instance_state === "retired"
+                          ? "neutral"
+                          : capabilitiesGoverned
+                            ? "success"
+                            : "pending"
+                      }`}>
                         {instance.instance_state === "retired"
                           ? "Retired"
-                          : configurationValidated
+                          : capabilitiesGoverned
+                            ? "Enabled / capabilities governed"
+                            : configurationValidated
                             ? "Disabled / configuration validated"
                             : credentialsAssigned
                             ? "Disabled / credentials assigned"
@@ -1503,7 +1624,9 @@ export default function InstalledMcpManagementWorkspace({
                       <span className="installed-mcp-event-label">
                         {instance.instance_state === "retired"
                           ? "Retired"
-                          : validation
+                          : enablement
+                            ? "Capabilities governed"
+                            : validation
                             ? "Configuration validated"
                             : assignment
                             ? "Credentials assigned"
@@ -1511,7 +1634,7 @@ export default function InstalledMcpManagementWorkspace({
                               ? "Target bound"
                               : "Created"}
                       </span>
-                      {new Date(validation?.validated_at ?? assignment?.assigned_at ?? binding?.bound_at ?? instance.retired_at ?? instance.created_at).toLocaleString()}
+                      {new Date(enablement?.enabled_at ?? validation?.validated_at ?? assignment?.assigned_at ?? binding?.bound_at ?? instance.retired_at ?? instance.created_at).toLocaleString()}
                     </td>
                     <td>
                       {instance.instance_state === "disabled_unconfigured" &&
@@ -1550,6 +1673,22 @@ export default function InstalledMcpManagementWorkspace({
                               <ShieldCheck size={15} /><span>{configurationValidated ? "View validation" : "Validate configuration"}</span>
                             </button>
                           )}
+                          {validation && enablementQuery.isSuccess && (
+                            <button
+                              className="secondary-button installed-mcp-row-action"
+                              type="button"
+                              title={capabilitiesGoverned
+                                ? "View governed capability metadata"
+                                : "Apply governed capability metadata"}
+                              aria-label={`${capabilitiesGoverned ? "View" : "Manage"} capabilities for ${instance.display_name}`}
+                              onClick={() => setGoverningCapabilities(instance)}
+                            >
+                              <ShieldCheck size={15} />
+                              <span>{capabilitiesGoverned
+                                ? "View capabilities"
+                                : "Enable governed capabilities"}</span>
+                            </button>
+                          )}
                           <button className="secondary-button installed-mcp-row-action" type="button" title="Review governed update evidence" aria-label={`Review update for ${instance.display_name}`} onClick={() => setReviewing(instance)}><ArrowUpCircle size={15} /><span>Review update</span></button>
                           {!configured && !credentialsAssigned && (
                             <button className="secondary-button installed-mcp-row-action danger" type="button" title="Remove from active management and preserve history" aria-label={`Remove ${instance.display_name}`} onClick={() => { retireMutation.reset(); setRetiring(instance); }}><Archive size={15} /><span>Remove</span></button>
@@ -1564,7 +1703,7 @@ export default function InstalledMcpManagementWorkspace({
           </table>
         </div>
       ) : null}
-      <div className="installed-mcp-footnote"><span>{activeCount} active in this result</span><span>Target, credential and validation records remain disabled evidence. Atlas does not run probes or contact infrastructure. Updates remain review-only.</span></div>
+      <div className="installed-mcp-footnote"><span>{activeCount} active in this result</span><span>Target, credential, validation and capability-governance records expose no secrets or runtime controls. Atlas does not run probes, connect, execute, or deploy. Updates remain review-only.</span></div>
       {adding && <AddMcpDialog packages={packages} policies={policies} pending={createMutation.isPending} onCancel={() => setAdding(false)} onOpenBuilder={openBuilder} onSubmit={(input) => createMutation.mutate(input)} />}
       {retiring && <RetireMcpDialog instance={retiring} pending={retireMutation.isPending} onCancel={() => setRetiring(null)} onSubmit={(reason) => retireMutation.mutate({ instance: retiring, reason })} />}
       {reviewing && <UpgradeReadinessDialog instance={reviewing} subjectId={subjectId} onCancel={() => setReviewing(null)} />}
@@ -1636,6 +1775,37 @@ export default function InstalledMcpManagementWorkspace({
               );
             }}
             onCancel={() => setValidating(null)}
+            onRequestEnterpriseLogin={onRequestEnterpriseLogin}
+          />
+        );
+      })()}
+      {governingCapabilities && (() => {
+        const binding = bindingByInstance.get(governingCapabilities.record_id);
+        const assignment = binding
+          ? assignmentByBinding.get(binding.binding_id)
+          : undefined;
+        const validation = assignment
+          ? validationByAssignment.get(assignment.assignment_id)
+          : undefined;
+        if (!validation) return null;
+        return (
+          <CapabilityEnablementDialog
+            instance={governingCapabilities}
+            validation={validation}
+            enablement={enablementByValidation.get(validation.validation_id)}
+            sessionScopeKey={sessionScopeKey}
+            onEnablementCreated={(enablement) => {
+              queryClient.setQueryData<ConnectorCapabilityEnablementInventoryItem[]>(
+                ["connector-capability-enablements", sessionScopeKey],
+                (current = []) => [
+                  ...current.filter(
+                    (item) => item.source_validation_id !== enablement.source_validation_id,
+                  ),
+                  enablement,
+                ],
+              );
+            }}
+            onCancel={() => setGoverningCapabilities(null)}
             onRequestEnterpriseLogin={onRequestEnterpriseLogin}
           />
         );
