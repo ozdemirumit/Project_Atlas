@@ -30,9 +30,17 @@ class ConnectorBoundedInvocationSource(Protocol):
 
 
 class ConnectorBoundedInvocationPolicySource(Protocol):
-    async def get_by_id(
-        self, *, policy_id: str
+    async def get_by_id_in_scope(
+        self,
+        *,
+        policy_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> ConnectorBoundedInvocationPolicySnapshot | None: ...
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorBoundedInvocationPolicySnapshot, ...]: ...
 
 
 class ConnectorBoundedInvocationAdapter(Protocol):
@@ -56,19 +64,38 @@ class ConnectorBoundedInvocationPermissionAuthorizer(Protocol):
 
 
 class ConnectorBoundedInvocationRepository(Protocol):
-    async def get(self, *, invocation_id: str) -> ConnectorBoundedInvocationRecord | None: ...
-
-    async def get_by_authorization(
-        self, *, source_authorization_id: str
+    async def get_in_scope(
+        self, *, invocation_id: str, organization_id: str, environment_id: str
     ) -> ConnectorBoundedInvocationRecord | None: ...
 
-    async def get_claim_by_authorization(
-        self, *, source_authorization_id: str
+    async def get_by_authorization_in_scope(
+        self,
+        *,
+        source_authorization_id: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> ConnectorBoundedInvocationRecord | None: ...
+
+    async def get_claim_by_authorization_in_scope(
+        self,
+        *,
+        source_authorization_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> ConnectorInvocationConsumptionClaim | None: ...
 
-    async def get_claim_by_idempotency(
-        self, *, claimed_by: str, idempotency_digest: str
+    async def get_claim_by_idempotency_in_scope(
+        self,
+        *,
+        claimed_by: str,
+        idempotency_digest: str,
+        organization_id: str,
+        environment_id: str,
     ) -> ConnectorInvocationConsumptionClaim | None: ...
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorBoundedInvocationRecord, ...]: ...
 
     async def claim(self, claim: ConnectorInvocationConsumptionClaim) -> bool: ...
 

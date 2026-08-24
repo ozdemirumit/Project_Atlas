@@ -30,37 +30,62 @@ class PostgreSQLConnectorBoundedInvocationRepository:
     def from_url(cls, database_url: str) -> PostgreSQLConnectorBoundedInvocationRepository:
         return cls(create_async_engine(database_url))
 
-    async def get(self, *, invocation_id: str) -> ConnectorBoundedInvocationRecord | None:
+    async def get_in_scope(
+        self, *, invocation_id: str, organization_id: str, environment_id: str
+    ) -> ConnectorBoundedInvocationRecord | None:
         async with self._sessions() as session:
-            row = await session.get(ConnectorBoundedInvocationModel, invocation_id)
+            row = await session.scalar(
+                select(ConnectorBoundedInvocationModel).where(
+                    ConnectorBoundedInvocationModel.invocation_id == invocation_id,
+                    ConnectorBoundedInvocationModel.organization_id == organization_id,
+                    ConnectorBoundedInvocationModel.environment_id == environment_id,
+                )
+            )
             return self._record_to_domain(row.payload) if row else None
 
-    async def get_by_authorization(
-        self, *, source_authorization_id: str
+    async def get_by_authorization_in_scope(
+        self,
+        *,
+        source_authorization_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> ConnectorBoundedInvocationRecord | None:
         async with self._sessions() as session:
             row = await session.scalar(
                 select(ConnectorBoundedInvocationModel).where(
                     ConnectorBoundedInvocationModel.source_authorization_id
-                    == source_authorization_id
+                    == source_authorization_id,
+                    ConnectorBoundedInvocationModel.organization_id == organization_id,
+                    ConnectorBoundedInvocationModel.environment_id == environment_id,
                 )
             )
             return self._record_to_domain(row.payload) if row else None
 
-    async def get_claim_by_authorization(
-        self, *, source_authorization_id: str
+    async def get_claim_by_authorization_in_scope(
+        self,
+        *,
+        source_authorization_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> ConnectorInvocationConsumptionClaim | None:
         async with self._sessions() as session:
             row = await session.scalar(
                 select(ConnectorInvocationConsumptionClaimModel).where(
                     ConnectorInvocationConsumptionClaimModel.source_authorization_id
-                    == source_authorization_id
+                    == source_authorization_id,
+                    ConnectorInvocationConsumptionClaimModel.organization_id == organization_id,
+                    ConnectorInvocationConsumptionClaimModel.environment_id == environment_id,
                 )
             )
             return self._claim_to_domain(row.payload) if row else None
 
-    async def get_claim_by_idempotency(
-        self, *, claimed_by: str, idempotency_digest: str
+    async def get_claim_by_idempotency_in_scope(
+        self,
+        *,
+        claimed_by: str,
+        idempotency_digest: str,
+        organization_id: str,
+        environment_id: str,
     ) -> ConnectorInvocationConsumptionClaim | None:
         async with self._sessions() as session:
             row = await session.scalar(
@@ -68,9 +93,29 @@ class PostgreSQLConnectorBoundedInvocationRepository:
                     ConnectorInvocationConsumptionClaimModel.claimed_by == claimed_by,
                     ConnectorInvocationConsumptionClaimModel.idempotency_digest
                     == idempotency_digest,
+                    ConnectorInvocationConsumptionClaimModel.organization_id == organization_id,
+                    ConnectorInvocationConsumptionClaimModel.environment_id == environment_id,
                 )
             )
             return self._claim_to_domain(row.payload) if row else None
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorBoundedInvocationRecord, ...]:
+        async with self._sessions() as session:
+            rows = tuple(
+                (
+                    await session.scalars(
+                        select(ConnectorBoundedInvocationModel)
+                        .where(
+                            ConnectorBoundedInvocationModel.organization_id == organization_id,
+                            ConnectorBoundedInvocationModel.environment_id == environment_id,
+                        )
+                        .order_by(ConnectorBoundedInvocationModel.invocation_id)
+                    )
+                ).all()
+            )
+        return tuple(self._record_to_domain(row.payload) for row in rows)
 
     async def claim(self, claim: ConnectorInvocationConsumptionClaim) -> bool:
         payload = ConnectorBoundedInvocationService._normalize(asdict(claim))

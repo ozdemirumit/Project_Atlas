@@ -23,13 +23,17 @@ class ConnectorInvocationEvidenceUncertainError(ConnectorInvocationEvidenceError
 
 class ConnectorInvocationEvidenceSource(Protocol):
     async def evidence_ingestion_source(
-        self, *, invocation_id: str
+        self, *, invocation_id: str, organization_id: str, environment_id: str
     ) -> tuple[ConnectorBoundedInvocationRecord, frozenset[str]]: ...
 
 
 class ConnectorInvocationEvidencePolicySource(Protocol):
-    async def get_by_id(
-        self, *, policy_id: str
+    async def get_by_id_in_scope(
+        self,
+        *,
+        policy_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> ConnectorInvocationEvidencePolicySnapshot | None: ...
 
 
@@ -54,18 +58,33 @@ class ConnectorInvocationEvidencePermissionAuthorizer(Protocol):
 
 
 class ConnectorInvocationEvidenceRepository(Protocol):
-    async def get(self, *, ingestion_id: str) -> ConnectorInvocationEvidenceRecord | None: ...
-
-    async def get_by_invocation(
-        self, *, source_invocation_id: str
+    async def get_in_scope(
+        self, *, ingestion_id: str, organization_id: str, environment_id: str
     ) -> ConnectorInvocationEvidenceRecord | None: ...
 
-    async def get_claim_by_invocation(
-        self, *, source_invocation_id: str
+    async def get_by_invocation_in_scope(
+        self,
+        *,
+        source_invocation_id: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> ConnectorInvocationEvidenceRecord | None: ...
+
+    async def get_claim_by_invocation_in_scope(
+        self,
+        *,
+        source_invocation_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> ConnectorInvocationEvidenceClaim | None: ...
 
-    async def get_claim_by_idempotency(
-        self, *, claimed_by: str, idempotency_digest: str
+    async def get_claim_by_idempotency_in_scope(
+        self,
+        *,
+        claimed_by: str,
+        idempotency_digest: str,
+        organization_id: str,
+        environment_id: str,
     ) -> ConnectorInvocationEvidenceClaim | None: ...
 
     async def claim(self, claim: ConnectorInvocationEvidenceClaim) -> bool: ...

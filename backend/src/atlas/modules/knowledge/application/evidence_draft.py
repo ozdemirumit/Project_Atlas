@@ -112,7 +112,9 @@ class OperationalEvidenceKnowledgeDraftService:
             )
         try:
             source, source_actors = await self._source.knowledge_draft_source(
-                ingestion_id=source_ingestion_id
+                ingestion_id=source_ingestion_id,
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
             )
         except Exception as error:
             raise OperationalEvidenceKnowledgeDraftError(

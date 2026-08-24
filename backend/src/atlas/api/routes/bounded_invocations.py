@@ -3,11 +3,14 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated, NoReturn
 
-from fastapi import APIRouter, Depends, Header, Path, Request, Response
+from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response
 
 from atlas.api.bounded_invocation_schemas import (
     ConnectorBoundedInvocationData,
     ConnectorBoundedInvocationInput,
+    ConnectorBoundedInvocationInventoryResponse,
+    ConnectorBoundedInvocationOptionData,
+    ConnectorBoundedInvocationOptionsResponse,
     ConnectorBoundedInvocationResponse,
 )
 from atlas.api.errors import AtlasError
@@ -31,6 +34,7 @@ from atlas.modules.connectors.domain.bounded_invocation import (
 from atlas.modules.identity.domain.models import AuthenticatedSubject
 
 router = APIRouter(prefix="/connectors/bounded-invocations", tags=["connectors"])
+STABLE_ID = r"^[a-z][a-z0-9_.:-]{2,127}$"
 IDEMPOTENCY = Header(
     alias="Idempotency-Key", min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$"
 )
@@ -73,6 +77,64 @@ def _response(
     )
 
 
+@router.get("", response_model=ConnectorBoundedInvocationInventoryResponse)
+async def list_connector_bounded_invocations(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_connector_bounded_invocation_read)
+    ],
+    source_authorization_id: Annotated[str | None, Query(pattern=STABLE_ID)] = None,
+) -> ConnectorBoundedInvocationInventoryResponse:
+    service: ConnectorBoundedInvocationService = request.app.state.bounded_invocation_service
+    try:
+        records = await service.list_invocations(
+            actor=subject,
+            source_authorization_id=source_authorization_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ConnectorBoundedInvocationError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorBoundedInvocationInventoryResponse(
+        data=tuple(ConnectorBoundedInvocationData.from_domain(record) for record in records),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.get("/options", response_model=ConnectorBoundedInvocationOptionsResponse)
+async def list_connector_bounded_invocation_options(
+    source_authorization_id: Annotated[str, Query(pattern=STABLE_ID)],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_connector_bounded_invocation_read)
+    ],
+) -> ConnectorBoundedInvocationOptionsResponse:
+    service: ConnectorBoundedInvocationService = request.app.state.bounded_invocation_service
+    try:
+        options = await service.list_options(
+            actor=subject,
+            source_authorization_id=source_authorization_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ConnectorBoundedInvocationError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorBoundedInvocationOptionsResponse(
+        data=tuple(
+            ConnectorBoundedInvocationOptionData.from_application(option) for option in options
+        ),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
 @router.post("", response_model=ConnectorBoundedInvocationResponse, status_code=201)
 async def create_connector_bounded_invocation(
     payload: ConnectorBoundedInvocationInput,
@@ -107,7 +169,7 @@ async def create_connector_bounded_invocation(
 
 @router.get("/{invocation_id}", response_model=ConnectorBoundedInvocationResponse)
 async def get_connector_bounded_invocation(
-    invocation_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    invocation_id: Annotated[str, Path(pattern=STABLE_ID)],
     request: Request,
     response: Response,
     subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
