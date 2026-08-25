@@ -143,9 +143,7 @@ class ConfiguredHitachiHealthExecutor:
         )
         return candidates[0] if len(candidates) == 1 else None
 
-    async def _allowed_storage_ids(
-        self, definition: HealthCheckDefinition
-    ) -> frozenset[str]:
+    async def _allowed_storage_ids(self, definition: HealthCheckDefinition) -> frozenset[str]:
         devices = await self._inventory_repository.list_scope(
             organization_id=self._organization_id,
             environment_id=self._environment_id,

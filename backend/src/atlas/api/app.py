@@ -4840,30 +4840,22 @@ def create_app(
             environment_id=f"environment.{resolved_settings.environment}",
         )
     resolved_bundled_connector_catalog_service = BundledConnectorCatalogService(
-        descriptors=(
-            () if is_production else (build_hitachi_ops_center_bundled_descriptor(),)
-        ),
+        descriptors=(() if is_production else (build_hitachi_ops_center_bundled_descriptor(),)),
         repository=resolved_connector_instance_creation_service.repository,
         audit_sink=resolved_audit_sink,
         environment_id=resolved_connector_instance_creation_service.environment_id,
     )
-    bundled_connection_configuration_repository = (
-        InMemoryBundledConnectionConfigurationRepository()
-    )
-    resolved_bundled_connection_configuration_service = (
-        BundledConnectionConfigurationService(
-            repository=bundled_connection_configuration_repository,
-            instance_repository=resolved_connector_instance_creation_service.repository,
-            audit_sink=resolved_audit_sink,
-            environment_id=resolved_connector_instance_creation_service.environment_id,
-            deployment_environment=resolved_settings.environment,
-        )
+    bundled_connection_configuration_repository = InMemoryBundledConnectionConfigurationRepository()
+    resolved_bundled_connection_configuration_service = BundledConnectionConfigurationService(
+        repository=bundled_connection_configuration_repository,
+        instance_repository=resolved_connector_instance_creation_service.repository,
+        audit_sink=resolved_audit_sink,
+        environment_id=resolved_connector_instance_creation_service.environment_id,
+        deployment_environment=resolved_settings.environment,
     )
     hitachi_credential_materializer = DevelopmentEnvironmentCredentialMaterializer(
         deployment_environment=resolved_settings.environment,
-        reference_environment_variables={
-            "secret.hitachi.readonly": "ATLAS_HITACHI_AUTHORIZATION"
-        },
+        reference_environment_variables={"secret.hitachi.readonly": "ATLAS_HITACHI_AUTHORIZATION"},
     )
     hitachi_transport_factory = HitachiOpsCenterConnectionTestHttpsFactory()
     resolved_connector_connection_test_service = ConnectorConnectionTestService(
@@ -6886,9 +6878,7 @@ def create_app(
         ),
         audit_sink=resolved_audit_sink,
         data_profile=(
-            "configured_hitachi_read_only"
-            if configured_hitachi_health_enabled
-            else "synthetic_lab"
+            "configured_hitachi_read_only" if configured_hitachi_health_enabled else "synthetic_lab"
         ),
     )
     resolved_investigation_service = investigation_service or InvestigationService(
@@ -9618,15 +9608,11 @@ def create_app(
         app.state.package_registration_service = resolved_package_registration_service
         app.state.package_installation_service = resolved_package_installation_service
         app.state.connector_instance_creation_service = resolved_connector_instance_creation_service
-        app.state.bundled_connector_catalog_service = (
-            resolved_bundled_connector_catalog_service
-        )
+        app.state.bundled_connector_catalog_service = resolved_bundled_connector_catalog_service
         app.state.bundled_connection_configuration_service = (
             resolved_bundled_connection_configuration_service
         )
-        app.state.connector_connection_test_service = (
-            resolved_connector_connection_test_service
-        )
+        app.state.connector_connection_test_service = resolved_connector_connection_test_service
         app.state.connector_instance_lifecycle_service = (
             resolved_connector_instance_lifecycle_service
         )

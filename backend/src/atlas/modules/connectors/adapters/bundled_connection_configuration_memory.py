@@ -10,9 +10,7 @@ from atlas.modules.connectors.domain.bundled_connection_configuration import (
 )
 
 
-class InMemoryBundledConnectionConfigurationRepository(
-    BundledConnectionConfigurationRepository
-):
+class InMemoryBundledConnectionConfigurationRepository(BundledConnectionConfigurationRepository):
     def __init__(self) -> None:
         self._records: dict[tuple[str, str, str], BundledConnectionConfiguration] = {}
         self._lock = asyncio.Lock()
