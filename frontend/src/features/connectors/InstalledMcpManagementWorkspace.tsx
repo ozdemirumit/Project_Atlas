@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   Archive,
   ArrowUpCircle,
+  BookMarked,
   Boxes,
   ClipboardList,
   Download,
@@ -96,6 +97,11 @@ import {
   type ConnectorInvocationEvidenceInventoryItem,
 } from "../../api/invocationEvidence";
 import {
+  getOperationalEvidenceKnowledgeDrafts,
+  operationalEvidenceKnowledgeDraftQueryKey,
+  type OperationalEvidenceKnowledgeDraftInventoryItem,
+} from "../../api/evidenceDrafts";
+import {
   getConnectorRuntimeTrustGrants,
   type ConnectorRuntimeTrustGrantInventoryItem,
 } from "../../api/runtimeTrustGrants";
@@ -126,6 +132,7 @@ import { TargetSessionPanel } from "./TargetSessionPanel";
 import { InvocationAuthorizationPanel } from "./InvocationAuthorizationPanel";
 import { BoundedInvocationPanel } from "./BoundedInvocationPanel";
 import { InvocationEvidencePanel } from "./InvocationEvidencePanel";
+import { EvidenceKnowledgeDraftPanel } from "./EvidenceKnowledgeDraftPanel";
 
 type LifecycleFilter = "active" | "retired" | "all";
 
@@ -979,6 +986,64 @@ function InvocationEvidenceDialog({
   );
 }
 
+function EvidenceKnowledgeDraftDialog({
+  evidence,
+  instance,
+  onCancel,
+  onDraftCreated,
+  onRequestEnterpriseLogin,
+  sessionScopeKey,
+}: {
+  evidence: ConnectorInvocationEvidenceInventoryItem;
+  instance: ConnectorInstanceRecord;
+  onCancel: () => void;
+  onDraftCreated: (draft: OperationalEvidenceKnowledgeDraftInventoryItem) => void;
+  onRequestEnterpriseLogin?: () => void;
+  sessionScopeKey: string;
+}) {
+  return (
+    <div className="installed-mcp-dialog-backdrop" role="presentation">
+      <section
+        className="installed-mcp-dialog evidence-knowledge-draft-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="evidence-knowledge-draft-mcp-title"
+      >
+        <header>
+          <div>
+            <p className="eyebrow">UNAPPROVED KNOWLEDGE DRAFT</p>
+            <h3 id="evidence-knowledge-draft-mcp-title">
+              Curate knowledge for {instance.display_name}
+            </h3>
+          </div>
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Close knowledge draft"
+            onClick={onCancel}
+          >
+            <X size={17} />
+          </button>
+        </header>
+        <p className="muted-copy">
+          Atlas may create one immutable draft from this exact evidence using a server-provided
+          signed option. This stage grants no review, publication, retrieval, model, workflow,
+          execution, deployment or infrastructure mutation authority.
+        </p>
+        <EvidenceKnowledgeDraftPanel
+          evidence={evidence}
+          onDraftCreated={onDraftCreated}
+          onRequestEnterpriseLogin={onRequestEnterpriseLogin}
+          sessionScopeKey={sessionScopeKey}
+        />
+        <footer>
+          <button type="button" className="secondary-button" onClick={onCancel}>Close</button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
 function UpgradeCandidateCard({
   candidate,
   onReviewPlan,
@@ -1575,6 +1640,8 @@ export default function InstalledMcpManagementWorkspace({
     useState<ConnectorInstanceRecord | null>(null);
   const [preservingInvocationEvidence, setPreservingInvocationEvidence] =
     useState<ConnectorInstanceRecord | null>(null);
+  const [curatingKnowledge, setCuratingKnowledge] =
+    useState<ConnectorInstanceRecord | null>(null);
   const sessionScopeKey = JSON.stringify([subjectId, organizationId, environmentId]);
   const packageQuery = useQuery({
     queryKey: ["connector-package-installations", subjectId],
@@ -1676,6 +1743,20 @@ export default function InstalledMcpManagementWorkspace({
         sourceInvocationId: invocation.invocation_id,
       }),
       enabled: Boolean(subjectId),
+    })),
+  });
+  const invocationEvidenceSources = invocationEvidenceQueries.flatMap((query) =>
+    query.isSuccess && query.data[0] ? [query.data[0]] : []
+  );
+  const knowledgeDraftQueries = useQueries({
+    queries: invocationEvidenceSources.map((evidence) => ({
+      queryKey: operationalEvidenceKnowledgeDraftQueryKey(
+        sessionScopeKey,
+        evidence.ingestion_id,
+      ),
+      queryFn: () => getOperationalEvidenceKnowledgeDrafts({ evidence }),
+      enabled: Boolean(subjectId),
+      retry: false,
     })),
   });
   const signingTrustQuery = useQuery({
@@ -1830,6 +1911,23 @@ export default function InstalledMcpManagementWorkspace({
   const invocationEvidenceQueryErrors = invocationEvidenceQueries
     .map((query) => query.error)
     .filter((error) => error !== null);
+  const knowledgeDraftByEvidence = new Map(
+    knowledgeDraftQueries.flatMap((query, index) => {
+      if (!query.isSuccess) return [];
+      const evidence = invocationEvidenceSources[index];
+      const draft = query.data[0];
+      return evidence && draft ? [[evidence.ingestion_id, draft] as const] : [];
+    }),
+  );
+  const knowledgeDraftInventoryReady = new Set(
+    knowledgeDraftQueries.flatMap((query, index) => {
+      const evidence = invocationEvidenceSources[index];
+      return query.isSuccess && evidence ? [evidence.ingestion_id] : [];
+    }),
+  );
+  const knowledgeDraftQueryErrors = knowledgeDraftQueries
+    .map((query) => query.error)
+    .filter((error) => error !== null);
   const packages = packageQuery.data ?? [];
   const policies = policyQuery.data ?? [];
   const activeCount = instances.filter(
@@ -1877,6 +1975,7 @@ export default function InstalledMcpManagementWorkspace({
     for (const query of invocationAuthorizationQueries) void query.refetch();
     for (const query of boundedInvocationQueries) void query.refetch();
     for (const query of invocationEvidenceQueries) void query.refetch();
+    for (const query of knowledgeDraftQueries) void query.refetch();
     void signingTrustQuery.refetch();
     void signingConformanceQuery.refetch();
     void signingOnboardingQuery.refetch();
@@ -2396,6 +2495,41 @@ export default function InstalledMcpManagementWorkspace({
           ) : null}
         </div>
       )}
+      {knowledgeDraftQueryErrors.length > 0 && (
+        <div className="installed-mcp-status error-state" role="alert">
+          {knowledgeDraftQueryErrors.some((error) => hasStatus(error, 401))
+            ? <LogIn size={18} />
+            : <AlertTriangle size={18} />}
+          <div>
+            <strong>
+              {knowledgeDraftQueryErrors.some((error) => hasStatus(error, 401))
+                ? "Your signed-in session has expired"
+                : knowledgeDraftQueryErrors.some((error) => hasStatus(error, 403))
+                  ? "Knowledge draft scope is required"
+                  : "Knowledge draft inventory is unavailable"}
+            </strong>
+            <span>
+              Preserved evidence remains visible. Draft state and curation controls stay hidden
+              until exact authoritative inventory can be read.
+            </span>
+          </div>
+          {knowledgeDraftQueryErrors.some((error) => hasStatus(error, 401)) &&
+          onRequestEnterpriseLogin ? (
+            <button type="button" onClick={onRequestEnterpriseLogin}>
+              <LogIn size={15} /> Sign in again
+            </button>
+          ) : !knowledgeDraftQueryErrors.some((error) => hasStatus(error, 403)) ? (
+            <button
+              type="button"
+              onClick={() => {
+                for (const query of knowledgeDraftQueries) void query.refetch();
+              }}
+            >
+              <RefreshCw size={15} /> Reload inventory
+            </button>
+          ) : null}
+        </div>
+      )}
       {instanceQuery.isLoading && (
         <div className="installed-mcp-status" role="status"><RefreshCw className="spin" size={18} /><span>Loading MCP lifecycle inventory...</span></div>
       )}
@@ -2489,6 +2623,10 @@ export default function InstalledMcpManagementWorkspace({
                   ? invocationEvidenceByInvocation.get(boundedInvocation.invocation_id)
                   : undefined;
                 const evidencePreserved = Boolean(invocationEvidence);
+                const knowledgeDraft = invocationEvidence
+                  ? knowledgeDraftByEvidence.get(invocationEvidence.ingestion_id)
+                  : undefined;
+                const knowledgeDraftCreated = Boolean(knowledgeDraft);
                 return (
                   <tr key={instance.record_id}>
                     <td><strong>{instance.display_name}</strong><code>{instance.instance_key}</code></td>
@@ -2503,6 +2641,8 @@ export default function InstalledMcpManagementWorkspace({
                       }`}>
                         {instance.instance_state === "retired"
                           ? "Retired"
+                          : knowledgeDraftCreated
+                            ? "Enabled / knowledge draft"
                           : evidencePreserved
                             ? "Enabled / evidence preserved"
                           : capabilityInvoked
@@ -2533,6 +2673,8 @@ export default function InstalledMcpManagementWorkspace({
                       <span className="installed-mcp-event-label">
                         {instance.instance_state === "retired"
                           ? "Retired"
+                          : knowledgeDraft
+                            ? "Knowledge draft created"
                           : invocationEvidence
                             ? "Evidence preserved"
                           : boundedInvocation
@@ -2557,7 +2699,7 @@ export default function InstalledMcpManagementWorkspace({
                               ? "Target bound"
                               : "Created"}
                       </span>
-                      {new Date(invocationEvidence?.ingested_at ?? boundedInvocation?.completed_at ?? invocationAuthorization?.authorized_at ?? targetSessionVerification?.verified_at ?? runtimeActivation?.healthy_at ?? secretBrokerageAuthorization?.authorized_at ?? runtimeTrust?.granted_at ?? enablement?.enabled_at ?? validation?.validated_at ?? assignment?.assigned_at ?? binding?.bound_at ?? instance.retired_at ?? instance.created_at).toLocaleString()}
+                      {new Date(knowledgeDraft?.created_at ?? invocationEvidence?.ingested_at ?? boundedInvocation?.completed_at ?? invocationAuthorization?.authorized_at ?? targetSessionVerification?.verified_at ?? runtimeActivation?.healthy_at ?? secretBrokerageAuthorization?.authorized_at ?? runtimeTrust?.granted_at ?? enablement?.enabled_at ?? validation?.validated_at ?? assignment?.assigned_at ?? binding?.bound_at ?? instance.retired_at ?? instance.created_at).toLocaleString()}
                     </td>
                     <td>
                       {instance.instance_state === "disabled_unconfigured" &&
@@ -2729,6 +2871,23 @@ export default function InstalledMcpManagementWorkspace({
                             >
                               <Archive size={15} />
                               <span>{evidencePreserved ? "View evidence" : "Preserve evidence"}</span>
+                            </button>
+                          )}
+                          {invocationEvidence &&
+                            knowledgeDraftInventoryReady.has(invocationEvidence.ingestion_id) && (
+                            <button
+                              className="secondary-button installed-mcp-row-action"
+                              type="button"
+                              title={knowledgeDraft
+                                ? "View immutable unapproved knowledge draft metadata"
+                                : "Curate one immutable unapproved draft from preserved evidence"}
+                              aria-label={`${knowledgeDraft
+                                ? "View draft"
+                                : "Curate knowledge"} for ${instance.display_name}`}
+                              onClick={() => setCuratingKnowledge(instance)}
+                            >
+                              <BookMarked size={15} />
+                              <span>{knowledgeDraft ? "View draft" : "Curate knowledge"}</span>
                             </button>
                           )}
                           <button className="secondary-button installed-mcp-row-action" type="button" title="Review governed update evidence" aria-label={`Review update for ${instance.display_name}`} onClick={() => setReviewing(instance)}><ArrowUpCircle size={15} /><span>Review update</span></button>
@@ -3151,6 +3310,58 @@ export default function InstalledMcpManagementWorkspace({
               );
             }}
             onCancel={() => setPreservingInvocationEvidence(null)}
+            onRequestEnterpriseLogin={onRequestEnterpriseLogin}
+          />
+        );
+      })()}
+      {curatingKnowledge && (() => {
+        const binding = bindingByInstance.get(curatingKnowledge.record_id);
+        const assignment = binding
+          ? assignmentByBinding.get(binding.binding_id)
+          : undefined;
+        const validation = assignment
+          ? validationByAssignment.get(assignment.assignment_id)
+          : undefined;
+        const enablement = validation
+          ? enablementByValidation.get(validation.validation_id)
+          : undefined;
+        const runtimeTrust = enablement
+          ? runtimeTrustByEnablement.get(enablement.enablement_id)
+          : undefined;
+        const brokerage = runtimeTrust
+          ? secretBrokerageByRuntimeTrust.get(runtimeTrust.grant_id)
+          : undefined;
+        const activation = brokerage
+          ? runtimeActivationBySecretBrokerage.get(brokerage.authorization_id)
+          : undefined;
+        const targetSession = activation
+          ? targetSessionByRuntimeActivation.get(activation.activation_id)
+          : undefined;
+        const authorization = targetSession
+          ? invocationAuthorizationByTargetSession.get(targetSession.verification_id)
+          : undefined;
+        const invocation = authorization
+          ? boundedInvocationByAuthorization.get(authorization.authorization_id)
+          : undefined;
+        const evidence = invocation
+          ? invocationEvidenceByInvocation.get(invocation.invocation_id)
+          : undefined;
+        if (!evidence || !knowledgeDraftInventoryReady.has(evidence.ingestion_id)) return null;
+        return (
+          <EvidenceKnowledgeDraftDialog
+            evidence={evidence}
+            instance={curatingKnowledge}
+            sessionScopeKey={sessionScopeKey}
+            onDraftCreated={(draft) => {
+              queryClient.setQueryData<OperationalEvidenceKnowledgeDraftInventoryItem[]>(
+                operationalEvidenceKnowledgeDraftQueryKey(
+                  sessionScopeKey,
+                  evidence.ingestion_id,
+                ),
+                [draft],
+              );
+            }}
+            onCancel={() => setCuratingKnowledge(null)}
             onRequestEnterpriseLogin={onRequestEnterpriseLogin}
           />
         );

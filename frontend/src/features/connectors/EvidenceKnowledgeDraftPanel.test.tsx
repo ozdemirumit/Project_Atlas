@@ -1,142 +1,149 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { OperationalEvidenceKnowledgeDraft } from "../../api/evidenceDrafts";
-import type { ConnectorInvocationEvidence } from "../../api/invocationEvidence";
 import { EvidenceKnowledgeDraftPanel } from "./EvidenceKnowledgeDraftPanel";
+import {
+  evidenceKnowledgeDraftInventoryItem as draft,
+  evidenceKnowledgeDraftOption as option,
+} from "./testEvidenceDraftFixture";
+import { invocationEvidenceInventoryItem as evidence } from "./testInvocationEvidenceFixture";
 
-const policyDigest = "f2c502a3c820e5f239ac5230137bde9c4817957a340d44ad36e8fd4e880168e8";
-const evidence = {
-  ingestion_id: "connector-invocation-evidence-ingestion.test",
-  schema_version: "atlas.connector-invocation-evidence-ingestion.v1",
-  version: 1,
-  canonical_digest: "1".repeat(64),
-  organization_id: "organization.development",
-  environment_id: "environment.development",
-  source_invocation_id: "connector-bounded-invocation.test",
-  evidence_package_id: "connector-evidence-package.test",
-  evidence_content_digest: "2".repeat(64),
-  connector_id: "connector.test",
-  instance_id: "connector-instance.test",
-  capability_id: "capability.storage.health.read",
-  classification: "classification.internal",
-  access_policy_id: "connector-evidence-access.development-tenant",
-  retention_policy_id: "connector-evidence-retention.development-30-days",
-  encryption_profile_id: "connector-evidence-encryption.development",
-  instance_state: "enabled_invocation_evidence_ingested",
-  evidence_ingested: true,
-  immutable_storage_confirmed: true,
-  knowledge_item_created: false,
-  retrieval_published: false,
-} as unknown as ConnectorInvocationEvidence;
+const meta = {
+  correlation_id: "cor_evidence_draft_panel",
+  generated_at: "2026-08-25T00:00:08Z",
+};
 
-const draft = {
-  draft_id: "operational-evidence-knowledge-draft.test",
-  schema_version: "atlas.operational-evidence-knowledge-draft.v1",
-  version: 1,
-  source_ingestion_id: evidence.ingestion_id,
-  source_ingestion_digest: evidence.canonical_digest,
-  evidence_package_id: evidence.evidence_package_id,
-  evidence_content_digest: evidence.evidence_content_digest,
-  connector_id: evidence.connector_id,
-  instance_id: evidence.instance_id,
-  capability_id: evidence.capability_id,
-  knowledge_item_id: "knowledge-item.operational-evidence.test",
-  title: "Test connector storage health operational evidence",
-  draft_domain: "domain.operational",
-  source_authority: "source-authority.system-generated",
-  knowledge_lifecycle: "draft",
-  classification: evidence.classification,
-  access_policy_id: evidence.access_policy_id,
-  retention_policy_id: evidence.retention_policy_id,
-  encryption_profile_id: evidence.encryption_profile_id,
-  curation_policy_id: "operational-evidence-knowledge-draft-policy.development",
-  curation_policy_digest: policyDigest,
-  canonical_digest: "3".repeat(64),
-  instance_state: "draft_operational_knowledge_created",
-  evidence_ingested: true,
-  knowledge_item_created: true,
-  immutable_draft_confirmed: true,
-  encrypted_at_rest: true,
-  transient_buffers_erased: true,
-  artifact_channel_closed: true,
-  domain_review_completed: false,
-  security_review_completed: false,
-  knowledge_approved: false,
-  knowledge_published: false,
-  chunks_created: false,
-  embeddings_created: false,
-  retrieval_published: false,
-  model_context_available: false,
-  graph_updated: false,
-  scheduled: false,
-  workflow_continued: false,
-  execution_authorized: false,
-  deployment_approved: false,
-  infrastructure_mutation_performed: false,
-} as unknown as OperationalEvidenceKnowledgeDraft;
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify({ data, meta }), { status });
+}
 
-afterEach(() => vi.unstubAllGlobals());
+function renderPanel(onRequestEnterpriseLogin?: () => void) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <EvidenceKnowledgeDraftPanel
+        evidence={evidence}
+        onRequestEnterpriseLogin={onRequestEnterpriseLogin}
+        sessionScopeKey="test-session"
+      />
+    </QueryClientProvider>,
+  );
+}
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 describe("EvidenceKnowledgeDraftPanel", () => {
-  it("creates only a non-retrievable draft without content or publication controls", async () => {
-    document.cookie = "atlas_csrf=test-csrf; path=/";
-    const fetchMock = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(new Response(JSON.stringify({ data: draft }), { status: 201 }));
-    vi.stubGlobal("fetch", fetchMock);
-    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
-    render(
-      <QueryClientProvider client={client}>
-        <EvidenceKnowledgeDraftPanel evidence={evidence} />
-      </QueryClientProvider>,
-    );
+  it("shows loading and empty signed-option states without curation controls", async () => {
+    let releaseInventory: ((value: Response) => void) | undefined;
+    vi.spyOn(globalThis, "fetch")
+      .mockImplementationOnce(() => new Promise((resolve) => { releaseInventory = resolve; }))
+      .mockResolvedValueOnce(json([]));
+    renderPanel();
 
-    expect(
-      screen.queryByRole("textbox", {
-        name: /draft content|evidence content|title|classification|acl|retention|storage/i,
-      }),
-    ).toBeNull();
-    expect(screen.queryByRole("button", { name: /approve|publish|index|embed/i })).toBeNull();
+    expect(screen.getByText("Loading authoritative knowledge draft inventory...")).toBeVisible();
+    releaseInventory?.(json([]));
+    expect(await screen.findByText("No signed curation option is available")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Create knowledge draft" })).toBeNull();
+  });
+
+  it("creates one draft from a server option and exposes no later authority", async () => {
+    document.cookie = "atlas_csrf=test-csrf; path=/";
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      if (init?.method === "POST") return Promise.resolve(json(draft, 201));
+      if (url.includes("/options")) return Promise.resolve(json([option]));
+      return Promise.resolve(fetchMock.mock.calls.some((call) => call[1]?.method === "POST")
+        ? json([draft])
+        : json([]));
+    });
+    renderPanel();
+
+    expect(await screen.findByText(option.curation_policy_id)).toBeVisible();
+    expect(screen.getByText("single factor")).toBeVisible();
+    expect(screen.queryByRole("textbox", { name: /policy|digest|classification|acl|retention/i }))
+      .toBeNull();
     fireEvent.click(screen.getByLabelText(/result is an unapproved/i));
-    fireEvent.click(screen.getByRole("button", { name: "Create review draft" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create knowledge draft" }));
 
     expect(await screen.findByText(draft.title)).toBeVisible();
-    expect(screen.getAllByText("draft").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("pending")).toBeVisible();
     expect(screen.getByText("not published")).toBeVisible();
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
-    const init = fetchMock.mock.calls[0]?.[1];
-    const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as Record<
-      string,
-      unknown
-    >;
+    for (const authority of [/request review/i, /approve/i, /publish/i, /index/i, /embed/i,
+      /retrieve/i, /model context/i, /schedule/i, /workflow/i, /execute/i, /deploy/i, /mutate/i]) {
+      expect(screen.queryByRole("button", { name: authority })).toBeNull();
+    }
+    const post = fetchMock.mock.calls.find((call) => call[1]?.method === "POST");
+    expect(post).toBeDefined();
+    const body = JSON.parse(
+      typeof post?.[1]?.body === "string" ? post[1].body : "{}",
+    ) as unknown;
     expect(body).toEqual({
       schema_version: "atlas.operational-evidence-knowledge-draft-input.v1",
       source_ingestion_id: evidence.ingestion_id,
-      source_ingestion_digest: evidence.canonical_digest,
-      curation_policy_id: draft.curation_policy_id,
-      curation_policy_digest: policyDigest,
-      purpose: "Create a governed review-only draft from exact operational evidence.",
+      curation_option_id: option.curation_option_id,
+      purpose: "Create a governed unapproved draft from this exact immutable operational evidence.",
       acknowledged_result_is_an_unapproved_non_retrievable_draft: true,
     });
-    for (const forbidden of [
-      "evidence_content",
-      "draft_content",
-      "title",
-      "classification",
-      "acl_principals",
-      "retention_policy_id",
-      "storage_location",
-      "reviewer",
-      "approver",
-      "retrieval_published",
-      "model_context_available",
-      "workflow_continued",
-      "execution_authorized",
-    ])
-      expect(body).not.toHaveProperty(forbidden);
-    expect(new Headers(init?.headers).get("X-CSRF-Token")).toBe("test-csrf");
+  });
+
+  it.each([409, 422, 503])("permanently locks a failed %s POST and only reloads inventory", async (status) => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      if (init?.method === "POST") return Promise.resolve(new Response(null, { status }));
+      if (url.includes("/options")) return Promise.resolve(json([option]));
+      return Promise.resolve(json([]));
+    });
+    renderPanel();
+
+    await screen.findByText(option.curation_policy_id);
+    fireEvent.click(screen.getByLabelText(/result is an unapproved/i));
+    fireEvent.click(screen.getByRole("button", { name: "Create knowledge draft" }));
+    expect(await screen.findByText("Draft attempt requires inventory reconciliation")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Create knowledge draft" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Reload inventory" }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.filter((call) => call[1]?.method === "POST")).toHaveLength(1);
+    });
+  });
+
+  it("permanently locks a network-uncertain POST", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      if (init?.method === "POST") return Promise.reject(new TypeError("network unavailable"));
+      if (url.includes("/options")) return Promise.resolve(json([option]));
+      return Promise.resolve(json([]));
+    });
+    renderPanel();
+
+    await screen.findByText(option.curation_policy_id);
+    fireEvent.click(screen.getByLabelText(/result is an unapproved/i));
+    fireEvent.click(screen.getByRole("button", { name: "Create knowledge draft" }));
+    expect(await screen.findByText("Draft attempt requires inventory reconciliation")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Reload inventory" }));
+    expect(fetchMock.mock.calls.filter((call) => call[1]?.method === "POST")).toHaveLength(1);
+  });
+
+  it("uses username-password re-login language for 401", async () => {
+    const requestLogin = vi.fn();
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 401 }));
+    renderPanel(requestLogin);
+
+    expect(await screen.findByText(/username and password/i)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Sign in again" }));
+    expect(requestLogin).toHaveBeenCalledOnce();
+  });
+
+  it("shows a fail-closed scope message for 403", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 403 }));
+    renderPanel();
+
+    expect(await screen.findByText("Knowledge draft scope is required")).toBeVisible();
+    expect(screen.getByText(/cannot read or curate operational evidence drafts/i)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /reload|create|sign in/i })).toBeNull();
   });
 });

@@ -70,6 +70,11 @@ import {
   getConnectorInvocationEvidenceOptions,
 } from "../../api/invocationEvidence";
 import {
+  createOperationalEvidenceKnowledgeDraft,
+  getOperationalEvidenceKnowledgeDraftOptions,
+  getOperationalEvidenceKnowledgeDrafts,
+} from "../../api/evidenceDrafts";
+import {
   createConnectorRuntimeTrustGrant,
   getConnectorRuntimeTrustGrantOptions,
   getConnectorRuntimeTrustGrants,
@@ -131,6 +136,10 @@ import {
   invocationEvidenceInventoryItem,
   invocationEvidenceOption,
 } from "./testInvocationEvidenceFixture";
+import {
+  evidenceKnowledgeDraftInventoryItem,
+  evidenceKnowledgeDraftOption,
+} from "./testEvidenceDraftFixture";
 
 const policy: ConnectorInstanceCreationPolicy = {
   policy_id: "connector-instance-creation-policy.development",
@@ -945,6 +954,16 @@ vi.mock("../../api/invocationEvidence", async (importOriginal) => {
   };
 });
 
+vi.mock("../../api/evidenceDrafts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../api/evidenceDrafts")>();
+  return {
+    ...original,
+    createOperationalEvidenceKnowledgeDraft: vi.fn(),
+    getOperationalEvidenceKnowledgeDraftOptions: vi.fn(),
+    getOperationalEvidenceKnowledgeDrafts: vi.fn(),
+  };
+});
+
 vi.mock("../../api/connectorUpgradeReadiness", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/connectorUpgradeReadiness")>();
   return {
@@ -992,6 +1011,32 @@ function renderWorkspace(
   );
 }
 
+function primeOperationalEvidenceLifecycle() {
+  vi.mocked(getConnectorTargetConfigurations).mockResolvedValue([configuredBinding]);
+  vi.mocked(getConnectorCredentialAssignments).mockResolvedValue([credentialAssignment]);
+  vi.mocked(getConnectorConfigurationValidations).mockResolvedValue([configurationValidation]);
+  vi.mocked(getConnectorCapabilityEnablements).mockResolvedValue([
+    capabilityEnablementInventoryItem,
+  ]);
+  vi.mocked(getConnectorRuntimeTrustGrants).mockResolvedValue([runtimeTrustGrant]);
+  vi.mocked(getConnectorSecretBrokerageAuthorizations).mockResolvedValue([
+    secretBrokerageAuthorization,
+  ]);
+  vi.mocked(getConnectorRuntimeActivations).mockResolvedValue([runtimeActivationInventoryItem]);
+  vi.mocked(getConnectorTargetSessionVerifications).mockResolvedValue([
+    targetSessionVerificationInventoryItem,
+  ]);
+  vi.mocked(getConnectorInvocationAuthorizations).mockResolvedValue([
+    invocationAuthorizationInventoryItem,
+  ]);
+  vi.mocked(getConnectorBoundedInvocations).mockResolvedValue([
+    boundedInvocationInventoryItem,
+  ]);
+  vi.mocked(getConnectorInvocationEvidence).mockResolvedValue([
+    invocationEvidenceInventoryItem,
+  ]);
+}
+
 beforeEach(() => {
   vi.mocked(getConnectorPackageInstallations).mockResolvedValue([installation]);
   vi.mocked(getConnectorInstanceCreationPolicies).mockResolvedValue([policy]);
@@ -1036,6 +1081,11 @@ beforeEach(() => {
   vi.mocked(getConnectorInvocationEvidenceOptions).mockResolvedValue([]);
   vi.mocked(createConnectorInvocationEvidence).mockResolvedValue({
     data: invocationEvidenceInventoryItem,
+  });
+  vi.mocked(getOperationalEvidenceKnowledgeDrafts).mockResolvedValue([]);
+  vi.mocked(getOperationalEvidenceKnowledgeDraftOptions).mockResolvedValue([]);
+  vi.mocked(createOperationalEvidenceKnowledgeDraft).mockResolvedValue({
+    data: evidenceKnowledgeDraftInventoryItem,
   });
   vi.mocked(getConnectorUpgradeReadiness).mockResolvedValue(upgradeReadiness);
   vi.mocked(getConnectorUpgradePlan).mockResolvedValue(upgradePlan);
@@ -1894,8 +1944,11 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(screen.getByRole("button", {
       name: "View evidence for Storage East",
     })).toHaveTextContent("View evidence");
+    expect(await screen.findByRole("button", {
+      name: "Curate knowledge for Storage East",
+    })).toBeVisible();
     expect(screen.queryByRole("button", {
-      name: /knowledge|publish|schedule|workflow|execute|deploy|mutate/i,
+      name: /publish|schedule|workflow|execute|deploy|mutate/i,
     })).toBeNull();
   });
 
@@ -1939,6 +1992,70 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(within(dialog).queryByRole("button", {
       name: /^(preserve|retry|knowledge|publish|schedule|execute|deploy|mutate)/i,
     })).toBeNull();
+  });
+
+  it("curates preserved evidence into one draft and transitions to View draft", async () => {
+    primeOperationalEvidenceLifecycle();
+    vi.mocked(getOperationalEvidenceKnowledgeDrafts)
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([evidenceKnowledgeDraftInventoryItem]);
+    vi.mocked(getOperationalEvidenceKnowledgeDraftOptions).mockResolvedValue([
+      evidenceKnowledgeDraftOption,
+    ]);
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", {
+      name: "Curate knowledge for Storage East",
+    }));
+    const dialog = screen.getByRole("dialog", { name: "Curate knowledge for Storage East" });
+    expect(await within(dialog).findByText(evidenceKnowledgeDraftOption.curation_policy_id))
+      .toBeVisible();
+    expect(within(dialog).getByText("single factor")).toBeVisible();
+    expect(within(dialog).queryByRole("textbox", {
+      name: /policy|digest|classification|acl|retention/i,
+    })).toBeNull();
+    fireEvent.click(within(dialog).getByLabelText(/result is an unapproved/i));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Create knowledge draft" }));
+
+    await waitFor(() => expect(createOperationalEvidenceKnowledgeDraft).toHaveBeenCalledOnce());
+    expect(vi.mocked(createOperationalEvidenceKnowledgeDraft).mock.calls[0]?.[0]).toMatchObject({
+      evidence: invocationEvidenceInventoryItem,
+      option: evidenceKnowledgeDraftOption,
+    });
+    expect(await screen.findByText("Enabled / knowledge draft")).toBeVisible();
+    expect(screen.getByRole("button", { name: "View draft for Storage East" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "View evidence for Storage East" })).toBeVisible();
+    expect(within(dialog).queryByRole("button", {
+      name: /review|approve|publish|index|embed|retrieve|model|schedule|workflow|execute|deploy|mutate/i,
+    })).toBeNull();
+  });
+
+  it("restores an authoritative draft as minimized read-only metadata", async () => {
+    primeOperationalEvidenceLifecycle();
+    vi.mocked(getOperationalEvidenceKnowledgeDrafts).mockResolvedValue([
+      evidenceKnowledgeDraftInventoryItem,
+    ]);
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: "View draft for Storage East" }));
+    const dialog = screen.getByRole("dialog", { name: "Curate knowledge for Storage East" });
+    expect(within(dialog).getByText(evidenceKnowledgeDraftInventoryItem.title)).toBeVisible();
+    expect(within(dialog).getByText(evidenceKnowledgeDraftInventoryItem.draft_id)).toBeVisible();
+    expect(getOperationalEvidenceKnowledgeDraftOptions).not.toHaveBeenCalled();
+    expect(within(dialog).queryByRole("button", { name: "Create knowledge draft" })).toBeNull();
+  });
+
+  it("hides draft controls when authoritative draft inventory fails", async () => {
+    primeOperationalEvidenceLifecycle();
+    vi.mocked(getOperationalEvidenceKnowledgeDrafts).mockRejectedValue(
+      new ApiRequestError("Knowledge draft inventory unavailable", 422),
+    );
+    renderWorkspace();
+
+    expect(await screen.findByText("Knowledge draft inventory is unavailable")).toBeVisible();
+    expect(screen.getByText("Enabled / evidence preserved")).toBeVisible();
+    expect(screen.getByRole("button", { name: "View evidence for Storage East" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /knowledge|draft for Storage East/i })).toBeNull();
   });
 
   it("hides preservation controls when authoritative evidence inventory reload fails", async () => {
