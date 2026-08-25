@@ -149,6 +149,15 @@
   `SINGLE_FACTOR` assurance and the absence of review, publication, model, workflow, execution,
   deployment or infrastructure-mutation authority.
 
+### ATLAS-IMP-245 Delivery Evidence
+
+- Source commit `02f4f976636621ff183a0e4e571f155621c3f535` passed exact-head pull-request CI
+  run `32814594873`; frontend completed in 11m30s and backend in 38m29s.
+- [PR #259](https://github.com/ozdemirumit/Project_Atlas/pull/259) was squash-merged to `main` as
+  `0c4f1a26cfd417322592fd7b7cd16b461e03035b`.
+- The exact merge commit passed post-main CI run `32817372302`; frontend completed in 10m50s and
+  backend in 21m12s. IMP-246 began from that synchronized commit.
+
 ### ATLAS-IMP-244 Scope Rationale
 
 - IMP-243 atomically completes one exact bounded C0/C1 invocation and reloads minimized completion
