@@ -24,7 +24,12 @@ configuration change, job submission, or CLI operation is included.
 - Collection count, nesting depth, status fields, response shape, and target identifiers are bounded.
 - Unknown, empty, malformed, timeout, permission, throttle, and unavailable results remain distinct.
 - Tests use synthetic documentation-derived data only. No production data or credentials exist here.
-- There is no production HTTP adapter in this candidate.
+- The production HTTPS transport is endpoint-bound, blocks redirects, requires certificate and
+  hostname verification, and bounds request duration and response bytes.
+- The transport accepts only absolute same-origin paths and strict JSON-object responses.
+- A secret broker may provide a pre-authenticated Authorization header per request. The transport
+  does not persist, log, expose, or return that header.
+- Application wiring and credential brokerage remain deliberately separate from this candidate.
 
 ## Source Provenance
 
