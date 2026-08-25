@@ -42,6 +42,8 @@ class ConnectorInvocationEvidencePolicySource(Protocol):
 
 
 class ConnectorInvocationEvidenceAdapter(Protocol):
+    available: bool
+
     async def ingest(
         self, instruction: ConnectorInvocationEvidenceInstruction
     ) -> ConnectorInvocationEvidenceReceipt: ...

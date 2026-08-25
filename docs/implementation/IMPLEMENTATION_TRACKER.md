@@ -4,14 +4,103 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-243 |
-| Title | Installed MCP tenant-scoped bounded invocation inventory and server-provided signed options |
+| Task ID | ATLAS-IMP-244 |
+| Title | Installed MCP tenant-scoped invocation-evidence inventory and server-provided signed preservation options |
 | Status | Verification Complete |
-| Branch | `agent/installed-mcp-bounded-invocation-governance` |
+| Branch | `agent/installed-mcp-invocation-evidence-governance` |
 | Pull Request | Pending |
-| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-052, ADR-039, ADR-040, ADR-100, ADR-123, ADR-133 |
+| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-052, ADR-040, ADR-041, ADR-100, ADR-123, ADR-133 |
 | Last Updated | 2026-08-25 |
-| Next Action | Open the delivery pull request, require exact-head CI and merge only after both jobs pass |
+| Next Action | Commit the verified slice, open the pull request and complete exact-head plus post-main CI |
+
+### ATLAS-IMP-244 Scope Rationale
+
+- IMP-243 atomically completes one exact bounded C0/C1 invocation and reloads minimized completion
+  evidence in Installed MCPs, but operational evidence preservation remains a separate Builder-only
+  form with browser-entered policy identifiers and no tenant-scoped inventory or option discovery.
+- This slice atomically claims one exact successful invocation and preserves only its redacted,
+  schema-validated result as immutable operational evidence through the existing trusted boundary.
+- Knowledge-item creation, RAG publication, model context, graph updates, scheduling, workflow
+  continuation, execution, deployment and infrastructure mutation remain separate later actions.
+
+### ATLAS-IMP-244 Acceptance Criteria
+
+- Invocation-evidence claims, records and source reads use organization-and-environment-scoped
+  contracts; persistence uniqueness and idempotency coordinates remain tenant scoped.
+- Installed MCP rows expose `Preserve evidence` or `View evidence` only after authoritative bounded-
+  invocation and invocation-evidence inventory reads both succeed.
+- The browser selects only exact server-provided signed preservation options and cannot provide
+  policy identifiers or digests, classification, retention, ACL, encryption, storage coordinates,
+  raw invocation results, target data, secrets or mutable lineage values.
+- The server reloads and independently validates complete invocation lineage, exact C0/C1
+  permission, successful schema validation and cleanup, signed preservation policy, assurance,
+  separation of duty, tenant scope and freshness.
+- Claim creation remains the irreversible point of no return. Any existing claim suppresses new
+  options; timeout, cancellation, adapter failure or uncertain outcome never enables automatic or
+  user-controlled retry and always resolves through authoritative inventory reload.
+- Production remains fail closed without trusted policy and evidence adapters. Development uses
+  only deterministic synthetic evidence and performs no network, secret-store, filesystem,
+  process, vendor, model, deployment or infrastructure operation.
+- API and persistence projections exclude raw input/output, target coordinates, commands, secrets,
+  signatures, raw idempotency keys, request fingerprints and unrelated mutable lineage fields.
+- Successful evidence exposes only safe classification, retention, item/byte count, ingestion time
+  and digest metadata; knowledge, RAG, model, graph, scheduling, workflow, execution, deployment and
+  infrastructure-mutation flags remain false.
+- Normal username/password authentication satisfies the default `SINGLE_FACTOR` policy. No global
+  MFA requirement or second browser session is introduced.
+
+### ATLAS-IMP-244 Verification Plan
+
+- Focused backend tests will cover tenant isolation, same identifiers in separate tenants,
+  authoritative inventory/options, stale or mismatched policy rejection, exact permission and
+  assurance, separation of duty, claim suppression, idempotent replay, uncertain permanent
+  consumption and live PostgreSQL concurrency.
+- Focused frontend tests will cover exact-field fail-closed parsing, authoritative empty/error
+  refresh, server-option-only submission, `Preserve evidence` to `View evidence`, normal login and
+  absence of knowledge, scheduling, execution, deployment or mutation controls.
+- Regression checks will preserve bounded-invocation source contracts and the downstream evidence-
+  to-knowledge-draft boundary. Live API/browser verification will cover normal username/password
+  login, immutable reload, no-store payload minimization and desktop plus `390x844` behavior.
+
+### ATLAS-IMP-244 Verification Evidence
+
+- Focused backend invocation-evidence coverage passed with `16 passed, 1 skipped`; the skip was the
+  intentionally separate live PostgreSQL case. Ruff and MyPy checks over the changed backend
+  contracts passed without findings.
+- The live PostgreSQL tenant-isolation case passed with Windows' selector event-loop policy,
+  proving that identical identifiers remain isolated by organization and environment.
+- Focused frontend API, panel and Installed MCP workspace coverage passed with `88 passed`.
+  TypeScript project checking, changed-file ESLint and the production Vite build all passed.
+- Review regressions explicitly cover minimized POST output, unavailable-adapter rejection before
+  irreversible claim, permanent UI retry suppression after HTTP `503`, `409`, `422` and network
+  uncertainty, and exact `{data, meta}` response-envelope validation.
+- Live backend verification at `127.0.0.1:8063` reported `alive` and exposed both governed
+  invocation-evidence inventory and signed-options routes in OpenAPI. The live frontend at
+  `127.0.0.1:5224` accepted the normal `operator` username/password development identity, loaded
+  authoritative Installed MCP inventory, exposed evidence-preservation lifecycle coverage and
+  showed neither global MFA nor an authorized-browser-session requirement.
+- Independent read-only review found no P0-P3 issue. It confirmed tenant scoping, minimized API
+  projections, adapter fail-closed behavior, irreversible retry locking, exact response envelopes,
+  default `SINGLE_FACTOR` assurance and the absence of knowledge, workflow, execution, deployment
+  or infrastructure-mutation authority.
+
+### ATLAS-IMP-243 Delivery Evidence
+
+- Source commit `e0de1c1b3050687b145114f6628755d8ad01b555` passed exact-head pull-request CI run
+  `32789869409`; frontend completed in 11m37s and backend in 25m44s.
+- [PR #256](https://github.com/ozdemirumit/Project_Atlas/pull/256) was squash-merged to `main` as
+  `def33dd5a89a71fc689fa35f04cb81cb652122f9`.
+- Post-main CI run `32791762500` passed frontend but exposed a pre-existing one-second PostgreSQL
+  test-fixture timing race in the protected process-creation concurrency test on three attempts;
+  all other `52` live PostgreSQL tests, including IMP-243 coverage, passed on every attempt.
+- Test-only source commit `381ba6ddff07b12eaadb110e48325049132ba6c5` preserved the production
+  one-second policy while refreshing fixture evidence from authoritative PostgreSQL time. It passed
+  exact-head PR CI run `32794128351`; frontend completed in 11m49s and backend in 26m59s, including
+  the previously failing PostgreSQL integration step.
+- [PR #257](https://github.com/ozdemirumit/Project_Atlas/pull/257) was squash-merged to `main` as
+  `5a06af6c6f355be342868e8d8b4f97c6aa0ed17f`. The exact merge commit passed post-main CI run
+  `32795898087`; frontend completed in 7m20s and backend in 27m17s. IMP-244 began from that
+  synchronized commit.
 
 ### ATLAS-IMP-243 Scope Rationale
 

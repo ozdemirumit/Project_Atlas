@@ -93,6 +93,8 @@ class RecordingPermissionAuthorizer:
 
 
 class UncertainAdapter:
+    available = True
+
     def __init__(self) -> None:
         self.calls = 0
 
@@ -323,6 +325,30 @@ async def test_invocation_evidence_options_reject_stale_policy_and_production_fa
     ) == ()
     with pytest.raises(ConnectorInvocationEvidenceError, match="policy_not_found"):
         await ingest_evidence(closed_service, invocation, policy, actor=actor)
+
+    unavailable_repository = InMemoryConnectorInvocationEvidenceRepository()
+    unavailable_service = ConnectorInvocationEvidenceService(
+        repository=unavailable_repository,
+        source=source,
+        policy_source=InMemoryConnectorInvocationEvidencePolicySource((policy,)),
+        permission_authorizer=RecordingPermissionAuthorizer(),
+        adapter=UnavailableConnectorInvocationEvidenceAdapter(),
+        audit_sink=CollectingAuditSink(),
+        environment_id=invocation.environment_id,
+        clock=lambda: invocation.completed_at,
+    )
+    assert await unavailable_service.list_options(
+        actor=actor,
+        source_invocation_id=invocation.invocation_id,
+        correlation_id="cor_invocation_evidence_unavailable_options",
+    ) == ()
+    with pytest.raises(ConnectorInvocationEvidenceError, match="adapter_unavailable"):
+        await ingest_evidence(unavailable_service, invocation, policy, actor=actor)
+    assert await unavailable_repository.get_claim_by_invocation_in_scope(
+        source_invocation_id=invocation.invocation_id,
+        organization_id=invocation.organization_id,
+        environment_id=invocation.environment_id,
+    ) is None
 
 
 @pytest.mark.asyncio
@@ -977,7 +1003,8 @@ def test_invocation_evidence_api_forbids_content_and_returns_minimized_metadata(
     assert option["knowledge_item_created"] is False
     assert inventory_before.json()["data"] == []
     assert options_after.json()["data"] == []
-    assert inventory_after.json()["data"][0]["ingestion_id"] == ingestion_id
+    inventory = inventory_after.json()["data"][0]
+    assert inventory["ingestion_id"] == ingestion_id
     assert {
         created.headers["Cache-Control"],
         read.headers["Cache-Control"],
@@ -991,6 +1018,19 @@ def test_invocation_evidence_api_forbids_content_and_returns_minimized_metadata(
     assert data["immutable_storage_confirmed"] is True
     assert data["retrieval_published"] is False
     assert data["model_context_available"] is False
+    for hidden in (
+        "claim_id",
+        "organization_id",
+        "environment_id",
+        "connector_id",
+        "instance_id",
+        "access_policy_id",
+        "encryption_profile_id",
+        "ingestion_adapter_id",
+        "ingested_by",
+        "purpose",
+    ):
+        assert hidden not in data
     for hidden in (
         "evidence_content",
         "evidence_excerpt",
@@ -1009,6 +1049,28 @@ def test_invocation_evidence_api_forbids_content_and_returns_minimized_metadata(
     ):
         assert hidden not in data
         assert hidden not in option
+        assert hidden not in inventory
+    for hidden in (
+        "claim_id",
+        "organization_id",
+        "environment_id",
+        "connector_id",
+        "release_version",
+        "manifest_digest",
+        "instance_id",
+        "instance_key",
+        "display_name",
+        "output_schema_digest",
+        "result_policy_digest",
+        "access_policy_id",
+        "access_policy_digest",
+        "encryption_profile_id",
+        "encryption_profile_digest",
+        "ingestion_adapter_id",
+        "ingested_by",
+        "purpose",
+    ):
+        assert hidden not in inventory
     for hidden in (
         "access_policy_id",
         "access_policy_digest",

@@ -9,6 +9,8 @@ from atlas.api.errors import AtlasError
 from atlas.api.invocation_evidence_schemas import (
     ConnectorInvocationEvidenceData,
     ConnectorInvocationEvidenceInput,
+    ConnectorInvocationEvidenceInventoryData,
+    ConnectorInvocationEvidenceInventoryItemResponse,
     ConnectorInvocationEvidenceInventoryResponse,
     ConnectorInvocationEvidenceOptionData,
     ConnectorInvocationEvidenceOptionsResponse,
@@ -77,6 +79,20 @@ def _response(
     )
 
 
+def _inventory_response(
+    record: ConnectorInvocationEvidenceRecord,
+    request: Request,
+    response: Response,
+) -> ConnectorInvocationEvidenceInventoryItemResponse:
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorInvocationEvidenceInventoryItemResponse(
+        data=ConnectorInvocationEvidenceInventoryData.from_domain(record),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
 @router.get("", response_model=ConnectorInvocationEvidenceInventoryResponse)
 async def list_connector_invocation_evidence(
     request: Request,
@@ -98,7 +114,9 @@ async def list_connector_invocation_evidence(
         _raise(error)
     response.headers["Cache-Control"] = "no-store"
     return ConnectorInvocationEvidenceInventoryResponse(
-        data=tuple(ConnectorInvocationEvidenceData.from_domain(record) for record in records),
+        data=tuple(
+            ConnectorInvocationEvidenceInventoryData.from_domain(record) for record in records
+        ),
         meta=ResponseMeta(
             correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
         ),
@@ -135,7 +153,7 @@ async def list_connector_invocation_evidence_options(
     )
 
 
-@router.post("", response_model=ConnectorInvocationEvidenceResponse, status_code=201)
+@router.post("", response_model=ConnectorInvocationEvidenceInventoryItemResponse, status_code=201)
 async def create_connector_invocation_evidence(
     payload: ConnectorInvocationEvidenceInput,
     request: Request,
@@ -145,7 +163,7 @@ async def create_connector_invocation_evidence(
         AuthorizationDecision, Depends(authorize_connector_invocation_evidence_create)
     ],
     idempotency_key: Annotated[str, IDEMPOTENCY],
-) -> ConnectorInvocationEvidenceResponse:
+) -> ConnectorInvocationEvidenceInventoryItemResponse:
     service: ConnectorInvocationEvidenceService = request.app.state.invocation_evidence_service
     try:
         record = await service.create(
@@ -163,7 +181,7 @@ async def create_connector_invocation_evidence(
         )
     except ConnectorInvocationEvidenceError as error:
         _raise(error)
-    return _response(record, request, response)
+    return _inventory_response(record, request, response)
 
 
 @router.get("/{ingestion_id}", response_model=ConnectorInvocationEvidenceResponse)

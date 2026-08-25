@@ -17,6 +17,8 @@ from atlas.modules.connectors.domain.invocation_evidence import (
 
 
 class SyntheticConnectorInvocationEvidenceAdapter:
+    available = True
+
     def __init__(self, *, clock: Callable[[], datetime] | None = None) -> None:
         self._clock = clock or (lambda: datetime.now(UTC))
         self.calls: list[str] = []
@@ -81,6 +83,8 @@ class SyntheticConnectorInvocationEvidenceAdapter:
 
 
 class UnavailableConnectorInvocationEvidenceAdapter(ConnectorInvocationEvidenceAdapter):
+    available = False
+
     async def ingest(
         self, instruction: ConnectorInvocationEvidenceInstruction
     ) -> ConnectorInvocationEvidenceReceipt:

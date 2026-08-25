@@ -186,6 +186,8 @@ class ConnectorInvocationEvidenceService:
             environment_id=source.environment_id,
             correlation_id=correlation_id,
         )
+        if not self._adapter.available:
+            raise ConnectorInvocationEvidenceError("invocation_evidence_adapter_unavailable")
         seed = self._digest(
             [
                 source.organization_id,
@@ -442,6 +444,16 @@ class ConnectorInvocationEvidenceService:
         correlation_id: str,
     ) -> tuple[ConnectorInvocationEvidenceOption, ...]:
         self._require_enterprise_human(actor)
+        if not self._adapter.available:
+            await self._audit(
+                actor,
+                correlation_id,
+                "connector_invocation_evidence_options_listed",
+                source_invocation_id,
+                (("count", "0"),),
+                permission_id=INVOCATION_EVIDENCE_READ_PERMISSION,
+            )
+            return ()
         try:
             source, source_actors = await self._source.evidence_ingestion_source(
                 invocation_id=source_invocation_id,

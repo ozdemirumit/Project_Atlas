@@ -92,6 +92,10 @@ import {
   type ConnectorBoundedInvocationInventoryItem,
 } from "../../api/boundedInvocations";
 import {
+  getConnectorInvocationEvidence,
+  type ConnectorInvocationEvidenceInventoryItem,
+} from "../../api/invocationEvidence";
+import {
   getConnectorRuntimeTrustGrants,
   type ConnectorRuntimeTrustGrantInventoryItem,
 } from "../../api/runtimeTrustGrants";
@@ -121,6 +125,7 @@ import { TargetConfigurationPanel } from "./TargetConfigurationPanel";
 import { TargetSessionPanel } from "./TargetSessionPanel";
 import { InvocationAuthorizationPanel } from "./InvocationAuthorizationPanel";
 import { BoundedInvocationPanel } from "./BoundedInvocationPanel";
+import { InvocationEvidencePanel } from "./InvocationEvidencePanel";
 
 type LifecycleFilter = "active" | "retired" | "all";
 
@@ -913,6 +918,67 @@ function BoundedInvocationDialog({
   );
 }
 
+function InvocationEvidenceDialog({
+  invocation,
+  instance,
+  evidence,
+  onCancel,
+  onEvidenceCreated,
+  onRequestEnterpriseLogin,
+  sessionScopeKey,
+}: {
+  invocation: ConnectorBoundedInvocationInventoryItem;
+  instance: ConnectorInstanceRecord;
+  evidence?: ConnectorInvocationEvidenceInventoryItem;
+  onCancel: () => void;
+  onEvidenceCreated: (evidence: ConnectorInvocationEvidenceInventoryItem) => void;
+  onRequestEnterpriseLogin?: () => void;
+  sessionScopeKey: string;
+}) {
+  return (
+    <div className="installed-mcp-dialog-backdrop" role="presentation">
+      <section
+        className="installed-mcp-dialog invocation-evidence-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="invocation-evidence-mcp-title"
+      >
+        <header>
+          <div>
+            <p className="eyebrow">IMMUTABLE OPERATIONAL EVIDENCE</p>
+            <h3 id="invocation-evidence-mcp-title">
+              Manage invocation evidence for {instance.display_name}
+            </h3>
+          </div>
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Close invocation evidence"
+            onClick={onCancel}
+          >
+            <X size={17} />
+          </button>
+        </header>
+        <p className="muted-copy">
+          Atlas claims one exact completed invocation using only a server-provided signed option.
+          Preservation is one-way and creates no knowledge, scheduling, workflow, execution,
+          deployment or infrastructure mutation authority.
+        </p>
+        <InvocationEvidencePanel
+          invocation={invocation}
+          existingEvidence={evidence}
+          onEvidenceCreated={onEvidenceCreated}
+          onRequestEnterpriseLogin={onRequestEnterpriseLogin}
+          sessionScopeKey={sessionScopeKey}
+        />
+        <footer>
+          <button type="button" className="secondary-button" onClick={onCancel}>Close</button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
 function UpgradeCandidateCard({
   candidate,
   onReviewPlan,
@@ -1507,6 +1573,8 @@ export default function InstalledMcpManagementWorkspace({
     useState<ConnectorInstanceRecord | null>(null);
   const [invokingBounded, setInvokingBounded] =
     useState<ConnectorInstanceRecord | null>(null);
+  const [preservingInvocationEvidence, setPreservingInvocationEvidence] =
+    useState<ConnectorInstanceRecord | null>(null);
   const sessionScopeKey = JSON.stringify([subjectId, organizationId, environmentId]);
   const packageQuery = useQuery({
     queryKey: ["connector-package-installations", subjectId],
@@ -1590,6 +1658,22 @@ export default function InstalledMcpManagementWorkspace({
       ],
       queryFn: () => getConnectorBoundedInvocations({
         sourceAuthorizationId: authorization.authorization_id,
+      }),
+      enabled: Boolean(subjectId),
+    })),
+  });
+  const boundedInvocations = boundedInvocationQueries.flatMap((query) =>
+    query.isSuccess && query.data[0] ? [query.data[0]] : []
+  );
+  const invocationEvidenceQueries = useQueries({
+    queries: boundedInvocations.map((invocation) => ({
+      queryKey: [
+        "connector-invocation-evidence",
+        sessionScopeKey,
+        invocation.invocation_id,
+      ],
+      queryFn: () => getConnectorInvocationEvidence({
+        sourceInvocationId: invocation.invocation_id,
       }),
       enabled: Boolean(subjectId),
     })),
@@ -1727,6 +1811,25 @@ export default function InstalledMcpManagementWorkspace({
   const boundedInvocationQueryErrors = boundedInvocationQueries
     .map((query) => query.error)
     .filter((error) => error !== null);
+  const invocationEvidenceByInvocation = new Map(
+    invocationEvidenceQueries.flatMap((query, index) => {
+      if (!query.isSuccess) return [];
+      const invocation = boundedInvocations[index];
+      const evidence = query.data[0];
+      return invocation && evidence
+        ? [[invocation.invocation_id, evidence] as const]
+        : [];
+    }),
+  );
+  const invocationEvidenceInventoryReady = new Set(
+    invocationEvidenceQueries.flatMap((query, index) => {
+      const invocation = boundedInvocations[index];
+      return query.isSuccess && invocation ? [invocation.invocation_id] : [];
+    }),
+  );
+  const invocationEvidenceQueryErrors = invocationEvidenceQueries
+    .map((query) => query.error)
+    .filter((error) => error !== null);
   const packages = packageQuery.data ?? [];
   const policies = policyQuery.data ?? [];
   const activeCount = instances.filter(
@@ -1773,6 +1876,7 @@ export default function InstalledMcpManagementWorkspace({
     void targetSessionQuery.refetch();
     for (const query of invocationAuthorizationQueries) void query.refetch();
     for (const query of boundedInvocationQueries) void query.refetch();
+    for (const query of invocationEvidenceQueries) void query.refetch();
     void signingTrustQuery.refetch();
     void signingConformanceQuery.refetch();
     void signingOnboardingQuery.refetch();
@@ -2257,6 +2361,41 @@ export default function InstalledMcpManagementWorkspace({
           ) : null}
         </div>
       )}
+      {invocationEvidenceQueryErrors.length > 0 && (
+        <div className="installed-mcp-status error-state" role="alert">
+          {invocationEvidenceQueryErrors.some((error) => hasStatus(error, 401))
+            ? <LogIn size={18} />
+            : <AlertTriangle size={18} />}
+          <div>
+            <strong>
+              {invocationEvidenceQueryErrors.some((error) => hasStatus(error, 401))
+                ? "Your signed-in session has expired"
+                : invocationEvidenceQueryErrors.some((error) => hasStatus(error, 403))
+                  ? "Evidence-preservation permission is required"
+                  : "Invocation evidence inventory is unavailable"}
+            </strong>
+            <span>
+              Bounded invocation completion remains visible. Evidence state and preservation
+              controls stay hidden until exact authoritative inventory can be read.
+            </span>
+          </div>
+          {invocationEvidenceQueryErrors.some((error) => hasStatus(error, 401)) &&
+          onRequestEnterpriseLogin ? (
+            <button type="button" onClick={onRequestEnterpriseLogin}>
+              <LogIn size={15} /> Sign in again
+            </button>
+          ) : !invocationEvidenceQueryErrors.some((error) => hasStatus(error, 403)) ? (
+            <button
+              type="button"
+              onClick={() => {
+                for (const query of invocationEvidenceQueries) void query.refetch();
+              }}
+            >
+              <RefreshCw size={15} /> Reload inventory
+            </button>
+          ) : null}
+        </div>
+      )}
       {instanceQuery.isLoading && (
         <div className="installed-mcp-status" role="status"><RefreshCw className="spin" size={18} /><span>Loading MCP lifecycle inventory...</span></div>
       )}
@@ -2346,6 +2485,10 @@ export default function InstalledMcpManagementWorkspace({
                   )
                   : undefined;
                 const capabilityInvoked = Boolean(boundedInvocation);
+                const invocationEvidence = boundedInvocation
+                  ? invocationEvidenceByInvocation.get(boundedInvocation.invocation_id)
+                  : undefined;
+                const evidencePreserved = Boolean(invocationEvidence);
                 return (
                   <tr key={instance.record_id}>
                     <td><strong>{instance.display_name}</strong><code>{instance.instance_key}</code></td>
@@ -2354,12 +2497,14 @@ export default function InstalledMcpManagementWorkspace({
                       <span className={`state-badge ${
                         instance.instance_state === "retired"
                           ? "neutral"
-                          : capabilityInvoked || invocationAuthorized || targetSessionVerified || runtimeHealthy || secretBrokerageGoverned || runtimeTrusted || capabilitiesGoverned
+                          : evidencePreserved || capabilityInvoked || invocationAuthorized || targetSessionVerified || runtimeHealthy || secretBrokerageGoverned || runtimeTrusted || capabilitiesGoverned
                             ? "success"
                             : "pending"
                       }`}>
                         {instance.instance_state === "retired"
                           ? "Retired"
+                          : evidencePreserved
+                            ? "Enabled / evidence preserved"
                           : capabilityInvoked
                             ? "Enabled / capability invoked"
                           : invocationAuthorized
@@ -2388,6 +2533,8 @@ export default function InstalledMcpManagementWorkspace({
                       <span className="installed-mcp-event-label">
                         {instance.instance_state === "retired"
                           ? "Retired"
+                          : invocationEvidence
+                            ? "Evidence preserved"
                           : boundedInvocation
                             ? "Capability invoked"
                           : invocationAuthorization
@@ -2410,7 +2557,7 @@ export default function InstalledMcpManagementWorkspace({
                               ? "Target bound"
                               : "Created"}
                       </span>
-                      {new Date(boundedInvocation?.completed_at ?? invocationAuthorization?.authorized_at ?? targetSessionVerification?.verified_at ?? runtimeActivation?.healthy_at ?? secretBrokerageAuthorization?.authorized_at ?? runtimeTrust?.granted_at ?? enablement?.enabled_at ?? validation?.validated_at ?? assignment?.assigned_at ?? binding?.bound_at ?? instance.retired_at ?? instance.created_at).toLocaleString()}
+                      {new Date(invocationEvidence?.ingested_at ?? boundedInvocation?.completed_at ?? invocationAuthorization?.authorized_at ?? targetSessionVerification?.verified_at ?? runtimeActivation?.healthy_at ?? secretBrokerageAuthorization?.authorized_at ?? runtimeTrust?.granted_at ?? enablement?.enabled_at ?? validation?.validated_at ?? assignment?.assigned_at ?? binding?.bound_at ?? instance.retired_at ?? instance.created_at).toLocaleString()}
                     </td>
                     <td>
                       {instance.instance_state === "disabled_unconfigured" &&
@@ -2565,6 +2712,25 @@ export default function InstalledMcpManagementWorkspace({
                               <span>{capabilityInvoked ? "View invocation" : "Invoke once"}</span>
                             </button>
                           )}
+                          {boundedInvocation &&
+                            invocationEvidenceInventoryReady.has(
+                              boundedInvocation.invocation_id,
+                            ) && (
+                            <button
+                              className="secondary-button installed-mcp-row-action"
+                              type="button"
+                              title={evidencePreserved
+                                ? "View immutable invocation evidence"
+                                : "Preserve the exact governed invocation result as evidence"}
+                              aria-label={`${evidencePreserved
+                                ? "View evidence"
+                                : "Preserve evidence"} for ${instance.display_name}`}
+                              onClick={() => setPreservingInvocationEvidence(instance)}
+                            >
+                              <Archive size={15} />
+                              <span>{evidencePreserved ? "View evidence" : "Preserve evidence"}</span>
+                            </button>
+                          )}
                           <button className="secondary-button installed-mcp-row-action" type="button" title="Review governed update evidence" aria-label={`Review update for ${instance.display_name}`} onClick={() => setReviewing(instance)}><ArrowUpCircle size={15} /><span>Review update</span></button>
                           {!configured && !credentialsAssigned && (
                             <button className="secondary-button installed-mcp-row-action danger" type="button" title="Remove from active management and preserve history" aria-label={`Remove ${instance.display_name}`} onClick={() => { retireMutation.reset(); setRetiring(instance); }}><Archive size={15} /><span>Remove</span></button>
@@ -2579,7 +2745,7 @@ export default function InstalledMcpManagementWorkspace({
           </table>
         </div>
       ) : null}
-      <div className="installed-mcp-footnote"><span>{activeCount} active in this result</span><span>Lifecycle records and immutable bounded-invocation completion expose no secrets, commands, raw input or output. Invocation is single-use, validated, redacted and fully disconnected; Atlas grants no retry, evidence ingestion, scheduling, execution, deployment or infrastructure mutation authority. Updates remain review-only.</span></div>
+      <div className="installed-mcp-footnote"><span>{activeCount} active in this result</span><span>Lifecycle, bounded-invocation and immutable evidence records expose no secrets, commands, raw input or output. Preservation is one-way and grants no retry, knowledge publication, scheduling, workflow, execution, deployment or infrastructure mutation authority. Updates remain review-only.</span></div>
       {adding && <AddMcpDialog packages={packages} policies={policies} pending={createMutation.isPending} onCancel={() => setAdding(false)} onOpenBuilder={openBuilder} onSubmit={(input) => createMutation.mutate(input)} />}
       {retiring && <RetireMcpDialog instance={retiring} pending={retireMutation.isPending} onCancel={() => setRetiring(null)} onSubmit={(reason) => retireMutation.mutate({ instance: retiring, reason })} />}
       {reviewing && <UpgradeReadinessDialog instance={reviewing} subjectId={subjectId} onCancel={() => setReviewing(null)} />}
@@ -2934,6 +3100,57 @@ export default function InstalledMcpManagementWorkspace({
               );
             }}
             onCancel={() => setInvokingBounded(null)}
+            onRequestEnterpriseLogin={onRequestEnterpriseLogin}
+          />
+        );
+      })()}
+      {preservingInvocationEvidence && (() => {
+        const binding = bindingByInstance.get(preservingInvocationEvidence.record_id);
+        const assignment = binding
+          ? assignmentByBinding.get(binding.binding_id)
+          : undefined;
+        const validation = assignment
+          ? validationByAssignment.get(assignment.assignment_id)
+          : undefined;
+        const enablement = validation
+          ? enablementByValidation.get(validation.validation_id)
+          : undefined;
+        const runtimeTrust = enablement
+          ? runtimeTrustByEnablement.get(enablement.enablement_id)
+          : undefined;
+        const brokerage = runtimeTrust
+          ? secretBrokerageByRuntimeTrust.get(runtimeTrust.grant_id)
+          : undefined;
+        const activation = brokerage
+          ? runtimeActivationBySecretBrokerage.get(brokerage.authorization_id)
+          : undefined;
+        const targetSession = activation
+          ? targetSessionByRuntimeActivation.get(activation.activation_id)
+          : undefined;
+        const authorization = targetSession
+          ? invocationAuthorizationByTargetSession.get(targetSession.verification_id)
+          : undefined;
+        const invocation = authorization
+          ? boundedInvocationByAuthorization.get(authorization.authorization_id)
+          : undefined;
+        if (!invocation) return null;
+        return (
+          <InvocationEvidenceDialog
+            invocation={invocation}
+            instance={preservingInvocationEvidence}
+            evidence={invocationEvidenceByInvocation.get(invocation.invocation_id)}
+            sessionScopeKey={sessionScopeKey}
+            onEvidenceCreated={(evidence) => {
+              queryClient.setQueryData<ConnectorInvocationEvidenceInventoryItem[]>(
+                [
+                  "connector-invocation-evidence",
+                  sessionScopeKey,
+                  invocation.invocation_id,
+                ],
+                [evidence],
+              );
+            }}
+            onCancel={() => setPreservingInvocationEvidence(null)}
             onRequestEnterpriseLogin={onRequestEnterpriseLogin}
           />
         );
