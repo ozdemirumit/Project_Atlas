@@ -11,7 +11,7 @@
 | Pull Request | Pending |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-020, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-052, ADR-133 |
 | Last Updated | 2026-08-25 |
-| Next Action | Complete user-visible inventory edit/reactivate and MCP add/test/enable/disable/retire workflows with focused smoke verification |
+| Next Action | Complete real Hitachi target, credential-reference and read-only connection-test workflow, then scheduled health execution |
 
 ### ATLAS-IMP-248 Scope Rationale
 
@@ -46,6 +46,29 @@
   `atlas-demo` / `local-demo` username/password session. One device was added, edited, retired and
   reactivated successfully. The stable device key remained immutable and each lifecycle result was
   visible immediately in the registry without a second browser authorization or MFA step.
+
+### ATLAS-IMP-248 MCP Operator Verification
+
+- Installed MCPs now separates the concise operator inventory from Builder and advanced governance.
+  Each active instance exposes one visible next action and an eight-step progress summary.
+- A development-only bundled catalog exposes Hitachi Ops Center as the first directly addable MCP.
+  Live validation created a `disabled_unconfigured` Hitachi instance from the normal username/password
+  session and immediately displayed `Configure target` as its next action.
+- Runtime deactivation is now a first-class lifecycle record and UI action. It revokes Atlas runtime
+  and target authority without contacting or mutating managed infrastructure. Reactivation of a
+  deactivated activation is not falsely offered until an explicit reactivation contract exists.
+- The responsive Installed MCP view was changed from a horizontally clipped table to a compact
+  operator record at narrow desktop and mobile widths; the next action and retirement command remain
+  visible without horizontal scrolling.
+- Focused verification passed: `34 passed, 1 skipped` for bundled catalog/runtime backend tests and
+  `9 passed` for affected frontend API/workspace scenarios; Ruff, strict MyPy, TypeScript and focused
+  ESLint passed. Live catalog creation and responsive browser smoke validation also passed.
+- Live validation found one remaining blocking workflow gap: the legacy signed target-option service
+  returns `404` for bundled catalog lineage. The next batch replaces that unreachable path for bundled
+  connectors with a direct, bounded Hitachi target, credential-reference and read-only connection-test
+  vertical rather than extending the synthetic package-governance chain.
+- Current estimate after this batch: approximately 45 percent of the user-visible MVP and 20-25
+  percent of the complete long-term product vision. These are scope estimates, not line-count metrics.
 
 ### Deferred Until MVP Completion
 
