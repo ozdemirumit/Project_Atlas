@@ -10,8 +10,10 @@ from atlas.modules.connectors.vendors.hitachi_ops_center.client import (
 )
 from atlas.modules.connectors.vendors.hitachi_ops_center.domain import (
     HealthSeverity,
+    HitachiCapacityResult,
     HitachiComponentHealth,
     HitachiHealthResult,
+    HitachiPoolCapacity,
 )
 from atlas.modules.health_checks.application.ports import HealthCheckExecutionResult
 from atlas.modules.health_checks.domain.models import (
@@ -26,6 +28,8 @@ from atlas.modules.health_checks.domain.models import (
 
 CONTROLLER_DEFINITION_ID = "health-check.storage.controller-status"
 CONTROLLER_CAPABILITY_ID = "hitachi.opscenter.storage.hardware.read"
+CAPACITY_DEFINITION_ID = "health-check.storage.capacity-utilization"
+CAPACITY_CAPABILITY_ID = "hitachi.opscenter.storage.capacity.read"
 
 _SAFE_CONNECTOR_ERROR_CODES = frozenset(
     {
@@ -306,3 +310,218 @@ class HitachiControllerHealthExecutor:
 
     def _completed_at(self, started_at: datetime) -> datetime:
         return max(self._clock(), started_at)
+
+
+class HitachiCapacityHealthExecutor:
+    """Executes bounded, read-only pool-capacity reads for allowlisted arrays."""
+
+    def __init__(
+        self,
+        *,
+        client: HitachiOpsCenterClient,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        self._client = client
+        self._clock = clock or (lambda: datetime.now(UTC))
+
+    async def execute(
+        self, definition: HealthCheckDefinition, *, started_at: datetime
+    ) -> HealthCheckExecutionResult:
+        if (
+            definition.definition_id != CAPACITY_DEFINITION_ID
+            or definition.capability_id != CAPACITY_CAPABILITY_ID
+        ):
+            raise ValueError("unsupported Hitachi capacity-check definition")
+        if definition.limits.max_steps < 2 or definition.limits.max_evidence_records < 2:
+            return self._failed(
+                definition,
+                started_at,
+                "The definition budget cannot contain inventory and capacity reads.",
+                "Pool capacity is unknown because the definition budget is insufficient.",
+            )
+
+        try:
+            inventory = await self._client.read_inventory()
+        except HitachiConnectorError as exc:
+            return self._failed(
+                definition,
+                started_at,
+                HitachiControllerHealthExecutor._connector_failure_reason(exc),
+                "Pool capacity is unknown because storage inventory could not be read.",
+                step_count=1,
+            )
+
+        evidence = [
+            HitachiControllerHealthExecutor._evidence(
+                reference=reference,
+                observed_at=inventory.observed_at,
+                definition=definition,
+                kind="inventory",
+            )
+            for reference in inventory.evidence_references
+        ]
+        if len(evidence) > definition.limits.max_evidence_records:
+            return self._failed(
+                definition,
+                started_at,
+                "The inventory evidence exceeded the definition budget.",
+                "Pool capacity is unknown because the bounded result was rejected.",
+                step_count=1,
+            )
+
+        step_count = 1
+        observations: list[HealthObservation] = []
+        findings: list[HealthCheckFinding] = []
+        partial_reasons: list[str] = []
+        unknowns: list[str] = []
+        successful_reads = 0
+        target_budget = min(
+            definition.limits.max_targets,
+            definition.limits.max_steps - step_count,
+            definition.limits.max_evidence_records - len(evidence),
+        )
+        selected_arrays = inventory.arrays[:target_budget]
+        if len(inventory.arrays) > target_budget:
+            partial_reasons.append(
+                "Additional allowlisted arrays were omitted by the definition target "
+                "or read budget."
+            )
+            unknowns.append("Capacity is unknown for arrays outside the bounded execution set.")
+        if not inventory.arrays:
+            partial_reasons.append("No allowlisted storage arrays were returned by inventory.")
+            unknowns.append("No pool capacity could be evaluated.")
+
+        for array in selected_arrays:
+            step_count += 1
+            try:
+                capacity = await self._client.read_pool_capacity(array.storage_device_id)
+            except HitachiConnectorError as exc:
+                partial_reasons.append(
+                    HitachiControllerHealthExecutor._connector_failure_reason(exc)
+                )
+                unknowns.append("Pool capacity is unknown for an allowlisted storage array.")
+                continue
+            if len(evidence) + len(capacity.evidence_references) > (
+                definition.limits.max_evidence_records
+            ):
+                partial_reasons.append(
+                    "A capacity evidence set exceeded the remaining definition budget."
+                )
+                unknowns.append("Pool capacity was omitted because its evidence was incomplete.")
+                continue
+
+            capacity_evidence = tuple(
+                HitachiControllerHealthExecutor._evidence(
+                    reference=reference,
+                    observed_at=capacity.observed_at,
+                    definition=definition,
+                    kind="pool-capacity",
+                )
+                for reference in capacity.evidence_references
+            )
+            evidence.extend(capacity_evidence)
+            successful_reads += 1
+            mapped_observations, mapped_findings = self._map_capacity(
+                definition=definition,
+                capacity=capacity,
+                evidence_references=tuple(item.reference for item in capacity_evidence),
+            )
+            observations.extend(mapped_observations)
+            findings.extend(mapped_findings)
+            if not capacity.pools:
+                partial_reasons.append("The allowlisted storage array returned no pools.")
+                unknowns.append("No pool utilization could be evaluated for one storage array.")
+
+        if successful_reads == 0:
+            state = HealthCheckRunState.FAILED if inventory.arrays else HealthCheckRunState.PARTIAL
+        elif partial_reasons:
+            state = HealthCheckRunState.PARTIAL
+        else:
+            state = HealthCheckRunState.COMPLETED
+        return HealthCheckExecutionResult(
+            state=state,
+            completed_at=max(self._clock(), started_at),
+            step_count=step_count,
+            observations=tuple(observations),
+            findings=tuple(findings),
+            evidence=tuple(evidence),
+            partial_reasons=tuple(dict.fromkeys(partial_reasons)),
+            unknowns=tuple(dict.fromkeys(unknowns)),
+        )
+
+    @classmethod
+    def _map_capacity(
+        cls,
+        *,
+        definition: HealthCheckDefinition,
+        capacity: HitachiCapacityResult,
+        evidence_references: tuple[str, ...],
+    ) -> tuple[list[HealthObservation], list[HealthCheckFinding]]:
+        observations: list[HealthObservation] = []
+        findings: list[HealthCheckFinding] = []
+        for pool in capacity.pools:
+            state = cls._pool_state(pool)
+            identity = HitachiControllerHealthExecutor._identity(
+                capacity.storage_device_id, str(pool.pool_id)
+            )
+            observation_id = f"observation.hitachi.capacity.{identity}"
+            observations.append(
+                HealthObservation(
+                    observation_id=observation_id,
+                    target_id=f"{definition.target_id}/{capacity.storage_device_id}",
+                    component=f"pool:{pool.pool_id}:{pool.pool_name}",
+                    metric="pool.utilization",
+                    value=str(pool.used_capacity_rate),
+                    unit="percent",
+                    state=state,
+                    observed_at=capacity.observed_at,
+                    freshness=FreshnessState.CURRENT,
+                    evidence_references=evidence_references,
+                )
+            )
+            if state is ObservationState.NORMAL:
+                continue
+            findings.append(
+                HealthCheckFinding(
+                    finding_id=f"finding.hitachi.capacity.{identity}",
+                    severity=state,
+                    title="Hitachi pool capacity requires attention",
+                    summary=(
+                        f"Pool utilization is {pool.used_capacity_rate} percent; the configured "
+                        f"warning and depletion thresholds are {pool.warning_threshold} and "
+                        f"{pool.depletion_threshold} percent."
+                    ),
+                    observation_ids=(observation_id,),
+                    evidence_references=evidence_references,
+                )
+            )
+        return observations, findings
+
+    @staticmethod
+    def _pool_state(pool: HitachiPoolCapacity) -> ObservationState:
+        if pool.used_capacity_rate >= pool.depletion_threshold:
+            return ObservationState.CRITICAL
+        if pool.used_capacity_rate >= pool.warning_threshold:
+            return ObservationState.WARNING
+        return ObservationState.NORMAL
+
+    def _failed(
+        self,
+        definition: HealthCheckDefinition,
+        started_at: datetime,
+        reason: str,
+        unknown: str,
+        *,
+        step_count: int = 0,
+    ) -> HealthCheckExecutionResult:
+        del definition
+        return HealthCheckExecutionResult(
+            state=HealthCheckRunState.FAILED,
+            completed_at=max(self._clock(), started_at),
+            step_count=step_count,
+            observations=(),
+            findings=(),
+            evidence=(),
+            partial_reasons=(reason,),
+            unknowns=(unknown,),
+        )

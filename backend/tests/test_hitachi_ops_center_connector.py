@@ -43,6 +43,7 @@ VERSION_PATH = "/configuration/version"
 INVENTORY_PATH = "/v1/objects/storages"
 STORAGE_DEVICE_ID = "836000123456"
 HEALTH_PATH = f"/v1/objects/storages/{STORAGE_DEVICE_ID}/components/instance"
+CAPACITY_PATH = f"/v1/objects/storages/{STORAGE_DEVICE_ID}/pools"
 
 
 class CollectingAuditSink:
@@ -219,6 +220,69 @@ async def test_empty_health_is_unknown_not_success() -> None:
     assert result.overall_severity is HealthSeverity.UNKNOWN
     assert result.components == ()
     assert result.warnings == ("no_supported_component_status_returned",)
+
+
+@pytest.mark.asyncio
+async def test_pool_capacity_uses_view_only_endpoint_and_vendor_thresholds() -> None:
+    transport = SyntheticHitachiTransport(
+        {
+            CAPACITY_PATH: SyntheticHitachiResponse(
+                payload={
+                    "data": [
+                        {
+                            "poolId": 5,
+                            "poolName": "Production",
+                            "usedCapacityRate": 78,
+                            "warningThreshold": 75,
+                            "depletionThreshold": 90,
+                            "availableVolumeCapacity": 32042850,
+                        }
+                    ]
+                }
+            )
+        }
+    )
+    connector = HitachiOpsCenterClient(
+        transport=transport,
+        allowed_storage_device_ids=frozenset({STORAGE_DEVICE_ID}),
+        clock=lambda: NOW,
+    )
+
+    result = await connector.read_pool_capacity(STORAGE_DEVICE_ID)
+
+    assert transport.requests == [CAPACITY_PATH]
+    assert result.evidence_references[0].startswith(
+        f"hitachi-ops-center://capacity/{STORAGE_DEVICE_ID}#sha256:"
+    )
+    assert result.pools[0].used_capacity_rate == 78
+    assert result.pools[0].warning_threshold == 75
+    assert result.pools[0].depletion_threshold == 90
+
+
+@pytest.mark.asyncio
+async def test_malformed_pool_capacity_is_rejected() -> None:
+    connector = client(
+        {
+            CAPACITY_PATH: SyntheticHitachiResponse(
+                payload={
+                    "data": [
+                        {
+                            "poolId": 5,
+                            "poolName": "Production",
+                            "usedCapacityRate": 101,
+                            "warningThreshold": 75,
+                            "depletionThreshold": 90,
+                        }
+                    ]
+                }
+            )
+        }
+    )
+
+    with pytest.raises(HitachiConnectorError) as error:
+        await connector.read_pool_capacity(STORAGE_DEVICE_ID)
+
+    assert error.value.code == "malformed_vendor_response"
 
 
 @pytest.mark.asyncio

@@ -4,14 +4,27 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-249 |
-| Title | Operator-managed credential references and read-only MCP runtime control |
+| Task ID | ATLAS-IMP-250 |
+| Title | Real Hitachi pool-capacity health checks |
 | Status | Review |
-| Branch | `agent/mvp-credential-enable-disable` |
+| Branch | `agent/mvp-hitachi-capacity` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-020, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-052, ADR-133 |
 | Last Updated | 2026-08-25 |
-| Next Action | Persist operator connector state and continue the real Hitachi read-only health vertical |
+| Next Action | Persist operator connector state and remove remaining process-local MVP state |
+
+### ATLAS-IMP-250 Scope and Verification
+
+- The configured Hitachi MCP now reads allowlisted pool capacity through the documented read-only
+  `GET /v1/objects/storages/{storageDeviceId}/pools` endpoint.
+- Pool utilization is evaluated against each pool's vendor-reported warning and depletion thresholds.
+  Atlas retains normalized observations, findings and digest-only evidence, never raw responses or
+  credentials.
+- Development no longer seeds a synthetic capacity result. Controller and capacity checks both require
+  the exact current MCP configuration to be enabled read-only before contacting infrastructure.
+- Focused verification passed: `39` connector, executor and Health API tests. Ruff formatting/lint and
+  strict MyPy across all `1500` configured source files also passed.
+- Full regression remains a CI merge gate; no unrelated test expansion was added.
 
 ### ATLAS-IMP-249 Scope and Verification
 

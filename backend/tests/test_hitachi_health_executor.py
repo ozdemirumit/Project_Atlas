@@ -11,7 +11,10 @@ from atlas.modules.connectors.vendors.hitachi_ops_center.synthetic import (
     SyntheticHitachiResponse,
     SyntheticHitachiTransport,
 )
-from atlas.modules.health_checks.adapters.hitachi import HitachiControllerHealthExecutor
+from atlas.modules.health_checks.adapters.hitachi import (
+    HitachiCapacityHealthExecutor,
+    HitachiControllerHealthExecutor,
+)
 from atlas.modules.health_checks.adapters.synthetic import (
     CAPACITY_DEFINITION_ID,
     build_synthetic_health_check_definitions,
@@ -29,6 +32,7 @@ STORAGE_B = "A34000800556"
 INVENTORY_PATH = "/v1/objects/storages"
 HEALTH_A_PATH = f"/v1/objects/storages/{STORAGE_A}/components/instance"
 HEALTH_B_PATH = f"/v1/objects/storages/{STORAGE_B}/components/instance"
+CAPACITY_A_PATH = f"/v1/objects/storages/{STORAGE_A}/pools"
 ALLOWED_STORAGE_IDS = frozenset({STORAGE_A, STORAGE_B})
 
 
@@ -265,3 +269,59 @@ async def test_rejects_capacity_definition_without_contacting_target() -> None:
         await health_executor.execute(capacity, started_at=NOW)
 
     assert transport.requests == []
+
+
+@pytest.mark.asyncio
+async def test_capacity_executor_maps_vendor_pool_thresholds() -> None:
+    transport = SyntheticHitachiTransport(
+        {
+            INVENTORY_PATH: SyntheticHitachiResponse(
+                payload={
+                    "data": [{"storageDeviceId": STORAGE_A, "model": "VSP G400", "serialNumber": 1}]
+                }
+            ),
+            CAPACITY_A_PATH: SyntheticHitachiResponse(
+                payload={
+                    "data": [
+                        {
+                            "poolId": 5,
+                            "poolName": "Production",
+                            "usedCapacityRate": 78,
+                            "warningThreshold": 75,
+                            "depletionThreshold": 90,
+                        },
+                        {
+                            "poolId": 6,
+                            "poolName": "Critical",
+                            "usedCapacityRate": 94,
+                            "warningThreshold": 75,
+                            "depletionThreshold": 90,
+                        },
+                    ]
+                }
+            ),
+        }
+    )
+    client = HitachiOpsCenterClient(
+        transport=transport,
+        allowed_storage_device_ids=frozenset({STORAGE_A}),
+        clock=lambda: NOW,
+    )
+    capacity = replace(
+        build_synthetic_health_check_definitions(
+            organization_id="organization.test", environment="lab", anchor_at=NOW
+        )[1],
+        connector_id="connector.hitachi.opscenter.configuration-manager",
+    )
+
+    result = await HitachiCapacityHealthExecutor(client=client, clock=lambda: NOW).execute(
+        capacity, started_at=NOW
+    )
+
+    assert transport.requests == [INVENTORY_PATH, CAPACITY_A_PATH]
+    assert result.state is HealthCheckRunState.COMPLETED
+    assert [item.state for item in result.observations] == [
+        ObservationState.WARNING,
+        ObservationState.CRITICAL,
+    ]
+    assert len(result.findings) == 2
