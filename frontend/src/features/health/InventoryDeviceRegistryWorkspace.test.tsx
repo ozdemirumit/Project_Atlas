@@ -1,11 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   createInventoryDevice,
   getInventoryDevices,
+  reactivateInventoryDevice,
   retireInventoryDevice,
+  updateInventoryDevice,
   type InventoryDevice,
 } from "../../api/inventoryDevices";
 import { ApiRequestError } from "../../api/client";
@@ -17,7 +19,9 @@ vi.mock("../../api/inventoryDevices", async (importOriginal) => {
     ...original,
     createInventoryDevice: vi.fn(),
     getInventoryDevices: vi.fn(),
+    reactivateInventoryDevice: vi.fn(),
     retireInventoryDevice: vi.fn(),
+    updateInventoryDevice: vi.fn(),
   };
 });
 
@@ -76,6 +80,11 @@ beforeEach(() => {
     truncated: false,
   });
   vi.mocked(createInventoryDevice).mockResolvedValue(device);
+  vi.mocked(updateInventoryDevice).mockResolvedValue({
+    ...device,
+    version: 2,
+    display_name: "Primary Production VSP",
+  });
   vi.mocked(retireInventoryDevice).mockResolvedValue({
     ...device,
     version: 2,
@@ -84,6 +93,7 @@ beforeEach(() => {
     retired_at: "2026-08-11T12:10:00Z",
     retirement_reason: "The governed decommissioning workflow has completed.",
   });
+  vi.mocked(reactivateInventoryDevice).mockResolvedValue({ ...device, version: 3 });
 });
 
 afterEach(() => {
@@ -92,19 +102,78 @@ afterEach(() => {
 });
 
 describe("InventoryDeviceRegistryWorkspace", () => {
-  it("lists authorized devices and exposes create and reversible retirement controls", async () => {
+  it("lists authorized devices and exposes edit and retirement controls", async () => {
     renderWorkspace();
 
     expect(await screen.findByRole("heading", { name: "Registered infrastructure" })).toBeVisible();
     expect(await screen.findByText("Primary VSP")).toBeVisible();
     expect(screen.getByText("Durable store")).toBeVisible();
     expect(screen.getByRole("button", { name: "Add device" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Edit Primary VSP" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Retire Primary VSP" })).toBeVisible();
     expect(screen.getByRole("columnheader", { name: "Manage" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Retire Primary VSP" })).toHaveTextContent(
       "Retire",
     );
     expect(screen.queryByRole("button", { name: /delete/i })).toBeNull();
+  });
+
+  it("edits mutable device details and returns focus after Escape", async () => {
+    renderWorkspace();
+    const editButton = await screen.findByRole("button", { name: "Edit Primary VSP" });
+    editButton.focus();
+    fireEvent.click(editButton);
+
+    const dialog = screen.getByRole("dialog", { name: "Edit Primary VSP" });
+    expect(dialog).toBeVisible();
+    expect(screen.getByLabelText("Display name")).toHaveFocus();
+    expect(screen.getByLabelText("Device key")).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Display name"), {
+      target: { value: "Primary Production VSP" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(updateInventoryDevice).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(updateInventoryDevice).mock.calls[0]?.[0].device).toEqual(device);
+    expect(
+      vi.mocked(updateInventoryDevice).mock.calls[0]?.[0].changes.displayName,
+    ).toBe("Primary Production VSP");
+    expect(await screen.findByText("Primary Production VSP was updated.")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Primary VSP" }));
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Edit Primary VSP" }), {
+      key: "Escape",
+    });
+    expect(screen.queryByRole("dialog", { name: "Edit Primary VSP" })).toBeNull();
+    expect(editButton).toHaveFocus();
+  });
+
+  it("reactivates a retired device through a concise version-bound confirmation", async () => {
+    const retired = {
+      ...device,
+      version: 2,
+      lifecycle: "retired" as const,
+      retired_by: "subject.test",
+      retired_at: "2026-08-11T12:10:00Z",
+      retirement_reason: "The governed decommissioning workflow has completed.",
+    };
+    vi.mocked(getInventoryDevices).mockResolvedValue({
+      devices: [retired],
+      durable: true,
+      truncated: false,
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Reactivate Primary VSP" }));
+    const dialog = screen.getByRole("dialog", { name: "Reactivate Primary VSP" });
+    expect(within(dialog).queryByRole("checkbox")).toBeNull();
+    expect(within(dialog).queryByRole("textbox")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Reactivate device" }));
+
+    await waitFor(() => expect(reactivateInventoryDevice).toHaveBeenCalledWith({ device: retired }));
+    expect(
+      await screen.findByText("Primary VSP returned to active inventory."),
+    ).toBeVisible();
   });
 
   it("requires complete device data and the no-action acknowledgement before registration", async () => {
@@ -197,6 +266,7 @@ describe("InventoryDeviceRegistryWorkspace", () => {
     expect(screen.queryByText(/authorized browser session|MFA|second login/i)).toBeNull();
     expect(await screen.findByText("Primary VSP")).toBeVisible();
     expect(screen.getByRole("button", { name: "Add device" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Edit Primary VSP" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Retire Primary VSP" })).toBeDisabled();
 
     fireEvent.click(screen.getByRole("button", { name: "Sign in to manage" }));

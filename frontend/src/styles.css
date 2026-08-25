@@ -11701,7 +11701,7 @@ tbody tr.selected {
 
 .inventory-device-table th:last-child,
 .inventory-device-table td:last-child {
-  width: 112px;
+  width: 180px;
   text-align: left;
 }
 
@@ -11774,8 +11774,23 @@ tbody tr.selected {
   font-weight: 740;
 }
 
+.inventory-device-row-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .inventory-device-row-action:hover {
+  border-color: #79a494;
+  color: #245e4d;
+  background: #f1f8f5;
+}
+
+.inventory-device-row-action.retirement-action:hover {
   border-color: #b89b6b;
+  color: #6e5b3d;
   background: #fffaf0;
 }
 
@@ -11927,6 +11942,31 @@ tbody tr.selected {
   border-left: 3px solid #a87942;
   color: #5f513f;
   background: #fff9ef;
+}
+
+.inventory-device-reactivation-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 12px;
+  border-left: 3px solid #4f806f;
+  color: #35584d;
+  background: #f1f8f5;
+}
+
+.inventory-device-reactivation-summary svg {
+  flex: 0 0 auto;
+}
+
+.inventory-device-reactivation-summary p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.inventory-device-form-grid small {
+  color: #697872;
+  font-size: 10px;
+  font-weight: 500;
 }
 
 .inventory-device-retirement-impact svg {

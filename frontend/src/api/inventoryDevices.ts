@@ -62,6 +62,16 @@ export type InventoryDeviceCreateInput = {
   purpose: string;
 };
 
+export type InventoryDeviceUpdateInput = {
+  displayName: string;
+  deviceType: InventoryDeviceType;
+  vendor: string;
+  model: string;
+  serialNumber: string;
+  managementAddress: string;
+  purpose: string;
+};
+
 const deviceTypes = new Set<InventoryDeviceType>([
   "storage",
   "san_switch",
@@ -293,4 +303,100 @@ export async function retireInventoryDevice(input: {
     throw new ApiRequestError("Inventory device retirement response was not bound", 500);
   }
   return retired;
+}
+
+export async function updateInventoryDevice(input: {
+  device: InventoryDevice;
+  changes: InventoryDeviceUpdateInput;
+}): Promise<InventoryDevice> {
+  const expected = {
+    display_name: input.changes.displayName.trim(),
+    device_type: input.changes.deviceType,
+    vendor: input.changes.vendor.trim(),
+    model: input.changes.model.trim(),
+    serial_number: input.changes.serialNumber.trim() || null,
+    management_address: input.changes.managementAddress.trim().toLowerCase() || null,
+    purpose: input.changes.purpose.trim(),
+  };
+  const response = await apiFetch(
+    `/api/v1/inventory/devices/${encodeURIComponent(input.device.device_id)}`,
+    {
+      method: "PATCH",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        schema_version: "atlas.inventory-device-update-input.v1",
+        expected_version: input.device.version,
+        ...expected,
+      }),
+    },
+  );
+  if (!response.ok) throw new ApiRequestError("Inventory device update failed", response.status);
+  const updated = readDeviceResponse(await response.json());
+  if (
+    updated.device_id !== input.device.device_id ||
+    updated.device_key !== input.device.device_key ||
+    updated.organization_id !== input.device.organization_id ||
+    updated.environment_id !== input.device.environment_id ||
+    updated.site_id !== input.device.site_id ||
+    updated.version !== input.device.version + 1 ||
+    updated.lifecycle !== "active" ||
+    updated.display_name !== expected.display_name ||
+    updated.device_type !== expected.device_type ||
+    updated.vendor !== expected.vendor ||
+    updated.model !== expected.model ||
+    updated.serial_number !== expected.serial_number ||
+    updated.management_address !== expected.management_address ||
+    updated.purpose !== expected.purpose
+  ) {
+    throw new ApiRequestError("Inventory device update response was not bound", 500);
+  }
+  return updated;
+}
+
+export async function reactivateInventoryDevice(input: {
+  device: InventoryDevice;
+}): Promise<InventoryDevice> {
+  const response = await apiFetch(
+    `/api/v1/inventory/devices/${encodeURIComponent(input.device.device_id)}/reactivations`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "Idempotency-Key": `inventory-device-reactivate.${crypto.randomUUID()}`,
+      },
+      body: JSON.stringify({
+        schema_version: "atlas.inventory-device-reactivation-input.v1",
+        expected_version: input.device.version,
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new ApiRequestError("Inventory device reactivation failed", response.status);
+  }
+  const reactivated = readDeviceResponse(await response.json());
+  if (
+    reactivated.device_id !== input.device.device_id ||
+    reactivated.device_key !== input.device.device_key ||
+    reactivated.organization_id !== input.device.organization_id ||
+    reactivated.environment_id !== input.device.environment_id ||
+    reactivated.site_id !== input.device.site_id ||
+    reactivated.version !== input.device.version + 1 ||
+    reactivated.lifecycle !== "active" ||
+    reactivated.display_name !== input.device.display_name ||
+    reactivated.device_type !== input.device.device_type ||
+    reactivated.vendor !== input.device.vendor ||
+    reactivated.model !== input.device.model ||
+    reactivated.serial_number !== input.device.serial_number ||
+    reactivated.management_address !== input.device.management_address ||
+    reactivated.purpose !== input.device.purpose ||
+    reactivated.created_by !== input.device.created_by ||
+    reactivated.created_at !== input.device.created_at
+  ) {
+    throw new ApiRequestError("Inventory device reactivation response was not bound", 500);
+  }
+  return reactivated;
 }

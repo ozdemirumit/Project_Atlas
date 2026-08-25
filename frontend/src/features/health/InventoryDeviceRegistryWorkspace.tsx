@@ -6,24 +6,35 @@ import {
   Clock3,
   Database,
   LogIn,
+  Pencil,
   Plus,
   RefreshCw,
+  RotateCcw,
   Search,
   Server,
   ShieldCheck,
   X,
 } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import {
   createInventoryDevice,
   getInventoryDevices,
+  reactivateInventoryDevice,
   retireInventoryDevice,
+  updateInventoryDevice,
   type InventoryDevice,
   type InventoryDeviceCreateInput,
   type InventoryDeviceLifecycle,
   type InventoryDeviceScope,
   type InventoryDeviceType,
+  type InventoryDeviceUpdateInput,
 } from "../../api/inventoryDevices";
 import { ApiRequestError } from "../../api/client";
 
@@ -44,6 +55,53 @@ function formatTimestamp(value: string): string {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function useAccessibleDialog(
+  onCancel: () => void,
+  returnFocusTo: HTMLElement | null,
+) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    const firstControl =
+      dialog?.querySelector<HTMLElement>("[data-autofocus]") ??
+      dialog?.querySelector<HTMLElement>(
+        "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])",
+      );
+    firstControl?.focus();
+    return () => returnFocusTo?.focus();
+  }, [returnFocusTo]);
+
+  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onCancel();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const focusable = Array.from(
+      event.currentTarget.querySelectorAll<HTMLElement>(
+        "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
+      ),
+    );
+    if (focusable.length === 0) {
+      event.preventDefault();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first?.focus();
+    }
+  }
+
+  return { dialogRef, handleKeyDown };
 }
 
 function DeviceCreateDialog({
@@ -217,6 +275,206 @@ function DeviceRetireDialog({
   );
 }
 
+function DeviceEditDialog({
+  device,
+  pending,
+  returnFocusTo,
+  onCancel,
+  onSubmit,
+}: {
+  device: InventoryDevice;
+  pending: boolean;
+  returnFocusTo: HTMLElement | null;
+  onCancel: () => void;
+  onSubmit: (changes: InventoryDeviceUpdateInput) => void;
+}) {
+  const [displayName, setDisplayName] = useState(device.display_name);
+  const [deviceType, setDeviceType] = useState<InventoryDeviceType>(device.device_type);
+  const [vendor, setVendor] = useState(device.vendor);
+  const [model, setModel] = useState(device.model);
+  const [serialNumber, setSerialNumber] = useState(device.serial_number ?? "");
+  const [managementAddress, setManagementAddress] = useState(
+    device.management_address ?? "",
+  );
+  const [purpose, setPurpose] = useState(device.purpose);
+  const { dialogRef, handleKeyDown } = useAccessibleDialog(onCancel, returnFocusTo);
+  const valid =
+    displayName.trim().length >= 3 &&
+    vendor.trim().length >= 2 &&
+    model.trim().length >= 1 &&
+    purpose.trim().length >= 20;
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!valid || pending) return;
+    onSubmit({
+      displayName,
+      deviceType,
+      vendor,
+      model,
+      serialNumber,
+      managementAddress,
+      purpose,
+    });
+  }
+
+  return (
+    <div
+      ref={dialogRef}
+      className="inventory-device-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="edit-device-title"
+      onKeyDown={handleKeyDown}
+    >
+      <form onSubmit={submit}>
+        <div className="inventory-device-dialog-heading">
+          <div>
+            <p className="eyebrow">DEVICE DETAILS</p>
+            <h3 id="edit-device-title">Edit {device.display_name}</h3>
+          </div>
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Close edit device"
+            onClick={onCancel}
+          >
+            <X size={17} />
+          </button>
+        </div>
+        <div className="inventory-device-form-grid">
+          <label>
+            Device key
+            <input
+              aria-label="Device key"
+              value={device.device_key}
+              disabled
+              aria-describedby="device-key-note"
+            />
+            <small id="device-key-note">The stable device key cannot be changed.</small>
+          </label>
+          <label>
+            Display name
+            <input
+              data-autofocus
+              required
+              value={displayName}
+              maxLength={160}
+              onChange={(event) => setDisplayName(event.target.value)}
+            />
+          </label>
+          <label>
+            Device type
+            <select
+              value={deviceType}
+              onChange={(event) => setDeviceType(event.target.value as InventoryDeviceType)}
+            >
+              {Object.entries(DEVICE_TYPE_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Vendor
+            <input required value={vendor} maxLength={120} onChange={(event) => setVendor(event.target.value)} />
+          </label>
+          <label>
+            Model
+            <input required value={model} maxLength={160} onChange={(event) => setModel(event.target.value)} />
+          </label>
+          <label>
+            Serial number
+            <input value={serialNumber} maxLength={160} onChange={(event) => setSerialNumber(event.target.value)} />
+          </label>
+          <label className="inventory-device-form-wide">
+            Management address
+            <input
+              value={managementAddress}
+              maxLength={253}
+              pattern={"[A-Za-z0-9][A-Za-z0-9.:\\-]{0,252}"}
+              onChange={(event) => setManagementAddress(event.target.value)}
+            />
+          </label>
+          <label className="inventory-device-form-wide">
+            Inventory purpose
+            <textarea required value={purpose} minLength={20} maxLength={1000} rows={3} onChange={(event) => setPurpose(event.target.value)} />
+          </label>
+        </div>
+        <div className="inventory-device-dialog-actions">
+          <button type="button" disabled={pending} onClick={onCancel}>Cancel</button>
+          <button className="inventory-device-primary" type="submit" disabled={!valid || pending}>
+            {pending ? <Clock3 size={15} /> : <Pencil size={15} />} Save changes
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function DeviceReactivateDialog({
+  device,
+  pending,
+  returnFocusTo,
+  onCancel,
+  onSubmit,
+}: {
+  device: InventoryDevice;
+  pending: boolean;
+  returnFocusTo: HTMLElement | null;
+  onCancel: () => void;
+  onSubmit: () => void;
+}) {
+  const { dialogRef, handleKeyDown } = useAccessibleDialog(onCancel, returnFocusTo);
+
+  return (
+    <div
+      ref={dialogRef}
+      className="inventory-device-dialog retirement"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="reactivate-device-title"
+      onKeyDown={handleKeyDown}
+    >
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!pending) onSubmit();
+        }}
+      >
+        <div className="inventory-device-dialog-heading">
+          <div>
+            <p className="eyebrow">LIFECYCLE CHANGE</p>
+            <h3 id="reactivate-device-title">Reactivate {device.display_name}</h3>
+          </div>
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Close reactivate device"
+            onClick={onCancel}
+          >
+            <X size={17} />
+          </button>
+        </div>
+        <div className="inventory-device-reactivation-summary">
+          <RotateCcw size={18} />
+          <p>This returns the existing record to active inventory. Its history is preserved.</p>
+        </div>
+        <div className="inventory-device-dialog-actions">
+          <button type="button" disabled={pending} onClick={onCancel}>Cancel</button>
+          <button
+            data-autofocus
+            className="inventory-device-primary"
+            type="submit"
+            disabled={pending}
+          >
+            {pending ? <Clock3 size={15} /> : <RotateCcw size={15} />} Reactivate device
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 export default function InventoryDeviceRegistryWorkspace({
   environmentId,
   governedSessionAvailable = true,
@@ -234,7 +492,10 @@ export default function InventoryDeviceRegistryWorkspace({
   const [lifecycle, setLifecycle] = useState<LifecycleFilter>("active");
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<InventoryDevice | null>(null);
   const [retiring, setRetiring] = useState<InventoryDevice | null>(null);
+  const [reactivating, setReactivating] = useState<InventoryDevice | null>(null);
+  const [dialogTrigger, setDialogTrigger] = useState<HTMLElement | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const scope: InventoryDeviceScope = { organizationId, environmentId, siteId };
   const inventoryQuery = useQuery({
@@ -264,9 +525,36 @@ export default function InventoryDeviceRegistryWorkspace({
       await refresh();
     },
   });
+  const updateMutation = useMutation({
+    mutationFn: ({
+      device,
+      changes,
+    }: {
+      device: InventoryDevice;
+      changes: InventoryDeviceUpdateInput;
+    }) => updateInventoryDevice({ device, changes }),
+    onSuccess: async (updatedDevice) => {
+      setEditing(null);
+      setSuccessMessage(`${updatedDevice.display_name} was updated.`);
+      await refresh();
+    },
+  });
+  const reactivateMutation = useMutation({
+    mutationFn: (device: InventoryDevice) => reactivateInventoryDevice({ device }),
+    onSuccess: async (reactivatedDevice) => {
+      setReactivating(null);
+      setLifecycle("active");
+      setSuccessMessage(`${reactivatedDevice.display_name} returned to active inventory.`);
+      await refresh();
+    },
+  });
   const inventory = inventoryQuery.data;
   const activeCount = inventory?.devices.filter((item) => item.lifecycle === "active").length ?? 0;
-  const lifecycleError = createMutation.error ?? retireMutation.error;
+  const lifecycleError =
+    createMutation.error ??
+    updateMutation.error ??
+    retireMutation.error ??
+    reactivateMutation.error;
   const lifecycleAccessDenied =
     lifecycleError instanceof ApiRequestError &&
     (lifecycleError.status === 401 || lifecycleError.status === 403);
@@ -356,7 +644,9 @@ export default function InventoryDeviceRegistryWorkspace({
         </div>
       )}
       {createMutation.isError && !lifecycleAccessDenied && <div className="inventory-device-status error-state" role="alert"><AlertTriangle size={17} /> Device registration failed. Review the scope and unique device key.</div>}
+      {updateMutation.isError && !lifecycleAccessDenied && <div className="inventory-device-status error-state" role="alert"><AlertTriangle size={17} /> Device update failed. Refresh and review the current version.</div>}
       {retireMutation.isError && !lifecycleAccessDenied && <div className="inventory-device-status error-state" role="alert"><AlertTriangle size={17} /> Device retirement failed. Refresh and review the current version.</div>}
+      {reactivateMutation.isError && !lifecycleAccessDenied && <div className="inventory-device-status error-state" role="alert"><AlertTriangle size={17} /> Device reactivation failed. Refresh and review the current version.</div>}
       {successMessage && (
         <div className="inventory-device-status success-state" role="status" aria-live="polite">
           <CheckCircle2 size={17} /> {successMessage}
@@ -395,26 +685,60 @@ export default function InventoryDeviceRegistryWorkspace({
                   <td data-label="Updated">{formatTimestamp(device.updated_at)}</td>
                   <td data-label="Manage">
                     {device.lifecycle === "active" ? (
-                      <button
-                        className="inventory-device-row-action"
-                        type="button"
-                        disabled={!governedSessionAvailable}
-                        title={
-                          governedSessionAvailable
-                            ? "Remove from active inventory and preserve audit history"
-                            : "Sign in to manage devices"
-                        }
-                        aria-label={`Retire ${device.display_name}`}
-                        onClick={() => {
-                          retireMutation.reset();
-                          setSuccessMessage(null);
-                          setRetiring(device);
-                        }}
-                      >
-                        <Archive size={15} /> Retire
-                      </button>
+                      <div className="inventory-device-row-actions">
+                        <button
+                          className="inventory-device-row-action"
+                          type="button"
+                          disabled={!governedSessionAvailable}
+                          title={governedSessionAvailable ? "Edit device details" : "Sign in to manage devices"}
+                          aria-label={`Edit ${device.display_name}`}
+                          onClick={(event) => {
+                            updateMutation.reset();
+                            setSuccessMessage(null);
+                            setDialogTrigger(event.currentTarget);
+                            setEditing(device);
+                          }}
+                        >
+                          <Pencil size={15} /> Edit
+                        </button>
+                        <button
+                          className="inventory-device-row-action retirement-action"
+                          type="button"
+                          disabled={!governedSessionAvailable}
+                          title={
+                            governedSessionAvailable
+                              ? "Remove from active inventory and preserve audit history"
+                              : "Sign in to manage devices"
+                          }
+                          aria-label={`Retire ${device.display_name}`}
+                          onClick={() => {
+                            retireMutation.reset();
+                            setSuccessMessage(null);
+                            setRetiring(device);
+                          }}
+                        >
+                          <Archive size={15} /> Retire
+                        </button>
+                      </div>
                     ) : (
-                      <span className="inventory-device-retired-label">History retained</span>
+                      <div className="inventory-device-row-actions">
+                        <button
+                          className="inventory-device-row-action"
+                          type="button"
+                          disabled={!governedSessionAvailable}
+                          title={governedSessionAvailable ? "Return to active inventory" : "Sign in to manage devices"}
+                          aria-label={`Reactivate ${device.display_name}`}
+                          onClick={(event) => {
+                            reactivateMutation.reset();
+                            setSuccessMessage(null);
+                            setDialogTrigger(event.currentTarget);
+                            setReactivating(device);
+                          }}
+                        >
+                          <RotateCcw size={15} /> Reactivate
+                        </button>
+                        <span className="inventory-device-retired-label">History retained</span>
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -427,11 +751,29 @@ export default function InventoryDeviceRegistryWorkspace({
       {inventory && (
         <div className="inventory-device-boundary">
           <ShieldCheck size={15} />
-          <span>{activeCount} active in this result. Registration and retirement do not execute infrastructure changes.</span>
+          <span>{activeCount} active in this result. Inventory lifecycle changes do not execute infrastructure actions.</span>
         </div>
       )}
       {creating && <DeviceCreateDialog pending={createMutation.isPending} onCancel={() => setCreating(false)} onSubmit={(input) => createMutation.mutate(input)} />}
+      {editing && (
+        <DeviceEditDialog
+          device={editing}
+          pending={updateMutation.isPending}
+          returnFocusTo={dialogTrigger}
+          onCancel={() => setEditing(null)}
+          onSubmit={(changes) => updateMutation.mutate({ device: editing, changes })}
+        />
+      )}
       {retiring && <DeviceRetireDialog device={retiring} pending={retireMutation.isPending} onCancel={() => setRetiring(null)} onSubmit={(reason) => retireMutation.mutate({ device: retiring, reason })} />}
+      {reactivating && (
+        <DeviceReactivateDialog
+          device={reactivating}
+          pending={reactivateMutation.isPending}
+          returnFocusTo={dialogTrigger}
+          onCancel={() => setReactivating(null)}
+          onSubmit={() => reactivateMutation.mutate(reactivating)}
+        />
+      )}
     </section>
   );
 }
