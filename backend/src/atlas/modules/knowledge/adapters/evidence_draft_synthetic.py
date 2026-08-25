@@ -35,6 +35,8 @@ def _digest(value: object) -> str:
 
 
 class SyntheticOperationalEvidenceKnowledgeDraftAdapter(OperationalEvidenceKnowledgeDraftAdapter):
+    available = True
+
     def __init__(self, *, clock: Callable[[], datetime] | None = None) -> None:
         self._clock = clock or (lambda: datetime.now(UTC))
         self.calls: list[OperationalEvidenceKnowledgeDraftInstruction] = []
@@ -102,6 +104,8 @@ class SyntheticOperationalEvidenceKnowledgeDraftAdapter(OperationalEvidenceKnowl
 
 
 class UnavailableOperationalEvidenceKnowledgeDraftAdapter(OperationalEvidenceKnowledgeDraftAdapter):
+    available = False
+
     async def create_draft(
         self, instruction: OperationalEvidenceKnowledgeDraftInstruction
     ) -> OperationalEvidenceKnowledgeDraftReceipt:

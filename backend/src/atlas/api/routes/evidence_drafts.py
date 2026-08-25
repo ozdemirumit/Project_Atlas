@@ -3,12 +3,17 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated, NoReturn
 
-from fastapi import APIRouter, Depends, Header, Path, Request, Response
+from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response
 
 from atlas.api.errors import AtlasError
 from atlas.api.evidence_draft_schemas import (
     OperationalEvidenceKnowledgeDraftData,
     OperationalEvidenceKnowledgeDraftInput,
+    OperationalEvidenceKnowledgeDraftInventoryData,
+    OperationalEvidenceKnowledgeDraftInventoryItemResponse,
+    OperationalEvidenceKnowledgeDraftInventoryResponse,
+    OperationalEvidenceKnowledgeDraftOptionData,
+    OperationalEvidenceKnowledgeDraftOptionsResponse,
     OperationalEvidenceKnowledgeDraftResponse,
 )
 from atlas.api.schemas import ResponseMeta
@@ -34,6 +39,7 @@ router = APIRouter(prefix="/knowledge/operational-evidence-drafts", tags=["knowl
 IDEMPOTENCY = Header(
     alias="Idempotency-Key", min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$"
 )
+STABLE_ID = r"^[a-z][a-z0-9_.:-]{2,127}$"
 
 
 def _raise(error: OperationalEvidenceKnowledgeDraftError) -> NoReturn:
@@ -73,7 +79,90 @@ def _response(
     )
 
 
-@router.post("", response_model=OperationalEvidenceKnowledgeDraftResponse, status_code=201)
+def _inventory_response(
+    record: OperationalEvidenceKnowledgeDraftRecord,
+    request: Request,
+    response: Response,
+) -> OperationalEvidenceKnowledgeDraftInventoryItemResponse:
+    response.headers["Cache-Control"] = "no-store"
+    return OperationalEvidenceKnowledgeDraftInventoryItemResponse(
+        data=OperationalEvidenceKnowledgeDraftInventoryData.from_domain(record),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.get("", response_model=OperationalEvidenceKnowledgeDraftInventoryResponse)
+async def list_operational_evidence_knowledge_drafts(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_operational_evidence_knowledge_draft_read),
+    ],
+    source_ingestion_id: Annotated[str | None, Query(pattern=STABLE_ID)] = None,
+) -> OperationalEvidenceKnowledgeDraftInventoryResponse:
+    service: OperationalEvidenceKnowledgeDraftService = (
+        request.app.state.operational_evidence_knowledge_draft_service
+    )
+    try:
+        records = await service.list_drafts(
+            actor=subject,
+            source_ingestion_id=source_ingestion_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except OperationalEvidenceKnowledgeDraftError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return OperationalEvidenceKnowledgeDraftInventoryResponse(
+        data=tuple(
+            OperationalEvidenceKnowledgeDraftInventoryData.from_domain(record) for record in records
+        ),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.get("/options", response_model=OperationalEvidenceKnowledgeDraftOptionsResponse)
+async def list_operational_evidence_knowledge_draft_options(
+    source_ingestion_id: Annotated[str, Query(pattern=STABLE_ID)],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_operational_evidence_knowledge_draft_read),
+    ],
+) -> OperationalEvidenceKnowledgeDraftOptionsResponse:
+    service: OperationalEvidenceKnowledgeDraftService = (
+        request.app.state.operational_evidence_knowledge_draft_service
+    )
+    try:
+        options = await service.list_options(
+            actor=subject,
+            source_ingestion_id=source_ingestion_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except OperationalEvidenceKnowledgeDraftError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return OperationalEvidenceKnowledgeDraftOptionsResponse(
+        data=tuple(
+            OperationalEvidenceKnowledgeDraftOptionData.from_application(option)
+            for option in options
+        ),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.post(
+    "", response_model=OperationalEvidenceKnowledgeDraftInventoryItemResponse, status_code=201
+)
 async def create_operational_evidence_knowledge_draft(
     payload: OperationalEvidenceKnowledgeDraftInput,
     request: Request,
@@ -84,7 +173,7 @@ async def create_operational_evidence_knowledge_draft(
         Depends(authorize_operational_evidence_knowledge_draft_create),
     ],
     idempotency_key: Annotated[str, IDEMPOTENCY],
-) -> OperationalEvidenceKnowledgeDraftResponse:
+) -> OperationalEvidenceKnowledgeDraftInventoryItemResponse:
     service: OperationalEvidenceKnowledgeDraftService = (
         request.app.state.operational_evidence_knowledge_draft_service
     )
@@ -92,9 +181,7 @@ async def create_operational_evidence_knowledge_draft(
         record = await service.create(
             actor=subject,
             source_ingestion_id=payload.source_ingestion_id,
-            source_ingestion_digest=payload.source_ingestion_digest,
-            curation_policy_id=payload.curation_policy_id,
-            curation_policy_digest=payload.curation_policy_digest,
+            curation_option_id=payload.curation_option_id,
             purpose=payload.purpose,
             unapproved_non_retrievable_draft_acknowledged=(
                 payload.acknowledged_result_is_an_unapproved_non_retrievable_draft
@@ -104,12 +191,12 @@ async def create_operational_evidence_knowledge_draft(
         )
     except OperationalEvidenceKnowledgeDraftError as error:
         _raise(error)
-    return _response(record, request, response)
+    return _inventory_response(record, request, response)
 
 
 @router.get("/{draft_id}", response_model=OperationalEvidenceKnowledgeDraftResponse)
 async def get_operational_evidence_knowledge_draft(
-    draft_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    draft_id: Annotated[str, Path(pattern=STABLE_ID)],
     request: Request,
     response: Response,
     subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
