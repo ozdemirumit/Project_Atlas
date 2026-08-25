@@ -1508,6 +1508,14 @@ describe("Atlas application shell", () => {
     expect(await screen.findByRole("heading", { name: "Installed MCPs" })).toBeVisible();
     expect(window.location.hash).toBe("#/connectors/inventory");
     expect(screen.queryByLabelText("Health inventory and evidence")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "OpenAPI source analysis" })).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: "Builder" }));
+    expect(await screen.findByRole("heading", { name: "OpenAPI source analysis" })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Installed MCPs" })).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: "Runtime" }));
+    expect(await screen.findByRole("heading", { name: "Connector runtime evidence" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Installed MCPs" })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "OpenAPI source analysis" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /^Health$/ }));
     expect(await screen.findByLabelText("Health inventory and evidence")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Open context panel" }));

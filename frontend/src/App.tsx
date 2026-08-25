@@ -2219,6 +2219,7 @@ export function OperationalApplication({
                 activeView={activeConnectorView}
                 onNavigate={onNavigateConnectorView}
               />
+              {activeConnectorView === "inventory" && (
               <div id="connector-view-inventory" className="connector-view-anchor">
                 <WorkspaceLoadBoundary compact resetKey="installed-mcp-management" workspace="Connectors">
                   <Suspense
@@ -2242,6 +2243,9 @@ export function OperationalApplication({
                   </Suspense>
                 </WorkspaceLoadBoundary>
               </div>
+              )}
+              {activeConnectorView === "builder" && (
+              <>
               <ConnectorLifecycleOverview activeView={activeConnectorView} />
               <section
                 className="workspace-section mcp-builder-section connector-view-anchor"
@@ -8187,6 +8191,43 @@ export function OperationalApplication({
                   </div>
                 )}
               </section>
+              </>
+              )}
+              {(activeConnectorView === "runtime" || activeConnectorView === "knowledge") && (
+                <div
+                  id={`connector-view-${activeConnectorView}`}
+                  className="connector-view-anchor"
+                >
+                  <WorkspaceLoadBoundary
+                    compact
+                    resetKey={`installed-mcp-${activeConnectorView}`}
+                    workspace="Connectors"
+                  >
+                    <Suspense
+                      fallback={
+                        <div className="workspace-message" aria-live="polite" aria-busy="true">
+                          <Clock3 size={22} />
+                          <div>
+                            <h2>Loading MCP operations</h2>
+                            <p>Preparing the current connector lifecycle and authority records.</p>
+                          </div>
+                        </div>
+                      }
+                    >
+                      <InstalledMcpManagementWorkspace
+                        onRequestEnterpriseLogin={() => setEnterpriseLoginRequested(true)}
+                        onOpenBuilder={() => {
+                          connectorFocusTarget.current = "builder";
+                          onNavigateConnectorView("builder");
+                        }}
+                        subjectId={identity?.subject_id ?? ""}
+                        organizationId={identity?.scope.organization_id ?? ""}
+                        environmentId={identity?.scope.environment_id ?? ""}
+                      />
+                    </Suspense>
+                  </WorkspaceLoadBoundary>
+                </div>
+              )}
             </div>
             )}
 
