@@ -1387,6 +1387,85 @@ class ConnectorInstanceRecordModel(Base):
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
 
+class BundledConnectionConfigurationModel(Base):
+    __tablename__ = "bundled_connection_configurations"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "environment_id",
+            "instance_id",
+            name="uq_bundled_connection_configurations_scope_instance",
+        ),
+    )
+
+    configuration_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    connector_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    instance_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    configured_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class ConnectorConnectionTestResultModel(Base):
+    __tablename__ = "connector_connection_test_results"
+    __table_args__ = (
+        CheckConstraint(
+            "outcome IN ('passed', 'failed')",
+            name="ck_connector_connection_test_results_outcome",
+        ),
+        Index(
+            "ix_connector_connection_test_results_scope_latest",
+            "organization_id",
+            "environment_id",
+            "instance_id",
+            "checked_at",
+        ),
+    )
+
+    test_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    connector_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    instance_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class BundledConnectorRuntimeStateModel(Base):
+    __tablename__ = "bundled_connector_runtime_states"
+    __table_args__ = (
+        CheckConstraint(
+            "state IN ('disabled', 'enabled_read_only')",
+            name="ck_bundled_connector_runtime_states_state",
+        ),
+        CheckConstraint(
+            "version >= 0",
+            name="ck_bundled_connector_runtime_states_version",
+        ),
+    )
+
+    organization_id: Mapped[str] = mapped_column(
+        String(128), primary_key=True, nullable=False, index=True
+    )
+    environment_id: Mapped[str] = mapped_column(
+        String(128), primary_key=True, nullable=False, index=True
+    )
+    instance_id: Mapped[str] = mapped_column(
+        String(128), primary_key=True, nullable=False, index=True
+    )
+    connector_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
 class ConnectorTargetConfigurationBindingModel(Base):
     __tablename__ = "connector_target_configuration_bindings"
     __table_args__ = (
