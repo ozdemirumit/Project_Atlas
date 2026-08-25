@@ -4,14 +4,70 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-244 |
-| Title | Installed MCP tenant-scoped invocation-evidence inventory and server-provided signed preservation options |
-| Status | Pull Request CI In Progress |
-| Branch | `agent/installed-mcp-invocation-evidence-governance` |
-| Pull Request | [#258](https://github.com/ozdemirumit/Project_Atlas/pull/258) |
-| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-052, ADR-040, ADR-041, ADR-100, ADR-123, ADR-133 |
+| Task ID | ATLAS-IMP-245 |
+| Title | Installed MCP tenant-scoped operational knowledge-draft inventory and server-provided signed curation options |
+| Status | Implementation In Progress |
+| Branch | `agent/installed-mcp-knowledge-draft-governance` |
+| Pull Request | Not opened |
+| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-052, ADR-041, ADR-042, ADR-100, ADR-123, ADR-133 |
 | Last Updated | 2026-08-25 |
-| Next Action | Complete exact-head CI, squash merge and post-main CI |
+| Next Action | Implement the tenant-scoped knowledge-draft backend and Installed MCP curation workflow |
+
+### ATLAS-IMP-245 Scope Rationale
+
+- IMP-244 makes immutable invocation evidence authoritative and reloadable in Installed MCPs, but
+  evidence-to-knowledge curation remains an unreachable Builder-only form with browser-entered
+  policy identifiers and digests, no tenant-scoped inventory and no signed option discovery.
+- This slice atomically claims one exact immutable evidence package and creates only one unapproved,
+  non-retrievable operational knowledge draft through the existing trusted curation boundary.
+- Review assignment, protected content inspection, approval, publication, chunking, embedding, RAG,
+  model context, graph updates, scheduling, workflow continuation, execution, deployment and
+  infrastructure mutation remain separate later actions.
+
+### ATLAS-IMP-245 Acceptance Criteria
+
+- Knowledge-draft claims, records, source reads and downstream review-request source reads use
+  organization-and-environment-scoped contracts; persistence uniqueness and idempotency
+  coordinates remain tenant scoped.
+- Installed MCP rows expose `Curate knowledge` or `View draft` only after authoritative invocation-
+  evidence and knowledge-draft inventory reads both succeed.
+- The browser selects only exact server-provided signed curation options and cannot provide policy
+  identifiers or digests, classification, access or retention policy, encryption, content, title,
+  storage coordinates, evidence values, secrets or mutable lineage fields.
+- The server reloads and independently validates exact evidence lineage, signed curation policy,
+  assurance, separation of duty, tenant scope, freshness, inherited governance and adapter
+  availability before creating the irreversible claim.
+- Claim creation remains the point of no return. Any existing claim suppresses new options;
+  timeout, cancellation, adapter failure or uncertain outcome never enables automatic or user-
+  controlled retry and resolves only through authoritative inventory reload.
+- Production remains fail closed without trusted policy and curation adapters. Development uses
+  only deterministic synthetic draft evidence and performs no network, secret-store, filesystem,
+  process, vendor, model, vector, deployment or infrastructure operation.
+- API and persistence projections exclude evidence or draft content, excerpts, observations,
+  target coordinates, storage coordinates, ACL principals, secrets, signatures, raw idempotency
+  keys, request fingerprints and unrelated mutable lineage fields.
+- Successful curation exposes only minimized immutable draft catalog metadata; review, approval,
+  publication, chunks, embeddings, retrieval, model context, graph, scheduling, workflow,
+  execution, deployment and infrastructure-mutation flags remain false.
+- Normal username/password authentication satisfies the default `SINGLE_FACTOR` policy. No global
+  MFA requirement or second browser session is introduced.
+
+### ATLAS-IMP-245 Verification Plan
+
+- Focused backend tests will cover tenant isolation, identical identifiers in separate tenants,
+  authoritative inventory/options, exact signed-policy matching, adapter fail-closed behavior,
+  permission, assurance, separation of duty, claim suppression, idempotent replay, uncertain
+  permanent consumption, downstream scope-before-deserialization and live PostgreSQL concurrency.
+- Migration verification will include upgrade, downgrade and re-upgrade plus a populated legacy
+  upgrade while preserving historical canonical digests and replacing global uniqueness with
+  organization-and-environment-scoped coordinates.
+- Focused frontend tests will cover exact-field fail-closed parsing, authoritative empty/error
+  refresh, server-option-only submission, permanent retry suppression, `Curate knowledge` to
+  `View draft`, normal login and absence of review, publication, retrieval, model, workflow,
+  execution, deployment or mutation controls.
+- Live API/browser verification will cover username/password login, immutable draft reload,
+  no-store payload minimization and desktop plus `390x844` responsive behavior. Exact-head PR CI
+  and exact merge-commit post-main CI must pass before delivery.
 
 ### ATLAS-IMP-244 Scope Rationale
 
@@ -83,6 +139,15 @@
   projections, adapter fail-closed behavior, irreversible retry locking, exact response envelopes,
   default `SINGLE_FACTOR` assurance and the absence of knowledge, workflow, execution, deployment
   or infrastructure-mutation authority.
+
+### ATLAS-IMP-244 Delivery Evidence
+
+- Source commit `d0a61e8b7cb14ebf15ca1062c28f430f53d88b2c` passed exact-head pull-request CI
+  run `32799441604`; frontend completed in 11m16s and backend in 27m04s.
+- [PR #258](https://github.com/ozdemirumit/Project_Atlas/pull/258) was squash-merged to `main` as
+  `93e88292d452bfe7fb4e7231f0a94c0646fb0e72`.
+- The exact merge commit passed post-main CI run `32801207350`; frontend completed in 6m04s and
+  backend in 29m10s. IMP-245 began from that synchronized commit.
 
 ### ATLAS-IMP-243 Delivery Evidence
 
