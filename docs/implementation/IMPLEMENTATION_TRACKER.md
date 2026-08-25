@@ -4,14 +4,36 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-250 |
-| Title | Real Hitachi pool-capacity health checks |
+| Task ID | ATLAS-IMP-251 |
+| Title | Durable bundled MCP operator state |
 | Status | Review |
-| Branch | `agent/mvp-hitachi-capacity` |
+| Branch | `agent/mvp-bundled-persistence` |
 | Pull Request | Pending |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-020, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-052, ADR-133 |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-020, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-053, ADR-133 |
 | Last Updated | 2026-08-25 |
-| Next Action | Persist operator connector state and remove remaining process-local MVP state |
+| Next Action | Replace remaining synthetic Health projections with connector-backed inventory and evidence |
+
+### ATLAS-IMP-251 Scope and Verification
+
+- Bundled MCP connection configuration, minimized connection-test results and read-only runtime state
+  now use tenant-scoped PostgreSQL repositories whenever `ATLAS_DATABASE_URL` is configured. The
+  development fallback remains process-local when no database is configured.
+- Migration `20260825_0166` adds the three operator-state tables with scope, outcome and runtime-state
+  constraints. Its upgrade, downgrade to `0165` and re-upgrade paths passed against local PostgreSQL
+  18, returning to the single `0166` head.
+- A live PostgreSQL reconstruction test persisted all three record types, restored them through new
+  repository objects and confirmed optimistic locking rejects a stale runtime-state update. The
+  database-backed test is included in the existing CI PostgreSQL stage rather than adding another
+  broad test job.
+- Live browser validation created and configured the bundled Hitachi MCP through the normal
+  `atlas-demo` / `local-demo` session, stopped the backend and started it again against the same
+  database. Installed MCPs restored the exact instance at `2 of 4` setup steps with `Test connection`
+  as the next action.
+- Focused verification passed: `43` existing connector and migration-head tests plus the live
+  PostgreSQL reconstruction test. Ruff formatting/lint and strict MyPy across all `1502` configured
+  source files also passed.
+- Full regression remains a CI merge gate; local verification stays focused on the user-visible MCP
+  workflow and its persistence boundary.
 
 ### ATLAS-IMP-250 Scope and Verification
 

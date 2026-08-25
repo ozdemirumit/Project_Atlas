@@ -345,6 +345,11 @@ from atlas.modules.connectors.adapters.bounded_invocation_synthetic import (
 from atlas.modules.connectors.adapters.bundled_connection_configuration_memory import (
     InMemoryBundledConnectionConfigurationRepository,
 )
+from atlas.modules.connectors.adapters.bundled_operator_state_postgres import (
+    PostgreSQLBundledConnectionConfigurationRepository,
+    PostgreSQLBundledConnectorRuntimeStateRepository,
+    PostgreSQLConnectorConnectionTestResultRepository,
+)
 from atlas.modules.connectors.adapters.bundled_runtime_state_memory import (
     InMemoryBundledConnectorRuntimeStateRepository,
 )
@@ -4854,8 +4859,16 @@ def create_app(
         audit_sink=resolved_audit_sink,
         environment_id=resolved_connector_instance_creation_service.environment_id,
     )
-    bundled_connection_configuration_repository = InMemoryBundledConnectionConfigurationRepository()
-    bundled_runtime_state_repository = InMemoryBundledConnectorRuntimeStateRepository()
+    bundled_connection_configuration_repository = (
+        PostgreSQLBundledConnectionConfigurationRepository.from_url(resolved_settings.database_url)
+        if resolved_settings.database_url
+        else InMemoryBundledConnectionConfigurationRepository()
+    )
+    bundled_runtime_state_repository = (
+        PostgreSQLBundledConnectorRuntimeStateRepository.from_url(resolved_settings.database_url)
+        if resolved_settings.database_url
+        else InMemoryBundledConnectorRuntimeStateRepository()
+    )
     resolved_bundled_connection_configuration_service = BundledConnectionConfigurationService(
         repository=bundled_connection_configuration_repository,
         instance_repository=resolved_connector_instance_creation_service.repository,
@@ -4869,7 +4882,11 @@ def create_app(
         reference_environment_variables={"secret.hitachi.readonly": "ATLAS_HITACHI_AUTHORIZATION"},
     )
     hitachi_transport_factory = HitachiOpsCenterConnectionTestHttpsFactory()
-    connector_connection_test_result_repository = InMemoryConnectorConnectionTestResultRepository()
+    connector_connection_test_result_repository = (
+        PostgreSQLConnectorConnectionTestResultRepository.from_url(resolved_settings.database_url)
+        if resolved_settings.database_url
+        else InMemoryConnectorConnectionTestResultRepository()
+    )
     resolved_connector_connection_test_service = ConnectorConnectionTestService(
         configuration_repository=bundled_connection_configuration_repository,
         result_repository=connector_connection_test_result_repository,
@@ -10106,6 +10123,21 @@ def create_app(
         await resolved_bounded_invocation_service.close()
         await resolved_invocation_authorization_service.close()
         await resolved_target_session_service.close()
+        if isinstance(
+            connector_connection_test_result_repository,
+            PostgreSQLConnectorConnectionTestResultRepository,
+        ):
+            await connector_connection_test_result_repository.close()
+        if isinstance(
+            bundled_runtime_state_repository,
+            PostgreSQLBundledConnectorRuntimeStateRepository,
+        ):
+            await bundled_runtime_state_repository.close()
+        if isinstance(
+            bundled_connection_configuration_repository,
+            PostgreSQLBundledConnectionConfigurationRepository,
+        ):
+            await bundled_connection_configuration_repository.close()
         await resolved_runtime_deactivation_service.close()
         await resolved_runtime_activation_service.close()
         await resolved_secret_brokerage_service.close()
