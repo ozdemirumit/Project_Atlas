@@ -37,6 +37,7 @@ def _digest(payload: object) -> str:
 
 
 class SyntheticOperationalKnowledgeReviewerAssignmentAdapter:
+    available = True
     adapter_id = "operational-knowledge-reviewer-assignment-adapter.synthetic"
     attestor_id = "subject.operational-knowledge-reviewer-assignment-adapter-attestor"
     receipt_schema = "atlas.operational-knowledge-reviewer-assignment-receipt.v1"
@@ -129,6 +130,10 @@ class SyntheticOperationalKnowledgeReviewerAssignmentAdapter:
 class UnavailableOperationalKnowledgeReviewerAssignmentAdapter(
     OperationalKnowledgeReviewerAssignmentAdapter
 ):
+    available = False
+    adapter_id = "operational-knowledge-reviewer-assignment-adapter.unavailable"
+    attestor_id = "subject.operational-knowledge-reviewer-assignment-adapter-unavailable"
+
     async def assign_reviewers(
         self, instruction: OperationalKnowledgeReviewerAssignmentInstruction
     ) -> OperationalKnowledgeReviewerAssignmentReceipt:

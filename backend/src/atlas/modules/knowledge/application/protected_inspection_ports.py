@@ -32,14 +32,22 @@ class OperationalKnowledgeProtectedInspectionUncertainError(
 
 class OperationalKnowledgeProtectedInspectionSource(Protocol):
     async def protected_inspection_source(
-        self, *, assignment_set_id: str
+        self,
+        *,
+        assignment_set_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> tuple[
         OperationalKnowledgeReviewerAssignmentRecord,
         OperationalKnowledgeReviewerAssignmentPolicySnapshot,
     ]: ...
 
     async def protected_content_lineage(
-        self, *, assignment_set_id: str
+        self,
+        *,
+        assignment_set_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> tuple[
         OperationalKnowledgeReviewerAssignmentRecord,
         OperationalKnowledgeReviewRequestRecord,

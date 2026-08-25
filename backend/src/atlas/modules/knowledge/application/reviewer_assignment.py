@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 from hashlib import sha256
@@ -50,6 +50,46 @@ ASSIGNMENT_CLAIM_SCHEMA = "atlas.operational-knowledge-reviewer-assignment-claim
 ASSIGNMENT_RECORD_SCHEMA = "atlas.operational-knowledge-reviewer-assignment.v1"
 
 
+@dataclass(frozen=True, slots=True)
+class OperationalKnowledgeReviewerAssignmentOption:
+    assignment_option_id: str
+    source_review_request_id: str
+    source_review_request_digest: str
+    source_draft_id: str
+    knowledge_item_id: str
+    connector_id: str
+    instance_id: str
+    capability_id: str
+    assignment_policy_id: str
+    assignment_policy_digest: str
+    assignment_policy_version: str
+    assignment_policy_expires_at: datetime
+    required_assurance_level: AssuranceLevel
+    domain_track_code: str
+    security_track_code: str
+    assignment_ttl_minutes: int
+
+
+@dataclass(frozen=True, slots=True)
+class OperationalKnowledgeReviewerAssignmentClaimStatus:
+    assignment_set_id: str
+    schema_version: str
+    source_review_request_id: str
+    source_review_request_digest: str
+    claimed_at: datetime
+    claim_state: str
+    claim_consumed: bool
+    assignment_completed: bool
+    automatic_retry_allowed: bool
+    content_inspection_opened: bool
+    knowledge_approved: bool
+    knowledge_published: bool
+    workflow_continued: bool
+    execution_authorized: bool
+    deployment_approved: bool
+    infrastructure_mutation_performed: bool
+
+
 class OperationalKnowledgeReviewerAssignmentService:
     def __init__(
         self,
@@ -77,9 +117,7 @@ class OperationalKnowledgeReviewerAssignmentService:
         *,
         actor: AuthenticatedSubject,
         source_review_request_id: str,
-        source_review_request_digest: str,
-        assignment_policy_id: str,
-        assignment_policy_digest: str,
+        assignment_option_id: str,
         purpose: str,
         assignment_only_acknowledged: bool,
         idempotency_key: str,
@@ -98,15 +136,21 @@ class OperationalKnowledgeReviewerAssignmentService:
         request_binding_digest = self._digest(
             {
                 "source_review_request_id": source_review_request_id,
-                "source_review_request_digest": source_review_request_digest,
-                "assignment_policy_id": assignment_policy_id,
-                "assignment_policy_digest": assignment_policy_digest,
+                "assignment_option_id": assignment_option_id,
+                "actor_id": actor.subject_id,
+                "organization_id": actor.organization_id,
+                "environment_id": self._environment_id,
                 "purpose": purpose,
             }
         )
-        idempotency_digest = self._digest([actor.subject_id, idempotency_key])
-        existing = await self._repository.get_claim_by_idempotency(
-            claimed_by=actor.subject_id, idempotency_digest=idempotency_digest
+        idempotency_digest = self._digest(
+            [actor.subject_id, actor.organization_id, self._environment_id, idempotency_key]
+        )
+        existing = await self._repository.get_claim_by_idempotency_in_scope(
+            claimed_by=actor.subject_id,
+            idempotency_digest=idempotency_digest,
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
         )
         if existing is not None:
             return await self._reuse(existing, actor, request_binding_digest, idempotency_digest)
@@ -120,37 +164,27 @@ class OperationalKnowledgeReviewerAssignmentService:
             raise OperationalKnowledgeReviewerAssignmentError(
                 "operational_knowledge_reviewer_assignment_source_not_found"
             ) from error
-        policy = await self._policy_source.get_by_id(policy_id=assignment_policy_id)
-        if policy is None:
-            raise OperationalKnowledgeReviewerAssignmentError(
-                "operational_knowledge_reviewer_assignment_policy_not_found"
-            )
-        self._verify_snapshot(policy)
-        if not assurance_satisfies_policy(actor.assurance_level, policy.required_assurance_level):
-            raise OperationalKnowledgeReviewerAssignmentError(
-                "operational_knowledge_reviewer_assignment_assurance_required"
-            )
         now = self._clock()
-        self._verify_source(
-            source=source,
-            policy=policy,
-            source_digest=source_review_request_digest,
-            policy_digest=assignment_policy_digest,
-            now=now,
-        )
         self._require_scope(actor, source.organization_id, source.environment_id)
-        if actor.subject_id in {policy.signed_by, policy.required_adapter_attestor_id}:
+        if not self._adapter.available:
             raise OperationalKnowledgeReviewerAssignmentError(
-                "operational_knowledge_reviewer_assignment_actor_separation_required"
+                "operational_knowledge_reviewer_assignment_adapter_unavailable"
             )
-        await self._permission_authorizer.authorize(
+        policy = await self._resolve_option(
             actor=actor,
-            organization_id=source.organization_id,
-            environment_id=source.environment_id,
+            source=source,
+            assignment_option_id=assignment_option_id,
+            now=now,
             correlation_id=correlation_id,
         )
         seed = self._digest(
-            [source.review_request_id, source.canonical_digest, policy.canonical_digest]
+            [
+                source.organization_id,
+                source.environment_id,
+                source.review_request_id,
+                source.canonical_digest,
+                policy.canonical_digest,
+            ]
         )
         assignment_set_id = f"operational-knowledge-reviewer-assignment.{seed[:24]}"
         exclusion_subject_digests = tuple(
@@ -171,6 +205,11 @@ class OperationalKnowledgeReviewerAssignmentService:
             source.review_request_id,
             (("manifest_id", source.manifest_id),),
         )
+        source, policy, now = await self._revalidate_before_claim(
+            actor=actor,
+            source=source,
+            policy=policy,
+        )
         claim = OperationalKnowledgeReviewerAssignmentClaim(
             claim_id=f"operational-knowledge-reviewer-assignment-claim.{seed[:24]}",
             schema_version=ASSIGNMENT_CLAIM_SCHEMA,
@@ -189,8 +228,23 @@ class OperationalKnowledgeReviewerAssignmentService:
         )
         claim = replace(claim, canonical_digest=self._digest(self._claim_payload(claim)))
         if not await self._repository.claim(claim):
-            prior = await self._repository.get_claim_by_source(
-                source_review_request_id=source.review_request_id
+            prior_by_idempotency = await self._repository.get_claim_by_idempotency_in_scope(
+                claimed_by=actor.subject_id,
+                idempotency_digest=idempotency_digest,
+                organization_id=source.organization_id,
+                environment_id=source.environment_id,
+            )
+            if prior_by_idempotency is not None:
+                return await self._reuse(
+                    prior_by_idempotency,
+                    actor,
+                    request_binding_digest,
+                    idempotency_digest,
+                )
+            prior = await self._repository.get_claim_by_source_in_scope(
+                source_review_request_id=source.review_request_id,
+                organization_id=source.organization_id,
+                environment_id=source.environment_id,
             )
             if prior is None:
                 raise OperationalKnowledgeReviewerAssignmentUncertainError(
@@ -253,8 +307,10 @@ class OperationalKnowledgeReviewerAssignmentService:
             (("state", record.instance_state),),
         )
         if not await self._repository.add(record):
-            raced = await self._repository.get_by_source(
-                source_review_request_id=source.review_request_id
+            raced = await self._repository.get_by_source_in_scope(
+                source_review_request_id=source.review_request_id,
+                organization_id=source.organization_id,
+                environment_id=source.environment_id,
             )
             if raced is None or raced.canonical_digest != record.canonical_digest:
                 raise OperationalKnowledgeReviewerAssignmentUncertainError(
@@ -267,13 +323,20 @@ class OperationalKnowledgeReviewerAssignmentService:
         self, *, actor: AuthenticatedSubject, assignment_set_id: str, correlation_id: str
     ) -> OperationalKnowledgeReviewerAssignmentRecord:
         self._require_human(actor)
-        record = await self._repository.get(assignment_set_id=assignment_set_id)
+        record = await self._repository.get_in_scope(
+            assignment_set_id=assignment_set_id,
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+        )
         if record is None:
             raise OperationalKnowledgeReviewerAssignmentError(
                 "operational_knowledge_reviewer_assignment_record_not_found"
             )
-        self._verify_record(record)
-        self._require_scope(actor, record.organization_id, record.environment_id)
+        record = await self._current_record(
+            record,
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+        )
         await self._audit(
             actor,
             correlation_id,
@@ -284,35 +347,219 @@ class OperationalKnowledgeReviewerAssignmentService:
         )
         return record
 
+    async def list_assignments(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        source_review_request_id: str | None,
+        correlation_id: str,
+    ) -> tuple[OperationalKnowledgeReviewerAssignmentRecord, ...]:
+        self._require_human(actor)
+        if source_review_request_id is None:
+            candidates = await self._repository.list_scope(
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+            )
+        else:
+            candidate = await self._repository.get_by_source_in_scope(
+                source_review_request_id=source_review_request_id,
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+            )
+            candidates = (candidate,) if candidate is not None else ()
+        visible = [
+            await self._current_record(
+                record,
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+            )
+            for record in candidates
+        ]
+        visible.sort(key=lambda item: item.assignment_set_id)
+        await self._audit(
+            actor,
+            correlation_id,
+            "operational_knowledge_reviewer_assignment_inventory_listed",
+            source_review_request_id or self._environment_id,
+            (("count", str(len(visible))),),
+            permission_id=KNOWLEDGE_REVIEWER_ASSIGNMENT_READ,
+        )
+        return tuple(visible)
+
+    async def list_inventory(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        source_review_request_id: str,
+        correlation_id: str,
+    ) -> tuple[
+        OperationalKnowledgeReviewerAssignmentRecord
+        | OperationalKnowledgeReviewerAssignmentClaimStatus,
+        ...,
+    ]:
+        self._require_human(actor)
+        record = await self._repository.get_by_source_in_scope(
+            source_review_request_id=source_review_request_id,
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+        )
+        if record is not None:
+            entries: tuple[
+                OperationalKnowledgeReviewerAssignmentRecord
+                | OperationalKnowledgeReviewerAssignmentClaimStatus,
+                ...,
+            ] = (
+                await self._current_record(
+                    record,
+                    organization_id=actor.organization_id,
+                    environment_id=self._environment_id,
+                ),
+            )
+        else:
+            claim = await self._repository.get_claim_by_source_in_scope(
+                source_review_request_id=source_review_request_id,
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+            )
+            if claim is None:
+                entries = ()
+            else:
+                self._verify_claim(claim)
+                self._require_scope(actor, claim.organization_id, claim.environment_id)
+                if claim.source_review_request_id != source_review_request_id:
+                    raise OperationalKnowledgeReviewerAssignmentError(
+                        "operational_knowledge_reviewer_assignment_persistence_integrity_failed"
+                    )
+                entries = (self._claim_status(claim),)
+        await self._audit(
+            actor,
+            correlation_id,
+            "operational_knowledge_reviewer_assignment_inventory_listed",
+            source_review_request_id,
+            (("count", str(len(entries))),),
+            permission_id=KNOWLEDGE_REVIEWER_ASSIGNMENT_READ,
+        )
+        return entries
+
+    async def list_options(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        source_review_request_id: str,
+        correlation_id: str,
+    ) -> tuple[OperationalKnowledgeReviewerAssignmentOption, ...]:
+        self._require_human(actor)
+        if not self._adapter.available:
+            await self._audit_options(actor, correlation_id, source_review_request_id, 0)
+            return ()
+        try:
+            source, _source_actors = await self._source.reviewer_assignment_source(
+                review_request_id=source_review_request_id,
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+            )
+        except Exception as error:
+            raise OperationalKnowledgeReviewerAssignmentError(
+                "operational_knowledge_reviewer_assignment_source_not_found"
+            ) from error
+        self._require_scope(actor, source.organization_id, source.environment_id)
+        claim = await self._repository.get_claim_by_source_in_scope(
+            source_review_request_id=source.review_request_id,
+            organization_id=source.organization_id,
+            environment_id=source.environment_id,
+        )
+        if claim is not None:
+            self._verify_claim(claim)
+            completed = await self._repository.get_by_source_in_scope(
+                source_review_request_id=source.review_request_id,
+                organization_id=source.organization_id,
+                environment_id=source.environment_id,
+            )
+            if completed is not None:
+                await self._current_record(
+                    completed,
+                    organization_id=source.organization_id,
+                    environment_id=source.environment_id,
+                )
+            await self._audit_options(actor, correlation_id, source.review_request_id, 0)
+            return ()
+        options: list[OperationalKnowledgeReviewerAssignmentOption] = []
+        now = self._clock()
+        policies = await self._policy_source.list_scope(
+            organization_id=source.organization_id,
+            environment_id=source.environment_id,
+        )
+        for policy in policies:
+            try:
+                self._verify_snapshot(policy)
+                self._verify_source(
+                    source=source,
+                    policy=policy,
+                    source_digest=source.canonical_digest,
+                    policy_digest=policy.canonical_digest,
+                    now=now,
+                )
+                if not assurance_satisfies_policy(
+                    actor.assurance_level, policy.required_assurance_level
+                ):
+                    continue
+                if not self._adapter_matches_policy(policy):
+                    continue
+                self._require_actor_separation(actor, policy)
+                await self._permission_authorizer.authorize(
+                    actor=actor,
+                    organization_id=source.organization_id,
+                    environment_id=source.environment_id,
+                    correlation_id=correlation_id,
+                )
+            except OperationalKnowledgeReviewerAssignmentError:
+                continue
+            options.append(self._option(source, policy))
+        options.sort(key=lambda item: item.assignment_option_id)
+        await self._audit_options(actor, correlation_id, source.review_request_id, len(options))
+        return tuple(options)
+
     async def protected_inspection_source(
-        self, *, assignment_set_id: str
+        self,
+        *,
+        assignment_set_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> tuple[
         OperationalKnowledgeReviewerAssignmentRecord,
         OperationalKnowledgeReviewerAssignmentPolicySnapshot,
     ]:
-        record = await self._repository.get(assignment_set_id=assignment_set_id)
+        record = await self._repository.get_in_scope(
+            assignment_set_id=assignment_set_id,
+            organization_id=organization_id,
+            environment_id=environment_id,
+        )
         if record is None:
             raise OperationalKnowledgeReviewerAssignmentError(
                 "operational_knowledge_reviewer_assignment_record_not_found"
             )
-        self._verify_record(record)
-        policy = await self._policy_source.get_by_id(policy_id=record.assignment_policy_id)
-        if policy is None or policy.canonical_digest != record.assignment_policy_digest:
-            raise OperationalKnowledgeReviewerAssignmentError(
-                "operational_knowledge_reviewer_assignment_policy_not_found"
-            )
-        self._verify_snapshot(policy)
+        record, policy = await self._current_record_with_policy(
+            record,
+            organization_id=organization_id,
+            environment_id=environment_id,
+        )
         return record, policy
 
     async def protected_content_lineage(
-        self, *, assignment_set_id: str
+        self,
+        *,
+        assignment_set_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> tuple[
         OperationalKnowledgeReviewerAssignmentRecord,
         OperationalKnowledgeReviewRequestRecord,
         OperationalEvidenceKnowledgeDraftRecord,
     ]:
         record, _policy = await self.protected_inspection_source(
-            assignment_set_id=assignment_set_id
+            assignment_set_id=assignment_set_id,
+            organization_id=organization_id,
+            environment_id=environment_id,
         )
         review_request, draft = await self._source.protected_content_lineage(
             review_request_id=record.source_review_request_id,
@@ -333,6 +580,300 @@ class OperationalKnowledgeReviewerAssignmentService:
     async def close(self) -> None:
         await self._repository.close()
 
+    async def _resolve_option(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        source: OperationalKnowledgeReviewRequestRecord,
+        assignment_option_id: str,
+        now: datetime,
+        correlation_id: str,
+    ) -> OperationalKnowledgeReviewerAssignmentPolicySnapshot:
+        policies = await self._policy_source.list_scope(
+            organization_id=source.organization_id,
+            environment_id=source.environment_id,
+        )
+        for policy in policies:
+            try:
+                self._verify_snapshot(policy)
+            except OperationalKnowledgeReviewerAssignmentError:
+                continue
+            if self._option_id(source, policy) != assignment_option_id:
+                continue
+            self._verify_source(
+                source=source,
+                policy=policy,
+                source_digest=source.canonical_digest,
+                policy_digest=policy.canonical_digest,
+                now=now,
+            )
+            if not assurance_satisfies_policy(
+                actor.assurance_level, policy.required_assurance_level
+            ):
+                raise OperationalKnowledgeReviewerAssignmentError(
+                    "operational_knowledge_reviewer_assignment_assurance_required"
+                )
+            if not self._adapter_matches_policy(policy):
+                raise OperationalKnowledgeReviewerAssignmentError(
+                    "operational_knowledge_reviewer_assignment_adapter_mismatch"
+                )
+            self._require_actor_separation(actor, policy)
+            await self._permission_authorizer.authorize(
+                actor=actor,
+                organization_id=source.organization_id,
+                environment_id=source.environment_id,
+                correlation_id=correlation_id,
+            )
+            return policy
+        raise OperationalKnowledgeReviewerAssignmentError(
+            "operational_knowledge_reviewer_assignment_option_invalid"
+        )
+
+    async def _current_record(
+        self,
+        record: OperationalKnowledgeReviewerAssignmentRecord,
+        *,
+        organization_id: str,
+        environment_id: str,
+    ) -> OperationalKnowledgeReviewerAssignmentRecord:
+        current, _policy = await self._current_record_with_policy(
+            record,
+            organization_id=organization_id,
+            environment_id=environment_id,
+        )
+        return current
+
+    async def _current_record_with_policy(
+        self,
+        record: OperationalKnowledgeReviewerAssignmentRecord,
+        *,
+        organization_id: str,
+        environment_id: str,
+    ) -> tuple[
+        OperationalKnowledgeReviewerAssignmentRecord,
+        OperationalKnowledgeReviewerAssignmentPolicySnapshot,
+    ]:
+        if record.organization_id != organization_id or record.environment_id != environment_id:
+            raise OperationalKnowledgeReviewerAssignmentError(
+                "operational_knowledge_reviewer_assignment_persistence_integrity_failed"
+            )
+        self._verify_record(record)
+        claim = await self._repository.get_claim_by_source_in_scope(
+            source_review_request_id=record.source_review_request_id,
+            organization_id=record.organization_id,
+            environment_id=record.environment_id,
+        )
+        if claim is None:
+            raise OperationalKnowledgeReviewerAssignmentError(
+                "operational_knowledge_reviewer_assignment_claim_not_found"
+            )
+        self._verify_claim(claim)
+        try:
+            source, _source_actors = await self._source.reviewer_assignment_source(
+                review_request_id=record.source_review_request_id,
+                organization_id=record.organization_id,
+                environment_id=record.environment_id,
+            )
+        except OperationalKnowledgeReviewerAssignmentError:
+            raise
+        except Exception as error:
+            raise OperationalKnowledgeReviewerAssignmentError(
+                "operational_knowledge_reviewer_assignment_source_not_found"
+            ) from error
+        policy = await self._policy_source.get_by_id_in_scope(
+            policy_id=record.assignment_policy_id,
+            organization_id=record.organization_id,
+            environment_id=record.environment_id,
+        )
+        if policy is None:
+            raise OperationalKnowledgeReviewerAssignmentError(
+                "operational_knowledge_reviewer_assignment_policy_not_found"
+            )
+        self._verify_snapshot(policy)
+        if (
+            claim.organization_id != record.organization_id
+            or claim.environment_id != record.environment_id
+            or claim.claim_id != record.claim_id
+            or claim.assignment_set_id != record.assignment_set_id
+            or claim.source_review_request_id != record.source_review_request_id
+            or claim.source_review_request_digest != record.source_review_request_digest
+            or claim.claimed_by != record.requested_by
+            or claim.purpose != record.purpose
+            or source.organization_id != record.organization_id
+            or source.environment_id != record.environment_id
+            or source.review_request_id != record.source_review_request_id
+            or source.canonical_digest != record.source_review_request_digest
+            or source.source_draft_id != record.source_draft_id
+            or source.source_draft_digest != record.source_draft_digest
+            or source.knowledge_item_id != record.knowledge_item_id
+            or source.draft_version_id != record.draft_version_id
+            or source.source_ingestion_id != record.source_ingestion_id
+            or source.source_invocation_id != record.source_invocation_id
+            or source.connector_id != record.connector_id
+            or source.instance_id != record.instance_id
+            or source.capability_id != record.capability_id
+            or source.title != record.title
+            or source.classification != record.classification
+            or source.access_policy_id != record.access_policy_id
+            or source.retention_policy_id != record.retention_policy_id
+            or source.encryption_profile_id != record.encryption_profile_id
+            or source.manifest_id != record.manifest_id
+            or source.manifest_digest != record.manifest_digest
+            or source.domain_track_code != record.domain_track_code
+            or source.security_track_code != record.security_track_code
+            or source.domain_queue_id != record.domain_queue_id
+            or source.security_queue_id != record.security_queue_id
+            or policy.canonical_digest != record.assignment_policy_digest
+            or policy.policy_id != record.assignment_policy_id
+            or policy.organization_id != record.organization_id
+            or policy.environment_id != record.environment_id
+            or policy.policy_version != record.assignment_policy_version
+            or policy.required_adapter_id != record.assignment_adapter_id
+        ):
+            raise OperationalKnowledgeReviewerAssignmentError(
+                "operational_knowledge_reviewer_assignment_lineage_invalid"
+            )
+        return record, policy
+
+    async def _revalidate_before_claim(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        source: OperationalKnowledgeReviewRequestRecord,
+        policy: OperationalKnowledgeReviewerAssignmentPolicySnapshot,
+    ) -> tuple[
+        OperationalKnowledgeReviewRequestRecord,
+        OperationalKnowledgeReviewerAssignmentPolicySnapshot,
+        datetime,
+    ]:
+        if not self._adapter.available:
+            raise OperationalKnowledgeReviewerAssignmentError(
+                "operational_knowledge_reviewer_assignment_adapter_unavailable"
+            )
+        try:
+            current_source, _source_actors = await self._source.reviewer_assignment_source(
+                review_request_id=source.review_request_id,
+                organization_id=source.organization_id,
+                environment_id=source.environment_id,
+            )
+        except OperationalKnowledgeReviewerAssignmentError:
+            raise
+        except Exception as error:
+            raise OperationalKnowledgeReviewerAssignmentError(
+                "operational_knowledge_reviewer_assignment_source_not_found"
+            ) from error
+        current_policy = await self._policy_source.get_by_id_in_scope(
+            policy_id=policy.policy_id,
+            organization_id=source.organization_id,
+            environment_id=source.environment_id,
+        )
+        if (
+            current_source.canonical_digest != source.canonical_digest
+            or current_policy is None
+            or current_policy.canonical_digest != policy.canonical_digest
+        ):
+            raise OperationalKnowledgeReviewerAssignmentError(
+                "operational_knowledge_reviewer_assignment_option_invalid"
+            )
+        self._verify_snapshot(current_policy)
+        now = self._clock()
+        self._verify_source(
+            source=current_source,
+            policy=current_policy,
+            source_digest=source.canonical_digest,
+            policy_digest=policy.canonical_digest,
+            now=now,
+        )
+        if not assurance_satisfies_policy(
+            actor.assurance_level, current_policy.required_assurance_level
+        ):
+            raise OperationalKnowledgeReviewerAssignmentError(
+                "operational_knowledge_reviewer_assignment_assurance_required"
+            )
+        self._require_actor_separation(actor, current_policy)
+        if not self._adapter_matches_policy(current_policy):
+            raise OperationalKnowledgeReviewerAssignmentError(
+                "operational_knowledge_reviewer_assignment_adapter_mismatch"
+            )
+        return current_source, current_policy, now
+
+    def _adapter_matches_policy(
+        self, policy: OperationalKnowledgeReviewerAssignmentPolicySnapshot
+    ) -> bool:
+        return (
+            self._adapter.adapter_id == policy.required_adapter_id
+            and self._adapter.attestor_id == policy.required_adapter_attestor_id
+        )
+
+    @classmethod
+    def _option(
+        cls,
+        source: OperationalKnowledgeReviewRequestRecord,
+        policy: OperationalKnowledgeReviewerAssignmentPolicySnapshot,
+    ) -> OperationalKnowledgeReviewerAssignmentOption:
+        return OperationalKnowledgeReviewerAssignmentOption(
+            assignment_option_id=cls._option_id(source, policy),
+            source_review_request_id=source.review_request_id,
+            source_review_request_digest=source.canonical_digest,
+            source_draft_id=source.source_draft_id,
+            knowledge_item_id=source.knowledge_item_id,
+            connector_id=source.connector_id,
+            instance_id=source.instance_id,
+            capability_id=source.capability_id,
+            assignment_policy_id=policy.policy_id,
+            assignment_policy_digest=policy.canonical_digest,
+            assignment_policy_version=policy.policy_version,
+            assignment_policy_expires_at=policy.expires_at,
+            required_assurance_level=policy.required_assurance_level,
+            domain_track_code=source.domain_track_code,
+            security_track_code=source.security_track_code,
+            assignment_ttl_minutes=policy.assignment_ttl_minutes,
+        )
+
+    @classmethod
+    def _option_id(
+        cls,
+        source: OperationalKnowledgeReviewRequestRecord,
+        policy: OperationalKnowledgeReviewerAssignmentPolicySnapshot,
+    ) -> str:
+        digest = cls._digest(
+            [
+                source.organization_id,
+                source.environment_id,
+                source.review_request_id,
+                source.canonical_digest,
+                policy.policy_id,
+                policy.canonical_digest,
+            ]
+        )
+        return f"operational-knowledge-reviewer-assignment-option.{digest[:24]}"
+
+    @staticmethod
+    def _require_actor_separation(
+        actor: AuthenticatedSubject,
+        policy: OperationalKnowledgeReviewerAssignmentPolicySnapshot,
+    ) -> None:
+        if actor.subject_id in {policy.signed_by, policy.required_adapter_attestor_id}:
+            raise OperationalKnowledgeReviewerAssignmentError(
+                "operational_knowledge_reviewer_assignment_actor_separation_required"
+            )
+
+    async def _audit_options(
+        self,
+        actor: AuthenticatedSubject,
+        correlation_id: str,
+        source_review_request_id: str,
+        count: int,
+    ) -> None:
+        await self._audit(
+            actor,
+            correlation_id,
+            "operational_knowledge_reviewer_assignment_options_listed",
+            source_review_request_id,
+            (("count", str(count)),),
+            permission_id=KNOWLEDGE_REVIEWER_ASSIGNMENT_READ,
+        )
+
     async def _reuse(
         self,
         claim: OperationalKnowledgeReviewerAssignmentClaim,
@@ -350,13 +891,46 @@ class OperationalKnowledgeReviewerAssignmentService:
                 "operational_knowledge_reviewer_assignment_idempotency_conflict"
             )
         self._require_scope(actor, claim.organization_id, claim.environment_id)
-        record = await self._repository.get(assignment_set_id=claim.assignment_set_id)
+        record = await self._repository.get_in_scope(
+            assignment_set_id=claim.assignment_set_id,
+            organization_id=claim.organization_id,
+            environment_id=claim.environment_id,
+        )
         if record is None:
             raise OperationalKnowledgeReviewerAssignmentError(
                 "operational_knowledge_reviewer_assignment_already_claimed"
             )
-        self._verify_record(record)
-        return replace(record, reused=True)
+        return replace(
+            await self._current_record(
+                record,
+                organization_id=claim.organization_id,
+                environment_id=claim.environment_id,
+            ),
+            reused=True,
+        )
+
+    @staticmethod
+    def _claim_status(
+        claim: OperationalKnowledgeReviewerAssignmentClaim,
+    ) -> OperationalKnowledgeReviewerAssignmentClaimStatus:
+        return OperationalKnowledgeReviewerAssignmentClaimStatus(
+            assignment_set_id=claim.assignment_set_id,
+            schema_version="atlas.operational-knowledge-reviewer-assignment-claim-status.v1",
+            source_review_request_id=claim.source_review_request_id,
+            source_review_request_digest=claim.source_review_request_digest,
+            claimed_at=claim.claimed_at,
+            claim_state="claim_consumed_unresolved",
+            claim_consumed=True,
+            assignment_completed=False,
+            automatic_retry_allowed=False,
+            content_inspection_opened=False,
+            knowledge_approved=False,
+            knowledge_published=False,
+            workflow_continued=False,
+            execution_authorized=False,
+            deployment_approved=False,
+            infrastructure_mutation_performed=False,
+        )
 
     @staticmethod
     def _verify_source(

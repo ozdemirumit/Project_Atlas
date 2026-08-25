@@ -40,33 +40,66 @@ class OperationalKnowledgeReviewerAssignmentSource(Protocol):
 
 
 class OperationalKnowledgeReviewerAssignmentPolicySource(Protocol):
-    async def get_by_id(
-        self, *, policy_id: str
+    async def get_by_id_in_scope(
+        self,
+        *,
+        policy_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> OperationalKnowledgeReviewerAssignmentPolicySnapshot | None: ...
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[OperationalKnowledgeReviewerAssignmentPolicySnapshot, ...]: ...
 
 
 class OperationalKnowledgeReviewerAssignmentAdapter(Protocol):
+    available: bool
+    adapter_id: str
+    attestor_id: str
+
     async def assign_reviewers(
         self, instruction: OperationalKnowledgeReviewerAssignmentInstruction
     ) -> OperationalKnowledgeReviewerAssignmentReceipt: ...
 
 
 class OperationalKnowledgeReviewerAssignmentRepository(Protocol):
-    async def get(
-        self, *, assignment_set_id: str
+    async def get_in_scope(
+        self,
+        *,
+        assignment_set_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> OperationalKnowledgeReviewerAssignmentRecord | None: ...
 
-    async def get_by_source(
-        self, *, source_review_request_id: str
+    async def get_by_source_in_scope(
+        self,
+        *,
+        source_review_request_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> OperationalKnowledgeReviewerAssignmentRecord | None: ...
 
-    async def get_claim_by_source(
-        self, *, source_review_request_id: str
+    async def get_claim_by_source_in_scope(
+        self,
+        *,
+        source_review_request_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> OperationalKnowledgeReviewerAssignmentClaim | None: ...
 
-    async def get_claim_by_idempotency(
-        self, *, claimed_by: str, idempotency_digest: str
+    async def get_claim_by_idempotency_in_scope(
+        self,
+        *,
+        claimed_by: str,
+        idempotency_digest: str,
+        organization_id: str,
+        environment_id: str,
     ) -> OperationalKnowledgeReviewerAssignmentClaim | None: ...
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[OperationalKnowledgeReviewerAssignmentRecord, ...]: ...
 
     async def claim(self, claim: OperationalKnowledgeReviewerAssignmentClaim) -> bool: ...
 

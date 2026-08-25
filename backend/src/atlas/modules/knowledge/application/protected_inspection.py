@@ -109,7 +109,9 @@ class OperationalKnowledgeProtectedInspectionService:
             )
         try:
             source, assignment_policy = await self._source.protected_inspection_source(
-                assignment_set_id=source_assignment_set_id
+                assignment_set_id=source_assignment_set_id,
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
             )
         except Exception as error:
             raise OperationalKnowledgeProtectedInspectionError(
@@ -354,7 +356,9 @@ class OperationalKnowledgeProtectedInspectionService:
             )
         self._verify_snapshot(policy)
         assignment, review_request, draft = await self._source.protected_content_lineage(
-            assignment_set_id=record.source_assignment_set_id
+            assignment_set_id=record.source_assignment_set_id,
+            organization_id=record.organization_id,
+            environment_id=record.environment_id,
         )
         if (
             assignment.canonical_digest != record.source_assignment_set_digest
