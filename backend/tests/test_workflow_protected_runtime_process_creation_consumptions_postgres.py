@@ -150,8 +150,9 @@ async def test_live_postgres_atomic_consumption_and_exact_replay_call_creator_on
         )
         successes = [item for item in concurrent if not isinstance(item, BaseException)]
         failures = [item for item in concurrent if isinstance(item, BaseException)]
-        assert len(successes) == 1
-        assert len(failures) == 1
+        failure_codes = [getattr(item, "code", type(item).__name__) for item in failures]
+        assert len(successes) == 1, failure_codes
+        assert len(failures) == 1, failure_codes
         assert isinstance(failures[0], WorkflowProtectedRuntimeProcessCreationConsumptionError)
         assert failures[0].code.endswith("attempt_committed_no_retry")
         first = successes[0]
