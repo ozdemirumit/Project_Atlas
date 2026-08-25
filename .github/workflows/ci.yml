@@ -149,7 +149,7 @@ jobs:
           -k live_postgres
       - name: Test
         working-directory: backend
-        run: uv run pytest
+        run: uv run pytest -n 4 --dist loadfile --max-worker-restart=0
 
   frontend:
     runs-on: ubuntu-latest
