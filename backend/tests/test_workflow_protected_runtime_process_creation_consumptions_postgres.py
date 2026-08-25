@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import inspect
 import os
+from dataclasses import replace
+from datetime import datetime, timedelta
 from typing import Any, cast
 from uuid import uuid4
 
@@ -42,6 +44,42 @@ from atlas.modules.workflows.domain.protected_runtime_process_creation_consumpti
     WorkflowProtectedRuntimeProcessCreationConsumptionResultState,
     code_owned_workflow_protected_runtime_process_creation_consumption_policy,
 )
+
+
+class _ConsumptionFixtureProcessCreationRepository(_FixtureProcessCreationRepository):
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._consumption_time: datetime | None = None
+
+    def bind_consumption_time(self, value: datetime) -> None:
+        self._consumption_time = value
+
+    def consumption_time(self) -> datetime:
+        assert self._consumption_time is not None
+        return self._consumption_time
+
+    async def get_authoritative_time(self) -> datetime:
+        if self._consumption_time is not None:
+            return self._consumption_time
+        return await super().get_authoritative_time()
+
+    async def _lock_protected_runtime_process_creation_rows(
+        self, session: Any, *, request: Any
+    ) -> Any:
+        locked = await super()._lock_protected_runtime_process_creation_rows(
+            session, request=request
+        )
+        if self._consumption_time is None:
+            return locked
+        return replace(
+            locked,
+            authorization=replace(
+                locked.authorization,
+                first_observed_at=self._consumption_time,
+                observed_at=self._consumption_time,
+            ),
+            observed_at=self._consumption_time,
+        )
 
 
 async def _cleanup_consumption(engine: AsyncEngine, *, authorization_lease_id: str) -> None:
@@ -85,7 +123,7 @@ async def test_live_postgres_atomic_consumption_and_exact_replay_call_creator_on
         pytest.skip("ATLAS_TEST_POSTGRES_DSN is not configured")
 
     engine = create_async_engine(database_url)
-    repository = _FixtureProcessCreationRepository(engine=engine)
+    repository = _ConsumptionFixtureProcessCreationRepository(engine=engine)
     repository.bind_protected_runtime_start_receipt_signature_verifier(
         cast(Any, _AcceptAllReceiptVerifier())
     )
@@ -96,7 +134,8 @@ async def test_live_postgres_atomic_consumption_and_exact_replay_call_creator_on
     )
     repository.bind_protected_runtime_process_creation_receipt_signature_verifier(receipt_verifier)
     creator = DeterministicDevelopmentWorkflowProtectedRuntimeProcessCreator(
-        development_enabled=True
+        development_enabled=True,
+        clock=repository.consumption_time,
     )
     service = WorkflowProtectedRuntimeProcessCreationConsumptionService(
         repository=cast(Any, repository),
@@ -130,6 +169,7 @@ async def test_live_postgres_atomic_consumption_and_exact_replay_call_creator_on
             idempotency_key=f"imp-228-authorization-{uuid4().hex}",
         )
         authorization_lease_id = authorization.authorization_lease_id
+        repository.bind_consumption_time(authorization.issued_at + timedelta(milliseconds=200))
         policy = code_owned_workflow_protected_runtime_process_creation_consumption_policy()
         request = {
             "authorization_lease_id": authorization_lease_id,
