@@ -75,6 +75,11 @@ import {
   getOperationalEvidenceKnowledgeDrafts,
 } from "../../api/evidenceDrafts";
 import {
+  createOperationalKnowledgeReviewRequest,
+  getOperationalKnowledgeReviewRequestOptions,
+  getOperationalKnowledgeReviewRequests,
+} from "../../api/knowledgeReviewRequests";
+import {
   createConnectorRuntimeTrustGrant,
   getConnectorRuntimeTrustGrantOptions,
   getConnectorRuntimeTrustGrants,
@@ -140,6 +145,10 @@ import {
   evidenceKnowledgeDraftInventoryItem,
   evidenceKnowledgeDraftOption,
 } from "./testEvidenceDraftFixture";
+import {
+  knowledgeReviewRequestInventoryItem,
+  knowledgeReviewRequestOption,
+} from "./testKnowledgeReviewRequestFixture";
 
 const policy: ConnectorInstanceCreationPolicy = {
   policy_id: "connector-instance-creation-policy.development",
@@ -964,6 +973,16 @@ vi.mock("../../api/evidenceDrafts", async (importOriginal) => {
   };
 });
 
+vi.mock("../../api/knowledgeReviewRequests", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../api/knowledgeReviewRequests")>();
+  return {
+    ...original,
+    createOperationalKnowledgeReviewRequest: vi.fn(),
+    getOperationalKnowledgeReviewRequestOptions: vi.fn(),
+    getOperationalKnowledgeReviewRequests: vi.fn(),
+  };
+});
+
 vi.mock("../../api/connectorUpgradeReadiness", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/connectorUpgradeReadiness")>();
   return {
@@ -1086,6 +1105,11 @@ beforeEach(() => {
   vi.mocked(getOperationalEvidenceKnowledgeDraftOptions).mockResolvedValue([]);
   vi.mocked(createOperationalEvidenceKnowledgeDraft).mockResolvedValue({
     data: evidenceKnowledgeDraftInventoryItem,
+  });
+  vi.mocked(getOperationalKnowledgeReviewRequests).mockResolvedValue([]);
+  vi.mocked(getOperationalKnowledgeReviewRequestOptions).mockResolvedValue([]);
+  vi.mocked(createOperationalKnowledgeReviewRequest).mockResolvedValue({
+    data: knowledgeReviewRequestInventoryItem,
   });
   vi.mocked(getConnectorUpgradeReadiness).mockResolvedValue(upgradeReadiness);
   vi.mocked(getConnectorUpgradePlan).mockResolvedValue(upgradePlan);
@@ -2056,6 +2080,88 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(screen.getByText("Enabled / evidence preserved")).toBeVisible();
     expect(screen.getByRole("button", { name: "View evidence for Storage East" })).toBeVisible();
     expect(screen.queryByRole("button", { name: /knowledge|draft for Storage East/i })).toBeNull();
+  });
+
+  it("requests review from a server option and transitions to View request", async () => {
+    primeOperationalEvidenceLifecycle();
+    vi.mocked(getOperationalEvidenceKnowledgeDrafts).mockResolvedValue([
+      evidenceKnowledgeDraftInventoryItem,
+    ]);
+    let inventory = [] as typeof knowledgeReviewRequestInventoryItem[];
+    vi.mocked(getOperationalKnowledgeReviewRequests).mockImplementation(
+      () => Promise.resolve(inventory),
+    );
+    vi.mocked(getOperationalKnowledgeReviewRequestOptions).mockResolvedValue([
+      knowledgeReviewRequestOption,
+    ]);
+    vi.mocked(createOperationalKnowledgeReviewRequest).mockImplementation(() => {
+      inventory = [knowledgeReviewRequestInventoryItem];
+      return Promise.resolve({ data: knowledgeReviewRequestInventoryItem });
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", {
+      name: "Request review for Storage East",
+    }));
+    const dialog = screen.getByRole("dialog", {
+      name: "Request knowledge review for Storage East",
+    });
+    expect(await within(dialog).findByText(knowledgeReviewRequestOption.orchestration_policy_id))
+      .toBeVisible();
+    expect(within(dialog).queryByRole("textbox", {
+      name: /policy|digest|queue|reviewer|assignment/i,
+    })).toBeNull();
+    fireEvent.click(within(dialog).getByLabelText(/result is only an unassigned review request/i));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Request review" }));
+
+    await waitFor(() => expect(createOperationalKnowledgeReviewRequest).toHaveBeenCalledOnce());
+    expect(vi.mocked(createOperationalKnowledgeReviewRequest).mock.calls[0]?.[0]).toMatchObject({
+      draft: evidenceKnowledgeDraftInventoryItem,
+      option: knowledgeReviewRequestOption,
+    });
+    expect(await screen.findByText("Enabled / review requested")).toBeVisible();
+    expect(screen.getByRole("button", { name: "View request for Storage East" })).toBeVisible();
+    expect(within(dialog).queryByRole("button", {
+      name: /assign|inspect|decide|approve|publish|retrieve|model|workflow|execute|deploy/i,
+    })).toBeNull();
+  });
+
+  it("restores a review request as read-only awaiting-reviewer metadata", async () => {
+    primeOperationalEvidenceLifecycle();
+    vi.mocked(getOperationalEvidenceKnowledgeDrafts).mockResolvedValue([
+      evidenceKnowledgeDraftInventoryItem,
+    ]);
+    vi.mocked(getOperationalKnowledgeReviewRequests).mockResolvedValue([
+      knowledgeReviewRequestInventoryItem,
+    ]);
+    renderWorkspace();
+
+    expect(await screen.findByText("Enabled / review requested")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "View request for Storage East" }));
+    const dialog = screen.getByRole("dialog", {
+      name: "Request knowledge review for Storage East",
+    });
+    expect(await within(dialog).findByText(knowledgeReviewRequestInventoryItem.review_request_id))
+      .toBeVisible();
+    expect(getOperationalKnowledgeReviewRequestOptions).not.toHaveBeenCalled();
+    expect(within(dialog).queryByRole("button", { name: "Request review" })).toBeNull();
+  });
+
+  it("hides review controls when authoritative review inventory fails", async () => {
+    primeOperationalEvidenceLifecycle();
+    vi.mocked(getOperationalEvidenceKnowledgeDrafts).mockResolvedValue([
+      evidenceKnowledgeDraftInventoryItem,
+    ]);
+    vi.mocked(getOperationalKnowledgeReviewRequests).mockRejectedValue(
+      new ApiRequestError("Knowledge review request inventory unavailable", 422),
+    );
+    renderWorkspace();
+
+    expect(await screen.findByText("Knowledge review request inventory is unavailable"))
+      .toBeVisible();
+    expect(screen.getByText("Enabled / knowledge draft")).toBeVisible();
+    expect(screen.getByRole("button", { name: "View draft for Storage East" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /request review|view request/i })).toBeNull();
   });
 
   it("hides preservation controls when authoritative evidence inventory reload fails", async () => {
