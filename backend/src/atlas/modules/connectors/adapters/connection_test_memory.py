@@ -8,13 +8,9 @@ from atlas.modules.connectors.application.connection_test_ports import (
 from atlas.modules.connectors.domain.connection_test import ConnectorConnectionTestResult
 
 
-class InMemoryConnectorConnectionTestResultRepository(
-    ConnectorConnectionTestResultRepository
-):
+class InMemoryConnectorConnectionTestResultRepository(ConnectorConnectionTestResultRepository):
     def __init__(self) -> None:
-        self._records: dict[
-            tuple[str, str, str], list[ConnectorConnectionTestResult]
-        ] = {}
+        self._records: dict[tuple[str, str, str], list[ConnectorConnectionTestResult]] = {}
         self._lock = asyncio.Lock()
 
     async def put(

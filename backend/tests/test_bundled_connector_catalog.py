@@ -134,9 +134,14 @@ async def test_create_is_idempotent_and_grants_no_authority() -> None:
     assert not record.execution_authorized and not record.deployment_approved
     assert not record.infrastructure_mutation_performed
     assert record.source_installation_receipt_id.startswith("bundled-installation-receipt.")
-    assert len(await repository.list_scope(
-        organization_id=record.organization_id, environment_id=record.environment_id
-    )) == 1
+    assert (
+        len(
+            await repository.list_scope(
+                organization_id=record.organization_id, environment_id=record.environment_id
+            )
+        )
+        == 1
+    )
     assert [item.result_code for item in audit.records] == [
         "bundled_connector_instance_creation_requested",
         "bundled_connector_instance_creation_completed",

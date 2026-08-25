@@ -54,9 +54,7 @@ class ConnectorRuntimeDeactivationData(BaseModel):
     def from_domain(
         cls, record: ConnectorRuntimeDeactivationRecord
     ) -> ConnectorRuntimeDeactivationData:
-        return cls.model_validate(
-            {field: getattr(record, field) for field in cls.model_fields}
-        )
+        return cls.model_validate({field: getattr(record, field) for field in cls.model_fields})
 
 
 class ConnectorRuntimeDeactivationResponse(BaseModel):

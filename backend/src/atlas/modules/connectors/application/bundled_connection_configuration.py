@@ -91,9 +91,7 @@ class BundledConnectionConfigurationService:
             instance_id=instance_id,
         )
         if record is None:
-            raise BundledConnectionConfigurationError(
-                "bundled_connection_configuration_not_found"
-            )
+            raise BundledConnectionConfigurationError("bundled_connection_configuration_not_found")
         await self._audit(
             actor, correlation_id, "bundled_connection_configuration_read", instance_id
         )

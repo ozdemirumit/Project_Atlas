@@ -62,9 +62,7 @@ class ConnectorRuntimeDeactivationService:
         self._require_human(actor)
         reason = reason.strip()
         if not runtime_only_acknowledged:
-            raise ConnectorRuntimeDeactivationError(
-                "runtime_deactivation_acknowledgement_required"
-            )
+            raise ConnectorRuntimeDeactivationError("runtime_deactivation_acknowledgement_required")
         if (
             (expected_activation_version is None and expected_activation_digest is None)
             or (expected_activation_version is not None and expected_activation_version < 1)
@@ -99,14 +97,11 @@ class ConnectorRuntimeDeactivationService:
         if activation is None:
             raise ConnectorRuntimeDeactivationError("runtime_deactivation_activation_not_found")
         if (
-            (
-                expected_activation_version is not None
-                and activation.version != expected_activation_version
-            )
-            or (
-                expected_activation_digest is not None
-                and activation.canonical_digest != expected_activation_digest
-            )
+            expected_activation_version is not None
+            and activation.version != expected_activation_version
+        ) or (
+            expected_activation_digest is not None
+            and activation.canonical_digest != expected_activation_digest
         ):
             raise ConnectorRuntimeDeactivationError("runtime_deactivation_activation_conflict")
 

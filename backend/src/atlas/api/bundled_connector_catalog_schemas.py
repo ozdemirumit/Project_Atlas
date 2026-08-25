@@ -52,9 +52,7 @@ class BundledConnectorDescriptorData(BaseModel):
     infrastructure_mutation_performed: bool
 
     @classmethod
-    def from_domain(
-        cls, descriptor: BundledConnectorDescriptor
-    ) -> BundledConnectorDescriptorData:
+    def from_domain(cls, descriptor: BundledConnectorDescriptor) -> BundledConnectorDescriptorData:
         return cls(**{field: getattr(descriptor, field) for field in cls.model_fields})
 
 

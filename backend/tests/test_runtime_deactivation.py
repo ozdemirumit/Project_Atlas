@@ -41,9 +41,16 @@ class FailingAuditSink:
 async def deactivation_fixture(
     *, audit_sink: CollectingAuditSink | FailingAuditSink | None = None
 ) -> tuple[object, ConnectorRuntimeDeactivationService, object, object]:
-    activation_service, _, _, runtime_trust, brokerage, profile, policy, _ = (
-        await runtime_activation_fixture()
-    )
+    (
+        activation_service,
+        _,
+        _,
+        runtime_trust,
+        brokerage,
+        profile,
+        policy,
+        _,
+    ) = await runtime_activation_fixture()
     activation = await activate_runtime(activation_service, brokerage, profile, policy)
     repository = InMemoryConnectorRuntimeDeactivationRepository()
     service = ConnectorRuntimeDeactivationService(
@@ -107,8 +114,9 @@ async def test_runtime_deactivation_is_immutable_idempotent_and_blocks_runtime_u
 
 
 @pytest.mark.asyncio
-async def test_runtime_deactivation_enforces_preconditions_scope_human_and_acknowledgement(
-) -> None:
+async def test_runtime_deactivation_enforces_preconditions_scope_human_and_acknowledgement() -> (
+    None
+):
     _, service, activation, _ = await deactivation_fixture()
     actor = runtime_activation_operator()
     base = {

@@ -206,13 +206,9 @@ async def list_connector_runtime_deactivations(
     _decision: Annotated[
         AuthorizationDecision, Depends(authorize_connector_runtime_activation_read)
     ],
-    activation_id: Annotated[
-        str | None, Query(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")
-    ] = None,
+    activation_id: Annotated[str | None, Query(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")] = None,
 ) -> ConnectorRuntimeDeactivationInventoryResponse:
-    service: ConnectorRuntimeDeactivationService = (
-        request.app.state.runtime_deactivation_service
-    )
+    service: ConnectorRuntimeDeactivationService = request.app.state.runtime_deactivation_service
     try:
         records = await service.list_deactivations(
             actor=subject,
@@ -243,9 +239,7 @@ async def list_connector_runtime_activation_deactivations(
         AuthorizationDecision, Depends(authorize_connector_runtime_activation_read)
     ],
 ) -> ConnectorRuntimeDeactivationInventoryResponse:
-    service: ConnectorRuntimeDeactivationService = (
-        request.app.state.runtime_deactivation_service
-    )
+    service: ConnectorRuntimeDeactivationService = request.app.state.runtime_deactivation_service
     try:
         records = await service.list_deactivations(
             actor=subject,
@@ -279,9 +273,7 @@ async def deactivate_connector_runtime_activation(
     ],
     idempotency_key: Annotated[str, IDEMPOTENCY],
 ) -> ConnectorRuntimeDeactivationResponse:
-    service: ConnectorRuntimeDeactivationService = (
-        request.app.state.runtime_deactivation_service
-    )
+    service: ConnectorRuntimeDeactivationService = request.app.state.runtime_deactivation_service
     try:
         record = await service.create(
             actor=subject,

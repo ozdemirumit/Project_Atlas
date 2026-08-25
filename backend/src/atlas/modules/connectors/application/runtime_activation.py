@@ -103,9 +103,7 @@ class ConnectorRuntimeActivationService:
     def repository(self) -> ConnectorRuntimeActivationRepository:
         return self._repository
 
-    def bind_deactivation_source(
-        self, source: ConnectorRuntimeDeactivationStatusSource
-    ) -> None:
+    def bind_deactivation_source(self, source: ConnectorRuntimeDeactivationStatusSource) -> None:
         self._deactivation_source = source
 
     async def get_activation_for_deactivation(

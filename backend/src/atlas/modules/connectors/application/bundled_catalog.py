@@ -196,10 +196,12 @@ class BundledConnectorCatalogService:
                 instance_key,
             ]
         )
+
         def lineage(name: str) -> str:
             return self._digest(
                 ["atlas.bundled-connector-catalog-lineage.v1", descriptor.canonical_digest, name]
             )
+
         record = ConnectorInstanceRecord(
             record_id=f"connector-instance-record.{seed[:24]}",
             schema_version=INSTANCE_RECORD_SCHEMA,
@@ -262,9 +264,7 @@ class BundledConnectorCatalogService:
             record.created_by != actor.subject_id
             or record.request_fingerprint != fingerprint
             or record.connector_id != descriptor.connector_id
-            or not record.source_installation_receipt_id.startswith(
-                "bundled-installation-receipt."
-            )
+            or not record.source_installation_receipt_id.startswith("bundled-installation-receipt.")
         ):
             raise BundledConnectorCatalogError("bundled_connector_idempotency_conflict")
         self._verify_record(record)

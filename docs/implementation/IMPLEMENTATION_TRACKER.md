@@ -6,9 +6,9 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-248 |
 | Title | MVP operator workflows: inventory lifecycle and simplified MCP operations |
-| Status | In Progress |
+| Status | Review |
 | Branch | `agent/mvp-operator-workflows` |
-| Pull Request | Pending |
+| Pull Request | [#263](https://github.com/ozdemirumit/Project_Atlas/pull/263) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-020, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-052, ADR-133 |
 | Last Updated | 2026-08-25 |
 | Next Action | Add operator-managed credential references and complete the short MCP enable/disable workflow |
