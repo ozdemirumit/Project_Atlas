@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-245 |
 | Title | Installed MCP tenant-scoped operational knowledge-draft inventory and server-provided signed curation options |
-| Status | Pull Request Preparation |
+| Status | Pull Request CI In Progress |
 | Branch | `agent/installed-mcp-knowledge-draft-governance` |
-| Pull Request | Not opened |
+| Pull Request | [PR #259](https://github.com/ozdemirumit/Project_Atlas/pull/259) |
 | Governing Documents | ATLAS-003, ATLAS-020, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-052, ADR-041, ADR-042, ADR-100, ADR-123, ADR-133 |
 | Last Updated | 2026-08-25 |
-| Next Action | Open the pull request and require exact-head CI before merge |
+| Next Action | Require exact-head PR CI before merge |
 
 ### ATLAS-IMP-245 Scope Rationale
 
