@@ -59,6 +59,10 @@ class ConnectorConnectionTestService:
         self._timeout_seconds = timeout_seconds
         self._maximum_response_bytes = maximum_response_bytes
 
+    @property
+    def result_repository(self) -> ConnectorConnectionTestResultRepository:
+        return self._result_repository
+
     async def test(
         self,
         *,

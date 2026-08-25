@@ -6,6 +6,9 @@ from datetime import datetime
 from atlas.modules.connectors.application.bundled_connection_configuration_ports import (
     BundledConnectionConfigurationRepository,
 )
+from atlas.modules.connectors.application.bundled_runtime_state_ports import (
+    BundledConnectorRuntimeStateRepository,
+)
 from atlas.modules.connectors.application.connection_test_ports import (
     ConnectorConnectionTestError,
     ConnectorCredentialMaterializer,
@@ -17,6 +20,7 @@ from atlas.modules.connectors.application.instance_creation_ports import (
 from atlas.modules.connectors.domain.bundled_connection_configuration import (
     BundledConnectionConfiguration,
 )
+from atlas.modules.connectors.domain.bundled_runtime_state import ENABLED_READ_ONLY
 from atlas.modules.connectors.domain.instance_creation import DISABLED_UNCONFIGURED
 from atlas.modules.connectors.vendors.hitachi_ops_center.client import HitachiOpsCenterClient
 from atlas.modules.connectors.vendors.hitachi_ops_center.manifest import PACKAGE_ID
@@ -55,6 +59,7 @@ class ConfiguredHitachiHealthExecutor:
         fallback_executor: HealthCheckExecutor,
         organization_id: str,
         environment_id: str,
+        runtime_state_repository: BundledConnectorRuntimeStateRepository | None = None,
     ) -> None:
         self._configuration_repository = configuration_repository
         self._instance_repository = instance_repository
@@ -64,6 +69,7 @@ class ConfiguredHitachiHealthExecutor:
         self._fallback_executor = fallback_executor
         self._organization_id = organization_id
         self._environment_id = environment_id
+        self._runtime_state_repository = runtime_state_repository
 
     async def execute(
         self, definition: HealthCheckDefinition, *, started_at: datetime
@@ -77,6 +83,21 @@ class ConfiguredHitachiHealthExecutor:
                 started_at,
                 "A single active configured Hitachi MCP is required for this health check.",
             )
+        if self._runtime_state_repository is not None:
+            runtime_state = await self._runtime_state_repository.get(
+                organization_id=self._organization_id,
+                environment_id=self._environment_id,
+                instance_id=configuration.instance_id,
+            )
+            if (
+                runtime_state is None
+                or runtime_state.state != ENABLED_READ_ONLY
+                or runtime_state.configuration_id != configuration.configuration_id
+            ):
+                return self._unavailable(
+                    started_at,
+                    "The configured Hitachi MCP must be enabled for read-only health polling.",
+                )
         storage_ids = await self._allowed_storage_ids(definition)
         if not storage_ids:
             return self._unavailable(

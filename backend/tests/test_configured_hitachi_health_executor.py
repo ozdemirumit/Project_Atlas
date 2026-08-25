@@ -9,8 +9,14 @@ from typing import cast
 
 import pytest
 
+from atlas.modules.connectors.adapters.bundled_runtime_state_memory import (
+    InMemoryBundledConnectorRuntimeStateRepository,
+)
 from atlas.modules.connectors.application.bundled_connection_configuration_ports import (
     BundledConnectionConfigurationRepository,
+)
+from atlas.modules.connectors.application.bundled_runtime_state_ports import (
+    BundledConnectorRuntimeStateRepository,
 )
 from atlas.modules.connectors.application.connection_test_ports import (
     ConnectorAuthorizationHeaderLease,
@@ -127,6 +133,7 @@ def build_executor(
     devices: Iterable[object] = (),
     credentials_available: bool = True,
     routes: Mapping[str, SyntheticHitachiResponse] | None = None,
+    runtime_state_repository: BundledConnectorRuntimeStateRepository | None = None,
 ) -> tuple[ConfiguredHitachiHealthExecutor, SyntheticHitachiTransport]:
     transport = SyntheticHitachiTransport(routes or {})
     executor = ConfiguredHitachiHealthExecutor(
@@ -143,6 +150,7 @@ def build_executor(
         fallback_executor=SyntheticStorageHealthExecutor(),
         organization_id="organization.atlas.local",
         environment_id="environment.development",
+        runtime_state_repository=runtime_state_repository,
     )
     return executor, transport
 
@@ -158,6 +166,36 @@ async def test_controller_check_fails_safely_without_one_configured_instance() -
     assert result.step_count == 0
     assert transport.requests == []
     assert "single active configured Hitachi MCP" in result.partial_reasons[0]
+
+
+@pytest.mark.asyncio
+async def test_controller_check_does_not_contact_disabled_configured_mcp() -> None:
+    configuration = SimpleNamespace(
+        configuration_id="connection_configuration.hitachi-health",
+        connector_id=PACKAGE_ID,
+        instance_id=INSTANCE_ID,
+        hostname="opscenter.example.internal",
+        port=23450,
+        trust_profile_id="trust.system-ca",
+        secret_reference_id="secret.hitachi.readonly",
+    )
+    instance = SimpleNamespace(
+        connector_id=PACKAGE_ID,
+        instance_id=INSTANCE_ID,
+        instance_state=DISABLED_UNCONFIGURED,
+    )
+    executor, transport = build_executor(
+        configurations=(configuration,),
+        instances=(instance,),
+        runtime_state_repository=InMemoryBundledConnectorRuntimeStateRepository(),
+    )
+    controller, _ = definitions()
+
+    result = await executor.execute(controller, started_at=NOW)
+
+    assert result.state is HealthCheckRunState.FAILED
+    assert "must be enabled" in result.partial_reasons[0]
+    assert transport.requests == []
 
 
 @pytest.mark.asyncio

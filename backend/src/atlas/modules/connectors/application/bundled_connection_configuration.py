@@ -10,6 +10,9 @@ from atlas.modules.connectors.application.bundled_connection_configuration_ports
     BundledConnectionConfigurationError,
     BundledConnectionConfigurationRepository,
 )
+from atlas.modules.connectors.application.bundled_runtime_state_ports import (
+    BundledConnectorRuntimeStateRepository,
+)
 from atlas.modules.connectors.application.instance_creation_ports import ConnectorInstanceRepository
 from atlas.modules.connectors.domain.bundled_connection_configuration import (
     BundledConnectionConfiguration,
@@ -29,6 +32,7 @@ class BundledConnectionConfigurationService:
         audit_sink: AuditSink,
         environment_id: str,
         deployment_environment: str,
+        runtime_state_repository: BundledConnectorRuntimeStateRepository | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._repository = repository
@@ -36,6 +40,7 @@ class BundledConnectionConfigurationService:
         self._audit_sink = audit_sink
         self._environment_id = environment_id
         self._development_enabled = deployment_environment == "development"
+        self._runtime_state_repository = runtime_state_repository
         self._clock = clock or (lambda: datetime.now(UTC))
 
     @property
@@ -54,6 +59,10 @@ class BundledConnectionConfigurationService:
         correlation_id: str,
     ) -> BundledConnectionConfiguration:
         self._require_development_human(actor)
+        if not secret_reference_id.startswith("secret."):
+            raise BundledConnectionConfigurationError(
+                "bundled_connection_configuration_secret_reference_invalid"
+            )
         await self._require_bundled_instance(actor=actor, instance_id=instance_id)
         try:
             normalized_hostname = validate_connection_hostname(hostname)
@@ -75,6 +84,12 @@ class BundledConnectionConfigurationService:
             configured_at=self._clock(),
         )
         await self._repository.put(record)
+        if self._runtime_state_repository is not None:
+            await self._runtime_state_repository.clear(
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+                instance_id=instance_id,
+            )
         await self._audit(
             actor, correlation_id, "bundled_connection_configuration_saved", instance_id
         )

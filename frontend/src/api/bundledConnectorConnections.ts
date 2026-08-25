@@ -37,6 +37,17 @@ export type ConnectorConnectionTestResult = {
   infrastructure_mutation_performed: false;
 };
 
+export type BundledConnectorRuntimeState = {
+  instance_id: string;
+  state: "disabled" | "enabled_read_only";
+  version: number;
+  changed_at: string | null;
+  changed_by: string | null;
+  reason: string | null;
+  managed_infrastructure_contacted: false;
+  infrastructure_mutation_performed: false;
+};
+
 const stableId = /^[a-z][a-z0-9_.:-]{2,127}$/;
 
 function responseData(payload: unknown): unknown {
@@ -72,6 +83,20 @@ function isConnectionTest(value: unknown): value is ConnectorConnectionTestResul
     record.infrastructure_mutation_performed === false;
 }
 
+function isRuntimeState(value: unknown): value is BundledConnectorRuntimeState {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return typeof record.instance_id === "string" && stableId.test(record.instance_id) &&
+    (record.state === "disabled" || record.state === "enabled_read_only") &&
+    typeof record.version === "number" && Number.isInteger(record.version) && record.version >= 0 &&
+    (record.changed_at === null ||
+      (typeof record.changed_at === "string" && !Number.isNaN(Date.parse(record.changed_at)))) &&
+    (record.changed_by === null || typeof record.changed_by === "string") &&
+    (record.reason === null || typeof record.reason === "string") &&
+    record.managed_infrastructure_contacted === false &&
+    record.infrastructure_mutation_performed === false;
+}
+
 function configurationPath(instanceId: string): string {
   return `/api/v1/connectors/bundled-instances/${encodeURIComponent(instanceId)}/connection-configuration`;
 }
@@ -95,6 +120,7 @@ export async function saveBundledConnectionConfiguration(input: {
   instanceId: string;
   hostname: string;
   port: number;
+  secretReferenceId: string;
 }): Promise<BundledConnectionConfiguration> {
   const response = await apiFetch(configurationPath(input.instanceId), {
     method: "PUT",
@@ -103,7 +129,7 @@ export async function saveBundledConnectionConfiguration(input: {
       hostname: input.hostname.trim().toLowerCase(),
       port: input.port,
       trust_profile_id: HITACHI_SYSTEM_CA_TRUST_PROFILE,
-      secret_reference_id: HITACHI_AUTHORIZATION_SECRET_REFERENCE,
+      secret_reference_id: input.secretReferenceId.trim().toLowerCase(),
     }),
   });
   if (!response.ok) throw new ApiRequestError("Connection configuration failed", response.status);
@@ -143,4 +169,57 @@ export async function getLatestBundledConnectorConnectionTest(
     throw new Error("Latest connection test returned unsafe data");
   }
   return data;
+}
+
+function runtimePath(instanceId: string, operation?: "enable" | "disable"): string {
+  const base = `/api/v1/connectors/bundled-instances/${encodeURIComponent(instanceId)}`;
+  return operation ? `${base}/${operation}` : `${base}/runtime-state`;
+}
+
+async function runtimeStateResponse(
+  response: Response,
+  instanceId: string,
+  errorMessage: string,
+): Promise<BundledConnectorRuntimeState> {
+  if (!response.ok) throw new ApiRequestError(errorMessage, response.status);
+  const data = responseData(await response.json());
+  if (!isRuntimeState(data) || data.instance_id !== instanceId) {
+    throw new Error("Bundled MCP runtime state returned unsafe data");
+  }
+  return data;
+}
+
+export async function getBundledConnectorRuntimeState(
+  instanceId: string,
+): Promise<BundledConnectorRuntimeState> {
+  const response = await apiFetch(runtimePath(instanceId), {
+    headers: { Accept: "application/json" },
+  });
+  return runtimeStateResponse(response, instanceId, "Bundled MCP runtime state failed");
+}
+
+export async function enableBundledConnectorRuntime(
+  instanceId: string,
+): Promise<BundledConnectorRuntimeState> {
+  const response = await apiFetch(runtimePath(instanceId, "enable"), {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({ acknowledged_read_only_operation: true }),
+  });
+  return runtimeStateResponse(response, instanceId, "Bundled MCP enable failed");
+}
+
+export async function disableBundledConnectorRuntime(input: {
+  instanceId: string;
+  reason: string;
+}): Promise<BundledConnectorRuntimeState> {
+  const response = await apiFetch(runtimePath(input.instanceId, "disable"), {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({
+      reason: input.reason.trim(),
+      acknowledged_runtime_stop: true,
+    }),
+  });
+  return runtimeStateResponse(response, input.instanceId, "Bundled MCP disable failed");
 }

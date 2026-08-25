@@ -36,17 +36,28 @@ export function BundledConnectionDialog({
   const current = configurationQuery.data;
   const [hostnameOverride, setHostnameOverride] = useState("");
   const [portOverride, setPortOverride] = useState<number | null>(null);
+  const [secretReferenceOverride, setSecretReferenceOverride] = useState("");
   const hostname = hostnameOverride || current?.hostname || "";
   const port = portOverride ?? current?.port ?? 23450;
+  const secretReferenceId = secretReferenceOverride || current?.secret_reference_id ||
+    HITACHI_AUTHORIZATION_SECRET_REFERENCE;
 
   const saveMutation = useMutation({
     mutationFn: () => saveBundledConnectionConfiguration({
       instanceId: instance.instance_id,
       hostname,
       port,
+      secretReferenceId,
     }),
     onSuccess: (saved) => {
       queryClient.setQueryData(queryKey, saved);
+      queryClient.setQueryData(
+        ["bundled-connection-test", instance.instance_id],
+        null,
+      );
+      void queryClient.invalidateQueries({
+        queryKey: ["bundled-runtime-state", instance.instance_id],
+      });
       onConfigured(saved);
     },
   });
@@ -61,7 +72,8 @@ export function BundledConnectionDialog({
     },
   });
   const valid = /^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$/.test(hostname.trim()) &&
-    port >= 1 && port <= 65_535;
+    port >= 1 && port <= 65_535 &&
+    /^secret\.[a-z0-9_.:-]{2,120}$/.test(secretReferenceId.trim());
   const error = saveMutation.error ?? testMutation.error ?? configurationQuery.error;
 
   const submit = (event: FormEvent) => {
@@ -120,9 +132,20 @@ export function BundledConnectionDialog({
                 />
               </label>
             </div>
+            <label>
+              Credential reference ID
+              <input
+                value={secretReferenceId}
+                maxLength={127}
+                required
+                pattern={"secret\\.[a-z0-9_.:\\-]{2,120}"}
+                placeholder="secret.hitachi.readonly"
+                onChange={(event) => setSecretReferenceOverride(event.target.value.toLowerCase())}
+              />
+            </label>
             <div className="installed-mcp-package-facts">
               <span>Protocol <strong>HTTPS</strong></span>
-              <span>Credential <code>{HITACHI_AUTHORIZATION_SECRET_REFERENCE}</code></span>
+              <span>Credential handling <strong>reference only</strong></span>
             </div>
             <button className="primary-button" type="submit" disabled={!valid || saveMutation.isPending}>
               {saveMutation.isPending ? <RefreshCw className="spin" size={16} /> : <ShieldCheck size={16} />}

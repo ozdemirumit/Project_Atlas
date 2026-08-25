@@ -9,6 +9,19 @@ import {
   type BundledConnectorDescriptor,
 } from "../../api/bundledConnectorCatalog";
 import {
+  HITACHI_BUNDLED_CONNECTOR_ID,
+  disableBundledConnectorRuntime,
+  enableBundledConnectorRuntime,
+  getBundledConnectionConfiguration,
+  getBundledConnectorRuntimeState,
+  getLatestBundledConnectorConnectionTest,
+  saveBundledConnectionConfiguration,
+  testBundledConnectorConnection,
+  type BundledConnectionConfiguration,
+  type BundledConnectorRuntimeState,
+  type ConnectorConnectionTestResult,
+} from "../../api/bundledConnectorConnections";
+import {
   createConnectorCapabilityEnablement,
   getConnectorCapabilityEnablementOptions,
   getConnectorCapabilityEnablements,
@@ -200,6 +213,66 @@ const runtimeDeactivation: ConnectorRuntimeDeactivation = {
   managed_infrastructure_contacted: false,
   infrastructure_mutation_performed: false,
   reused: false,
+};
+
+const bundledInstance = {
+  ...instance,
+  record_id: "connector-instance-record.hitachi-east",
+  connector_id: HITACHI_BUNDLED_CONNECTOR_ID,
+  instance_id: "connector-instance.hitachi-east",
+  instance_key: "hitachi-east",
+  display_name: "Hitachi East",
+};
+
+const bundledConnection: BundledConnectionConfiguration = {
+  configuration_id: "connection_configuration.hitachi-east",
+  connector_id: HITACHI_BUNDLED_CONNECTOR_ID,
+  instance_id: bundledInstance.instance_id,
+  hostname: "opscenter.example.internal",
+  port: 23450,
+  trust_profile_id: "trust.system-ca",
+  secret_reference_id: "secret.hitachi.readonly",
+  configured_at: "2026-08-25T12:00:00Z",
+  protocol: "https",
+  development_only: true,
+  secret_material_stored: false,
+  infrastructure_mutation_performed: false,
+};
+
+const bundledConnectionTest: ConnectorConnectionTestResult = {
+  test_id: "connection-test.hitachi-east",
+  connector_id: HITACHI_BUNDLED_CONNECTOR_ID,
+  instance_id: bundledInstance.instance_id,
+  outcome: "passed",
+  result_code: "hitachi_api_compatible",
+  retryable: false,
+  checked_at: "2026-08-25T12:01:00Z",
+  duration_ms: 42,
+  read_only_request_performed: true,
+  target_details_disclosed: false,
+  secret_material_disclosed: false,
+  managed_infrastructure_contacted: true,
+  infrastructure_mutation_performed: false,
+};
+
+const bundledRuntimeDisabled: BundledConnectorRuntimeState = {
+  instance_id: bundledInstance.instance_id,
+  state: "disabled",
+  version: 1,
+  changed_at: null,
+  changed_by: null,
+  reason: null,
+  managed_infrastructure_contacted: false,
+  infrastructure_mutation_performed: false,
+};
+
+const bundledRuntimeEnabled: BundledConnectorRuntimeState = {
+  ...bundledRuntimeDisabled,
+  state: "enabled_read_only",
+  version: 2,
+  changed_at: "2026-08-25T12:02:00Z",
+  changed_by: "subject.connector-operator",
+  reason: "Enable the verified read-only connector.",
 };
 
 const bundledDescriptor = {
@@ -993,6 +1066,20 @@ vi.mock("../../api/bundledConnectorCatalog", async (importOriginal) => {
   };
 });
 
+vi.mock("../../api/bundledConnectorConnections", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../api/bundledConnectorConnections")>();
+  return {
+    ...original,
+    disableBundledConnectorRuntime: vi.fn(),
+    enableBundledConnectorRuntime: vi.fn(),
+    getBundledConnectionConfiguration: vi.fn(),
+    getBundledConnectorRuntimeState: vi.fn(),
+    getLatestBundledConnectorConnectionTest: vi.fn(),
+    saveBundledConnectionConfiguration: vi.fn(),
+    testBundledConnectorConnection: vi.fn(),
+  };
+});
+
 vi.mock("../../api/runtimeDeactivations", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/runtimeDeactivations")>();
   return {
@@ -1190,6 +1277,19 @@ function primeOperationalEvidenceLifecycle() {
 beforeEach(() => {
   vi.mocked(getBundledConnectorCatalog).mockResolvedValue([]);
   vi.mocked(createBundledConnectorInstance).mockRejectedValue(new Error("Not configured"));
+  vi.mocked(getBundledConnectionConfiguration).mockResolvedValue(null);
+  vi.mocked(getLatestBundledConnectorConnectionTest).mockResolvedValue(null);
+  vi.mocked(getBundledConnectorRuntimeState).mockResolvedValue(bundledRuntimeDisabled);
+  vi.mocked(saveBundledConnectionConfiguration).mockResolvedValue(bundledConnection);
+  vi.mocked(testBundledConnectorConnection).mockResolvedValue(bundledConnectionTest);
+  vi.mocked(enableBundledConnectorRuntime).mockResolvedValue(bundledRuntimeEnabled);
+  vi.mocked(disableBundledConnectorRuntime).mockResolvedValue({
+    ...bundledRuntimeDisabled,
+    version: 3,
+    changed_at: "2026-08-25T12:03:00Z",
+    changed_by: "subject.connector-operator",
+    reason: "Planned connector maintenance.",
+  });
   vi.mocked(getConnectorPackageInstallations).mockResolvedValue([installation]);
   vi.mocked(getConnectorInstanceCreationPolicies).mockResolvedValue([policy]);
   vi.mocked(getConnectorInstances).mockResolvedValue([instance]);
@@ -1300,6 +1400,61 @@ afterEach(() => {
 });
 
 describe("InstalledMcpManagementWorkspace", () => {
+  it("enables a tested bundled MCP through the concise read-only operator action", async () => {
+    vi.mocked(getConnectorInstances).mockResolvedValue([bundledInstance]);
+    vi.mocked(getBundledConnectionConfiguration).mockResolvedValue(bundledConnection);
+    vi.mocked(getLatestBundledConnectorConnectionTest).mockResolvedValue(bundledConnectionTest);
+    vi.mocked(getBundledConnectorRuntimeState).mockResolvedValue(bundledRuntimeDisabled);
+    renderWorkspace();
+
+    const progress = await screen.findByRole("progressbar", {
+      name: "Setup progress for Hitachi East",
+    });
+    expect(progress).toHaveAttribute("aria-valuemax", "4");
+    expect(progress).toHaveAttribute("aria-valuenow", "3");
+    fireEvent.click(screen.getByRole("button", {
+      name: "Enable read-only MCP for Hitachi East",
+    }));
+
+    await waitFor(() => expect(
+      vi.mocked(enableBundledConnectorRuntime).mock.calls[0]?.[0],
+    ).toBe(bundledInstance.instance_id));
+    expect(await screen.findByText("Enabled / read-only")).toBeVisible();
+    expect(progress).toHaveAttribute("aria-valuenow", "4");
+    expect(screen.getByRole("button", { name: "Disable MCP for Hitachi East" })).toBeVisible();
+  });
+
+  it("disables an enabled bundled MCP with an operator reason", async () => {
+    const reason = "Planned connector maintenance.";
+    vi.mocked(getConnectorInstances).mockResolvedValue([bundledInstance]);
+    vi.mocked(getBundledConnectionConfiguration).mockResolvedValue(bundledConnection);
+    vi.mocked(getLatestBundledConnectorConnectionTest).mockResolvedValue(bundledConnectionTest);
+    vi.mocked(getBundledConnectorRuntimeState).mockResolvedValue(bundledRuntimeEnabled);
+    renderWorkspace();
+
+    expect(await screen.findByText("Enabled / read-only")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Disable MCP for Hitachi East" }));
+    const dialog = screen.getByRole("dialog", { name: "Disable Hitachi East" });
+    expect(within(dialog).getByText(/does not contact or change managed infrastructure/i))
+      .toBeVisible();
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Reason" }), {
+      target: { value: reason },
+    });
+    fireEvent.click(within(dialog).getByRole("checkbox"));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Disable MCP" }));
+
+    await waitFor(() => expect(
+      vi.mocked(disableBundledConnectorRuntime).mock.calls[0]?.[0],
+    ).toEqual({
+      instanceId: bundledInstance.instance_id,
+      reason,
+    }));
+    expect(await screen.findByText("Read-only MCP disabled")).toBeVisible();
+    expect(screen.getByRole("button", {
+      name: "Enable read-only MCP for Hitachi East",
+    })).toBeVisible();
+  });
+
   it.each([
     [0, "Configure target"],
     [1, "Assign credential reference"],
