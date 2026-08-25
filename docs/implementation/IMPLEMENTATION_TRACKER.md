@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-244 |
 | Title | Installed MCP tenant-scoped invocation-evidence inventory and server-provided signed preservation options |
-| Status | Verification Complete |
+| Status | Pull Request CI In Progress |
 | Branch | `agent/installed-mcp-invocation-evidence-governance` |
-| Pull Request | Pending |
+| Pull Request | [#258](https://github.com/ozdemirumit/Project_Atlas/pull/258) |
 | Governing Documents | ATLAS-003, ATLAS-020, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-052, ADR-040, ADR-041, ADR-100, ADR-123, ADR-133 |
 | Last Updated | 2026-08-25 |
-| Next Action | Commit the verified slice, open the pull request and complete exact-head plus post-main CI |
+| Next Action | Complete exact-head CI, squash merge and post-main CI |
 
 ### ATLAS-IMP-244 Scope Rationale
 
