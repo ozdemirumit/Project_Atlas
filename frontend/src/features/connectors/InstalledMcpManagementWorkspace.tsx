@@ -32,6 +32,11 @@ import {
   type BundledConnectorDescriptor,
 } from "../../api/bundledConnectorCatalog";
 import {
+  HITACHI_BUNDLED_CONNECTOR_ID,
+  getBundledConnectionConfiguration,
+  type BundledConnectionConfiguration,
+} from "../../api/bundledConnectorConnections";
+import {
   getConnectorCapabilityEnablements,
   type ConnectorCapabilityEnablementInventoryItem,
 } from "../../api/capabilityEnablements";
@@ -159,6 +164,7 @@ import { InvocationEvidencePanel } from "./InvocationEvidencePanel";
 import { EvidenceKnowledgeDraftPanel } from "./EvidenceKnowledgeDraftPanel";
 import { KnowledgeDraftReviewRequestPanel } from "./KnowledgeDraftReviewRequestPanel";
 import { ReviewerAssignmentPanel } from "./ReviewerAssignmentPanel";
+import { BundledConnectionDialog } from "./BundledConnectionDialog";
 
 type LifecycleFilter = "active" | "retired" | "all";
 
@@ -1915,6 +1921,8 @@ export default function InstalledMcpManagementWorkspace({
   const [retiring, setRetiring] = useState<ConnectorInstanceRecord | null>(null);
   const [reviewing, setReviewing] = useState<ConnectorInstanceRecord | null>(null);
   const [targeting, setTargeting] = useState<ConnectorInstanceRecord | null>(null);
+  const [configuringBundledConnection, setConfiguringBundledConnection] =
+    useState<ConnectorInstanceRecord | null>(null);
   const [credentialing, setCredentialing] = useState<ConnectorInstanceRecord | null>(null);
   const [validating, setValidating] = useState<ConnectorInstanceRecord | null>(null);
   const [governingCapabilities, setGoverningCapabilities] =
@@ -2150,6 +2158,25 @@ export default function InstalledMcpManagementWorkspace({
     },
   });
   const instances = instanceQuery.data ?? [];
+  const bundledInstances = instances.filter(
+    (instance) => instance.connector_id === HITACHI_BUNDLED_CONNECTOR_ID,
+  );
+  const bundledConnectionQueries = useQueries({
+    queries: bundledInstances.map((instance) => ({
+      queryKey: ["bundled-connection-configuration", instance.instance_id],
+      queryFn: () => getBundledConnectionConfiguration(instance.instance_id),
+      enabled: Boolean(subjectId),
+      retry: false,
+    })),
+  });
+  const bundledConnectionByInstance = new Map(
+    bundledConnectionQueries.flatMap((query, index) => {
+      const instance = bundledInstances[index];
+      return query.isSuccess && query.data && instance
+        ? [[instance.instance_id, query.data] as const]
+        : [];
+    }),
+  );
   const targetBindings = bindingQuery.data ?? [];
   const bindingByInstance = new Map(
     targetBindings.map((binding) => [binding.source_instance_record_id, binding]),
@@ -2381,6 +2408,7 @@ export default function InstalledMcpManagementWorkspace({
     void runtimeActivationQuery.refetch();
     void runtimeDeactivationQuery.refetch();
     void targetSessionQuery.refetch();
+    for (const query of bundledConnectionQueries) void query.refetch();
     for (const query of invocationAuthorizationQueries) void query.refetch();
     for (const query of boundedInvocationQueries) void query.refetch();
     for (const query of invocationEvidenceQueries) void query.refetch();
@@ -3076,11 +3104,15 @@ export default function InstalledMcpManagementWorkspace({
             <tbody>
               {instances.map((instance) => {
                 const binding = bindingByInstance.get(instance.record_id);
-                const configured = Boolean(binding);
+                const isBundledHitachi = instance.connector_id === HITACHI_BUNDLED_CONNECTOR_ID;
+                const bundledConnection = isBundledHitachi
+                  ? bundledConnectionByInstance.get(instance.instance_id)
+                  : undefined;
+                const configured = Boolean(binding || bundledConnection);
                 const assignment = binding
                   ? assignmentByBinding.get(binding.binding_id)
                   : undefined;
-                const credentialsAssigned = Boolean(assignment);
+                const credentialsAssigned = Boolean(assignment || bundledConnection);
                 const validation = assignment
                   ? validationByAssignment.get(assignment.assignment_id)
                   : undefined;
@@ -3157,9 +3189,17 @@ export default function InstalledMcpManagementWorkspace({
                 const nextSetupAction = !configured
                   ? {
                       icon: <Link2 size={15} />,
-                      label: "Configure target",
-                      onClick: () => setTargeting(instance),
+                      label: isBundledHitachi ? "Configure connection" : "Configure target",
+                      onClick: () => isBundledHitachi
+                        ? setConfiguringBundledConnection(instance)
+                        : setTargeting(instance),
                     }
+                  : isBundledHitachi
+                    ? {
+                        icon: <Link2 size={15} />,
+                        label: "Test connection",
+                        onClick: () => setConfiguringBundledConnection(instance),
+                      }
                   : !credentialsAssigned
                     ? {
                         icon: <KeyRound size={15} />,
@@ -3222,6 +3262,8 @@ export default function InstalledMcpManagementWorkspace({
                           ? "Retired"
                           : runtimeDeactivation
                             ? "Disabled / runtime stopped"
+                          : bundledConnection
+                            ? "Disabled / connection configured"
                           : knowledgeReviewersAssigned
                             ? "Enabled / reviewers assigned"
                           : knowledgeReviewerAssignmentClaim
@@ -3262,6 +3304,8 @@ export default function InstalledMcpManagementWorkspace({
                           ? "Retired"
                           : runtimeDeactivation
                             ? "Runtime disabled"
+                          : bundledConnection
+                            ? "Connection configured"
                           : knowledgeReviewerAssignment
                             ? "Knowledge reviewers assigned"
                           : knowledgeReviewerAssignmentClaim
@@ -3294,7 +3338,7 @@ export default function InstalledMcpManagementWorkspace({
                               ? "Target bound"
                               : "Created"}
                       </span>
-                      {new Date(runtimeDeactivation?.deactivated_at ?? knowledgeReviewerAssignment?.created_at ?? knowledgeReviewerAssignmentClaim?.claimed_at ?? knowledgeReviewRequest?.created_at ?? knowledgeDraft?.created_at ?? invocationEvidence?.ingested_at ?? boundedInvocation?.completed_at ?? invocationAuthorization?.authorized_at ?? targetSessionVerification?.verified_at ?? runtimeActivation?.healthy_at ?? secretBrokerageAuthorization?.authorized_at ?? runtimeTrust?.granted_at ?? enablement?.enabled_at ?? validation?.validated_at ?? assignment?.assigned_at ?? binding?.bound_at ?? instance.retired_at ?? instance.created_at).toLocaleString()}
+                      {new Date(runtimeDeactivation?.deactivated_at ?? bundledConnection?.configured_at ?? knowledgeReviewerAssignment?.created_at ?? knowledgeReviewerAssignmentClaim?.claimed_at ?? knowledgeReviewRequest?.created_at ?? knowledgeDraft?.created_at ?? invocationEvidence?.ingested_at ?? boundedInvocation?.completed_at ?? invocationAuthorization?.authorized_at ?? targetSessionVerification?.verified_at ?? runtimeActivation?.healthy_at ?? secretBrokerageAuthorization?.authorized_at ?? runtimeTrust?.granted_at ?? enablement?.enabled_at ?? validation?.validated_at ?? assignment?.assigned_at ?? binding?.bound_at ?? instance.retired_at ?? instance.created_at).toLocaleString()}
                     </td>
                     <td>
                       {instance.instance_state === "disabled_unconfigured" &&
@@ -3352,6 +3396,16 @@ export default function InstalledMcpManagementWorkspace({
                               <span>Advanced governance</span>
                             </summary>
                             <div className="installed-mcp-row-actions">
+                              {isBundledHitachi && bundledConnection && (
+                                <button
+                                  className="secondary-button installed-mcp-row-action"
+                                  type="button"
+                                  aria-label={`View connection for ${instance.display_name}`}
+                                  onClick={() => setConfiguringBundledConnection(instance)}
+                                >
+                                  <Link2 size={15} /><span>View connection</span>
+                                </button>
+                              )}
                               {binding && (
                                 <button className="secondary-button installed-mcp-row-action" type="button" aria-label={`View target for ${instance.display_name}`} onClick={() => setTargeting(instance)}>
                                   <Link2 size={15} /><span>View target</span>
@@ -3552,6 +3606,21 @@ export default function InstalledMcpManagementWorkspace({
           onOpenBuilder={openBuilder}
           onCatalogSubmit={(input) => createBundledMutation.mutate(input)}
           onSubmit={(input) => createMutation.mutate(input)}
+        />
+      )}
+      {configuringBundledConnection && (
+        <BundledConnectionDialog
+          instance={configuringBundledConnection}
+          configuration={bundledConnectionByInstance.get(
+            configuringBundledConnection.instance_id,
+          )}
+          onCancel={() => setConfiguringBundledConnection(null)}
+          onConfigured={(configuration) => {
+            queryClient.setQueryData<BundledConnectionConfiguration>(
+              ["bundled-connection-configuration", configuration.instance_id],
+              configuration,
+            );
+          }}
         />
       )}
       {retiring && <RetireMcpDialog instance={retiring} pending={retireMutation.isPending} onCancel={() => setRetiring(null)} onSubmit={(reason) => retireMutation.mutate({ instance: retiring, reason })} />}

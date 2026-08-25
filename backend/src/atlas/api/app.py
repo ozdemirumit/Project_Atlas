@@ -37,6 +37,7 @@ from atlas.api.routes import (
     capability_enablements,
     change_reviews,
     configuration_validations,
+    connector_connection_tests,
     connector_validations,
     connectors,
     content_policy_scans,
@@ -340,6 +341,9 @@ from atlas.modules.connectors.adapters.bounded_invocation_synthetic import (
     SyntheticConnectorBoundedInvocationAdapter,
     UnavailableConnectorBoundedInvocationAdapter,
 )
+from atlas.modules.connectors.adapters.bundled_connection_configuration_memory import (
+    InMemoryBundledConnectionConfigurationRepository,
+)
 from atlas.modules.connectors.adapters.capability_enablement_memory import (
     InMemoryConnectorCapabilityEnablementPolicySource,
     InMemoryConnectorCapabilityEnablementRepository,
@@ -355,6 +359,9 @@ from atlas.modules.connectors.adapters.configuration_validation_memory import (
 )
 from atlas.modules.connectors.adapters.configuration_validation_postgres import (
     PostgreSQLConnectorConfigurationValidationRepository,
+)
+from atlas.modules.connectors.adapters.connection_test_credential_environment import (
+    DevelopmentEnvironmentCredentialMaterializer,
 )
 from atlas.modules.connectors.adapters.content_policy_scan_memory import (
     InMemoryPackageContentPolicyScanRepository,
@@ -620,6 +627,9 @@ from atlas.modules.connectors.application.bundled_catalog import (
     BundledConnectorCatalogService,
     build_hitachi_ops_center_bundled_descriptor,
 )
+from atlas.modules.connectors.application.bundled_connection_configuration import (
+    BundledConnectionConfigurationService,
+)
 from atlas.modules.connectors.application.capability_enablement import (
     ConnectorCapabilityEnablementService,
     build_development_connector_capability_enablement_policy,
@@ -628,6 +638,7 @@ from atlas.modules.connectors.application.configuration_validation import (
     ConnectorConfigurationValidationService,
     build_development_connector_configuration_validation_policy,
 )
+from atlas.modules.connectors.application.connection_test import ConnectorConnectionTestService
 from atlas.modules.connectors.application.content_policy_scan import PackageContentPolicyScanService
 from atlas.modules.connectors.application.contract_validation import (
     PackageContractValidationService,
@@ -757,6 +768,9 @@ from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
     ConnectorUpgradeSigningProviderOnboardingPolicyAttestation,
     ConnectorUpgradeSigningProviderOnboardingPolicySnapshot,
     ConnectorUpgradeSigningProviderOnboardingPolicyTrustKey,
+)
+from atlas.modules.connectors.vendors.hitachi_ops_center.connection_test_https import (
+    HitachiOpsCenterConnectionTestHttpsFactory,
 )
 from atlas.modules.conversations.adapters.grounded import GroundedConversationGenerator
 from atlas.modules.conversations.adapters.memory import InMemoryConversationRepository
@@ -4824,6 +4838,32 @@ def create_app(
         repository=resolved_connector_instance_creation_service.repository,
         audit_sink=resolved_audit_sink,
         environment_id=resolved_connector_instance_creation_service.environment_id,
+    )
+    bundled_connection_configuration_repository = (
+        InMemoryBundledConnectionConfigurationRepository()
+    )
+    resolved_bundled_connection_configuration_service = (
+        BundledConnectionConfigurationService(
+            repository=bundled_connection_configuration_repository,
+            instance_repository=resolved_connector_instance_creation_service.repository,
+            audit_sink=resolved_audit_sink,
+            environment_id=resolved_connector_instance_creation_service.environment_id,
+            deployment_environment=resolved_settings.environment,
+        )
+    )
+    resolved_connector_connection_test_service = ConnectorConnectionTestService(
+        configuration_repository=bundled_connection_configuration_repository,
+        instance_repository=resolved_connector_instance_creation_service.repository,
+        credential_materializer=DevelopmentEnvironmentCredentialMaterializer(
+            deployment_environment=resolved_settings.environment,
+            reference_environment_variables={
+                "secret.hitachi.readonly": "ATLAS_HITACHI_AUTHORIZATION"
+            },
+        ),
+        transport_factory=HitachiOpsCenterConnectionTestHttpsFactory(),
+        audit_sink=resolved_audit_sink,
+        environment_id=resolved_connector_instance_creation_service.environment_id,
+        deployment_environment=resolved_settings.environment,
     )
     if runtime_deactivation_service is not None:
         resolved_runtime_deactivation_service = runtime_deactivation_service
@@ -9530,6 +9570,12 @@ def create_app(
         app.state.bundled_connector_catalog_service = (
             resolved_bundled_connector_catalog_service
         )
+        app.state.bundled_connection_configuration_service = (
+            resolved_bundled_connection_configuration_service
+        )
+        app.state.connector_connection_test_service = (
+            resolved_connector_connection_test_service
+        )
         app.state.connector_instance_lifecycle_service = (
             resolved_connector_instance_lifecycle_service
         )
@@ -10121,6 +10167,7 @@ def create_app(
     app.include_router(package_installations.router, prefix="/api/v1")
     app.include_router(instance_creation.router, prefix="/api/v1")
     app.include_router(bundled_connector_catalog.router, prefix="/api/v1")
+    app.include_router(connector_connection_tests.router, prefix="/api/v1")
     app.include_router(target_configuration.router, prefix="/api/v1")
     app.include_router(credential_assignments.router, prefix="/api/v1")
     app.include_router(configuration_validations.router, prefix="/api/v1")

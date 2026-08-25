@@ -995,6 +995,50 @@ textarea:focus-visible {
   order: 4;
 }
 
+.bundled-connection-dialog {
+  max-width: 680px;
+}
+
+.bundled-connection-dialog .installed-mcp-form {
+  display: grid;
+  gap: 12px;
+}
+
+.bundled-connection-dialog .installed-mcp-package-facts span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.bundled-connection-test {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #c7d8d2;
+  border-radius: 6px;
+  background: #f7faf9;
+}
+
+.bundled-connection-test > div,
+.bundled-connection-test > div > span {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.bundled-connection-test > div > span {
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bundled-connection-test small {
+  overflow-wrap: anywhere;
+  color: #687772;
+}
+
 @media (max-width: 800px) {
   .installed-mcp-table-wrap {
     overflow-x: visible;
@@ -1069,6 +1113,11 @@ textarea:focus-visible {
 
   .installed-mcp-next-action {
     align-items: flex-start;
+  }
+
+  .bundled-connection-test {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 

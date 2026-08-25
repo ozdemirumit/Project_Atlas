@@ -11,7 +11,7 @@
 | Pull Request | Pending |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-020, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-052, ADR-133 |
 | Last Updated | 2026-08-25 |
-| Next Action | Complete real Hitachi target, credential-reference and read-only connection-test workflow, then scheduled health execution |
+| Next Action | Persist the Hitachi connection and latest test result, then connect it to scheduled health execution |
 
 ### ATLAS-IMP-248 Scope Rationale
 
@@ -67,6 +67,15 @@
   returns `404` for bundled catalog lineage. The next batch replaces that unreachable path for bundled
   connectors with a direct, bounded Hitachi target, credential-reference and read-only connection-test
   vertical rather than extending the synthetic package-governance chain.
+- The bundled Hitachi path now provides a direct operator connection dialog for HTTPS hostname and
+  port metadata, uses the fixed `secret.hitachi.readonly` reference without accepting secret material,
+  and performs only a bounded read of the Ops Center version endpoint. Live browser validation saved
+  the connection, advanced setup to `2 of 8 complete`, and exposed `Test connection` as the next action.
+- With no local Hitachi credential configured, the live test failed closed as
+  `connection_test_credentials_unavailable` without contacting infrastructure or disclosing target or
+  secret details. Focused verification passed: `7` backend tests and `71` frontend tests; Ruff, strict
+  MyPy, TypeScript and focused ESLint passed. The narrow-screen dialog was visually checked without
+  clipped or overlapping controls.
 - Current estimate after this batch: approximately 45 percent of the user-visible MVP and 20-25
   percent of the complete long-term product vision. These are scope estimates, not line-count metrics.
 
