@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-247 |
 | Title | Installed MCP tenant-scoped operational knowledge reviewer-assignment inventory and server-provided signed assignment options |
-| Status | Local Verification Complete |
+| Status | In Review |
 | Branch | `agent/installed-mcp-reviewer-assignment-governance` |
-| Pull Request | Pending |
+| Pull Request | [#262](https://github.com/ozdemirumit/Project_Atlas/pull/262) |
 | Governing Documents | ATLAS-003, ATLAS-020, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-052, ADR-043, ADR-044, ADR-100, ADR-123, ADR-133 |
 | Last Updated | 2026-08-25 |
-| Next Action | Commit, open PR and require exact-head plus post-merge `main` CI evidence |
+| Next Action | Require exact-head PR CI, merge and verify exact merge-commit `main` CI |
 
 ### ATLAS-IMP-247 Scope Rationale
 
