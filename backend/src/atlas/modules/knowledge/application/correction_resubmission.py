@@ -129,7 +129,9 @@ class OperationalKnowledgeCorrectionService:
             )
         try:
             source = await self._source.correction_resubmission_source(
-                review_request_id=source_review_request_id
+                review_request_id=source_review_request_id,
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
             )
         except Exception as error:
             raise OperationalKnowledgeCorrectionError(
@@ -391,7 +393,9 @@ class OperationalKnowledgeCorrectionService:
             source_request,
             source_draft,
         ) = await self._source.correction_resubmission_source(
-            review_request_id=record.source_review_request_id
+            review_request_id=record.source_review_request_id,
+            organization_id=record.organization_id,
+            environment_id=record.environment_id,
         )
         if (
             source_request.canonical_digest != record.source_review_request_digest

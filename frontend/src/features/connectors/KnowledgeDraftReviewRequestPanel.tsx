@@ -78,12 +78,19 @@ export function KnowledgeDraftReviewRequestPanel({
 }) {
   const queryClient = useQueryClient();
   const queryKey = operationalKnowledgeReviewRequestQueryKey(sessionScopeKey, draft.draft_id);
+  const attemptQueryKey = [
+    "operational-knowledge-review-request-attempted",
+    sessionScopeKey,
+    draft.draft_id,
+  ] as const;
   const [purpose, setPurpose] = useState(
     "Request independent review for this exact immutable operational knowledge draft.",
   );
   const [acknowledged, setAcknowledged] = useState(false);
   const [selectedOptionId, setSelectedOptionId] = useState("");
-  const [attempted, setAttempted] = useState(false);
+  const [attempted, setAttempted] = useState(
+    () => queryClient.getQueryData<boolean>(attemptQueryKey) === true,
+  );
   const inventoryQuery = useQuery({
     queryKey,
     queryFn: () => getOperationalKnowledgeReviewRequests({ draft }),
@@ -121,6 +128,7 @@ export function KnowledgeDraftReviewRequestPanel({
 
   const submit = () => {
     if (!selectedOption || !canSubmit) return;
+    queryClient.setQueryData(attemptQueryKey, true);
     setAttempted(true);
     mutation.mutate({ draft, option: selectedOption, purpose });
   };

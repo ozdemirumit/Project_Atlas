@@ -89,14 +89,22 @@ class PostgreSQLOperationalKnowledgeTrackReviewDecisionRepository:
             return self._claim_to_domain(row.payload) if row else None
 
     async def list_by_review_request(
-        self, *, review_request_id: str
+        self,
+        *,
+        review_request_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> tuple[OperationalKnowledgeTrackReviewDecisionRecord, ...]:
         async with self._sessions() as session:
             rows = (
                 await session.scalars(
                     select(OperationalKnowledgeTrackReviewDecisionModel).where(
                         OperationalKnowledgeTrackReviewDecisionModel.review_request_id
-                        == review_request_id
+                        == review_request_id,
+                        OperationalKnowledgeTrackReviewDecisionModel.organization_id
+                        == organization_id,
+                        OperationalKnowledgeTrackReviewDecisionModel.environment_id
+                        == environment_id,
                     )
                 )
             ).all()

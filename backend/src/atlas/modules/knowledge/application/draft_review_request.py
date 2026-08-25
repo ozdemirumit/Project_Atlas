@@ -165,6 +165,10 @@ class OperationalKnowledgeReviewRequestService:
             raise OperationalKnowledgeReviewRequestError(
                 "operational_knowledge_review_request_adapter_unavailable"
             )
+        if not self._adapter_matches_policy(policy):
+            raise OperationalKnowledgeReviewRequestError(
+                "operational_knowledge_review_request_adapter_mismatch"
+            )
         seed = self._digest(
             [
                 source.organization_id,
@@ -200,6 +204,19 @@ class OperationalKnowledgeReviewRequestService:
         )
         claim = replace(claim, canonical_digest=self._digest(self._claim_payload(claim)))
         if not await self._repository.claim(claim):
+            prior_by_idempotency = await self._repository.get_claim_by_idempotency_in_scope(
+                claimed_by=actor.subject_id,
+                idempotency_digest=idempotency_digest,
+                organization_id=source.organization_id,
+                environment_id=source.environment_id,
+            )
+            if prior_by_idempotency is not None:
+                return await self._reuse(
+                    prior_by_idempotency,
+                    actor,
+                    request_binding_digest,
+                    idempotency_digest,
+                )
             prior = await self._repository.get_claim_by_source_in_scope(
                 source_draft_id=source.draft_id,
                 organization_id=source.organization_id,
@@ -390,6 +407,8 @@ class OperationalKnowledgeReviewRequestService:
                     actor.assurance_level, policy.required_assurance_level
                 ):
                     continue
+                if not self._adapter_matches_policy(policy):
+                    continue
                 self._require_actor_separation(actor, policy)
                 await self._permission_authorizer.authorize(
                     actor=actor,
@@ -515,6 +534,14 @@ class OperationalKnowledgeReviewRequestService:
             return policy
         raise OperationalKnowledgeReviewRequestError(
             "operational_knowledge_review_request_option_invalid"
+        )
+
+    def _adapter_matches_policy(
+        self, policy: OperationalKnowledgeReviewRequestPolicySnapshot
+    ) -> bool:
+        return (
+            self._adapter.adapter_id == policy.required_adapter_id
+            and self._adapter.attestor_id == policy.required_adapter_attestor_id
         )
 
     async def _current_record(

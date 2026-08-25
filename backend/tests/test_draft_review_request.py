@@ -48,6 +48,7 @@ from atlas.modules.knowledge.application.draft_review_request_ports import (
     OperationalKnowledgeReviewRequestUncertainError,
 )
 from atlas.modules.knowledge.domain.draft_review_request import (
+    OperationalKnowledgeReviewRequestClaim,
     OperationalKnowledgeReviewRequestInstruction,
     OperationalKnowledgeReviewRequestPolicySnapshot,
     OperationalKnowledgeReviewRequestReceipt,
@@ -82,6 +83,8 @@ class RecordingReviewRequestPermissionAuthorizer:
 
 class UncertainReviewRequestAdapter:
     available = True
+    adapter_id = "operational-knowledge-review-request-adapter.synthetic"
+    attestor_id = "subject.operational-knowledge-review-request-adapter-attestor"
 
     def __init__(self) -> None:
         self.calls = 0
@@ -126,6 +129,42 @@ class BlockingReviewRequestAdapter(SyntheticOperationalKnowledgeReviewRequestAda
         return await super().create_review_request(instruction)
 
 
+class MismatchedReviewRequestAdapter(SyntheticOperationalKnowledgeReviewRequestAdapter):
+    adapter_id = "operational-knowledge-review-request-adapter.mismatched"
+
+
+class IdempotencyRaceReviewRequestRepository(InMemoryOperationalKnowledgeReviewRequestRepository):
+    def __init__(self) -> None:
+        super().__init__()
+        self.raced_claim: OperationalKnowledgeReviewRequestClaim | None = None
+
+    async def get_claim_by_idempotency_in_scope(
+        self,
+        *,
+        claimed_by: str,
+        idempotency_digest: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> OperationalKnowledgeReviewRequestClaim | None:
+        del claimed_by, idempotency_digest, organization_id, environment_id
+        return self.raced_claim
+
+    async def claim(self, claim: OperationalKnowledgeReviewRequestClaim) -> bool:
+        raced = replace(
+            claim,
+            source_draft_id="operational-evidence-knowledge-draft.concurrent-other",
+            request_binding_digest="f" * 64,
+            canonical_digest="0" * 64,
+        )
+        self.raced_claim = replace(
+            raced,
+            canonical_digest=OperationalKnowledgeReviewRequestService._digest(
+                OperationalKnowledgeReviewRequestService._claim_payload(raced)
+            ),
+        )
+        return False
+
+
 async def review_request_fixture(
     *,
     audit_sink: CollectingAuditSink | FailSecondAuditSink | None = None,
@@ -135,8 +174,10 @@ async def review_request_fixture(
     | UncertainReviewRequestAdapter
     | AlteredReviewRequestReceiptAdapter
     | BlockingReviewRequestAdapter
+    | MismatchedReviewRequestAdapter
     | None = None,
     required_assurance_level: AssuranceLevel = AssuranceLevel.SINGLE_FACTOR,
+    repository: InMemoryOperationalKnowledgeReviewRequestRepository | None = None,
 ) -> tuple[
     OperationalKnowledgeReviewRequestService,
     InMemoryOperationalKnowledgeReviewRequestRepository,
@@ -147,7 +188,8 @@ async def review_request_fixture(
     | UnavailableOperationalKnowledgeReviewRequestAdapter
     | UncertainReviewRequestAdapter
     | AlteredReviewRequestReceiptAdapter
-    | BlockingReviewRequestAdapter,
+    | BlockingReviewRequestAdapter
+    | MismatchedReviewRequestAdapter,
     tuple[Any, ...],
 ]:
     draft_parts = await draft_fixture()
@@ -167,13 +209,13 @@ async def review_request_fixture(
             canonical_digest="0" * 64,
         )
         policy = replace(policy, canonical_digest=_signed_policy(policy))
-    repository = InMemoryOperationalKnowledgeReviewRequestRepository()
+    resolved_repository = repository or InMemoryOperationalKnowledgeReviewRequestRepository()
     authorizer = permission_authorizer or RecordingReviewRequestPermissionAuthorizer()
     resolved_adapter = adapter or SyntheticOperationalKnowledgeReviewRequestAdapter(
         clock=lambda: draft.created_at
     )
     service = OperationalKnowledgeReviewRequestService(
-        repository=repository,
+        repository=resolved_repository,
         source=draft_service,
         policy_source=InMemoryOperationalKnowledgeReviewRequestPolicySource((policy,)),
         permission_authorizer=authorizer,
@@ -182,7 +224,7 @@ async def review_request_fixture(
         environment_id=draft.environment_id,
         clock=lambda: draft.created_at,
     )
-    return service, repository, draft, policy, authorizer, resolved_adapter, draft_parts
+    return service, resolved_repository, draft, policy, authorizer, resolved_adapter, draft_parts
 
 
 async def request_review(
@@ -334,6 +376,33 @@ async def test_review_request_unavailable_adapter_fails_before_claim() -> None:
     )
 
 
+@pytest.mark.asyncio
+async def test_review_request_adapter_identity_mismatch_fails_before_claim() -> None:
+    adapter = MismatchedReviewRequestAdapter()
+    service, repository, draft, policy, _, _, _ = await review_request_fixture(adapter=adapter)
+    actor = development_target_session_operator("subject.connector-independent-knowledge-curator")
+
+    assert (
+        await service.list_options(
+            actor=actor,
+            source_draft_id=draft.draft_id,
+            correlation_id="cor_mismatched_adapter_options",
+        )
+        == ()
+    )
+    with pytest.raises(OperationalKnowledgeReviewRequestError, match="adapter_mismatch"):
+        await request_review(service, draft, policy, actor=actor)
+    assert (
+        await repository.get_claim_by_source_in_scope(
+            source_draft_id=draft.draft_id,
+            organization_id=draft.organization_id,
+            environment_id=draft.environment_id,
+        )
+        is None
+    )
+    assert adapter.call_count == 0
+
+
 @pytest.mark.parametrize(
     "required_assurance_level",
     [AssuranceLevel.MULTI_FACTOR, AssuranceLevel.HARDWARE_BACKED],
@@ -409,6 +478,17 @@ async def test_review_request_atomically_rejects_concurrent_second_claim() -> No
     adapter.release.set()
     record = await first
     assert record.review_requested and adapter.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_review_request_resolves_raced_idempotency_conflict() -> None:
+    repository = IdempotencyRaceReviewRequestRepository()
+    service, _, draft, policy, _, adapter, _ = await review_request_fixture(repository=repository)
+
+    with pytest.raises(OperationalKnowledgeReviewRequestError, match="idempotency_conflict"):
+        await request_review(service, draft, policy)
+
+    assert getattr(adapter, "call_count", 0) == 0
 
 
 @pytest.mark.asyncio

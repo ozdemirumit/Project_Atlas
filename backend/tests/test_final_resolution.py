@@ -61,13 +61,21 @@ class StaticFinalResolutionSource:
         self.draft = draft
 
     async def final_resolution_source(
-        self, *, review_request_id: str
+        self,
+        *,
+        review_request_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> tuple[
         tuple[OperationalKnowledgeTrackReviewDecisionRecord, ...],
         OperationalKnowledgeReviewRequestRecord,
         OperationalEvidenceKnowledgeDraftRecord,
     ]:
-        if review_request_id != self.request.review_request_id:
+        if (
+            review_request_id != self.request.review_request_id
+            or organization_id != self.request.organization_id
+            or environment_id != self.request.environment_id
+        ):
             raise OperationalKnowledgeFinalResolutionError(
                 "operational_knowledge_final_resolution_source_not_found"
             )

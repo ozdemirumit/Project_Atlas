@@ -43,6 +43,8 @@ class OperationalKnowledgeReviewRequestPolicySource(Protocol):
 
 class OperationalKnowledgeReviewRequestAdapter(Protocol):
     available: bool
+    adapter_id: str
+    attestor_id: str
 
     async def create_review_request(
         self, instruction: OperationalKnowledgeReviewRequestInstruction

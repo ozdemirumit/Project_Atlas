@@ -1,69 +1,6 @@
 import { ApiRequestError, apiFetch } from "./client";
 import type { OperationalEvidenceKnowledgeDraftInventoryItem } from "./evidenceDrafts";
 
-export type OperationalKnowledgeReviewRequest = {
-  review_request_id: string;
-  schema_version: "atlas.operational-knowledge-review-request.v1";
-  version: 1;
-  source_draft_id: string;
-  source_draft_digest: string;
-  organization_id: string;
-  environment_id: string;
-  knowledge_item_id: string;
-  draft_version_id: string;
-  source_ingestion_id: string;
-  source_invocation_id: string;
-  connector_id: string;
-  instance_id: string;
-  capability_id: string;
-  title: string;
-  draft_domain: "domain.operational";
-  content_type: string;
-  language: string;
-  knowledge_lifecycle: "review_requested";
-  classification: string;
-  access_policy_id: string;
-  retention_policy_id: string;
-  encryption_profile_id: string;
-  manifest_id: string;
-  orchestration_policy_id: string;
-  orchestration_policy_digest: string;
-  domain_track_code: "review-track.domain";
-  security_track_code: "review-track.security";
-  domain_queue_id: string;
-  security_queue_id: string;
-  assignment_strategy: "assignment-strategy.policy-controlled";
-  sla_class: string;
-  domain_status: "awaiting_reviewer";
-  security_status: "awaiting_reviewer";
-  created_at: string;
-  instance_state: "operational_knowledge_review_requested";
-  canonical_digest: string;
-  review_requested: true;
-  immutable_manifest_confirmed: true;
-  encrypted_at_rest: true;
-  transient_buffers_erased: true;
-  artifact_channel_closed: true;
-  reviewer_assigned: false;
-  content_inspection_opened: false;
-  domain_review_completed: false;
-  security_review_completed: false;
-  correction_created: false;
-  knowledge_approved: false;
-  knowledge_published: false;
-  chunks_created: false;
-  embeddings_created: false;
-  retrieval_published: false;
-  model_context_available: false;
-  graph_updated: false;
-  scheduled: false;
-  workflow_continued: false;
-  execution_authorized: false;
-  deployment_approved: false;
-  infrastructure_mutation_performed: false;
-  reused: boolean;
-};
-
 export type ReviewableOperationalEvidenceKnowledgeDraft = Pick<
   OperationalEvidenceKnowledgeDraftInventoryItem,
   | "draft_id"

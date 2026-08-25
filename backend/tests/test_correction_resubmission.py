@@ -67,13 +67,21 @@ class StaticCorrectionSource:
         self.draft = draft
 
     async def correction_resubmission_source(
-        self, *, review_request_id: str
+        self,
+        *,
+        review_request_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> tuple[
         tuple[OperationalKnowledgeTrackReviewDecisionRecord, ...],
         OperationalKnowledgeReviewRequestRecord,
         OperationalEvidenceKnowledgeDraftRecord,
     ]:
-        if review_request_id != self.request.review_request_id:
+        if (
+            review_request_id != self.request.review_request_id
+            or organization_id != self.request.organization_id
+            or environment_id != self.request.environment_id
+        ):
             raise OperationalKnowledgeCorrectionError(
                 "operational_knowledge_correction_source_not_found"
             )

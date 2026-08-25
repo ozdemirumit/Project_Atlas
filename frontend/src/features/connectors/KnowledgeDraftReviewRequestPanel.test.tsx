@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { evidenceKnowledgeDraftInventoryItem as draft } from "./testEvidenceDraftFixture";
@@ -14,10 +14,16 @@ const meta = {
   generated_at: "2026-08-25T00:00:10Z",
 };
 
-function renderPanel(onRequestEnterpriseLogin?: () => void) {
-  const queryClient = new QueryClient({
+function createQueryClient() {
+  return new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+}
+
+function renderPanel(
+  onRequestEnterpriseLogin?: () => void,
+  queryClient = createQueryClient(),
+) {
   return render(
     <QueryClientProvider client={queryClient}>
       <KnowledgeDraftReviewRequestPanel
@@ -33,7 +39,10 @@ function requestUrl(input: RequestInfo | URL): string {
   return input instanceof Request ? input.url : input.toString();
 }
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 describe("KnowledgeDraftReviewRequestPanel", () => {
   it("creates one request from a signed option and exposes no downstream controls", async () => {
@@ -111,6 +120,36 @@ describe("KnowledgeDraftReviewRequestPanel", () => {
     await waitFor(() => expect(inventoryReads).toBeGreaterThanOrEqual(3));
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
     expect(screen.queryByRole("button", { name: "Request review" })).toBeNull();
+  });
+
+  it("preserves the permanent attempt lock after the dialog panel is remounted", async () => {
+    const queryClient = createQueryClient();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      if (init?.method === "POST") return Promise.resolve(new Response(null, { status: 503 }));
+      if (requestUrl(input).includes("/options")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ data: [option], meta }), { status: 200 }),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ data: [], meta }), { status: 200 }),
+      );
+    });
+    const firstRender = renderPanel(undefined, queryClient);
+
+    await screen.findByText(option.orchestration_policy_id);
+    fireEvent.click(screen.getByLabelText(/result is only an unassigned review request/i));
+    fireEvent.click(screen.getByRole("button", { name: "Request review" }));
+    expect(await screen.findByText(/permanently locked/i)).toBeVisible();
+    firstRender.unmount();
+    const secondRender = renderPanel(undefined, queryClient);
+
+    expect(await within(secondRender.container).findByText(/permanently locked/i)).toBeVisible();
+    expect(within(secondRender.container).queryByRole(
+      "button",
+      { name: "Request review" },
+    )).toBeNull();
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
   });
 
   it("uses normal username and password recovery for a verified 401", async () => {
