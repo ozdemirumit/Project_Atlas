@@ -25,7 +25,9 @@ from atlas.modules.connectors.domain.instance_creation import DISABLED_UNCONFIGU
 from atlas.modules.connectors.vendors.hitachi_ops_center.client import HitachiOpsCenterClient
 from atlas.modules.connectors.vendors.hitachi_ops_center.manifest import PACKAGE_ID
 from atlas.modules.health_checks.adapters.hitachi import (
+    CAPACITY_DEFINITION_ID,
     CONTROLLER_DEFINITION_ID,
+    HitachiCapacityHealthExecutor,
     HitachiControllerHealthExecutor,
 )
 from atlas.modules.health_checks.application.ports import (
@@ -74,7 +76,7 @@ class ConfiguredHitachiHealthExecutor:
     async def execute(
         self, definition: HealthCheckDefinition, *, started_at: datetime
     ) -> HealthCheckExecutionResult:
-        if definition.definition_id != CONTROLLER_DEFINITION_ID:
+        if definition.definition_id not in {CONTROLLER_DEFINITION_ID, CAPACITY_DEFINITION_ID}:
             return await self._fallback_executor.execute(definition, started_at=started_at)
 
         configuration = await self._single_active_configuration()
@@ -125,10 +127,12 @@ class ConfiguredHitachiHealthExecutor:
                     maximum_components=5_000,
                     maximum_response_bytes=1_048_576,
                 )
-                return await HitachiControllerHealthExecutor(client=client).execute(
-                    definition,
-                    started_at=started_at,
+                executor = (
+                    HitachiControllerHealthExecutor(client=client)
+                    if definition.definition_id == CONTROLLER_DEFINITION_ID
+                    else HitachiCapacityHealthExecutor(client=client)
                 )
+                return await executor.execute(definition, started_at=started_at)
         except ConnectorConnectionTestError:
             return self._unavailable(
                 started_at,
@@ -192,5 +196,5 @@ class ConfiguredHitachiHealthExecutor:
             findings=(),
             evidence=(),
             partial_reasons=(reason,),
-            unknowns=("Storage controller health remains unknown.",),
+            unknowns=("Storage health remains unknown.",),
         )

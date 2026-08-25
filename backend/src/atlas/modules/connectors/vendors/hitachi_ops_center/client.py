@@ -11,9 +11,11 @@ from atlas.modules.connectors.domain.models import ConnectorHealth, ConnectorIns
 from atlas.modules.connectors.vendors.hitachi_ops_center.domain import (
     HealthSeverity,
     HitachiApiVersion,
+    HitachiCapacityResult,
     HitachiComponentHealth,
     HitachiHealthResult,
     HitachiInventoryResult,
+    HitachiPoolCapacity,
     HitachiStorageArray,
 )
 from atlas.modules.connectors.vendors.hitachi_ops_center.manifest import PACKAGE_ID
@@ -91,9 +93,15 @@ class HitachiOpsCenterClient:
         clock: Callable[[], datetime] | None = None,
         maximum_arrays: int = 500,
         maximum_components: int = 5_000,
+        maximum_pools: int = 2_048,
         maximum_response_bytes: int = 1_048_576,
     ) -> None:
-        if maximum_arrays < 1 or maximum_components < 1 or maximum_response_bytes < 1:
+        if (
+            maximum_arrays < 1
+            or maximum_components < 1
+            or maximum_pools < 1
+            or maximum_response_bytes < 1
+        ):
             raise ValueError("connector collection limits must be positive")
         if not allowed_storage_device_ids:
             raise ValueError("at least one storage device binding is required")
@@ -104,6 +112,7 @@ class HitachiOpsCenterClient:
         self._clock = clock or (lambda: datetime.now(UTC))
         self._maximum_arrays = maximum_arrays
         self._maximum_components = maximum_components
+        self._maximum_pools = maximum_pools
         self._maximum_response_bytes = maximum_response_bytes
 
     async def self_test(self, instance: ConnectorInstance) -> ConnectorSelfTestResult:
@@ -173,14 +182,7 @@ class HitachiOpsCenterClient:
         )
 
     async def read_hardware_health(self, storage_device_id: str) -> HitachiHealthResult:
-        if not _STORAGE_DEVICE_ID.fullmatch(storage_device_id):
-            raise HitachiConnectorError(
-                "invalid_storage_device_id", "The storage device identifier is invalid."
-            )
-        if storage_device_id not in self._allowed_storage_device_ids:
-            raise HitachiConnectorError(
-                "target_not_bound", "The storage device is outside this connector binding."
-            )
+        self._require_bound_storage(storage_device_id)
         path = f"/v1/objects/storages/{storage_device_id}/components/instance"
         payload = await self._get(path)
         components: list[HitachiComponentHealth] = []
@@ -205,6 +207,37 @@ class HitachiOpsCenterClient:
             evidence_references=(self._evidence(f"health/{storage_device_id}", payload),),
             warnings=tuple(dict.fromkeys(warnings)),
         )
+
+    async def read_pool_capacity(self, storage_device_id: str) -> HitachiCapacityResult:
+        self._require_bound_storage(storage_device_id)
+        path = f"/v1/objects/storages/{storage_device_id}/pools"
+        payload = await self._get(path)
+        raw_items = payload.get("data")
+        if not isinstance(raw_items, list):
+            raise HitachiConnectorError(
+                "malformed_vendor_response", "The pool capacity response is malformed."
+            )
+        if len(raw_items) > self._maximum_pools:
+            raise HitachiConnectorError(
+                "vendor_response_limit_exceeded", "The pool response exceeds its item limit."
+            )
+        pools = tuple(self._parse_pool(storage_device_id, item) for item in raw_items)
+        return HitachiCapacityResult(
+            storage_device_id=storage_device_id,
+            pools=pools,
+            observed_at=self._clock(),
+            evidence_references=(self._evidence(f"capacity/{storage_device_id}", payload),),
+        )
+
+    def _require_bound_storage(self, storage_device_id: str) -> None:
+        if not _STORAGE_DEVICE_ID.fullmatch(storage_device_id):
+            raise HitachiConnectorError(
+                "invalid_storage_device_id", "The storage device identifier is invalid."
+            )
+        if storage_device_id not in self._allowed_storage_device_ids:
+            raise HitachiConnectorError(
+                "target_not_bound", "The storage device is outside this connector binding."
+            )
 
     async def _get(self, path: str) -> Mapping[str, object]:
         try:
@@ -256,6 +289,45 @@ class HitachiOpsCenterClient:
         except ValueError as exc:
             raise HitachiConnectorError(
                 "malformed_vendor_response", "A storage inventory item failed validation."
+            ) from exc
+
+    @staticmethod
+    def _parse_pool(storage_device_id: str, value: object) -> HitachiPoolCapacity:
+        if not isinstance(value, Mapping):
+            raise HitachiConnectorError(
+                "malformed_vendor_response", "A pool capacity item is malformed."
+            )
+        pool_id = value.get("poolId")
+        pool_name = value.get("poolName")
+        used_capacity_rate = value.get("usedCapacityRate")
+        warning_threshold = value.get("warningThreshold")
+        depletion_threshold = value.get("depletionThreshold")
+        if (
+            not isinstance(pool_id, int)
+            or isinstance(pool_id, bool)
+            or not isinstance(pool_name, str)
+            or not isinstance(used_capacity_rate, int)
+            or isinstance(used_capacity_rate, bool)
+            or not isinstance(warning_threshold, int)
+            or isinstance(warning_threshold, bool)
+            or not isinstance(depletion_threshold, int)
+            or isinstance(depletion_threshold, bool)
+        ):
+            raise HitachiConnectorError(
+                "malformed_vendor_response", "A pool capacity item has invalid fields."
+            )
+        try:
+            return HitachiPoolCapacity(
+                storage_device_id=storage_device_id,
+                pool_id=pool_id,
+                pool_name=pool_name,
+                used_capacity_rate=used_capacity_rate,
+                warning_threshold=warning_threshold,
+                depletion_threshold=depletion_threshold,
+            )
+        except ValueError as exc:
+            raise HitachiConnectorError(
+                "malformed_vendor_response", "A pool capacity item failed validation."
             ) from exc
 
     def _collect_components(

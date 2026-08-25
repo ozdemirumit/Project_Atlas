@@ -802,7 +802,10 @@ from atlas.modules.graph.application.service import GraphImpactService
 from atlas.modules.health_checks.adapters.configured_hitachi import (
     ConfiguredHitachiHealthExecutor,
 )
-from atlas.modules.health_checks.adapters.hitachi import CONTROLLER_DEFINITION_ID
+from atlas.modules.health_checks.adapters.hitachi import (
+    CAPACITY_DEFINITION_ID,
+    CONTROLLER_DEFINITION_ID,
+)
 from atlas.modules.health_checks.adapters.synthetic import (
     SyntheticStorageHealthExecutor,
     build_synthetic_health_check_definitions,
@@ -6864,7 +6867,7 @@ def create_app(
                 connector_version="0.1.0",
                 target_id="target.hitachi.opscenter.configured",
             )
-            if definition.definition_id == CONTROLLER_DEFINITION_ID
+            if definition.definition_id in {CONTROLLER_DEFINITION_ID, CAPACITY_DEFINITION_ID}
             else definition
             for definition in base_health_check_definitions
         )
@@ -6878,7 +6881,7 @@ def create_app(
             run
             for run in synthetic_latest_runs
             if not configured_hitachi_health_enabled
-            or run.definition_id != CONTROLLER_DEFINITION_ID
+            or run.definition_id not in {CONTROLLER_DEFINITION_ID, CAPACITY_DEFINITION_ID}
         ),
         executor=(
             ConfiguredHitachiHealthExecutor(

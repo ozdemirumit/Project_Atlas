@@ -253,15 +253,62 @@ async def test_controller_check_uses_configured_read_only_hitachi_transport() ->
 
 
 @pytest.mark.asyncio
-async def test_capacity_remains_on_the_explicit_fallback_executor() -> None:
-    executor, transport = build_executor()
+async def test_capacity_uses_configured_read_only_hitachi_transport() -> None:
+    configuration = SimpleNamespace(
+        connector_id=PACKAGE_ID,
+        instance_id=INSTANCE_ID,
+        hostname="opscenter.example.internal",
+        port=23450,
+        trust_profile_id="trust.system-ca",
+        secret_reference_id="secret.hitachi.readonly",
+    )
+    instance = SimpleNamespace(
+        connector_id=PACKAGE_ID,
+        instance_id=INSTANCE_ID,
+        instance_state=DISABLED_UNCONFIGURED,
+    )
+    device = SimpleNamespace(
+        device_type=InventoryDeviceType.STORAGE,
+        vendor="Hitachi Vantara",
+        serial_number=STORAGE_ID,
+    )
+    executor, transport = build_executor(
+        configurations=(configuration,),
+        instances=(instance,),
+        devices=(device,),
+        routes={
+            "/v1/objects/storages": SyntheticHitachiResponse(
+                payload={
+                    "data": [
+                        {"storageDeviceId": STORAGE_ID, "model": "VSP G400", "serialNumber": 1}
+                    ]
+                }
+            ),
+            f"/v1/objects/storages/{STORAGE_ID}/pools": SyntheticHitachiResponse(
+                payload={
+                    "data": [
+                        {
+                            "poolId": 5,
+                            "poolName": "Production",
+                            "usedCapacityRate": 78,
+                            "warningThreshold": 75,
+                            "depletionThreshold": 90,
+                        }
+                    ]
+                }
+            ),
+        },
+    )
     _, capacity = definitions()
 
     result = await executor.execute(capacity, started_at=NOW)
 
     assert result.state is HealthCheckRunState.COMPLETED
-    assert result.observations
-    assert transport.requests == []
+    assert result.observations[0].value == "78"
+    assert transport.requests == [
+        "/v1/objects/storages",
+        f"/v1/objects/storages/{STORAGE_ID}/pools",
+    ]
 
 
 @pytest.mark.asyncio
