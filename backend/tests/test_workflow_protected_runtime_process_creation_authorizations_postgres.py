@@ -6,8 +6,9 @@ import inspect
 import os
 import subprocess
 import sys
+from collections.abc import Awaitable, Callable
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 from uuid import uuid4
@@ -342,18 +343,25 @@ class _ReadinessReceiptVerifier:
 class _ProcessLifecycleAttestor:
     available = True
 
-    def __init__(self, *, before_return: Any | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        before_return: Any | None = None,
+        clock: Callable[[], Awaitable[datetime]] | None = None,
+    ) -> None:
         self._before_return = before_return
+        self._clock = clock
 
     async def attest_runtime_process_creation_lifecycle(
         self, request: WorkflowProtectedRuntimeProcessCreationLifecycleAttestationRequest
     ) -> WorkflowProtectedRuntimeProcessCreationLifecycleAttestation:
         if self._before_return is not None:
             await self._before_return(request.readiness_result_id)
+        observed_at = await self._clock() if self._clock is not None else request.requested_at
         request_values = {
             name: getattr(request, name) for name in request.__slots__ if name != "requested_at"
         }
-        valid_until = request.requested_at + timedelta(seconds=1)
+        valid_until = observed_at + timedelta(seconds=1)
         values: dict[str, object] = {
             **request_values,
             "attestation_id": f"process-creation-attestation.{uuid4().hex}",
@@ -363,7 +371,7 @@ class _ProcessLifecycleAttestor:
                 WORKFLOW_PROTECTED_RUNTIME_PROCESS_CREATION_ATTESTATION_SIGNING_KEY_ID
             ),
             "signature_algorithm": "test-signature-v1",
-            "observed_at": request.requested_at,
+            "observed_at": observed_at,
             "valid_until": valid_until,
             "runtime_envelope_eligible_until": valid_until,
             "exact_readiness_result_confirmed": True,
@@ -585,7 +593,7 @@ def _process_service(
     *,
     attestor: _ProcessLifecycleAttestor | None = None,
 ) -> WorkflowProtectedRuntimeProcessCreationAuthorizationService:
-    attestor = attestor or _ProcessLifecycleAttestor()
+    attestor = attestor or _ProcessLifecycleAttestor(clock=repository.get_authoritative_time)
     return WorkflowProtectedRuntimeProcessCreationAuthorizationService(
         authorization_repository=cast(Any, repository),
         lifecycle_attestor=attestor,
@@ -988,7 +996,10 @@ async def test_live_postgres_publication_fence_change_fails_closed() -> None:
         await _seed_fixture_fences(engine, repository, readiness_result)
         service = _process_service(
             repository,
-            attestor=_ProcessLifecycleAttestor(before_return=release_exact_publication_fence),
+            attestor=_ProcessLifecycleAttestor(
+                before_return=release_exact_publication_fence,
+                clock=repository.get_authoritative_time,
+            ),
         )
         with pytest.raises(WorkflowProtectedRuntimeProcessCreationAuthorizationError) as exc_info:
             await _authorize_process_creation(
