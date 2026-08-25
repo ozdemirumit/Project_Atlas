@@ -2356,7 +2356,8 @@ describe("MCP Builder workspace", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: "Connectors" }, { timeout: 15_000 }),
     );
-    fireEvent.change(screen.getByLabelText("Vendor"), {
+    fireEvent.click(await screen.findByRole("tab", { name: "Builder" }));
+    fireEvent.change(await screen.findByLabelText("Vendor", {}, { timeout: 15_000 }), {
       target: { value: "Atlas Synthetic" },
     });
     fireEvent.change(screen.getByLabelText("Product"), {
