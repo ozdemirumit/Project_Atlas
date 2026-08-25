@@ -15,6 +15,7 @@ import {
   LogIn,
   PackagePlus,
   Play,
+  Power,
   RefreshCw,
   Search,
   ShieldCheck,
@@ -25,6 +26,11 @@ import {
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 
 import { ApiRequestError } from "../../api/client";
+import {
+  createBundledConnectorInstance,
+  getBundledConnectorCatalog,
+  type BundledConnectorDescriptor,
+} from "../../api/bundledConnectorCatalog";
 import {
   getConnectorCapabilityEnablements,
   type ConnectorCapabilityEnablementInventoryItem,
@@ -123,6 +129,11 @@ import {
   type ConnectorRuntimeActivationInventoryItem,
 } from "../../api/runtimeActivations";
 import {
+  deactivateConnectorRuntime,
+  getConnectorRuntimeDeactivations,
+  type ConnectorRuntimeDeactivation,
+} from "../../api/runtimeDeactivations";
+import {
   getConnectorSecretBrokerageAuthorizations,
   type ConnectorSecretBrokerageAuthorizationInventoryItem,
 } from "../../api/secretBrokerageAuthorizations";
@@ -156,22 +167,29 @@ function hasStatus(error: unknown, status: number): boolean {
 }
 
 function AddMcpDialog({
+  catalog,
   packages,
   policies,
   pending,
   onCancel,
   onOpenBuilder,
+  onCatalogSubmit,
   onSubmit,
 }: {
+  catalog: BundledConnectorDescriptor[];
   packages: ConnectorPackageInstallationReceipt[];
   policies: ConnectorInstanceCreationPolicy[];
   pending: boolean;
   onCancel: () => void;
   onOpenBuilder: () => void;
+  onCatalogSubmit: (input: Parameters<typeof createBundledConnectorInstance>[0]) => void;
   onSubmit: (input: Parameters<typeof createConnectorInstance>[0]) => void;
 }) {
   const [receiptId, setReceiptId] = useState(packages[0]?.receipt_id ?? "");
   const installation = packages.find((item) => item.receipt_id === receiptId) ?? packages[0];
+  const [catalogItemId, setCatalogItemId] = useState(catalog[0]?.catalog_item_id ?? "");
+  const descriptor = catalog.find((item) => item.catalog_item_id === catalogItemId) ?? catalog[0];
+  const source = installation ?? descriptor;
   const policy = policies.find(
     (item) =>
       item.environment_id === installation?.environment_id &&
@@ -179,10 +197,14 @@ function AddMcpDialog({
       item.allowed_sdk_profiles.includes(installation.sdk_profile),
   );
   const [instanceKey, setInstanceKey] = useState(
-    installation ? `${installation.connector_id}-managed` : "",
+    source ? `${source.connector_id}-managed` : "",
   );
   const [displayName, setDisplayName] = useState(
-    installation ? `${installation.connector_id} managed` : "",
+    installation
+      ? `${installation.connector_id} managed`
+      : descriptor
+        ? `${descriptor.display_name} managed`
+        : "",
   );
   const [purpose, setPurpose] = useState(
     "Create a disabled MCP identity for governed lifecycle management.",
@@ -191,25 +213,22 @@ function AddMcpDialog({
   const policyId = policy?.policy_id ?? "";
   const policyDigest = policy?.canonical_digest ?? "";
   const valid = Boolean(
-    installation &&
+    source &&
       /^[a-z][a-z0-9_.:-]{2,127}$/.test(instanceKey) &&
       displayName.trim().length >= 3 &&
       purpose.trim().length >= 20 &&
-      /^[a-f0-9]{64}$/.test(policyDigest) &&
+      (descriptor || /^[a-f0-9]{64}$/.test(policyDigest)) &&
       acknowledged,
   );
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (!valid || !installation) return;
-    onSubmit({
-      installation,
-      instanceKey,
-      displayName,
-      policyId,
-      policyDigest,
-      purpose,
-    });
+    if (!valid) return;
+    if (installation) {
+      onSubmit({ installation, instanceKey, displayName, policyId, policyDigest, purpose });
+    } else if (descriptor) {
+      onCatalogSubmit({ descriptor, instanceKey, displayName, purpose });
+    }
   };
 
   return (
@@ -222,27 +241,47 @@ function AddMcpDialog({
           </div>
           <button className="icon-button" type="button" aria-label="Close Add MCP" onClick={onCancel}><X size={17} /></button>
         </header>
-        {installation ? (
+        {source ? (
           <>
             <label>
-              <span>Installed package</span>
-              <select
-                value={installation.receipt_id}
-                onChange={(event) => {
-                  const next = packages.find((item) => item.receipt_id === event.target.value);
-                  setReceiptId(event.target.value);
-                  if (next) {
-                    setInstanceKey(`${next.connector_id}-managed`);
-                    setDisplayName(`${next.connector_id} managed`);
-                  }
-                }}
-              >
-                {packages.map((item) => (
-                  <option value={item.receipt_id} key={item.receipt_id}>
-                    {item.connector_id} {item.release_version}
-                  </option>
-                ))}
-              </select>
+              <span>{installation ? "Installed package" : "Available MCP"}</span>
+              {installation ? (
+                <select
+                  value={installation.receipt_id}
+                  onChange={(event) => {
+                    const next = packages.find((item) => item.receipt_id === event.target.value);
+                    setReceiptId(event.target.value);
+                    if (next) {
+                      setInstanceKey(`${next.connector_id}-managed`);
+                      setDisplayName(`${next.connector_id} managed`);
+                    }
+                  }}
+                >
+                  {packages.map((item) => (
+                    <option value={item.receipt_id} key={item.receipt_id}>
+                      {item.connector_id} {item.release_version}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <select
+                  value={descriptor?.catalog_item_id}
+                  onChange={(event) => {
+                    const next = catalog.find((item) => item.catalog_item_id === event.target.value);
+                    setCatalogItemId(event.target.value);
+                    if (next) {
+                      setInstanceKey(`${next.connector_id}-managed`);
+                      setDisplayName(`${next.display_name} managed`);
+                    }
+                  }}
+                >
+                  {catalog.map((item) => (
+                    <option value={item.catalog_item_id} key={item.catalog_item_id}>
+                      {item.vendor_name} - {item.display_name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </label>
             <div className="installed-mcp-form-grid">
               <label>
@@ -264,10 +303,10 @@ function AddMcpDialog({
               <textarea value={purpose} onChange={(event) => setPurpose(event.target.value)} minLength={20} maxLength={1000} rows={3} required />
             </label>
             <div className="installed-mcp-package-facts">
-              <span>Package digest <code>{installation.package_digest.slice(0, 16)}</code></span>
-              <span>Publisher <strong>{installation.publisher_id}</strong></span>
+              <span>Package digest <code>{(installation?.package_digest ?? descriptor?.canonical_digest)?.slice(0, 16)}</code></span>
+              <span>{installation ? "Publisher" : "Vendor"} <strong>{installation?.publisher_id ?? descriptor?.vendor_name}</strong></span>
             </div>
-            {!policy && (
+            {installation && !policy && (
               <div className="installed-mcp-status error-state" role="alert">
                 <AlertTriangle size={18} /> No current signed instance policy matches this package.
               </div>
@@ -747,6 +786,87 @@ function RuntimeActivationDialog({
         <footer>
           <button type="button" className="secondary-button" onClick={onCancel}>Close</button>
         </footer>
+      </section>
+    </div>
+  );
+}
+
+function RuntimeDeactivationDialog({
+  activation,
+  instance,
+  onCancel,
+  onDeactivated,
+}: {
+  activation: ConnectorRuntimeActivationInventoryItem;
+  instance: ConnectorInstanceRecord;
+  onCancel: () => void;
+  onDeactivated: (deactivation: ConnectorRuntimeDeactivation) => void;
+}) {
+  const [reason, setReason] = useState("");
+  const mutation = useMutation({
+    mutationFn: () => deactivateConnectorRuntime({ activation, reason }),
+    onSuccess: onDeactivated,
+  });
+  const boundedReason = reason.trim();
+
+  return (
+    <div className="installed-mcp-dialog-backdrop" role="presentation">
+      <section
+        className="installed-mcp-dialog runtime-activation-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="runtime-deactivation-mcp-title"
+      >
+        <header>
+          <div>
+            <p className="eyebrow">RUNTIME CONTROL</p>
+            <h3 id="runtime-deactivation-mcp-title">
+              Disable runtime for {instance.display_name}
+            </h3>
+          </div>
+          <button className="icon-button" type="button" aria-label="Close runtime deactivation" onClick={onCancel}>
+            <X size={17} />
+          </button>
+        </header>
+        <p className="muted-copy">
+          This stops the Atlas connector runtime and revokes its target authority. It does not
+          contact or change the managed infrastructure.
+        </p>
+        <form
+          className="installed-mcp-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            mutation.mutate();
+          }}
+        >
+          <label>
+            Reason
+            <textarea
+              value={reason}
+              minLength={20}
+              maxLength={1000}
+              required
+              placeholder="Explain why this Atlas runtime is being disabled."
+              onChange={(event) => setReason(event.target.value)}
+            />
+          </label>
+          {mutation.isError && (
+            <p className="inline-error" role="alert">
+              {mutation.error instanceof Error ? mutation.error.message : "Runtime deactivation failed"}
+            </p>
+          )}
+          <footer>
+            <button type="button" className="secondary-button" onClick={onCancel}>Cancel</button>
+            <button
+              type="submit"
+              className="primary-button"
+              disabled={boundedReason.length < 20 || mutation.isPending}
+            >
+              <Power size={16} />
+              {mutation.isPending ? "Disabling..." : "Disable runtime"}
+            </button>
+          </footer>
+        </form>
       </section>
     </div>
   );
@@ -1805,6 +1925,8 @@ export default function InstalledMcpManagementWorkspace({
     useState<ConnectorInstanceRecord | null>(null);
   const [activatingRuntime, setActivatingRuntime] =
     useState<ConnectorInstanceRecord | null>(null);
+  const [deactivatingRuntime, setDeactivatingRuntime] =
+    useState<ConnectorInstanceRecord | null>(null);
   const [verifyingTargetSession, setVerifyingTargetSession] =
     useState<ConnectorInstanceRecord | null>(null);
   const [authorizingInvocation, setAuthorizingInvocation] =
@@ -1870,6 +1992,16 @@ export default function InstalledMcpManagementWorkspace({
   const runtimeActivationQuery = useQuery({
     queryKey: ["connector-runtime-activations", sessionScopeKey],
     queryFn: () => getConnectorRuntimeActivations(),
+    enabled: Boolean(subjectId),
+  });
+  const bundledCatalogQuery = useQuery({
+    queryKey: ["bundled-connector-catalog", subjectId],
+    queryFn: getBundledConnectorCatalog,
+    enabled: Boolean(subjectId),
+  });
+  const runtimeDeactivationQuery = useQuery({
+    queryKey: ["connector-runtime-deactivations", sessionScopeKey],
+    queryFn: () => getConnectorRuntimeDeactivations(),
     enabled: Boolean(subjectId),
   });
   const targetSessionQuery = useQuery({
@@ -2003,6 +2135,13 @@ export default function InstalledMcpManagementWorkspace({
       await queryClient.invalidateQueries({ queryKey: ["connector-instances"] });
     },
   });
+  const createBundledMutation = useMutation({
+    mutationFn: createBundledConnectorInstance,
+    onSuccess: async () => {
+      setAdding(false);
+      await queryClient.invalidateQueries({ queryKey: ["connector-instances"] });
+    },
+  });
   const retireMutation = useMutation({
     mutationFn: retireConnectorInstance,
     onSuccess: async () => {
@@ -2048,6 +2187,11 @@ export default function InstalledMcpManagementWorkspace({
       activation.source_brokerage_authorization_id,
       activation,
     ]),
+  );
+  const runtimeDeactivationByActivation = new Map(
+    (runtimeDeactivationQuery.isError ? [] : (runtimeDeactivationQuery.data ?? [])).map(
+      (deactivation) => [deactivation.activation_id, deactivation],
+    ),
   );
   const targetSessionVerifications = targetSessionQuery.isError
     ? []
@@ -2189,6 +2333,8 @@ export default function InstalledMcpManagementWorkspace({
     .map((query) => query.error)
     .filter((error) => error !== null);
   const packages = packageQuery.data ?? [];
+  const bundledCatalog = bundledCatalogQuery.data ?? [];
+  const availableConnectorCount = packages.length + bundledCatalog.length;
   const policies = policyQuery.data ?? [];
   const activeCount = instances.filter(
     (item) => item.instance_state === "disabled_unconfigured",
@@ -2199,16 +2345,17 @@ export default function InstalledMcpManagementWorkspace({
     assignmentQuery.error,
     validationQuery.error,
     packageQuery.error,
+    bundledCatalogQuery.error,
     policyQuery.error,
   ].filter((error) => error !== null);
   const lifecycleQueryFailed = lifecycleQueryErrors.length > 0;
   const sessionAuthenticationFailed = lifecycleQueryErrors.some((error) => hasStatus(error, 401));
   const lifecycleAuthorizationFailed = lifecycleQueryErrors.some((error) => hasStatus(error, 403));
-  const lifecycleMutationError = createMutation.error ?? retireMutation.error;
+  const lifecycleMutationError = createMutation.error ?? createBundledMutation.error ?? retireMutation.error;
   const mutationAuthenticationFailed = hasStatus(lifecycleMutationError, 401);
   const mutationAuthorizationFailed = hasStatus(lifecycleMutationError, 403);
   const mutationConflict = hasStatus(lifecycleMutationError, 409);
-  const mutationAction = createMutation.error ? "creation" : "retirement";
+  const mutationAction = createMutation.error || createBundledMutation.error ? "creation" : "retirement";
   const openBuilder = () => {
     setAdding(false);
     if (onOpenBuilder) {
@@ -2222,6 +2369,7 @@ export default function InstalledMcpManagementWorkspace({
   };
   const refresh = () => {
     void packageQuery.refetch();
+    void bundledCatalogQuery.refetch();
     void policyQuery.refetch();
     void instanceQuery.refetch();
     void bindingQuery.refetch();
@@ -2231,6 +2379,7 @@ export default function InstalledMcpManagementWorkspace({
     void runtimeTrustQuery.refetch();
     void secretBrokerageQuery.refetch();
     void runtimeActivationQuery.refetch();
+    void runtimeDeactivationQuery.refetch();
     void targetSessionQuery.refetch();
     for (const query of invocationAuthorizationQueries) void query.refetch();
     for (const query of boundedInvocationQueries) void query.refetch();
@@ -2255,7 +2404,20 @@ export default function InstalledMcpManagementWorkspace({
         <div className="installed-mcp-heading-actions">
           <span className="state-badge neutral"><ShieldCheck size={14} /> no runtime authority</span>
           <button className="icon-button" type="button" title="Refresh MCP inventory" aria-label="Refresh MCP inventory" onClick={refresh}><RefreshCw size={17} /></button>
-          <button className="primary-button" type="button" disabled={packageQuery.isLoading || packageQuery.isError || policyQuery.isLoading || policyQuery.isError} title="Add MCP" onClick={() => { createMutation.reset(); setAdding(true); }}><PackagePlus size={16} />Add MCP</button>
+          <button
+            className="primary-button"
+            type="button"
+            disabled={
+              (packageQuery.isLoading || policyQuery.isLoading || bundledCatalogQuery.isLoading) ||
+              ((packageQuery.isError || policyQuery.isError) && bundledCatalogQuery.isError)
+            }
+            title="Add MCP"
+            onClick={() => {
+              createMutation.reset();
+              createBundledMutation.reset();
+              setAdding(true);
+            }}
+          ><PackagePlus size={16} />Add MCP</button>
         </div>
       </div>
       <div className="installed-mcp-readiness" aria-label="MCP lifecycle prerequisites">
@@ -2263,19 +2425,21 @@ export default function InstalledMcpManagementWorkspace({
           <ShieldCheck size={15} />
           Backend authorization enforced
         </span>
-        <span data-ready={!packageQuery.isLoading && !packageQuery.isError && packages.length > 0}>
-          {packageQuery.isLoading ? <RefreshCw className="spin" size={15} /> : <PackagePlus size={15} />}
-          {packageQuery.isLoading
-            ? "Checking packages"
-            : packageQuery.isError
-              ? "Package inventory unavailable"
-            : packages.length > 0
-              ? `${packages.length} governed package${packages.length === 1 ? "" : "s"}`
-              : "Governed package required"}
+        <span data-ready={availableConnectorCount > 0}>
+          {packageQuery.isLoading || bundledCatalogQuery.isLoading
+            ? <RefreshCw className="spin" size={15} />
+            : <PackagePlus size={15} />}
+          {packageQuery.isLoading || bundledCatalogQuery.isLoading
+            ? "Checking MCP catalog"
+            : availableConnectorCount > 0
+              ? `${availableConnectorCount} MCP${availableConnectorCount === 1 ? "" : "s"} available`
+              : "MCP catalog unavailable"}
         </span>
-        <span data-ready={!policyQuery.isLoading && !policyQuery.isError && policies.length > 0}>
+        <span data-ready={bundledCatalog.length > 0 || (!policyQuery.isLoading && !policyQuery.isError && policies.length > 0)}>
           {policyQuery.isLoading ? <RefreshCw className="spin" size={15} /> : <FileCheck2 size={15} />}
-          {policyQuery.isLoading
+          {bundledCatalog.length > 0
+            ? "Bundled catalog governed"
+            : policyQuery.isLoading
             ? "Checking policy"
             : policyQuery.isError
               ? "Policy inventory unavailable"
@@ -2283,7 +2447,7 @@ export default function InstalledMcpManagementWorkspace({
               ? `${policies.length} creation polic${policies.length === 1 ? "y" : "ies"}`
               : "Creation policy required"}
         </span>
-        {!packageQuery.isLoading && !packageQuery.isError && packages.length === 0 && (
+        {!packageQuery.isLoading && !bundledCatalogQuery.isLoading && availableConnectorCount === 0 && (
           <button type="button" className="secondary-button" onClick={openBuilder}>
             <PackagePlus size={15} /> Open Builder workflow
           </button>
@@ -2936,8 +3100,11 @@ export default function InstalledMcpManagementWorkspace({
                 const runtimeActivation = secretBrokerageAuthorization
                   ? runtimeActivationBySecretBrokerage.get(secretBrokerageAuthorization.authorization_id)
                   : undefined;
-                const runtimeHealthy = Boolean(runtimeActivation);
-                const targetSessionVerification = runtimeActivation
+                const runtimeDeactivation = runtimeActivation
+                  ? runtimeDeactivationByActivation.get(runtimeActivation.activation_id)
+                  : undefined;
+                const runtimeHealthy = Boolean(runtimeActivation) && !runtimeDeactivation;
+                const targetSessionVerification = runtimeHealthy && runtimeActivation
                   ? targetSessionByRuntimeActivation.get(runtimeActivation.activation_id)
                   : undefined;
                 const targetSessionVerified = Boolean(targetSessionVerification);
@@ -3024,7 +3191,9 @@ export default function InstalledMcpManagementWorkspace({
                                 onClick: () => setAuthorizingSecretBrokerage(instance),
                               } : undefined
                             : !runtimeHealthy
-                              ? runtimeActivationQuery.isSuccess ? {
+                              ? runtimeDeactivation
+                                ? undefined
+                                : runtimeActivationQuery.isSuccess ? {
                                   icon: <Activity size={15} />,
                                   label: "Activate runtime",
                                   onClick: () => setActivatingRuntime(instance),
@@ -3051,6 +3220,8 @@ export default function InstalledMcpManagementWorkspace({
                       }`}>
                         {instance.instance_state === "retired"
                           ? "Retired"
+                          : runtimeDeactivation
+                            ? "Disabled / runtime stopped"
                           : knowledgeReviewersAssigned
                             ? "Enabled / reviewers assigned"
                           : knowledgeReviewerAssignmentClaim
@@ -3089,6 +3260,8 @@ export default function InstalledMcpManagementWorkspace({
                       <span className="installed-mcp-event-label">
                         {instance.instance_state === "retired"
                           ? "Retired"
+                          : runtimeDeactivation
+                            ? "Runtime disabled"
                           : knowledgeReviewerAssignment
                             ? "Knowledge reviewers assigned"
                           : knowledgeReviewerAssignmentClaim
@@ -3121,7 +3294,7 @@ export default function InstalledMcpManagementWorkspace({
                               ? "Target bound"
                               : "Created"}
                       </span>
-                      {new Date(knowledgeReviewerAssignment?.created_at ?? knowledgeReviewerAssignmentClaim?.claimed_at ?? knowledgeReviewRequest?.created_at ?? knowledgeDraft?.created_at ?? invocationEvidence?.ingested_at ?? boundedInvocation?.completed_at ?? invocationAuthorization?.authorized_at ?? targetSessionVerification?.verified_at ?? runtimeActivation?.healthy_at ?? secretBrokerageAuthorization?.authorized_at ?? runtimeTrust?.granted_at ?? enablement?.enabled_at ?? validation?.validated_at ?? assignment?.assigned_at ?? binding?.bound_at ?? instance.retired_at ?? instance.created_at).toLocaleString()}
+                      {new Date(runtimeDeactivation?.deactivated_at ?? knowledgeReviewerAssignment?.created_at ?? knowledgeReviewerAssignmentClaim?.claimed_at ?? knowledgeReviewRequest?.created_at ?? knowledgeDraft?.created_at ?? invocationEvidence?.ingested_at ?? boundedInvocation?.completed_at ?? invocationAuthorization?.authorized_at ?? targetSessionVerification?.verified_at ?? runtimeActivation?.healthy_at ?? secretBrokerageAuthorization?.authorized_at ?? runtimeTrust?.granted_at ?? enablement?.enabled_at ?? validation?.validated_at ?? assignment?.assigned_at ?? binding?.bound_at ?? instance.retired_at ?? instance.created_at).toLocaleString()}
                     </td>
                     <td>
                       {instance.instance_state === "disabled_unconfigured" &&
@@ -3165,6 +3338,8 @@ export default function InstalledMcpManagementWorkspace({
                                 {nextSetupAction.icon}
                                 <span>{nextSetupAction.label}</span>
                               </button>
+                            ) : runtimeDeactivation ? (
+                              <strong className="pending"><Power size={15} /> Runtime disabled</strong>
                             ) : setupComplete ? (
                               <strong><FileCheck2 size={15} /> Setup complete</strong>
                             ) : (
@@ -3210,6 +3385,16 @@ export default function InstalledMcpManagementWorkspace({
                               {runtimeActivation && (
                                 <button className="secondary-button installed-mcp-row-action" type="button" aria-label={`View runtime activation for ${instance.display_name}`} onClick={() => setActivatingRuntime(instance)}>
                                   <Activity size={15} /><span>View runtime activation</span>
+                                </button>
+                              )}
+                              {runtimeHealthy && (
+                                <button
+                                  className="secondary-button installed-mcp-row-action"
+                                  type="button"
+                                  aria-label={`Disable runtime for ${instance.display_name}`}
+                                  onClick={() => setDeactivatingRuntime(instance)}
+                                >
+                                  <Power size={15} /><span>Disable runtime</span>
                                 </button>
                               )}
                               {targetSessionVerification && (
@@ -3357,7 +3542,18 @@ export default function InstalledMcpManagementWorkspace({
         </div>
       ) : null}
       <div className="installed-mcp-footnote"><span>{activeCount} active in this result</span><span>Lifecycle, bounded-invocation and immutable evidence records expose no secrets, commands, raw input or output. Preservation is one-way and grants no retry, knowledge publication, scheduling, workflow, execution, deployment or infrastructure mutation authority. Updates remain review-only.</span></div>
-      {adding && <AddMcpDialog packages={packages} policies={policies} pending={createMutation.isPending} onCancel={() => setAdding(false)} onOpenBuilder={openBuilder} onSubmit={(input) => createMutation.mutate(input)} />}
+      {adding && (
+        <AddMcpDialog
+          catalog={bundledCatalog}
+          packages={packages}
+          policies={policies}
+          pending={createMutation.isPending || createBundledMutation.isPending}
+          onCancel={() => setAdding(false)}
+          onOpenBuilder={openBuilder}
+          onCatalogSubmit={(input) => createBundledMutation.mutate(input)}
+          onSubmit={(input) => createMutation.mutate(input)}
+        />
+      )}
       {retiring && <RetireMcpDialog instance={retiring} pending={retireMutation.isPending} onCancel={() => setRetiring(null)} onSubmit={(reason) => retireMutation.mutate({ instance: retiring, reason })} />}
       {reviewing && <UpgradeReadinessDialog instance={reviewing} subjectId={subjectId} onCancel={() => setReviewing(null)} />}
       {targeting && (
@@ -3573,6 +3769,35 @@ export default function InstalledMcpManagementWorkspace({
             }}
             onCancel={() => setActivatingRuntime(null)}
             onRequestEnterpriseLogin={onRequestEnterpriseLogin}
+          />
+        );
+      })()}
+      {deactivatingRuntime && (() => {
+        const binding = bindingByInstance.get(deactivatingRuntime.record_id);
+        const assignment = binding ? assignmentByBinding.get(binding.binding_id) : undefined;
+        const validation = assignment ? validationByAssignment.get(assignment.assignment_id) : undefined;
+        const enablement = validation ? enablementByValidation.get(validation.validation_id) : undefined;
+        const runtimeTrust = enablement ? runtimeTrustByEnablement.get(enablement.enablement_id) : undefined;
+        const brokerage = runtimeTrust ? secretBrokerageByRuntimeTrust.get(runtimeTrust.grant_id) : undefined;
+        const activation = brokerage
+          ? runtimeActivationBySecretBrokerage.get(brokerage.authorization_id)
+          : undefined;
+        if (!activation || runtimeDeactivationByActivation.has(activation.activation_id)) return null;
+        return (
+          <RuntimeDeactivationDialog
+            activation={activation}
+            instance={deactivatingRuntime}
+            onCancel={() => setDeactivatingRuntime(null)}
+            onDeactivated={(deactivation) => {
+              queryClient.setQueryData<ConnectorRuntimeDeactivation[]>(
+                ["connector-runtime-deactivations", sessionScopeKey],
+                (current = []) => [
+                  ...current.filter((item) => item.activation_id !== deactivation.activation_id),
+                  deactivation,
+                ],
+              );
+              setDeactivatingRuntime(null);
+            }}
           />
         );
       })()}

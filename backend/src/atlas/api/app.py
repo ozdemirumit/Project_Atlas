@@ -33,6 +33,7 @@ from atlas.api.routes import (
     bootstrap_trust,
     bootstrap_verification,
     bounded_invocations,
+    bundled_connector_catalog,
     capability_enablements,
     change_reviews,
     configuration_validations,
@@ -614,6 +615,10 @@ from atlas.modules.connectors.application.authority_behavior_validation import (
 from atlas.modules.connectors.application.bounded_invocation import (
     ConnectorBoundedInvocationService,
     build_development_connector_bounded_invocation_policy,
+)
+from atlas.modules.connectors.application.bundled_catalog import (
+    BundledConnectorCatalogService,
+    build_hitachi_ops_center_bundled_descriptor,
 )
 from atlas.modules.connectors.application.capability_enablement import (
     ConnectorCapabilityEnablementService,
@@ -4812,6 +4817,14 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
+    resolved_bundled_connector_catalog_service = BundledConnectorCatalogService(
+        descriptors=(
+            () if is_production else (build_hitachi_ops_center_bundled_descriptor(),)
+        ),
+        repository=resolved_connector_instance_creation_service.repository,
+        audit_sink=resolved_audit_sink,
+        environment_id=resolved_connector_instance_creation_service.environment_id,
+    )
     if runtime_deactivation_service is not None:
         resolved_runtime_deactivation_service = runtime_deactivation_service
     else:
@@ -9514,6 +9527,9 @@ def create_app(
         app.state.package_registration_service = resolved_package_registration_service
         app.state.package_installation_service = resolved_package_installation_service
         app.state.connector_instance_creation_service = resolved_connector_instance_creation_service
+        app.state.bundled_connector_catalog_service = (
+            resolved_bundled_connector_catalog_service
+        )
         app.state.connector_instance_lifecycle_service = (
             resolved_connector_instance_lifecycle_service
         )
@@ -10104,6 +10120,7 @@ def create_app(
     app.include_router(package_registrations.router, prefix="/api/v1")
     app.include_router(package_installations.router, prefix="/api/v1")
     app.include_router(instance_creation.router, prefix="/api/v1")
+    app.include_router(bundled_connector_catalog.router, prefix="/api/v1")
     app.include_router(target_configuration.router, prefix="/api/v1")
     app.include_router(credential_assignments.router, prefix="/api/v1")
     app.include_router(configuration_validations.router, prefix="/api/v1")

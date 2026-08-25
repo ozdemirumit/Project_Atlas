@@ -4,6 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiRequestError } from "../../api/client";
 import {
+  createBundledConnectorInstance,
+  getBundledConnectorCatalog,
+  type BundledConnectorDescriptor,
+} from "../../api/bundledConnectorCatalog";
+import {
   createConnectorCapabilityEnablement,
   getConnectorCapabilityEnablementOptions,
   getConnectorCapabilityEnablements,
@@ -95,6 +100,11 @@ import {
   getConnectorRuntimeActivations,
 } from "../../api/runtimeActivations";
 import {
+  deactivateConnectorRuntime,
+  getConnectorRuntimeDeactivations,
+  type ConnectorRuntimeDeactivation,
+} from "../../api/runtimeDeactivations";
+import {
   createConnectorSecretBrokerageAuthorization,
   getConnectorSecretBrokerageAuthorizationOptions,
   getConnectorSecretBrokerageAuthorizations,
@@ -174,6 +184,48 @@ const policy: ConnectorInstanceCreationPolicy = {
   expires_at: "2030-01-01T00:00:00Z",
   canonical_digest: "f".repeat(64),
 };
+
+const runtimeDeactivation: ConnectorRuntimeDeactivation = {
+  deactivation_id: "connector-runtime-deactivation.test",
+  activation_id: runtimeActivationInventoryItem.activation_id,
+  activation_version: 1,
+  connector_id: runtimeActivationInventoryItem.connector_id,
+  instance_id: runtimeActivationInventoryItem.instance_id,
+  effective_runtime_state: "disabled_runtime",
+  deactivated_by: "subject.connector-operator",
+  reason: "Disable this Atlas runtime during planned maintenance.",
+  deactivated_at: "2026-08-25T12:00:00Z",
+  atlas_runtime_disabled: true,
+  target_authority_revoked: true,
+  managed_infrastructure_contacted: false,
+  infrastructure_mutation_performed: false,
+  reused: false,
+};
+
+const bundledDescriptor = {
+  catalog_item_id: "catalog.connector.hitachi.opscenter",
+  schema_version: "atlas.bundled-connector-descriptor.v1",
+  version: 1,
+  connector_id: "connector.hitachi.opscenter",
+  display_name: "Hitachi Ops Center API Configuration Manager",
+  vendor_name: "Hitachi Vantara",
+  release_version: "version.0.1.0",
+  sdk_profile: "atlas.python312.v1",
+  capability_ids: ["capability.hitachi.inventory"],
+  capability_classes: ["C1"],
+  canonical_digest: "a".repeat(64),
+  trusted_bundled: true,
+  development_only: true,
+  catalog_evidence_only: true,
+  target_authority_granted: false,
+  credential_authority_granted: false,
+  capability_authority_granted: false,
+  network_authority_granted: false,
+  runtime_authority_granted: false,
+  execution_authorized: false,
+  deployment_approved: false,
+  infrastructure_mutation_performed: false,
+} satisfies BundledConnectorDescriptor;
 
 const configuredBinding = {
   binding_id: "connector-target-configuration-binding.test",
@@ -932,6 +984,24 @@ vi.mock("../../api/runtimeActivations", async (importOriginal) => {
   };
 });
 
+vi.mock("../../api/bundledConnectorCatalog", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../api/bundledConnectorCatalog")>();
+  return {
+    ...original,
+    createBundledConnectorInstance: vi.fn(),
+    getBundledConnectorCatalog: vi.fn(),
+  };
+});
+
+vi.mock("../../api/runtimeDeactivations", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../api/runtimeDeactivations")>();
+  return {
+    ...original,
+    deactivateConnectorRuntime: vi.fn(),
+    getConnectorRuntimeDeactivations: vi.fn(),
+  };
+});
+
 vi.mock("../../api/targetSessionVerifications", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/targetSessionVerifications")>();
   return {
@@ -1052,9 +1122,9 @@ function renderWorkspace(
 function openAdvancedGovernance() {
   const summary = screen.getByText("Advanced governance");
   const details = summary.closest("details");
-  expect(details).not.toBeNull();
-  if (!details?.open) fireEvent.click(summary);
-  expect(details?.open).toBe(true);
+  if (!details) throw new Error("Advanced governance details were not rendered");
+  if (!details.open) fireEvent.click(summary);
+  expect(details.open).toBe(true);
   return details;
 }
 
@@ -1118,6 +1188,8 @@ function primeOperationalEvidenceLifecycle() {
 }
 
 beforeEach(() => {
+  vi.mocked(getBundledConnectorCatalog).mockResolvedValue([]);
+  vi.mocked(createBundledConnectorInstance).mockRejectedValue(new Error("Not configured"));
   vi.mocked(getConnectorPackageInstallations).mockResolvedValue([installation]);
   vi.mocked(getConnectorInstanceCreationPolicies).mockResolvedValue([policy]);
   vi.mocked(getConnectorInstances).mockResolvedValue([instance]);
@@ -1142,6 +1214,8 @@ beforeEach(() => {
   vi.mocked(createConnectorRuntimeActivation).mockResolvedValue({
     data: runtimeActivationInventoryItem,
   });
+  vi.mocked(getConnectorRuntimeDeactivations).mockResolvedValue([]);
+  vi.mocked(deactivateConnectorRuntime).mockResolvedValue(runtimeDeactivation);
   vi.mocked(getConnectorTargetSessionVerifications).mockResolvedValue([]);
   vi.mocked(getConnectorTargetSessionVerificationOptions).mockResolvedValue([]);
   vi.mocked(createConnectorTargetSessionVerification).mockResolvedValue({
@@ -1293,7 +1367,7 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(await screen.findByRole("heading", { name: "Installed MCPs" })).toBeVisible();
     expect(await screen.findByText("Storage East")).toBeVisible();
     expect(screen.getByText("Backend authorization enforced")).toBeVisible();
-    expect(screen.getByText("1 governed package")).toBeVisible();
+    expect(screen.getByText("1 MCP available")).toBeVisible();
     expect(screen.getByText("1 creation policy")).toBeVisible();
     expect(screen.getByRole("button", { name: "Add MCP" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Remove Storage East" })).toBeVisible();
@@ -1331,6 +1405,31 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(screen.queryByRole("button", { name: /rotate|revoke|disable|export key/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /configure provider|approve provider/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /upload|trust key|sign policy/i })).toBeNull();
+  });
+
+  it("adds the bundled Hitachi MCP directly from the visible catalog", async () => {
+    vi.mocked(getConnectorPackageInstallations).mockResolvedValue([]);
+    vi.mocked(getConnectorInstanceCreationPolicies).mockResolvedValue([]);
+    vi.mocked(getBundledConnectorCatalog).mockResolvedValue([bundledDescriptor]);
+    vi.mocked(createBundledConnectorInstance).mockResolvedValue({} as never);
+    renderWorkspace();
+
+    expect(await screen.findByText("1 MCP available")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Add MCP" }));
+    const dialog = screen.getByRole("dialog", { name: "Add MCP" });
+    expect(within(dialog).getByRole("combobox", { name: "Available MCP" }))
+      .toHaveValue(bundledDescriptor.catalog_item_id);
+    expect(within(dialog).getByText("Hitachi Vantara")).toBeVisible();
+    fireEvent.click(within(dialog).getByRole("checkbox"));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add disabled MCP" }));
+
+    await waitFor(() => expect(createBundledConnectorInstance).toHaveBeenCalledOnce());
+    expect(vi.mocked(createBundledConnectorInstance).mock.calls[0]?.[0]).toEqual({
+      descriptor: bundledDescriptor,
+      instanceKey: `${bundledDescriptor.connector_id}-managed`,
+      displayName: `${bundledDescriptor.display_name} managed`,
+      purpose: "Create a disabled MCP identity for governed lifecycle management.",
+    });
   });
 
   it("restores configured target state and hides retirement for the bound MCP", async () => {
@@ -1681,6 +1780,34 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(within(dialog).queryByRole("button", {
       name: /^(connect|run|invoke|execute|deploy|mutate)/i,
     })).toBeNull();
+  });
+
+  it("disables only the Atlas runtime and reflects the revoked authority", async () => {
+    primeSetupThrough(7);
+    renderWorkspace();
+
+    expect(await screen.findByText("Enabled / runtime healthy")).toBeVisible();
+    const governance = openAdvancedGovernance();
+    fireEvent.click(within(governance).getByRole("button", {
+      name: "Disable runtime for Storage East",
+    }));
+    const dialog = screen.getByRole("dialog", {
+      name: "Disable runtime for Storage East",
+    });
+    expect(within(dialog).getByText(/does not contact or change the managed infrastructure/i))
+      .toBeVisible();
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Reason" }), {
+      target: { value: runtimeDeactivation.reason },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Disable runtime" }));
+
+    await waitFor(() => expect(deactivateConnectorRuntime).toHaveBeenCalledWith({
+      activation: runtimeActivationInventoryItem,
+      reason: runtimeDeactivation.reason,
+    }));
+    expect(await screen.findByText("Disabled / runtime stopped")).toBeVisible();
+    expect(screen.getAllByText("Runtime disabled")).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: "Activate runtime for Storage East" })).toBeNull();
   });
 
   it("removes stale runtime-health state when authoritative refresh fails", async () => {
