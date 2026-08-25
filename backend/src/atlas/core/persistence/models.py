@@ -2434,10 +2434,14 @@ class OperationalEvidenceKnowledgeDraftClaimModel(Base):
     __tablename__ = "operational_evidence_knowledge_draft_claims"
     __table_args__ = (
         UniqueConstraint(
+            "organization_id",
+            "environment_id",
             "source_ingestion_id",
             name="uq_operational_evidence_knowledge_draft_claims_source",
         ),
         UniqueConstraint(
+            "organization_id",
+            "environment_id",
             "claimed_by",
             "idempotency_digest",
             name="uq_ok_draft_claim_actor_idem",
@@ -2449,8 +2453,12 @@ class OperationalEvidenceKnowledgeDraftClaimModel(Base):
     draft_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     claimed_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     idempotency_digest: Mapped[str] = mapped_column(String(64), nullable=False)
-    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
-    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(
+        String(128), primary_key=True, nullable=False, index=True
+    )
+    environment_id: Mapped[str] = mapped_column(
+        String(128), primary_key=True, nullable=False, index=True
+    )
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
@@ -2459,10 +2467,14 @@ class OperationalEvidenceKnowledgeDraftModel(Base):
     __tablename__ = "operational_evidence_knowledge_drafts"
     __table_args__ = (
         UniqueConstraint(
+            "organization_id",
+            "environment_id",
             "source_ingestion_id",
             name="uq_operational_evidence_knowledge_drafts_source",
         ),
         UniqueConstraint(
+            "organization_id",
+            "environment_id",
             "claim_id",
             name="uq_operational_evidence_knowledge_drafts_claim",
         ),
@@ -2475,8 +2487,12 @@ class OperationalEvidenceKnowledgeDraftModel(Base):
     capability_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     evidence_package_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     curated_by: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
-    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
-    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(
+        String(128), primary_key=True, nullable=False, index=True
+    )
+    environment_id: Mapped[str] = mapped_column(
+        String(128), primary_key=True, nullable=False, index=True
+    )
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import inspect
 import os
+from dataclasses import replace
+from datetime import datetime, timedelta
 from typing import Any, cast
 from uuid import uuid4
 
@@ -42,6 +44,80 @@ from atlas.modules.workflows.domain.protected_runtime_process_creation_consumpti
     WorkflowProtectedRuntimeProcessCreationConsumptionResultState,
     code_owned_workflow_protected_runtime_process_creation_consumption_policy,
 )
+
+
+class _ConsumptionFixtureProcessCreationRepository(_FixtureProcessCreationRepository):
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._fixture_time: datetime | None = None
+
+    def bind_fixture_time(self, value: datetime) -> None:
+        self._fixture_time = value
+
+    def fixture_time(self) -> datetime:
+        assert self._fixture_time is not None
+        return self._fixture_time
+
+    async def get_authoritative_time(self) -> datetime:
+        if self._fixture_time is not None:
+            return self._fixture_time
+        return await super().get_authoritative_time()
+
+    async def _lock_protected_runtime_process_creation_authorization_rows(
+        self,
+        session: Any,
+        *,
+        readiness_result_id: str,
+        scope: Any,
+        consumer_subject_id: str,
+        consumer_audience: str,
+        idempotency_key: str | None,
+        for_update: bool = True,
+    ) -> Any:
+        locked = await super()._lock_protected_runtime_process_creation_authorization_rows(
+            session,
+            readiness_result_id=readiness_result_id,
+            scope=scope,
+            consumer_subject_id=consumer_subject_id,
+            consumer_audience=consumer_audience,
+            idempotency_key=idempotency_key,
+            for_update=for_update,
+        )
+        if self._fixture_time is None:
+            return locked
+        return replace(
+            locked,
+            first_observed_at=self._fixture_time,
+            observed_at=self._fixture_time,
+        )
+
+    async def _lock_protected_runtime_process_creation_rows(
+        self, session: Any, *, request: Any
+    ) -> Any:
+        locked = await super()._lock_protected_runtime_process_creation_rows(
+            session, request=request
+        )
+        if self._fixture_time is None:
+            return locked
+        return replace(
+            locked,
+            authorization=replace(
+                locked.authorization,
+                first_observed_at=self._fixture_time,
+                observed_at=self._fixture_time,
+            ),
+            observed_at=self._fixture_time,
+        )
+
+    async def _lock_protected_runtime_process_creation_result_rows(
+        self, session: Any, *, request: Any
+    ) -> Any:
+        locked = await super()._lock_protected_runtime_process_creation_result_rows(
+            session, request=request
+        )
+        if self._fixture_time is None:
+            return locked
+        return replace(locked, observed_at=self._fixture_time)
 
 
 async def _cleanup_consumption(engine: AsyncEngine, *, authorization_lease_id: str) -> None:
@@ -85,7 +161,7 @@ async def test_live_postgres_atomic_consumption_and_exact_replay_call_creator_on
         pytest.skip("ATLAS_TEST_POSTGRES_DSN is not configured")
 
     engine = create_async_engine(database_url)
-    repository = _FixtureProcessCreationRepository(engine=engine)
+    repository = _ConsumptionFixtureProcessCreationRepository(engine=engine)
     repository.bind_protected_runtime_start_receipt_signature_verifier(
         cast(Any, _AcceptAllReceiptVerifier())
     )
@@ -96,7 +172,8 @@ async def test_live_postgres_atomic_consumption_and_exact_replay_call_creator_on
     )
     repository.bind_protected_runtime_process_creation_receipt_signature_verifier(receipt_verifier)
     creator = DeterministicDevelopmentWorkflowProtectedRuntimeProcessCreator(
-        development_enabled=True
+        development_enabled=True,
+        clock=repository.fixture_time,
     )
     service = WorkflowProtectedRuntimeProcessCreationConsumptionService(
         repository=cast(Any, repository),
@@ -124,12 +201,14 @@ async def test_live_postgres_atomic_consumption_and_exact_replay_call_creator_on
         )
         seeded.append(start_request)
         await _seed_fixture_fences(engine, repository, readiness_result)
+        repository.bind_fixture_time(await repository.get_authoritative_time())
         authorization = await _authorize_process_creation(
             _process_service(repository),
             readiness_result,
             idempotency_key=f"imp-228-authorization-{uuid4().hex}",
         )
         authorization_lease_id = authorization.authorization_lease_id
+        repository.bind_fixture_time(authorization.issued_at + timedelta(milliseconds=200))
         policy = code_owned_workflow_protected_runtime_process_creation_consumption_policy()
         request = {
             "authorization_lease_id": authorization_lease_id,

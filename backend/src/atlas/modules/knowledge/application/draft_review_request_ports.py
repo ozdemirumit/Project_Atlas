@@ -23,7 +23,7 @@ class OperationalKnowledgeReviewRequestUncertainError(OperationalKnowledgeReview
 
 class OperationalKnowledgeReviewRequestSource(Protocol):
     async def review_request_source(
-        self, *, draft_id: str
+        self, *, draft_id: str, organization_id: str, environment_id: str
     ) -> OperationalEvidenceKnowledgeDraftRecord: ...
 
 

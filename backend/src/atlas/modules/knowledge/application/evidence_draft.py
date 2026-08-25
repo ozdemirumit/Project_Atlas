@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 from hashlib import sha256
@@ -48,6 +48,25 @@ EVIDENCE_DRAFT_CLAIM_SCHEMA = "atlas.operational-evidence-knowledge-draft-claim.
 EVIDENCE_DRAFT_RECORD_SCHEMA = "atlas.operational-evidence-knowledge-draft.v1"
 
 
+@dataclass(frozen=True, slots=True)
+class OperationalEvidenceKnowledgeDraftOption:
+    curation_option_id: str
+    source_ingestion_id: str
+    source_ingestion_digest: str
+    evidence_package_id: str
+    capability_id: str
+    curation_policy_id: str
+    curation_policy_digest: str
+    curation_policy_version: str
+    curation_policy_expires_at: datetime
+    required_assurance_level: AssuranceLevel
+    classification: str
+    access_policy_id: str
+    retention_policy_id: str
+    maximum_draft_items: int
+    maximum_draft_bytes: int
+
+
 class OperationalEvidenceKnowledgeDraftService:
     def __init__(
         self,
@@ -70,14 +89,16 @@ class OperationalEvidenceKnowledgeDraftService:
         self._environment_id = environment_id
         self._clock = clock or (lambda: datetime.now(UTC))
 
+    @property
+    def repository(self) -> OperationalEvidenceKnowledgeDraftRepository:
+        return self._repository
+
     async def create(
         self,
         *,
         actor: AuthenticatedSubject,
         source_ingestion_id: str,
-        source_ingestion_digest: str,
-        curation_policy_id: str,
-        curation_policy_digest: str,
+        curation_option_id: str,
         purpose: str,
         unapproved_non_retrievable_draft_acknowledged: bool,
         idempotency_key: str,
@@ -96,15 +117,21 @@ class OperationalEvidenceKnowledgeDraftService:
         request_binding_digest = self._digest(
             {
                 "source_ingestion_id": source_ingestion_id,
-                "source_ingestion_digest": source_ingestion_digest,
-                "curation_policy_id": curation_policy_id,
-                "curation_policy_digest": curation_policy_digest,
+                "curation_option_id": curation_option_id,
+                "actor_id": actor.subject_id,
+                "organization_id": actor.organization_id,
+                "environment_id": self._environment_id,
                 "purpose": purpose,
             }
         )
-        idempotency_digest = self._digest([actor.subject_id, idempotency_key])
-        existing_claim = await self._repository.get_claim_by_idempotency(
-            claimed_by=actor.subject_id, idempotency_digest=idempotency_digest
+        idempotency_digest = self._digest(
+            [actor.subject_id, actor.organization_id, self._environment_id, idempotency_key]
+        )
+        existing_claim = await self._repository.get_claim_by_idempotency_in_scope(
+            claimed_by=actor.subject_id,
+            idempotency_digest=idempotency_digest,
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
         )
         if existing_claim is not None:
             return await self._reuse(
@@ -120,40 +147,29 @@ class OperationalEvidenceKnowledgeDraftService:
             raise OperationalEvidenceKnowledgeDraftError(
                 "operational_evidence_knowledge_draft_source_not_found"
             ) from error
-        policy = await self._policy_source.get_by_id(policy_id=curation_policy_id)
-        if policy is None:
-            raise OperationalEvidenceKnowledgeDraftError(
-                "operational_evidence_knowledge_draft_policy_not_found"
-            )
-        self._verify_snapshot(policy)
-        if not assurance_satisfies_policy(actor.assurance_level, policy.required_assurance_level):
-            raise OperationalEvidenceKnowledgeDraftError(
-                "operational_evidence_knowledge_draft_assurance_required"
-            )
         now = self._clock()
-        self._verify_source(
-            source=source,
-            policy=policy,
-            source_digest=source_ingestion_digest,
-            policy_digest=curation_policy_digest,
-            now=now,
-        )
         self._require_scope(actor, source.organization_id, source.environment_id)
-        if actor.subject_id in source_actors | {
-            source.ingested_by,
-            policy.signed_by,
-            policy.required_adapter_attestor_id,
-        }:
-            raise OperationalEvidenceKnowledgeDraftError(
-                "operational_evidence_knowledge_draft_actor_separation_required"
-            )
-        await self._permission_authorizer.authorize(
+        policy = await self._resolve_option(
             actor=actor,
-            organization_id=source.organization_id,
-            environment_id=source.environment_id,
+            source=source,
+            source_actors=source_actors,
+            curation_option_id=curation_option_id,
+            now=now,
             correlation_id=correlation_id,
         )
-        seed = self._digest([source.ingestion_id, source.canonical_digest, policy.canonical_digest])
+        if not self._adapter.available:
+            raise OperationalEvidenceKnowledgeDraftError(
+                "operational_evidence_knowledge_draft_adapter_unavailable"
+            )
+        seed = self._digest(
+            [
+                source.organization_id,
+                source.environment_id,
+                source.ingestion_id,
+                source.canonical_digest,
+                policy.canonical_digest,
+            ]
+        )
         draft_id = f"operational-evidence-knowledge-draft.{seed[:24]}"
         await self._audit(
             actor,
@@ -180,8 +196,10 @@ class OperationalEvidenceKnowledgeDraftService:
         )
         claim = replace(claim, canonical_digest=self._digest(self._claim_payload(claim)))
         if not await self._repository.claim(claim):
-            prior = await self._repository.get_claim_by_source(
-                source_ingestion_id=source.ingestion_id
+            prior = await self._repository.get_claim_by_source_in_scope(
+                source_ingestion_id=source.ingestion_id,
+                organization_id=source.organization_id,
+                environment_id=source.environment_id,
             )
             if prior is None:
                 raise OperationalEvidenceKnowledgeDraftUncertainError(
@@ -202,15 +220,15 @@ class OperationalEvidenceKnowledgeDraftService:
             await self._audit(
                 actor,
                 correlation_id,
-                (
-                    "operational_evidence_knowledge_draft_uncertain"
-                    if isinstance(error, OperationalEvidenceKnowledgeDraftUncertainError)
-                    else "operational_evidence_knowledge_draft_failed"
-                ),
+                "operational_evidence_knowledge_draft_uncertain",
                 draft_id,
                 (("claim_persisted", "true"),),
             )
-            raise
+            if isinstance(error, OperationalEvidenceKnowledgeDraftUncertainError):
+                raise
+            raise OperationalEvidenceKnowledgeDraftUncertainError(
+                "operational_evidence_knowledge_draft_outcome_uncertain"
+            ) from error
         except Exception as error:
             await self._audit(
                 actor,
@@ -242,7 +260,11 @@ class OperationalEvidenceKnowledgeDraftService:
             (("knowledge_lifecycle", record.knowledge_lifecycle),),
         )
         if not await self._repository.add(record):
-            raced = await self._repository.get_by_source(source_ingestion_id=source.ingestion_id)
+            raced = await self._repository.get_by_source_in_scope(
+                source_ingestion_id=source.ingestion_id,
+                organization_id=source.organization_id,
+                environment_id=source.environment_id,
+            )
             if raced is None or raced.canonical_digest != record.canonical_digest:
                 raise OperationalEvidenceKnowledgeDraftUncertainError(
                     "operational_evidence_knowledge_draft_persistence_uncertain"
@@ -254,13 +276,16 @@ class OperationalEvidenceKnowledgeDraftService:
         self, *, actor: AuthenticatedSubject, draft_id: str, correlation_id: str
     ) -> OperationalEvidenceKnowledgeDraftRecord:
         self._require_human(actor)
-        record = await self._repository.get(draft_id=draft_id)
+        record = await self._repository.get_in_scope(
+            draft_id=draft_id,
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+        )
         if record is None:
             raise OperationalEvidenceKnowledgeDraftError(
                 "operational_evidence_knowledge_draft_record_not_found"
             )
-        self._verify_record(record)
-        self._require_scope(actor, record.organization_id, record.environment_id)
+        record = await self._current_record(record)
         await self._audit(
             actor,
             correlation_id,
@@ -271,19 +296,126 @@ class OperationalEvidenceKnowledgeDraftService:
         )
         return record
 
+    async def list_drafts(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        source_ingestion_id: str | None,
+        correlation_id: str,
+    ) -> tuple[OperationalEvidenceKnowledgeDraftRecord, ...]:
+        self._require_human(actor)
+        if source_ingestion_id is None:
+            candidates = await self._repository.list_scope(
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+            )
+        else:
+            candidate = await self._repository.get_by_source_in_scope(
+                source_ingestion_id=source_ingestion_id,
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+            )
+            candidates = (candidate,) if candidate is not None else ()
+        visible = [await self._current_record(record) for record in candidates]
+        visible.sort(key=lambda item: item.draft_id)
+        await self._audit(
+            actor,
+            correlation_id,
+            "operational_evidence_knowledge_draft_inventory_listed",
+            source_ingestion_id or self._environment_id,
+            (("count", str(len(visible))),),
+            permission_id=KNOWLEDGE_EVIDENCE_DRAFT_READ,
+        )
+        return tuple(visible)
+
+    async def list_options(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        source_ingestion_id: str,
+        correlation_id: str,
+    ) -> tuple[OperationalEvidenceKnowledgeDraftOption, ...]:
+        self._require_human(actor)
+        if not self._adapter.available:
+            await self._audit_options(actor, correlation_id, source_ingestion_id, 0)
+            return ()
+        try:
+            source, source_actors = await self._source.knowledge_draft_source(
+                ingestion_id=source_ingestion_id,
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+            )
+        except Exception as error:
+            raise OperationalEvidenceKnowledgeDraftError(
+                "operational_evidence_knowledge_draft_source_not_found"
+            ) from error
+        self._require_scope(actor, source.organization_id, source.environment_id)
+        claim = await self._repository.get_claim_by_source_in_scope(
+            source_ingestion_id=source.ingestion_id,
+            organization_id=source.organization_id,
+            environment_id=source.environment_id,
+        )
+        if claim is not None:
+            self._verify_claim(claim)
+            completed = await self._repository.get_by_source_in_scope(
+                source_ingestion_id=source.ingestion_id,
+                organization_id=source.organization_id,
+                environment_id=source.environment_id,
+            )
+            if completed is not None:
+                await self._current_record(completed)
+            await self._audit_options(actor, correlation_id, source.ingestion_id, 0)
+            return ()
+        options: list[OperationalEvidenceKnowledgeDraftOption] = []
+        now = self._clock()
+        policies = await self._policy_source.list_scope(
+            organization_id=source.organization_id,
+            environment_id=source.environment_id,
+        )
+        for policy in policies:
+            try:
+                self._verify_snapshot(policy)
+                self._verify_source(
+                    source=source,
+                    policy=policy,
+                    source_digest=source.canonical_digest,
+                    policy_digest=policy.canonical_digest,
+                    now=now,
+                )
+                if not assurance_satisfies_policy(
+                    actor.assurance_level, policy.required_assurance_level
+                ):
+                    continue
+                self._require_actor_separation(actor, source, source_actors, policy)
+                await self._permission_authorizer.authorize(
+                    actor=actor,
+                    organization_id=source.organization_id,
+                    environment_id=source.environment_id,
+                    correlation_id=correlation_id,
+                )
+            except OperationalEvidenceKnowledgeDraftError:
+                continue
+            options.append(self._option(source, policy))
+        options.sort(key=lambda item: item.curation_option_id)
+        await self._audit_options(actor, correlation_id, source.ingestion_id, len(options))
+        return tuple(options)
+
     async def close(self) -> None:
         await self._repository.close()
 
     async def review_request_source(
-        self, *, draft_id: str
+        self, *, draft_id: str, organization_id: str, environment_id: str
     ) -> OperationalEvidenceKnowledgeDraftRecord:
-        record = await self._repository.get(draft_id=draft_id)
+        record = await self._repository.get_in_scope(
+            draft_id=draft_id,
+            organization_id=organization_id,
+            environment_id=environment_id,
+        )
         if record is None:
             raise OperationalEvidenceKnowledgeDraftError(
                 "operational_evidence_knowledge_draft_record_not_found"
             )
-        self._verify_record(record)
-        return record
+        return await self._current_record(record)
 
     async def _reuse(
         self,
@@ -302,13 +434,214 @@ class OperationalEvidenceKnowledgeDraftService:
                 "operational_evidence_knowledge_draft_idempotency_conflict"
             )
         self._require_scope(actor, claim.organization_id, claim.environment_id)
-        record = await self._repository.get(draft_id=claim.draft_id)
+        record = await self._repository.get_in_scope(
+            draft_id=claim.draft_id,
+            organization_id=claim.organization_id,
+            environment_id=claim.environment_id,
+        )
         if record is None:
             raise OperationalEvidenceKnowledgeDraftError(
                 "operational_evidence_knowledge_draft_already_claimed"
             )
+        return replace(await self._current_record(record), reused=True)
+
+    async def _resolve_option(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        source: ConnectorInvocationEvidenceRecord,
+        source_actors: frozenset[str],
+        curation_option_id: str,
+        now: datetime,
+        correlation_id: str,
+    ) -> OperationalEvidenceKnowledgeDraftPolicySnapshot:
+        policies = await self._policy_source.list_scope(
+            organization_id=source.organization_id,
+            environment_id=source.environment_id,
+        )
+        for policy in policies:
+            try:
+                self._verify_snapshot(policy)
+            except OperationalEvidenceKnowledgeDraftError:
+                continue
+            if self._option_id(source, policy) != curation_option_id:
+                continue
+            self._verify_source(
+                source=source,
+                policy=policy,
+                source_digest=source.canonical_digest,
+                policy_digest=policy.canonical_digest,
+                now=now,
+            )
+            if not assurance_satisfies_policy(
+                actor.assurance_level, policy.required_assurance_level
+            ):
+                raise OperationalEvidenceKnowledgeDraftError(
+                    "operational_evidence_knowledge_draft_assurance_required"
+                )
+            self._require_actor_separation(actor, source, source_actors, policy)
+            await self._permission_authorizer.authorize(
+                actor=actor,
+                organization_id=source.organization_id,
+                environment_id=source.environment_id,
+                correlation_id=correlation_id,
+            )
+            return policy
+        raise OperationalEvidenceKnowledgeDraftError(
+            "operational_evidence_knowledge_draft_option_invalid"
+        )
+
+    async def _current_record(
+        self, record: OperationalEvidenceKnowledgeDraftRecord
+    ) -> OperationalEvidenceKnowledgeDraftRecord:
         self._verify_record(record)
-        return replace(record, reused=True)
+        claim = await self._repository.get_claim_by_source_in_scope(
+            source_ingestion_id=record.source_ingestion_id,
+            organization_id=record.organization_id,
+            environment_id=record.environment_id,
+        )
+        if claim is None:
+            raise OperationalEvidenceKnowledgeDraftError(
+                "operational_evidence_knowledge_draft_claim_not_found"
+            )
+        self._verify_claim(claim)
+        try:
+            source, _ = await self._source.knowledge_draft_source(
+                ingestion_id=record.source_ingestion_id,
+                organization_id=record.organization_id,
+                environment_id=record.environment_id,
+            )
+        except OperationalEvidenceKnowledgeDraftError:
+            raise
+        except Exception as error:
+            raise OperationalEvidenceKnowledgeDraftError(
+                "operational_evidence_knowledge_draft_source_not_found"
+            ) from error
+        policy = await self._policy_source.get_by_id_in_scope(
+            policy_id=record.curation_policy_id,
+            organization_id=record.organization_id,
+            environment_id=record.environment_id,
+        )
+        if policy is None:
+            raise OperationalEvidenceKnowledgeDraftError(
+                "operational_evidence_knowledge_draft_policy_not_found"
+            )
+        self._verify_snapshot(policy)
+        if (
+            claim.organization_id != record.organization_id
+            or claim.environment_id != record.environment_id
+            or claim.claim_id != record.claim_id
+            or claim.draft_id != record.draft_id
+            or claim.source_ingestion_id != record.source_ingestion_id
+            or claim.source_ingestion_digest != record.source_ingestion_digest
+            or claim.claimed_by != record.curated_by
+            or claim.purpose != record.purpose
+            or source.organization_id != record.organization_id
+            or source.environment_id != record.environment_id
+            or source.ingestion_id != record.source_ingestion_id
+            or source.canonical_digest != record.source_ingestion_digest
+            or source.source_invocation_id != record.source_invocation_id
+            or source.evidence_package_id != record.evidence_package_id
+            or source.evidence_content_digest != record.evidence_content_digest
+            or source.evidence_metadata_digest != record.evidence_metadata_digest
+            or source.connector_id != record.connector_id
+            or source.instance_id != record.instance_id
+            or source.capability_id != record.capability_id
+            or source.classification != record.classification
+            or source.access_policy_id != record.access_policy_id
+            or source.access_policy_digest != record.access_policy_digest
+            or source.retention_policy_id != record.retention_policy_id
+            or source.retention_policy_digest != record.retention_policy_digest
+            or source.encryption_profile_id != record.encryption_profile_id
+            or source.encryption_profile_digest != record.encryption_profile_digest
+            or policy.canonical_digest != record.curation_policy_digest
+            or policy.policy_version != record.curation_policy_version
+            or policy.required_adapter_id != record.curation_adapter_id
+            or policy.draft_domain != record.draft_domain
+            or policy.content_type != record.content_type
+            or policy.source_authority != record.source_authority
+            or policy.language != record.language
+            or record.draft_item_count > policy.maximum_draft_items
+            or record.draft_bytes > policy.maximum_draft_bytes
+        ):
+            raise OperationalEvidenceKnowledgeDraftError(
+                "operational_evidence_knowledge_draft_lineage_invalid"
+            )
+        return record
+
+    @classmethod
+    def _option(
+        cls,
+        source: ConnectorInvocationEvidenceRecord,
+        policy: OperationalEvidenceKnowledgeDraftPolicySnapshot,
+    ) -> OperationalEvidenceKnowledgeDraftOption:
+        return OperationalEvidenceKnowledgeDraftOption(
+            curation_option_id=cls._option_id(source, policy),
+            source_ingestion_id=source.ingestion_id,
+            source_ingestion_digest=source.canonical_digest,
+            evidence_package_id=source.evidence_package_id,
+            capability_id=source.capability_id,
+            curation_policy_id=policy.policy_id,
+            curation_policy_digest=policy.canonical_digest,
+            curation_policy_version=policy.policy_version,
+            curation_policy_expires_at=policy.expires_at,
+            required_assurance_level=policy.required_assurance_level,
+            classification=source.classification,
+            access_policy_id=source.access_policy_id,
+            retention_policy_id=source.retention_policy_id,
+            maximum_draft_items=policy.maximum_draft_items,
+            maximum_draft_bytes=policy.maximum_draft_bytes,
+        )
+
+    @classmethod
+    def _option_id(
+        cls,
+        source: ConnectorInvocationEvidenceRecord,
+        policy: OperationalEvidenceKnowledgeDraftPolicySnapshot,
+    ) -> str:
+        digest = cls._digest(
+            [
+                source.organization_id,
+                source.environment_id,
+                source.ingestion_id,
+                source.canonical_digest,
+                policy.policy_id,
+                policy.canonical_digest,
+            ]
+        )
+        return f"operational-evidence-knowledge-draft-option.{digest[:24]}"
+
+    @staticmethod
+    def _require_actor_separation(
+        actor: AuthenticatedSubject,
+        source: ConnectorInvocationEvidenceRecord,
+        source_actors: frozenset[str],
+        policy: OperationalEvidenceKnowledgeDraftPolicySnapshot,
+    ) -> None:
+        if actor.subject_id in source_actors | {
+            source.ingested_by,
+            policy.signed_by,
+            policy.required_adapter_attestor_id,
+        }:
+            raise OperationalEvidenceKnowledgeDraftError(
+                "operational_evidence_knowledge_draft_actor_separation_required"
+            )
+
+    async def _audit_options(
+        self,
+        actor: AuthenticatedSubject,
+        correlation_id: str,
+        source_ingestion_id: str,
+        count: int,
+    ) -> None:
+        await self._audit(
+            actor,
+            correlation_id,
+            "operational_evidence_knowledge_draft_options_listed",
+            source_ingestion_id,
+            (("count", str(count)),),
+            permission_id=KNOWLEDGE_EVIDENCE_DRAFT_READ,
+        )
 
     @staticmethod
     def _verify_source(

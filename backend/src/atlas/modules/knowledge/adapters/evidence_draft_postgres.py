@@ -30,37 +30,62 @@ class PostgreSQLOperationalEvidenceKnowledgeDraftRepository:
     def from_url(cls, database_url: str) -> PostgreSQLOperationalEvidenceKnowledgeDraftRepository:
         return cls(create_async_engine(database_url))
 
-    async def get(self, *, draft_id: str) -> OperationalEvidenceKnowledgeDraftRecord | None:
+    async def get_in_scope(
+        self, *, draft_id: str, organization_id: str, environment_id: str
+    ) -> OperationalEvidenceKnowledgeDraftRecord | None:
         async with self._sessions() as session:
-            row = await session.get(OperationalEvidenceKnowledgeDraftModel, draft_id)
+            row = await session.scalar(
+                select(OperationalEvidenceKnowledgeDraftModel).where(
+                    OperationalEvidenceKnowledgeDraftModel.draft_id == draft_id,
+                    OperationalEvidenceKnowledgeDraftModel.organization_id == organization_id,
+                    OperationalEvidenceKnowledgeDraftModel.environment_id == environment_id,
+                )
+            )
             return self._record_to_domain(row.payload) if row else None
 
-    async def get_by_source(
-        self, *, source_ingestion_id: str
+    async def get_by_source_in_scope(
+        self,
+        *,
+        source_ingestion_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> OperationalEvidenceKnowledgeDraftRecord | None:
         async with self._sessions() as session:
             row = await session.scalar(
                 select(OperationalEvidenceKnowledgeDraftModel).where(
                     OperationalEvidenceKnowledgeDraftModel.source_ingestion_id
-                    == source_ingestion_id
+                    == source_ingestion_id,
+                    OperationalEvidenceKnowledgeDraftModel.organization_id == organization_id,
+                    OperationalEvidenceKnowledgeDraftModel.environment_id == environment_id,
                 )
             )
             return self._record_to_domain(row.payload) if row else None
 
-    async def get_claim_by_source(
-        self, *, source_ingestion_id: str
+    async def get_claim_by_source_in_scope(
+        self,
+        *,
+        source_ingestion_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> OperationalEvidenceKnowledgeDraftClaim | None:
         async with self._sessions() as session:
             row = await session.scalar(
                 select(OperationalEvidenceKnowledgeDraftClaimModel).where(
                     OperationalEvidenceKnowledgeDraftClaimModel.source_ingestion_id
-                    == source_ingestion_id
+                    == source_ingestion_id,
+                    OperationalEvidenceKnowledgeDraftClaimModel.organization_id == organization_id,
+                    OperationalEvidenceKnowledgeDraftClaimModel.environment_id == environment_id,
                 )
             )
             return self._claim_to_domain(row.payload) if row else None
 
-    async def get_claim_by_idempotency(
-        self, *, claimed_by: str, idempotency_digest: str
+    async def get_claim_by_idempotency_in_scope(
+        self,
+        *,
+        claimed_by: str,
+        idempotency_digest: str,
+        organization_id: str,
+        environment_id: str,
     ) -> OperationalEvidenceKnowledgeDraftClaim | None:
         async with self._sessions() as session:
             row = await session.scalar(
@@ -68,9 +93,30 @@ class PostgreSQLOperationalEvidenceKnowledgeDraftRepository:
                     OperationalEvidenceKnowledgeDraftClaimModel.claimed_by == claimed_by,
                     OperationalEvidenceKnowledgeDraftClaimModel.idempotency_digest
                     == idempotency_digest,
+                    OperationalEvidenceKnowledgeDraftClaimModel.organization_id == organization_id,
+                    OperationalEvidenceKnowledgeDraftClaimModel.environment_id == environment_id,
                 )
             )
             return self._claim_to_domain(row.payload) if row else None
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[OperationalEvidenceKnowledgeDraftRecord, ...]:
+        async with self._sessions() as session:
+            rows = tuple(
+                (
+                    await session.scalars(
+                        select(OperationalEvidenceKnowledgeDraftModel)
+                        .where(
+                            OperationalEvidenceKnowledgeDraftModel.organization_id
+                            == organization_id,
+                            OperationalEvidenceKnowledgeDraftModel.environment_id == environment_id,
+                        )
+                        .order_by(OperationalEvidenceKnowledgeDraftModel.draft_id)
+                    )
+                ).all()
+            )
+        return tuple(self._record_to_domain(row.payload) for row in rows)
 
     async def claim(self, claim: OperationalEvidenceKnowledgeDraftClaim) -> bool:
         payload = OperationalEvidenceKnowledgeDraftService._normalize(asdict(claim))

@@ -28,31 +28,60 @@ class OperationalEvidenceKnowledgeDraftSource(Protocol):
 
 
 class OperationalEvidenceKnowledgeDraftPolicySource(Protocol):
-    async def get_by_id(
-        self, *, policy_id: str
+    async def get_by_id_in_scope(
+        self,
+        *,
+        policy_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> OperationalEvidenceKnowledgeDraftPolicySnapshot | None: ...
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[OperationalEvidenceKnowledgeDraftPolicySnapshot, ...]: ...
 
 
 class OperationalEvidenceKnowledgeDraftAdapter(Protocol):
+    available: bool
+
     async def create_draft(
         self, instruction: OperationalEvidenceKnowledgeDraftInstruction
     ) -> OperationalEvidenceKnowledgeDraftReceipt: ...
 
 
 class OperationalEvidenceKnowledgeDraftRepository(Protocol):
-    async def get(self, *, draft_id: str) -> OperationalEvidenceKnowledgeDraftRecord | None: ...
-
-    async def get_by_source(
-        self, *, source_ingestion_id: str
+    async def get_in_scope(
+        self, *, draft_id: str, organization_id: str, environment_id: str
     ) -> OperationalEvidenceKnowledgeDraftRecord | None: ...
 
-    async def get_claim_by_source(
-        self, *, source_ingestion_id: str
+    async def get_by_source_in_scope(
+        self,
+        *,
+        source_ingestion_id: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> OperationalEvidenceKnowledgeDraftRecord | None: ...
+
+    async def get_claim_by_source_in_scope(
+        self,
+        *,
+        source_ingestion_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> OperationalEvidenceKnowledgeDraftClaim | None: ...
 
-    async def get_claim_by_idempotency(
-        self, *, claimed_by: str, idempotency_digest: str
+    async def get_claim_by_idempotency_in_scope(
+        self,
+        *,
+        claimed_by: str,
+        idempotency_digest: str,
+        organization_id: str,
+        environment_id: str,
     ) -> OperationalEvidenceKnowledgeDraftClaim | None: ...
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[OperationalEvidenceKnowledgeDraftRecord, ...]: ...
 
     async def claim(self, claim: OperationalEvidenceKnowledgeDraftClaim) -> bool: ...
 

@@ -117,7 +117,11 @@ class OperationalKnowledgeReviewRequestService:
         if existing is not None:
             return await self._reuse(existing, actor, request_binding_digest, idempotency_digest)
         try:
-            source = await self._source.review_request_source(draft_id=source_draft_id)
+            source = await self._source.review_request_source(
+                draft_id=source_draft_id,
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+            )
         except Exception as error:
             raise OperationalKnowledgeReviewRequestError(
                 "operational_knowledge_review_request_source_not_found"
@@ -283,7 +287,11 @@ class OperationalKnowledgeReviewRequestService:
                 "operational_knowledge_review_request_record_not_found"
             )
         self._verify_record(record)
-        draft = await self._source.review_request_source(draft_id=record.source_draft_id)
+        draft = await self._source.review_request_source(
+            draft_id=record.source_draft_id,
+            organization_id=record.organization_id,
+            environment_id=record.environment_id,
+        )
         return record, frozenset((record.requested_by, draft.curated_by))
 
     async def protected_content_lineage(
@@ -302,7 +310,11 @@ class OperationalKnowledgeReviewRequestService:
                 "operational_knowledge_review_request_record_not_found"
             )
         self._verify_record(record)
-        draft = await self._source.review_request_source(draft_id=record.source_draft_id)
+        draft = await self._source.review_request_source(
+            draft_id=record.source_draft_id,
+            organization_id=record.organization_id,
+            environment_id=record.environment_id,
+        )
         if (
             draft.draft_id != record.source_draft_id
             or draft.canonical_digest != record.source_draft_digest
