@@ -2976,6 +2976,67 @@ export default function InstalledMcpManagementWorkspace({
                     )
                   : undefined;
                 const knowledgeReviewersAssigned = Boolean(knowledgeReviewerAssignment);
+                const setupSteps = [
+                  { complete: configured, label: "Target" },
+                  { complete: credentialsAssigned, label: "Credential" },
+                  { complete: configurationValidated, label: "Validation" },
+                  { complete: capabilitiesGoverned, label: "Capabilities" },
+                  { complete: runtimeTrusted, label: "Runtime trust" },
+                  { complete: secretBrokerageGoverned, label: "Secret brokerage" },
+                  { complete: runtimeHealthy, label: "Runtime" },
+                  { complete: targetSessionVerified, label: "Target session" },
+                ];
+                const completedSetupSteps = setupSteps.filter((step) => step.complete).length;
+                const nextSetupAction = !configured
+                  ? {
+                      icon: <Link2 size={15} />,
+                      label: "Configure target",
+                      onClick: () => setTargeting(instance),
+                    }
+                  : !credentialsAssigned
+                    ? {
+                        icon: <KeyRound size={15} />,
+                        label: "Assign credential reference",
+                        onClick: () => setCredentialing(instance),
+                      }
+                    : !configurationValidated
+                      ? {
+                          icon: <ShieldCheck size={15} />,
+                          label: "Validate configuration",
+                          onClick: () => setValidating(instance),
+                        }
+                      : !capabilitiesGoverned
+                        ? enablementQuery.isSuccess ? {
+                            icon: <ShieldCheck size={15} />,
+                            label: "Govern capabilities",
+                            onClick: () => setGoverningCapabilities(instance),
+                          } : undefined
+                        : !runtimeTrusted
+                          ? runtimeTrustQuery.isSuccess ? {
+                              icon: <ShieldCheck size={15} />,
+                              label: "Establish runtime trust",
+                              onClick: () => setEstablishingRuntimeTrust(instance),
+                            } : undefined
+                          : !secretBrokerageGoverned
+                            ? secretBrokerageQuery.isSuccess ? {
+                                icon: <KeyRound size={15} />,
+                                label: "Authorize secret brokerage",
+                                onClick: () => setAuthorizingSecretBrokerage(instance),
+                              } : undefined
+                            : !runtimeHealthy
+                              ? runtimeActivationQuery.isSuccess ? {
+                                  icon: <Activity size={15} />,
+                                  label: "Activate runtime",
+                                  onClick: () => setActivatingRuntime(instance),
+                                } : undefined
+                              : !targetSessionVerified
+                                ? targetSessionQuery.isSuccess ? {
+                                    icon: <Link2 size={15} />,
+                                    label: "Verify target session",
+                                    onClick: () => setVerifyingTargetSession(instance),
+                                  } : undefined
+                                : undefined;
+                const setupComplete = completedSetupSteps === setupSteps.length;
                 return (
                   <tr key={instance.record_id}>
                     <td><strong>{instance.display_name}</strong><code>{instance.instance_key}</code></td>
@@ -3067,114 +3128,95 @@ export default function InstalledMcpManagementWorkspace({
                         bindingQuery.isSuccess &&
                         assignmentQuery.isSuccess &&
                         validationQuery.isSuccess && (
-                        <div className="installed-mcp-row-actions">
-                          <button
-                            className="secondary-button installed-mcp-row-action"
-                            type="button"
-                            title={configured ? "View governed target metadata" : "Bind governed target metadata"}
-                            aria-label={`${configured ? "View" : "Manage"} target for ${instance.display_name}`}
-                            onClick={() => setTargeting(instance)}
-                          >
-                            <Link2 size={15} /><span>{configured ? "View target" : "Manage target"}</span>
-                          </button>
-                          {binding && (
-                            <button
-                              className="secondary-button installed-mcp-row-action"
-                              type="button"
-                              title={credentialsAssigned ? "View governed credential metadata" : "Assign governed credential metadata"}
-                              aria-label={`${credentialsAssigned ? "View" : "Manage"} credentials for ${instance.display_name}`}
-                              onClick={() => setCredentialing(instance)}
+                        <div className="installed-mcp-operator-flow">
+                          <div className="installed-mcp-setup-progress">
+                            <div>
+                              <span>Setup progress</span>
+                              <strong>{completedSetupSteps} of {setupSteps.length} complete</strong>
+                            </div>
+                            <div
+                              className="installed-mcp-progress-track"
+                              role="progressbar"
+                              aria-label={`Setup progress for ${instance.display_name}`}
+                              aria-valuemin={0}
+                              aria-valuemax={setupSteps.length}
+                              aria-valuenow={completedSetupSteps}
                             >
-                              <KeyRound size={15} /><span>{credentialsAssigned ? "View credentials" : "Manage credentials"}</span>
-                            </button>
-                          )}
-                          {assignment && (
-                            <button
-                              className="secondary-button installed-mcp-row-action"
-                              type="button"
-                              title={configurationValidated ? "View governed configuration evidence" : "Verify governed configuration evidence"}
-                              aria-label={`${configurationValidated ? "View" : "Validate"} configuration for ${instance.display_name}`}
-                              onClick={() => setValidating(instance)}
-                            >
-                              <ShieldCheck size={15} /><span>{configurationValidated ? "View validation" : "Validate configuration"}</span>
-                            </button>
-                          )}
-                          {validation && enablementQuery.isSuccess && (
-                            <button
-                              className="secondary-button installed-mcp-row-action"
-                              type="button"
-                              title={capabilitiesGoverned
-                                ? "View governed capability metadata"
-                                : "Apply governed capability metadata"}
-                              aria-label={`${capabilitiesGoverned ? "View" : "Manage"} capabilities for ${instance.display_name}`}
-                              onClick={() => setGoverningCapabilities(instance)}
-                            >
+                              <span style={{ width: `${(completedSetupSteps / setupSteps.length) * 100}%` }} />
+                            </div>
+                            <ol aria-label={`Setup steps for ${instance.display_name}`}>
+                              {setupSteps.map((step) => (
+                                <li className={step.complete ? "complete" : undefined} key={step.label}>
+                                  <span aria-hidden="true" />
+                                  {step.label}
+                                </li>
+                              ))}
+                            </ol>
+                          </div>
+                          <div className="installed-mcp-next-action">
+                            <span>Next action</span>
+                            {nextSetupAction ? (
+                              <button
+                                className="primary-button installed-mcp-row-action"
+                                type="button"
+                                aria-label={`${nextSetupAction.label} for ${instance.display_name}`}
+                                onClick={nextSetupAction.onClick}
+                              >
+                                {nextSetupAction.icon}
+                                <span>{nextSetupAction.label}</span>
+                              </button>
+                            ) : setupComplete ? (
+                              <strong><FileCheck2 size={15} /> Setup complete</strong>
+                            ) : (
+                              <strong className="pending"><AlertTriangle size={15} /> Action unavailable</strong>
+                            )}
+                          </div>
+                          <details className="installed-mcp-advanced-governance">
+                            <summary>
                               <ShieldCheck size={15} />
-                              <span>{capabilitiesGoverned
-                                ? "View capabilities"
-                                : "Enable governed capabilities"}</span>
-                            </button>
-                          )}
-                          {enablement && runtimeTrustQuery.isSuccess && (
-                            <button
-                              className="secondary-button installed-mcp-row-action"
-                              type="button"
-                              title={runtimeTrusted
-                                ? "View governed runtime boundary"
-                                : "Bind governed runtime boundary"}
-                              aria-label={`${runtimeTrusted ? "View" : "Establish"} runtime trust for ${instance.display_name}`}
-                              onClick={() => setEstablishingRuntimeTrust(instance)}
-                            >
-                              <ShieldCheck size={15} />
-                              <span>{runtimeTrusted ? "View runtime trust" : "Establish runtime trust"}</span>
-                            </button>
-                          )}
-                          {runtimeTrust && secretBrokerageQuery.isSuccess && (
-                            <button
-                              className="secondary-button installed-mcp-row-action"
-                              type="button"
-                              title={secretBrokerageGoverned
-                                ? "View governed secret brokerage boundary"
-                                : "Authorize governed secret brokerage boundary"}
-                              aria-label={`${secretBrokerageGoverned ? "View" : "Authorize"} secret brokerage for ${instance.display_name}`}
-                              onClick={() => setAuthorizingSecretBrokerage(instance)}
-                            >
-                              <KeyRound size={15} />
-                              <span>{secretBrokerageGoverned
-                                ? "View secret brokerage"
-                                : "Authorize secret brokerage"}</span>
-                            </button>
-                          )}
-                          {secretBrokerageAuthorization && runtimeActivationQuery.isSuccess && (
-                            <button
-                              className="secondary-button installed-mcp-row-action"
-                              type="button"
-                              title={runtimeHealthy
-                                ? "View signed runtime activation and local health evidence"
-                                : "Activate the governed isolated runtime boundary"}
-                              aria-label={`${runtimeHealthy ? "View runtime activation" : "Activate runtime"} for ${instance.display_name}`}
-                              onClick={() => setActivatingRuntime(instance)}
-                            >
-                              <Activity size={15} />
-                              <span>{runtimeHealthy ? "View runtime activation" : "Activate runtime"}</span>
-                            </button>
-                          )}
-                          {runtimeActivation && targetSessionQuery.isSuccess && (
-                            <button
-                              className="secondary-button installed-mcp-row-action"
-                              type="button"
-                              title={targetSessionVerified
-                                ? "View signed bounded target session evidence"
-                                : "Verify one bounded read-only target session"}
-                              aria-label={`${targetSessionVerified ? "View target session" : "Verify target session"} for ${instance.display_name}`}
-                              onClick={() => setVerifyingTargetSession(instance)}
-                            >
-                              <Link2 size={15} />
-                              <span>{targetSessionVerified
-                                ? "View target session"
-                                : "Verify target session"}</span>
-                            </button>
-                          )}
+                              <span>Advanced governance</span>
+                            </summary>
+                            <div className="installed-mcp-row-actions">
+                              {binding && (
+                                <button className="secondary-button installed-mcp-row-action" type="button" aria-label={`View target for ${instance.display_name}`} onClick={() => setTargeting(instance)}>
+                                  <Link2 size={15} /><span>View target</span>
+                                </button>
+                              )}
+                              {assignment && (
+                                <button className="secondary-button installed-mcp-row-action" type="button" aria-label={`View credentials for ${instance.display_name}`} onClick={() => setCredentialing(instance)}>
+                                  <KeyRound size={15} /><span>View credentials</span>
+                                </button>
+                              )}
+                              {validation && (
+                                <button className="secondary-button installed-mcp-row-action" type="button" aria-label={`View configuration for ${instance.display_name}`} onClick={() => setValidating(instance)}>
+                                  <ShieldCheck size={15} /><span>View validation</span>
+                                </button>
+                              )}
+                              {enablement && (
+                                <button className="secondary-button installed-mcp-row-action" type="button" aria-label={`View capabilities for ${instance.display_name}`} onClick={() => setGoverningCapabilities(instance)}>
+                                  <ShieldCheck size={15} /><span>View capabilities</span>
+                                </button>
+                              )}
+                              {runtimeTrust && (
+                                <button className="secondary-button installed-mcp-row-action" type="button" aria-label={`View runtime trust for ${instance.display_name}`} onClick={() => setEstablishingRuntimeTrust(instance)}>
+                                  <ShieldCheck size={15} /><span>View runtime trust</span>
+                                </button>
+                              )}
+                              {secretBrokerageAuthorization && (
+                                <button className="secondary-button installed-mcp-row-action" type="button" aria-label={`View secret brokerage for ${instance.display_name}`} onClick={() => setAuthorizingSecretBrokerage(instance)}>
+                                  <KeyRound size={15} /><span>View secret brokerage</span>
+                                </button>
+                              )}
+                              {runtimeActivation && (
+                                <button className="secondary-button installed-mcp-row-action" type="button" aria-label={`View runtime activation for ${instance.display_name}`} onClick={() => setActivatingRuntime(instance)}>
+                                  <Activity size={15} /><span>View runtime activation</span>
+                                </button>
+                              )}
+                              {targetSessionVerification && (
+                                <button className="secondary-button installed-mcp-row-action" type="button" aria-label={`View target session for ${instance.display_name}`} onClick={() => setVerifyingTargetSession(instance)}>
+                                  <Link2 size={15} /><span>View target session</span>
+                                </button>
+                              )}
                           {targetSessionVerification &&
                             invocationAuthorizationInventoryReady.has(
                               targetSessionVerification.verification_id,
@@ -3299,6 +3341,8 @@ export default function InstalledMcpManagementWorkspace({
                             </button>
                           )}
                           <button className="secondary-button installed-mcp-row-action" type="button" title="Review governed update evidence" aria-label={`Review update for ${instance.display_name}`} onClick={() => setReviewing(instance)}><ArrowUpCircle size={15} /><span>Review update</span></button>
+                            </div>
+                          </details>
                           {!configured && !credentialsAssigned && (
                             <button className="secondary-button installed-mcp-row-action danger" type="button" title="Remove from active management and preserve history" aria-label={`Remove ${instance.display_name}`} onClick={() => { retireMutation.reset(); setRetiring(instance); }}><Archive size={15} /><span>Remove</span></button>
                           )}

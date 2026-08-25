@@ -774,7 +774,7 @@ textarea:focus-visible {
 
 .installed-mcp-table {
   width: 100%;
-  min-width: 860px;
+  min-width: 960px;
   border-collapse: collapse;
   font-size: 12px;
 }
@@ -827,8 +827,136 @@ textarea:focus-visible {
 
 .installed-mcp-table th:last-child,
 .installed-mcp-table td:last-child {
-  width: 270px;
+  width: 360px;
   text-align: right;
+}
+
+.installed-mcp-operator-flow {
+  display: grid;
+  min-width: 330px;
+  gap: 9px;
+  text-align: left;
+}
+
+.installed-mcp-setup-progress {
+  display: grid;
+  gap: 6px;
+}
+
+.installed-mcp-setup-progress > div:first-child,
+.installed-mcp-next-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.installed-mcp-setup-progress > div:first-child span,
+.installed-mcp-next-action > span {
+  color: #687772;
+  font-size: 10px;
+  font-weight: 720;
+  text-transform: uppercase;
+}
+
+.installed-mcp-setup-progress > div:first-child strong {
+  color: #334a43;
+  font-size: 11px;
+}
+
+.installed-mcp-progress-track {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: #dfe7e4;
+}
+
+.installed-mcp-progress-track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #2f6d5a;
+}
+
+.installed-mcp-setup-progress ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 0;
+  padding: 0;
+  color: #73817d;
+  font-size: 9px;
+  list-style: none;
+}
+
+.installed-mcp-setup-progress li {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.installed-mcp-setup-progress li > span {
+  width: 6px;
+  height: 6px;
+  border: 1px solid #9caaa6;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.installed-mcp-setup-progress li.complete {
+  color: #245d4b;
+}
+
+.installed-mcp-setup-progress li.complete > span {
+  border-color: #2f6d5a;
+  background: #2f6d5a;
+}
+
+.installed-mcp-next-action {
+  min-height: 34px;
+  padding-top: 2px;
+}
+
+.installed-mcp-next-action > strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #245d4b;
+}
+
+.installed-mcp-next-action > strong.pending {
+  color: #705517;
+}
+
+.installed-mcp-advanced-governance {
+  border-top: 1px solid #e0e6e4;
+  padding-top: 7px;
+}
+
+.installed-mcp-advanced-governance summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  color: #53645f;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 720;
+  list-style: none;
+}
+
+.installed-mcp-advanced-governance summary::-webkit-details-marker {
+  display: none;
+}
+
+.installed-mcp-advanced-governance[open] summary {
+  color: #245d4b;
+}
+
+.installed-mcp-advanced-governance .installed-mcp-row-actions {
+  justify-content: flex-start;
+  padding-top: 8px;
 }
 
 .installed-mcp-row-actions {
