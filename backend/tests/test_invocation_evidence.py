@@ -267,11 +267,14 @@ async def test_invocation_evidence_inventory_and_exact_signed_options_are_author
 
     record = await ingest_evidence(service, invocation, policy, actor=actor)
 
-    assert await service.list_options(
-        actor=actor,
-        source_invocation_id=invocation.invocation_id,
-        correlation_id="cor_invocation_evidence_claimed_options",
-    ) == ()
+    assert (
+        await service.list_options(
+            actor=actor,
+            source_invocation_id=invocation.invocation_id,
+            correlation_id="cor_invocation_evidence_claimed_options",
+        )
+        == ()
+    )
     assert await service.list_evidence(
         actor=actor,
         source_invocation_id=invocation.invocation_id,
@@ -280,8 +283,7 @@ async def test_invocation_evidence_inventory_and_exact_signed_options_are_author
 
 
 @pytest.mark.asyncio
-async def test_invocation_evidence_options_reject_stale_policy_and_production_fail_closed(
-) -> None:
+async def test_invocation_evidence_options_reject_stale_policy_and_production_fail_closed() -> None:
     _, invocation, policy, _, _, bounded = await evidence_fixture()
     actor = target_session_operator("subject.connector-independent-evidence-ingestor")
     stale_policy = replace(
@@ -302,11 +304,14 @@ async def test_invocation_evidence_options_reject_stale_policy_and_production_fa
         environment_id=invocation.environment_id,
         clock=lambda: invocation.completed_at,
     )
-    assert await stale_service.list_options(
-        actor=actor,
-        source_invocation_id=invocation.invocation_id,
-        correlation_id="cor_invocation_evidence_stale_options",
-    ) == ()
+    assert (
+        await stale_service.list_options(
+            actor=actor,
+            source_invocation_id=invocation.invocation_id,
+            correlation_id="cor_invocation_evidence_stale_options",
+        )
+        == ()
+    )
 
     closed_service = ConnectorInvocationEvidenceService(
         repository=InMemoryConnectorInvocationEvidenceRepository(),
@@ -318,11 +323,14 @@ async def test_invocation_evidence_options_reject_stale_policy_and_production_fa
         environment_id=invocation.environment_id,
         clock=lambda: invocation.completed_at,
     )
-    assert await closed_service.list_options(
-        actor=actor,
-        source_invocation_id=invocation.invocation_id,
-        correlation_id="cor_invocation_evidence_closed_options",
-    ) == ()
+    assert (
+        await closed_service.list_options(
+            actor=actor,
+            source_invocation_id=invocation.invocation_id,
+            correlation_id="cor_invocation_evidence_closed_options",
+        )
+        == ()
+    )
     with pytest.raises(ConnectorInvocationEvidenceError, match="policy_not_found"):
         await ingest_evidence(closed_service, invocation, policy, actor=actor)
 
@@ -337,18 +345,24 @@ async def test_invocation_evidence_options_reject_stale_policy_and_production_fa
         environment_id=invocation.environment_id,
         clock=lambda: invocation.completed_at,
     )
-    assert await unavailable_service.list_options(
-        actor=actor,
-        source_invocation_id=invocation.invocation_id,
-        correlation_id="cor_invocation_evidence_unavailable_options",
-    ) == ()
+    assert (
+        await unavailable_service.list_options(
+            actor=actor,
+            source_invocation_id=invocation.invocation_id,
+            correlation_id="cor_invocation_evidence_unavailable_options",
+        )
+        == ()
+    )
     with pytest.raises(ConnectorInvocationEvidenceError, match="adapter_unavailable"):
         await ingest_evidence(unavailable_service, invocation, policy, actor=actor)
-    assert await unavailable_repository.get_claim_by_invocation_in_scope(
-        source_invocation_id=invocation.invocation_id,
-        organization_id=invocation.organization_id,
-        environment_id=invocation.environment_id,
-    ) is None
+    assert (
+        await unavailable_repository.get_claim_by_invocation_in_scope(
+            source_invocation_id=invocation.invocation_id,
+            organization_id=invocation.organization_id,
+            environment_id=invocation.environment_id,
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio
@@ -498,10 +512,13 @@ async def test_invocation_evidence_memory_contract_allows_same_ids_in_separate_t
         organization_id=foreign_record.organization_id,
         environment_id=foreign_record.environment_id,
     ) == (foreign_record,)
-    assert await service.repository.list_scope(
-        organization_id="org-missing",
-        environment_id=record.environment_id,
-    ) == ()
+    assert (
+        await service.repository.list_scope(
+            organization_id="org-missing",
+            environment_id=record.environment_id,
+        )
+        == ()
+    )
 
     policy_source = InMemoryConnectorInvocationEvidencePolicySource(
         (
@@ -828,16 +845,22 @@ async def test_invocation_evidence_uncertain_or_invalid_receipt_stays_claimed() 
         await ingest_evidence(service, invocation, policy)
     assert uncertain.calls == 1
     actor = target_session_operator("subject.connector-independent-evidence-ingestor")
-    assert await service.list_options(
-        actor=actor,
-        source_invocation_id=invocation.invocation_id,
-        correlation_id="cor_invocation_evidence_uncertain_options",
-    ) == ()
-    assert await service.list_evidence(
-        actor=actor,
-        source_invocation_id=invocation.invocation_id,
-        correlation_id="cor_invocation_evidence_uncertain_inventory",
-    ) == ()
+    assert (
+        await service.list_options(
+            actor=actor,
+            source_invocation_id=invocation.invocation_id,
+            correlation_id="cor_invocation_evidence_uncertain_options",
+        )
+        == ()
+    )
+    assert (
+        await service.list_evidence(
+            actor=actor,
+            source_invocation_id=invocation.invocation_id,
+            correlation_id="cor_invocation_evidence_uncertain_inventory",
+        )
+        == ()
+    )
     assert uncertain.calls == 1
 
     altered = AlteredReceiptAdapter(clock=lambda: invocation.completed_at)

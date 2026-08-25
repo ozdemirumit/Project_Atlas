@@ -479,9 +479,7 @@ class ConnectorInvocationEvidenceService:
                 environment_id=source.environment_id,
             )
             if completed is not None:
-                await self._current_record(
-                    completed, actor=actor, correlation_id=correlation_id
-                )
+                await self._current_record(completed, actor=actor, correlation_id=correlation_id)
         else:
             policies = await self._policy_source.list_scope(
                 organization_id=source.organization_id,
@@ -678,8 +676,7 @@ class ConnectorInvocationEvidenceService:
             or source.required_permission != record.required_permission
             or source.output_schema_digest != record.output_schema_digest
             or source.result_policy_digest != record.result_policy_digest
-            or source.normalized_redacted_result_digest
-            != record.normalized_redacted_result_digest
+            or source.normalized_redacted_result_digest != record.normalized_redacted_result_digest
             or claim.claim_id != record.claim_id
             or claim.source_invocation_id != record.source_invocation_id
             or claim.source_invocation_digest != record.source_invocation_digest
@@ -713,9 +710,7 @@ class ConnectorInvocationEvidenceService:
             or record.deployment_approved
             or record.infrastructure_mutation_performed
         ):
-            raise ConnectorInvocationEvidenceError(
-                "invocation_evidence_record_integrity_failed"
-            )
+            raise ConnectorInvocationEvidenceError("invocation_evidence_record_integrity_failed")
         await self._permission_authorizer.authorize(
             actor=actor,
             permission_id=record.required_permission,
