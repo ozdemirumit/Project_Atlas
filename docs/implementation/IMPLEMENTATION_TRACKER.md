@@ -37,6 +37,16 @@
 - Development verification uses changed-module tests, lint/type checks for touched files and live
   browser smoke checks. Full regression remains a merge or milestone gate rather than a local loop.
 
+### ATLAS-IMP-248 Inventory Verification
+
+- Backend inventory route tests passed: `9 passed` in `tests/test_inventory_devices.py`.
+- Frontend inventory API and workspace tests passed: `19 passed` across the two focused test files;
+  focused TypeScript and ESLint checks also passed.
+- Live validation at `http://127.0.0.1:5227/#/health/overview` used the normal
+  `atlas-demo` / `local-demo` username/password session. One device was added, edited, retired and
+  reactivated successfully. The stable device key remained immutable and each lifecycle result was
+  visible immediately in the registry without a second browser authorization or MFA step.
+
 ### Deferred Until MVP Completion
 
 - Operational knowledge protected-inspection inventory hardening, additional tenant migrations,
