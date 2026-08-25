@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { knowledgeReviewRequestInventoryItem as reviewRequest } from
   "./testKnowledgeReviewRequestFixture";
 import {
+  reviewerAssignmentClaimStatus as claimStatus,
   reviewerAssignmentInventoryItem as assignment,
   reviewerAssignmentOption as option,
 } from "./testReviewerAssignmentFixture";
@@ -97,6 +98,18 @@ describe("ReviewerAssignmentPanel", () => {
     renderPanel();
 
     expect(await screen.findByText("reviewers assigned")).toBeVisible();
+    expect(fetchMock.mock.calls.some(([input]) => requestUrl(input).includes("/options"))).toBe(false);
+    expect(screen.queryByRole("button", { name: "Assign reviewers" })).toBeNull();
+  });
+
+  it("renders an authoritative consumed claim and never offers retry", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ data: [claimStatus], meta }), { status: 200 }),
+    );
+    renderPanel();
+
+    expect(await screen.findByText("Reviewer assignment claim consumed")).toBeVisible();
+    expect(screen.getByText(/Automatic retry remains permanently disabled/i)).toBeVisible();
     expect(fetchMock.mock.calls.some(([input]) => requestUrl(input).includes("/options"))).toBe(false);
     expect(screen.queryByRole("button", { name: "Assign reviewers" })).toBeNull();
   });

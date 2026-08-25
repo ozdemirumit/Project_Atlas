@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-247 |
 | Title | Installed MCP tenant-scoped operational knowledge reviewer-assignment inventory and server-provided signed assignment options |
-| Status | In Progress |
+| Status | Local Verification Complete |
 | Branch | `agent/installed-mcp-reviewer-assignment-governance` |
 | Pull Request | Pending |
 | Governing Documents | ATLAS-003, ATLAS-020, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-052, ADR-043, ADR-044, ADR-100, ADR-123, ADR-133 |
 | Last Updated | 2026-08-25 |
-| Next Action | Implement tenant-scoped authoritative assignment inventory, signed options and Installed MCP controls |
+| Next Action | Commit, open PR and require exact-head plus post-merge `main` CI evidence |
 
 ### ATLAS-IMP-247 Scope Rationale
 
@@ -67,6 +67,26 @@
 - Live API/browser verification will cover username/password login, immutable assignment reload,
   no-store payload minimization and desktop plus `390x844` responsive behavior. Exact-head PR CI
   and exact merge-commit post-main CI must pass before delivery.
+
+### ATLAS-IMP-247 Verification Evidence
+
+- Focused backend reviewer-assignment and protected-inspection coverage passed, including adapter,
+  permission, permanent-claim, idempotency and claim-time policy revalidation cases. Ruff passed and
+  MyPy reported no issues across all `1466` configured source files.
+- A dedicated migrated PostgreSQL database passed `2 passed, 16 deselected`, covering identical
+  identifiers in separate tenants, scope-before-deserialization, indexed-column/payload integrity,
+  a true two-connection claim race, populated migration upgrade, failed preflight rollback,
+  downgrade collision rejection and restoration to migration head.
+- Focused frontend API, reviewer panel and Installed MCP workspace coverage passed with `88 passed`.
+  TypeScript, ESLint and the production Vite build passed; the client now rejects oversized policy
+  versions and permanently consumed unresolved claims expose no identity or retry authority.
+- Two independent read-only reviews found no remaining P0, P1 or P2 issue after tenant-pivot,
+  TOCTOU, policy reuse, adapter-ordering, claim reconciliation, exact-schema and modal-accessibility
+  corrections. Their remaining P3 test and parser-parity observations were also corrected.
+- Live validation at `http://127.0.0.1:5227/#/connectors/inventory` used the normal existing
+  username/password session against current branch code. The Installed MCP workspace loaded with
+  one `Sign out` control, no MFA or authorized-browser-session prompt and no horizontal overflow at
+  the `748px` constrained viewport.
 
 ### ATLAS-IMP-246 Scope Rationale
 
@@ -143,7 +163,9 @@
   global MFA or authorized-browser-session prompt. At `390x844`, both document and body widths remained
   exactly `390px` with no page-level horizontal overflow.
 - [PR #260](https://github.com/ozdemirumit/Project_Atlas/pull/260) exact-head CI passed and the slice
-  was squash-merged as `0a3bcc20`. Exact merge-commit `main` CI evidence remains pending.
+  was squash-merged as `0a3bcc20`. Exact merge-commit `main` CI run
+  [`32832707366`](https://github.com/ozdemirumit/Project_Atlas/actions/runs/32832707366)
+  passed both backend and frontend jobs.
 
 ### ATLAS-IMP-245 Scope Rationale
 

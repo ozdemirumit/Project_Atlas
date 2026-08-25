@@ -1,4 +1,5 @@
 import type {
+  OperationalKnowledgeReviewerAssignmentClaimStatus,
   OperationalKnowledgeReviewerAssignmentInventoryItem,
   OperationalKnowledgeReviewerAssignmentOption,
 } from "../../api/reviewerAssignments";
@@ -95,3 +96,22 @@ export const reviewerAssignmentInventoryItem = {
   infrastructure_mutation_performed: false,
   reused: false,
 } satisfies OperationalKnowledgeReviewerAssignmentInventoryItem;
+
+export const reviewerAssignmentClaimStatus = {
+  assignment_set_id: "operational-knowledge-reviewer-assignment.unresolved-test",
+  schema_version: "atlas.operational-knowledge-reviewer-assignment-claim-status.v1",
+  source_review_request_id: reviewRequest.review_request_id,
+  source_review_request_digest: reviewRequest.canonical_digest,
+  claimed_at: "2026-08-25T00:10:00Z",
+  claim_state: "claim_consumed_unresolved",
+  claim_consumed: true,
+  assignment_completed: false,
+  automatic_retry_allowed: false,
+  content_inspection_opened: false,
+  knowledge_approved: false,
+  knowledge_published: false,
+  workflow_continued: false,
+  execution_authorized: false,
+  deployment_approved: false,
+  infrastructure_mutation_performed: false,
+} satisfies OperationalKnowledgeReviewerAssignmentClaimStatus;

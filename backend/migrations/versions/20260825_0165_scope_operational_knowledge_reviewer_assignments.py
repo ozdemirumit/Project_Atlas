@@ -49,6 +49,34 @@ UNIQUE_CONSTRAINTS = (
         ("claim_id",),
     ),
 )
+PAYLOAD_COLUMN_CONTRACTS = (
+    (
+        "operational_knowledge_reviewer_assignment_claims",
+        (
+            "claim_id",
+            "source_review_request_id",
+            "assignment_set_id",
+            "claimed_by",
+            "idempotency_digest",
+            "organization_id",
+            "environment_id",
+            "canonical_digest",
+        ),
+    ),
+    (
+        "operational_knowledge_reviewer_assignments",
+        (
+            "assignment_set_id",
+            "claim_id",
+            "source_review_request_id",
+            "knowledge_item_id",
+            "requested_by",
+            "organization_id",
+            "environment_id",
+            "canonical_digest",
+        ),
+    ),
+)
 
 
 def _lock_tables() -> None:
@@ -60,8 +88,26 @@ def _lock_tables() -> None:
     )
 
 
+def _has_payload_mismatch(table: str, columns: tuple[str, ...]) -> bool:
+    comparisons = " OR ".join(
+        f"payload ->> '{column}' IS DISTINCT FROM {column}" for column in columns
+    )
+    result = op.get_bind().execute(
+        sa.text(
+            f"SELECT EXISTS (SELECT 1 FROM {table} "
+            f"WHERE jsonb_typeof(payload) IS DISTINCT FROM 'object' OR {comparisons})"
+        )
+    )
+    return bool(result.scalar_one())
+
+
 def upgrade() -> None:
     _lock_tables()
+    if any(_has_payload_mismatch(table, columns) for table, columns in PAYLOAD_COLUMN_CONTRACTS):
+        raise RuntimeError(
+            "Cannot scope operational knowledge reviewer assignments while indexed columns and "
+            "immutable payloads disagree."
+        )
     for table, name, _ in UNIQUE_CONSTRAINTS:
         op.drop_constraint(name, table, type_="unique")
     for table, name, identifier in PRIMARY_KEYS:

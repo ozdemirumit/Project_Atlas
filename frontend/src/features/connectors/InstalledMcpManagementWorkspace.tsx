@@ -22,7 +22,7 @@ import {
   UserX,
   X,
 } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 
 import { ApiRequestError } from "../../api/client";
 import {
@@ -110,6 +110,8 @@ import {
 import {
   getOperationalKnowledgeReviewerAssignments,
   operationalKnowledgeReviewerAssignmentQueryKey,
+  type OperationalKnowledgeReviewerAssignmentClaimStatus,
+  type OperationalKnowledgeReviewerAssignmentInventoryEntry,
   type OperationalKnowledgeReviewerAssignmentInventoryItem,
 } from "../../api/reviewerAssignments";
 import {
@@ -1121,6 +1123,7 @@ function ReviewerAssignmentDialog({
   onCancel,
   onAssignmentCreated,
   onRequestEnterpriseLogin,
+  returnFocusTo,
   sessionScopeKey,
 }: {
   reviewRequest: OperationalKnowledgeReviewRequestInventoryItem;
@@ -1130,15 +1133,54 @@ function ReviewerAssignmentDialog({
     assignment: OperationalKnowledgeReviewerAssignmentInventoryItem,
   ) => void;
   onRequestEnterpriseLogin?: () => void;
+  returnFocusTo: HTMLElement | null;
   sessionScopeKey: string;
 }) {
+  const dialogRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    dialog?.querySelector<HTMLElement>(
+      "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])",
+    )?.focus();
+    return () => returnFocusTo?.focus();
+  }, [returnFocusTo]);
+
+  function handleKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onCancel();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const focusable = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
+      "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
+    ));
+    if (focusable.length === 0) {
+      event.preventDefault();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first?.focus();
+    }
+  }
+
   return (
     <div className="installed-mcp-dialog-backdrop" role="presentation">
       <section
+        ref={dialogRef}
         className="installed-mcp-dialog evidence-knowledge-draft-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="reviewer-assignment-mcp-title"
+        aria-describedby="reviewer-assignment-mcp-description"
+        onKeyDown={handleKeyDown}
       >
         <header>
           <div>
@@ -1156,7 +1198,7 @@ function ReviewerAssignmentDialog({
             <X size={17} />
           </button>
         </header>
-        <p className="muted-copy">
+        <p className="muted-copy" id="reviewer-assignment-mcp-description">
           Atlas may assign distinct domain and security review tracks using an exact server-provided
           signed option. Reviewer identity and protected content remain unavailable, and no
           inspection, decision, approval, publication, workflow or operational authority is granted.
@@ -1777,6 +1819,8 @@ export default function InstalledMcpManagementWorkspace({
     useState<ConnectorInstanceRecord | null>(null);
   const [assigningKnowledgeReviewers, setAssigningKnowledgeReviewers] =
     useState<ConnectorInstanceRecord | null>(null);
+  const [reviewerAssignmentReturnFocus, setReviewerAssignmentReturnFocus] =
+    useState<HTMLElement | null>(null);
   const sessionScopeKey = JSON.stringify([subjectId, organizationId, environmentId]);
   const packageQuery = useQuery({
     queryKey: ["connector-package-installations", subjectId],
@@ -2112,9 +2156,26 @@ export default function InstalledMcpManagementWorkspace({
     knowledgeReviewerAssignmentQueries.flatMap((query, index) => {
       if (!query.isSuccess) return [];
       const reviewRequest = knowledgeReviewRequestSources[index];
-      const assignment = query.data[0];
+      const assignment = query.data.find(
+        (entry): entry is OperationalKnowledgeReviewerAssignmentInventoryItem =>
+          entry.schema_version === "atlas.operational-knowledge-reviewer-assignment.v1",
+      );
       return reviewRequest && assignment
         ? [[reviewRequest.review_request_id, assignment] as const]
+        : [];
+    }),
+  );
+  const knowledgeReviewerAssignmentClaimByReviewRequest = new Map(
+    knowledgeReviewerAssignmentQueries.flatMap((query, index) => {
+      if (!query.isSuccess) return [];
+      const reviewRequest = knowledgeReviewRequestSources[index];
+      const status = query.data.find(
+        (entry): entry is OperationalKnowledgeReviewerAssignmentClaimStatus =>
+          entry.schema_version ===
+            "atlas.operational-knowledge-reviewer-assignment-claim-status.v1",
+      );
+      return reviewRequest && status
+        ? [[reviewRequest.review_request_id, status] as const]
         : [];
     }),
   );
@@ -2906,8 +2967,13 @@ export default function InstalledMcpManagementWorkspace({
                 const knowledgeReviewRequested = Boolean(knowledgeReviewRequest);
                 const knowledgeReviewerAssignment = knowledgeReviewRequest
                   ? knowledgeReviewerAssignmentByReviewRequest.get(
-                    knowledgeReviewRequest.review_request_id,
-                  )
+                      knowledgeReviewRequest.review_request_id,
+                    )
+                  : undefined;
+                const knowledgeReviewerAssignmentClaim = knowledgeReviewRequest
+                  ? knowledgeReviewerAssignmentClaimByReviewRequest.get(
+                      knowledgeReviewRequest.review_request_id,
+                    )
                   : undefined;
                 const knowledgeReviewersAssigned = Boolean(knowledgeReviewerAssignment);
                 return (
@@ -2926,6 +2992,8 @@ export default function InstalledMcpManagementWorkspace({
                           ? "Retired"
                           : knowledgeReviewersAssigned
                             ? "Enabled / reviewers assigned"
+                          : knowledgeReviewerAssignmentClaim
+                            ? "Enabled / assignment reconciliation"
                           : knowledgeReviewRequested
                             ? "Enabled / review requested"
                           : knowledgeDraftCreated
@@ -2962,6 +3030,8 @@ export default function InstalledMcpManagementWorkspace({
                           ? "Retired"
                           : knowledgeReviewerAssignment
                             ? "Knowledge reviewers assigned"
+                          : knowledgeReviewerAssignmentClaim
+                            ? "Reviewer assignment reconciliation required"
                           : knowledgeReviewRequest
                             ? "Knowledge review requested"
                           : knowledgeDraft
@@ -2990,7 +3060,7 @@ export default function InstalledMcpManagementWorkspace({
                               ? "Target bound"
                               : "Created"}
                       </span>
-                      {new Date(knowledgeReviewerAssignment?.created_at ?? knowledgeReviewRequest?.created_at ?? knowledgeDraft?.created_at ?? invocationEvidence?.ingested_at ?? boundedInvocation?.completed_at ?? invocationAuthorization?.authorized_at ?? targetSessionVerification?.verified_at ?? runtimeActivation?.healthy_at ?? secretBrokerageAuthorization?.authorized_at ?? runtimeTrust?.granted_at ?? enablement?.enabled_at ?? validation?.validated_at ?? assignment?.assigned_at ?? binding?.bound_at ?? instance.retired_at ?? instance.created_at).toLocaleString()}
+                      {new Date(knowledgeReviewerAssignment?.created_at ?? knowledgeReviewerAssignmentClaim?.claimed_at ?? knowledgeReviewRequest?.created_at ?? knowledgeDraft?.created_at ?? invocationEvidence?.ingested_at ?? boundedInvocation?.completed_at ?? invocationAuthorization?.authorized_at ?? targetSessionVerification?.verified_at ?? runtimeActivation?.healthy_at ?? secretBrokerageAuthorization?.authorized_at ?? runtimeTrust?.granted_at ?? enablement?.enabled_at ?? validation?.validated_at ?? assignment?.assigned_at ?? binding?.bound_at ?? instance.retired_at ?? instance.created_at).toLocaleString()}
                     </td>
                     <td>
                       {instance.instance_state === "disabled_unconfigured" &&
@@ -3206,17 +3276,26 @@ export default function InstalledMcpManagementWorkspace({
                               className="secondary-button installed-mcp-row-action"
                               type="button"
                               title={knowledgeReviewerAssignment
-                                ? "View minimized immutable reviewer assignment metadata"
-                                : "Assign distinct domain and security review tracks"}
+                                ? "View authoritative reviewer assignment"
+                                : knowledgeReviewerAssignmentClaim
+                                  ? "View permanently consumed assignment claim status"
+                                  : "Assign distinct domain and security review tracks"}
                               aria-label={`${knowledgeReviewerAssignment
                                 ? "View assignment"
-                                : "Assign reviewers"} for ${instance.display_name}`}
-                              onClick={() => setAssigningKnowledgeReviewers(instance)}
+                                : knowledgeReviewerAssignmentClaim
+                                  ? "View assignment status"
+                                  : "Assign reviewers"} for ${instance.display_name}`}
+                              onClick={(event) => {
+                                setReviewerAssignmentReturnFocus(event.currentTarget);
+                                setAssigningKnowledgeReviewers(instance);
+                              }}
                             >
                               <UserCheck size={15} />
                               <span>{knowledgeReviewerAssignment
                                 ? "View assignment"
-                                : "Assign reviewers"}</span>
+                                : knowledgeReviewerAssignmentClaim
+                                  ? "View assignment status"
+                                  : "Assign reviewers"}</span>
                             </button>
                           )}
                           <button className="secondary-button installed-mcp-row-action" type="button" title="Review governed update evidence" aria-label={`Review update for ${instance.display_name}`} onClick={() => setReviewing(instance)}><ArrowUpCircle size={15} /><span>Review update</span></button>
@@ -3727,7 +3806,7 @@ export default function InstalledMcpManagementWorkspace({
             instance={assigningKnowledgeReviewers}
             sessionScopeKey={sessionScopeKey}
             onAssignmentCreated={(assignment) => {
-              queryClient.setQueryData<OperationalKnowledgeReviewerAssignmentInventoryItem[]>(
+              queryClient.setQueryData<OperationalKnowledgeReviewerAssignmentInventoryEntry[]>(
                 operationalKnowledgeReviewerAssignmentQueryKey(
                   sessionScopeKey,
                   reviewRequest.review_request_id,
@@ -3737,6 +3816,7 @@ export default function InstalledMcpManagementWorkspace({
             }}
             onCancel={() => setAssigningKnowledgeReviewers(null)}
             onRequestEnterpriseLogin={onRequestEnterpriseLogin}
+            returnFocusTo={reviewerAssignmentReturnFocus}
           />
         );
       })()}

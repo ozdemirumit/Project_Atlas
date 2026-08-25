@@ -9,6 +9,8 @@ import {
   getOperationalKnowledgeReviewerAssignmentOptions,
   getOperationalKnowledgeReviewerAssignments,
   operationalKnowledgeReviewerAssignmentQueryKey,
+  type OperationalKnowledgeReviewerAssignmentClaimStatus,
+  type OperationalKnowledgeReviewerAssignmentInventoryEntry,
   type OperationalKnowledgeReviewerAssignmentInventoryItem,
   type OperationalKnowledgeReviewerAssignmentOption,
   type OperationalKnowledgeReviewerAssignmentSource,
@@ -44,6 +46,26 @@ function AssignmentRecord({
         Inspection, findings, decisions, approval, publication, retrieval, model, workflow,
         execution and deployment remain separate stages.
       </p>
+    </div>
+  );
+}
+
+function ConsumedClaimStatus({
+  status,
+}: {
+  status: OperationalKnowledgeReviewerAssignmentClaimStatus;
+}) {
+  return (
+    <div className="installed-mcp-status error-state" role="status">
+      <AlertTriangle size={18} />
+      <div>
+        <strong>Reviewer assignment claim consumed</strong>
+        <span>
+          The one-way claim was recorded at {new Date(status.claimed_at).toLocaleString()}, but no
+          completed assignment is available. Automatic retry remains permanently disabled while
+          an authorized operator reconciles authoritative records.
+        </span>
+      </div>
     </div>
   );
 }
@@ -102,7 +124,15 @@ export function ReviewerAssignmentPanel({
     retry: false,
     staleTime: 30_000,
   });
-  const assignment = inventoryQuery.data?.[0];
+  const assignment = inventoryQuery.data?.find(
+    (entry): entry is OperationalKnowledgeReviewerAssignmentInventoryItem =>
+      entry.schema_version === "atlas.operational-knowledge-reviewer-assignment.v1",
+  );
+  const claimStatus = inventoryQuery.data?.find(
+    (entry): entry is OperationalKnowledgeReviewerAssignmentClaimStatus =>
+      entry.schema_version ===
+        "atlas.operational-knowledge-reviewer-assignment-claim-status.v1",
+  );
   const optionsQuery = useQuery({
     queryKey: [
       "operational-knowledge-reviewer-assignment-options",
@@ -110,7 +140,7 @@ export function ReviewerAssignmentPanel({
       reviewRequest.review_request_id,
     ],
     queryFn: () => getOperationalKnowledgeReviewerAssignmentOptions({ reviewRequest }),
-    enabled: inventoryQuery.isSuccess && !assignment && !attempted,
+    enabled: inventoryQuery.isSuccess && !assignment && !claimStatus && !attempted,
     retry: false,
   });
   const selectedOption = optionsQuery.data?.find(
@@ -120,7 +150,7 @@ export function ReviewerAssignmentPanel({
     mutationFn: createOperationalKnowledgeReviewerAssignment,
     retry: false,
     onSuccess: ({ data }) => {
-      queryClient.setQueryData<OperationalKnowledgeReviewerAssignmentInventoryItem[]>(
+      queryClient.setQueryData<OperationalKnowledgeReviewerAssignmentInventoryEntry[]>(
         queryKey,
         [data],
       );
@@ -192,7 +222,9 @@ export function ReviewerAssignmentPanel({
         </div>
         <UserRoundCheck size={24} />
       </div>
-      {assignment ? <AssignmentRecord assignment={assignment} /> : (
+      {assignment ? <AssignmentRecord assignment={assignment} /> : claimStatus ? (
+        <ConsumedClaimStatus status={claimStatus} />
+      ) : (
         <>
           {optionsQuery.isLoading && (
             <div className="installed-mcp-status" role="status">

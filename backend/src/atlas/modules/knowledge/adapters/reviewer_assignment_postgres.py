@@ -15,6 +15,9 @@ from atlas.core.persistence.models import (
 from atlas.modules.knowledge.application.reviewer_assignment import (
     OperationalKnowledgeReviewerAssignmentService,
 )
+from atlas.modules.knowledge.application.reviewer_assignment_ports import (
+    OperationalKnowledgeReviewerAssignmentError,
+)
 from atlas.modules.knowledge.domain.reviewer_assignment import (
     OperationalKnowledgeReviewerAssignmentClaim,
     OperationalKnowledgeReviewerAssignmentRecord,
@@ -32,39 +35,69 @@ class PostgreSQLOperationalKnowledgeReviewerAssignmentRepository:
     ) -> PostgreSQLOperationalKnowledgeReviewerAssignmentRepository:
         return cls(create_async_engine(database_url))
 
-    async def get(
-        self, *, assignment_set_id: str
+    async def get_in_scope(
+        self,
+        *,
+        assignment_set_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> OperationalKnowledgeReviewerAssignmentRecord | None:
         async with self._sessions() as session:
-            row = await session.get(OperationalKnowledgeReviewerAssignmentModel, assignment_set_id)
-            return self._record_to_domain(row.payload) if row else None
+            row = await session.scalar(
+                select(OperationalKnowledgeReviewerAssignmentModel).where(
+                    OperationalKnowledgeReviewerAssignmentModel.assignment_set_id
+                    == assignment_set_id,
+                    OperationalKnowledgeReviewerAssignmentModel.organization_id == organization_id,
+                    OperationalKnowledgeReviewerAssignmentModel.environment_id == environment_id,
+                )
+            )
+            return self._record_from_row(row) if row else None
 
-    async def get_by_source(
-        self, *, source_review_request_id: str
+    async def get_by_source_in_scope(
+        self,
+        *,
+        source_review_request_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> OperationalKnowledgeReviewerAssignmentRecord | None:
         async with self._sessions() as session:
             row = await session.scalar(
                 select(OperationalKnowledgeReviewerAssignmentModel).where(
                     OperationalKnowledgeReviewerAssignmentModel.source_review_request_id
-                    == source_review_request_id
+                    == source_review_request_id,
+                    OperationalKnowledgeReviewerAssignmentModel.organization_id == organization_id,
+                    OperationalKnowledgeReviewerAssignmentModel.environment_id == environment_id,
                 )
             )
-            return self._record_to_domain(row.payload) if row else None
+            return self._record_from_row(row) if row else None
 
-    async def get_claim_by_source(
-        self, *, source_review_request_id: str
+    async def get_claim_by_source_in_scope(
+        self,
+        *,
+        source_review_request_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> OperationalKnowledgeReviewerAssignmentClaim | None:
         async with self._sessions() as session:
             row = await session.scalar(
                 select(OperationalKnowledgeReviewerAssignmentClaimModel).where(
                     OperationalKnowledgeReviewerAssignmentClaimModel.source_review_request_id
-                    == source_review_request_id
+                    == source_review_request_id,
+                    OperationalKnowledgeReviewerAssignmentClaimModel.organization_id
+                    == organization_id,
+                    OperationalKnowledgeReviewerAssignmentClaimModel.environment_id
+                    == environment_id,
                 )
             )
-            return self._claim_to_domain(row.payload) if row else None
+            return self._claim_from_row(row) if row else None
 
-    async def get_claim_by_idempotency(
-        self, *, claimed_by: str, idempotency_digest: str
+    async def get_claim_by_idempotency_in_scope(
+        self,
+        *,
+        claimed_by: str,
+        idempotency_digest: str,
+        organization_id: str,
+        environment_id: str,
     ) -> OperationalKnowledgeReviewerAssignmentClaim | None:
         async with self._sessions() as session:
             row = await session.scalar(
@@ -72,9 +105,33 @@ class PostgreSQLOperationalKnowledgeReviewerAssignmentRepository:
                     OperationalKnowledgeReviewerAssignmentClaimModel.claimed_by == claimed_by,
                     OperationalKnowledgeReviewerAssignmentClaimModel.idempotency_digest
                     == idempotency_digest,
+                    OperationalKnowledgeReviewerAssignmentClaimModel.organization_id
+                    == organization_id,
+                    OperationalKnowledgeReviewerAssignmentClaimModel.environment_id
+                    == environment_id,
                 )
             )
-            return self._claim_to_domain(row.payload) if row else None
+            return self._claim_from_row(row) if row else None
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[OperationalKnowledgeReviewerAssignmentRecord, ...]:
+        async with self._sessions() as session:
+            rows = tuple(
+                (
+                    await session.scalars(
+                        select(OperationalKnowledgeReviewerAssignmentModel)
+                        .where(
+                            OperationalKnowledgeReviewerAssignmentModel.organization_id
+                            == organization_id,
+                            OperationalKnowledgeReviewerAssignmentModel.environment_id
+                            == environment_id,
+                        )
+                        .order_by(OperationalKnowledgeReviewerAssignmentModel.assignment_set_id)
+                    )
+                ).all()
+            )
+        return tuple(self._record_from_row(row) for row in rows)
 
     async def claim(self, claim: OperationalKnowledgeReviewerAssignmentClaim) -> bool:
         payload = OperationalKnowledgeReviewerAssignmentService._normalize(asdict(claim))
@@ -124,6 +181,46 @@ class PostgreSQLOperationalKnowledgeReviewerAssignmentRepository:
 
     async def close(self) -> None:
         await self._engine.dispose()
+
+    @classmethod
+    def _claim_from_row(
+        cls, row: OperationalKnowledgeReviewerAssignmentClaimModel
+    ) -> OperationalKnowledgeReviewerAssignmentClaim:
+        claim = cls._claim_to_domain(row.payload)
+        if (
+            claim.claim_id != row.claim_id
+            or claim.source_review_request_id != row.source_review_request_id
+            or claim.assignment_set_id != row.assignment_set_id
+            or claim.claimed_by != row.claimed_by
+            or claim.idempotency_digest != row.idempotency_digest
+            or claim.organization_id != row.organization_id
+            or claim.environment_id != row.environment_id
+            or claim.canonical_digest != row.canonical_digest
+        ):
+            raise OperationalKnowledgeReviewerAssignmentError(
+                "operational_knowledge_reviewer_assignment_persistence_integrity_failed"
+            )
+        return claim
+
+    @classmethod
+    def _record_from_row(
+        cls, row: OperationalKnowledgeReviewerAssignmentModel
+    ) -> OperationalKnowledgeReviewerAssignmentRecord:
+        record = cls._record_to_domain(row.payload)
+        if (
+            record.assignment_set_id != row.assignment_set_id
+            or record.claim_id != row.claim_id
+            or record.source_review_request_id != row.source_review_request_id
+            or record.knowledge_item_id != row.knowledge_item_id
+            or record.requested_by != row.requested_by
+            or record.organization_id != row.organization_id
+            or record.environment_id != row.environment_id
+            or record.canonical_digest != row.canonical_digest
+        ):
+            raise OperationalKnowledgeReviewerAssignmentError(
+                "operational_knowledge_reviewer_assignment_persistence_integrity_failed"
+            )
+        return record
 
     @staticmethod
     def _claim_to_domain(raw: dict[str, Any]) -> OperationalKnowledgeReviewerAssignmentClaim:

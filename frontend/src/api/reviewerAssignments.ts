@@ -57,6 +57,29 @@ export type OperationalKnowledgeReviewerAssignmentInventoryItem = {
   reused: boolean;
 };
 
+export type OperationalKnowledgeReviewerAssignmentClaimStatus = {
+  assignment_set_id: string;
+  schema_version: "atlas.operational-knowledge-reviewer-assignment-claim-status.v1";
+  source_review_request_id: string;
+  source_review_request_digest: string;
+  claimed_at: string;
+  claim_state: "claim_consumed_unresolved";
+  claim_consumed: true;
+  assignment_completed: false;
+  automatic_retry_allowed: false;
+  content_inspection_opened: false;
+  knowledge_approved: false;
+  knowledge_published: false;
+  workflow_continued: false;
+  execution_authorized: false;
+  deployment_approved: false;
+  infrastructure_mutation_performed: false;
+};
+
+export type OperationalKnowledgeReviewerAssignmentInventoryEntry =
+  OperationalKnowledgeReviewerAssignmentInventoryItem |
+  OperationalKnowledgeReviewerAssignmentClaimStatus;
+
 // Legacy protected-inspection code owns a separate, non-inventory contract until its governance
 // slice replaces browser-provided policy data. It must not be returned by the APIs in this module.
 export type OperationalKnowledgeReviewerAssignment =
@@ -138,6 +161,13 @@ const inventoryFields = new Set([
   "embeddings_created", "retrieval_published", "model_context_available", "graph_updated",
   "scheduled", "workflow_continued", "execution_authorized", "deployment_approved",
   "infrastructure_mutation_performed", "reused",
+]);
+const claimStatusFields = new Set([
+  "assignment_set_id", "schema_version", "source_review_request_id",
+  "source_review_request_digest", "claimed_at", "claim_state", "claim_consumed",
+  "assignment_completed", "automatic_retry_allowed", "content_inspection_opened",
+  "knowledge_approved", "knowledge_published", "workflow_continued", "execution_authorized",
+  "deployment_approved", "infrastructure_mutation_performed",
 ]);
 const optionFields = new Set([
   "assignment_option_id", "source_review_request_id", "source_review_request_digest",
@@ -228,7 +258,7 @@ function isInventoryItem(
     record.schema_version === "atlas.operational-knowledge-reviewer-assignment.v1" &&
     record.version === 1 && typeof record.title === "string" && record.title.length > 0 &&
     record.title.length <= 512 && typeof record.assignment_policy_version === "string" &&
-    record.assignment_policy_version.length > 0 &&
+    record.assignment_policy_version.length > 0 && record.assignment_policy_version.length <= 64 &&
     record.knowledge_lifecycle === "reviewer_assigned" &&
     record.domain_track_code === "review-track.domain" &&
     record.security_track_code === "review-track.security" && record.domain_status === "assigned" &&
@@ -237,6 +267,27 @@ function isInventoryItem(
       Date.parse(record.created_at) &&
     record.instance_state === "operational_knowledge_reviewers_assigned" &&
     typeof record.reused === "boolean" && hasAssignmentBoundary(record);
+}
+
+function isClaimStatus(
+  value: unknown,
+): value is OperationalKnowledgeReviewerAssignmentClaimStatus {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return hasExactFields(record, claimStatusFields) &&
+    typeof record.assignment_set_id === "string" && stableId.test(record.assignment_set_id) &&
+    record.schema_version ===
+      "atlas.operational-knowledge-reviewer-assignment-claim-status.v1" &&
+    typeof record.source_review_request_id === "string" &&
+    stableId.test(record.source_review_request_id) &&
+    typeof record.source_review_request_digest === "string" &&
+    digest.test(record.source_review_request_digest) && isTimestamp(record.claimed_at) &&
+    record.claim_state === "claim_consumed_unresolved" && record.claim_consumed === true &&
+    record.assignment_completed === false && record.automatic_retry_allowed === false &&
+    record.content_inspection_opened === false && record.knowledge_approved === false &&
+    record.knowledge_published === false && record.workflow_continued === false &&
+    record.execution_authorized === false && record.deployment_approved === false &&
+    record.infrastructure_mutation_performed === false;
 }
 
 function hasOptionBoundary(record: Record<string, unknown>): boolean {
@@ -324,7 +375,7 @@ function optionMatchesReviewRequest(
 
 export async function getOperationalKnowledgeReviewerAssignments(input: {
   reviewRequest: OperationalKnowledgeReviewerAssignmentSource;
-}): Promise<OperationalKnowledgeReviewerAssignmentInventoryItem[]> {
+}): Promise<OperationalKnowledgeReviewerAssignmentInventoryEntry[]> {
   assertAssignableReviewRequest(input.reviewRequest);
   const parameters = new URLSearchParams({
     source_review_request_id: input.reviewRequest.review_request_id,
@@ -340,12 +391,17 @@ export async function getOperationalKnowledgeReviewerAssignments(input: {
   if (!Array.isArray(data)) {
     throw new Error("Reviewer assignment inventory returned unsafe records");
   }
-  const records: OperationalKnowledgeReviewerAssignmentInventoryItem[] = [];
+  const records: OperationalKnowledgeReviewerAssignmentInventoryEntry[] = [];
   for (const candidate of data as unknown[]) {
-    if (!isInventoryItem(candidate) || !matchesReviewRequest(candidate, input.reviewRequest)) {
+    const matchesSource = isInventoryItem(candidate)
+      ? matchesReviewRequest(candidate, input.reviewRequest)
+      : isClaimStatus(candidate) &&
+        candidate.source_review_request_id === input.reviewRequest.review_request_id &&
+        candidate.source_review_request_digest === input.reviewRequest.canonical_digest;
+    if (!matchesSource) {
       throw new Error("Reviewer assignment inventory returned unsafe records");
     }
-    records.push(candidate);
+    records.push(candidate as OperationalKnowledgeReviewerAssignmentInventoryEntry);
   }
   if (records.length > 1) {
     throw new Error("Reviewer assignment inventory returned duplicate records");

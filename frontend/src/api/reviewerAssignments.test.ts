@@ -8,6 +8,7 @@ import {
 import { knowledgeReviewRequestInventoryItem as reviewRequest } from
   "../features/connectors/testKnowledgeReviewRequestFixture";
 import {
+  reviewerAssignmentClaimStatus as claimStatus,
   reviewerAssignmentInventoryItem as assignment,
   reviewerAssignmentOption as option,
 } from "../features/connectors/testReviewerAssignmentFixture";
@@ -42,6 +43,27 @@ describe("operational knowledge reviewer assignment API client", () => {
     }
   });
 
+  it("loads a minimized permanently consumed unresolved claim status", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ data: [claimStatus], meta }), { status: 200 }),
+    );
+
+    await expect(getOperationalKnowledgeReviewerAssignments({ reviewRequest }))
+      .resolves.toEqual([claimStatus]);
+  });
+
+  it("rejects identity or retry authority added to a claim status", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({
+        data: [{ ...claimStatus, automatic_retry_allowed: true, claimed_by: "subject.hidden" }],
+        meta,
+      }), { status: 200 }),
+    );
+
+    await expect(getOperationalKnowledgeReviewerAssignments({ reviewRequest }))
+      .rejects.toThrow("unsafe records");
+  });
+
   it.each([
     [{ data: [assignment] }],
     [{ data: [assignment], meta, extra: true }],
@@ -61,6 +83,7 @@ describe("operational knowledge reviewer assignment API client", () => {
     ["connector_id", "connector.foreign"],
     ["instance_id", "connector-instance.foreign"],
     ["capability_id", "capability.foreign.read"],
+    ["assignment_policy_version", "x".repeat(65)],
     ["reviewer_name", "Hidden Reviewer"],
     ["reviewer_username", "hidden.reviewer"],
     ["reviewer_email", "hidden@example.invalid"],
