@@ -97,6 +97,24 @@ class PostgreSQLConnectorInvocationEvidenceRepository:
             )
             return self._claim_to_domain(row.payload) if row else None
 
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorInvocationEvidenceRecord, ...]:
+        async with self._sessions() as session:
+            rows = tuple(
+                (
+                    await session.scalars(
+                        select(ConnectorInvocationEvidenceModel)
+                        .where(
+                            ConnectorInvocationEvidenceModel.organization_id == organization_id,
+                            ConnectorInvocationEvidenceModel.environment_id == environment_id,
+                        )
+                        .order_by(ConnectorInvocationEvidenceModel.ingestion_id)
+                    )
+                ).all()
+            )
+        return tuple(self._record_to_domain(row.payload) for row in rows)
+
     async def claim(self, claim: ConnectorInvocationEvidenceClaim) -> bool:
         payload = ConnectorInvocationEvidenceService._normalize(asdict(claim))
         assert isinstance(payload, dict)

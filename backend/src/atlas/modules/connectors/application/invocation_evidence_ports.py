@@ -36,8 +36,14 @@ class ConnectorInvocationEvidencePolicySource(Protocol):
         environment_id: str,
     ) -> ConnectorInvocationEvidencePolicySnapshot | None: ...
 
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorInvocationEvidencePolicySnapshot, ...]: ...
+
 
 class ConnectorInvocationEvidenceAdapter(Protocol):
+    available: bool
+
     async def ingest(
         self, instruction: ConnectorInvocationEvidenceInstruction
     ) -> ConnectorInvocationEvidenceReceipt: ...
@@ -86,6 +92,10 @@ class ConnectorInvocationEvidenceRepository(Protocol):
         organization_id: str,
         environment_id: str,
     ) -> ConnectorInvocationEvidenceClaim | None: ...
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorInvocationEvidenceRecord, ...]: ...
 
     async def claim(self, claim: ConnectorInvocationEvidenceClaim) -> bool: ...
 

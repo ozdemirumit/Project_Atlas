@@ -1,125 +1,116 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ConnectorBoundedInvocation } from "../../api/boundedInvocations";
-import type { ConnectorInvocationEvidence } from "../../api/invocationEvidence";
+import { ApiRequestError } from "../../api/client";
+import {
+  createConnectorInvocationEvidence,
+  getConnectorInvocationEvidence,
+  getConnectorInvocationEvidenceOptions,
+} from "../../api/invocationEvidence";
 import { InvocationEvidencePanel } from "./InvocationEvidencePanel";
+import { boundedInvocationInventoryItem as invocation } from
+  "./testBoundedInvocationFixture";
+import {
+  invocationEvidenceInventoryItem as evidence,
+  invocationEvidenceOption as option,
+} from "./testInvocationEvidenceFixture";
 
-const policyDigest = "f06fd15735d2a77887160bbed9ea603da8e2a449f65fcc3431ce57fb20c32b6f";
-const invocation = {
-  invocation_id: "connector-bounded-invocation.test",
-  canonical_digest: "1".repeat(64),
-  organization_id: "organization.development",
-  environment_id: "environment.development",
-  package_digest: "2".repeat(64),
-  instance_id: "connector-instance.test",
-  capability_id: "capability.storage.health.read",
-  normalized_redacted_result_digest: "3".repeat(64),
-  instance_state: "enabled_bounded_capability_invocation_completed",
-  authorization_consumed: true,
-  capability_invoked: true,
-  result_validated: true,
-  result_redacted: true,
-  target_session_closed: true,
-  lease_revocation_confirmed: true,
-  target_connected: false,
-  evidence_ingested: false,
-} as unknown as ConnectorBoundedInvocation;
+vi.mock("../../api/invocationEvidence", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../api/invocationEvidence")>();
+  return {
+    ...original,
+    createConnectorInvocationEvidence: vi.fn(),
+    getConnectorInvocationEvidence: vi.fn(),
+    getConnectorInvocationEvidenceOptions: vi.fn(),
+  };
+});
 
-const evidence = {
-  ingestion_id: "connector-invocation-evidence-ingestion.test",
-  schema_version: "atlas.connector-invocation-evidence-ingestion.v1",
-  version: 1,
-  source_invocation_id: invocation.invocation_id,
-  source_invocation_digest: invocation.canonical_digest,
-  package_digest: invocation.package_digest,
-  instance_id: invocation.instance_id,
-  capability_id: invocation.capability_id,
-  normalized_redacted_result_digest: invocation.normalized_redacted_result_digest,
-  evidence_package_id: "connector-evidence-package.test",
-  evidence_item_count: 1,
-  classification: "classification.internal",
-  ingestion_policy_id: "connector-invocation-evidence-policy.development",
-  ingestion_policy_digest: policyDigest,
-  canonical_digest: "4".repeat(64),
-  instance_state: "enabled_invocation_evidence_ingested",
-  source_invocation_completed: true,
-  evidence_ingested: true,
-  immutable_storage_confirmed: true,
-  encrypted_at_rest: true,
-  transient_buffers_erased: true,
-  artifact_channel_closed: true,
-  knowledge_item_created: false,
-  retrieval_published: false,
-  model_context_available: false,
-  graph_updated: false,
-  scheduled: false,
-  workflow_continued: false,
-  execution_authorized: false,
-  deployment_approved: false,
-  infrastructure_mutation_performed: false,
-} as unknown as ConnectorInvocationEvidence;
+function renderPanel(onRequestEnterpriseLogin?: () => void) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={client}>
+      <InvocationEvidencePanel
+        invocation={invocation}
+        onRequestEnterpriseLogin={onRequestEnterpriseLogin}
+        sessionScopeKey="subject.test/org.test/env.test"
+      />
+    </QueryClientProvider>,
+  );
+}
 
-afterEach(() => vi.unstubAllGlobals());
+beforeEach(() => {
+  vi.mocked(getConnectorInvocationEvidence).mockResolvedValue([]);
+  vi.mocked(getConnectorInvocationEvidenceOptions).mockResolvedValue([option]);
+  vi.mocked(createConnectorInvocationEvidence).mockResolvedValue({ data: evidence });
+});
+
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
 
 describe("InvocationEvidencePanel", () => {
-  it("preserves only governed metadata without content or publication controls", async () => {
-    document.cookie = "atlas_csrf=test-csrf; path=/";
-    const fetchMock = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(new Response(JSON.stringify({ data: evidence }), { status: 201 }));
-    vi.stubGlobal("fetch", fetchMock);
-    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
-    render(
-      <QueryClientProvider client={client}>
-        <InvocationEvidencePanel invocation={invocation} />
-      </QueryClientProvider>,
-    );
+  it("uses one signed server option and renders only immutable evidence metadata", async () => {
+    renderPanel();
 
-    expect(
-      screen.queryByRole("textbox", {
-        name: /evidence content|observation value|storage location|acl principal|encryption key/i,
-      }),
-    ).toBeNull();
-    expect(screen.queryByRole("button", { name: /publish|index|embed/i })).toBeNull();
-    fireEvent.click(screen.getByLabelText(/ingestion is one-way/i));
+    expect(await screen.findByRole("combobox", {
+      name: "Signed evidence-preservation option",
+    })).toBeVisible();
+    expect(screen.getByText("username and password")).toBeVisible();
+    expect(screen.queryByRole("textbox", {
+      name: /policy id|policy digest|classification|retention|access|acl|encryption|storage/i,
+    })).toBeNull();
+    fireEvent.click(screen.getByLabelText(/invocation is claimed before preservation/i));
     fireEvent.click(screen.getByRole("button", { name: "Preserve evidence" }));
 
+    await waitFor(() => expect(createConnectorInvocationEvidence).toHaveBeenCalledOnce());
+    expect(vi.mocked(createConnectorInvocationEvidence).mock.calls[0]?.[0]).toMatchObject({
+      invocation,
+      option,
+    });
     expect(await screen.findByText(evidence.evidence_package_id)).toBeVisible();
     expect(screen.getByText("internal")).toBeVisible();
     expect(screen.getByText("at rest")).toBeVisible();
-    expect(screen.getByText("not published")).toBeVisible();
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
-    const init = fetchMock.mock.calls[0]?.[1];
-    const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as Record<
-      string,
-      unknown
-    >;
-    expect(body).toEqual({
-      schema_version: "atlas.connector-invocation-evidence-input.v1",
-      source_invocation_id: invocation.invocation_id,
-      source_invocation_digest: invocation.canonical_digest,
-      ingestion_policy_id: evidence.ingestion_policy_id,
-      ingestion_policy_digest: policyDigest,
-      purpose: "Preserve the exact governed connector observations as immutable evidence.",
-      acknowledged_ingestion_is_one_way_and_does_not_publish_knowledge_or_grant_authority: true,
-    });
-    for (const forbidden of [
-      "evidence_content",
-      "observation_values",
-      "classification",
-      "acl_principals",
-      "retention_policy_id",
-      "storage_location",
-      "encryption_key",
-      "retrieval_published",
-      "model_context_available",
-      "workflow_continued",
-      "execution_authorized",
-      "deployment_approved",
-    ])
-      expect(body).not.toHaveProperty(forbidden);
-    expect(new Headers(init?.headers).get("X-CSRF-Token")).toBe("test-csrf");
+    expect(screen.queryByRole("button", {
+      name: /preserve|retry|knowledge|publish|index|embed|schedule|execute|deploy|mutate/i,
+    })).toBeNull();
+  });
+
+  it.each([
+    ["HTTP 503", new ApiRequestError("Outcome uncertain", 503)],
+    ["HTTP 409", new ApiRequestError("Claim conflict", 409)],
+    ["HTTP 422", new ApiRequestError("Lineage changed", 422)],
+    ["network failure", new Error("Connection closed")],
+  ])("never offers retry after an irreversible claim attempt with %s", async (_case, error) => {
+    vi.mocked(createConnectorInvocationEvidence).mockRejectedValue(error);
+    renderPanel();
+
+    await screen.findByRole("combobox", { name: "Signed evidence-preservation option" });
+    fireEvent.click(screen.getByLabelText(/invocation is claimed before preservation/i));
+    fireEvent.click(screen.getByRole("button", { name: "Preserve evidence" }));
+
+    expect(await screen.findByText("Evidence-preservation outcome is uncertain")).toBeVisible();
+    expect(screen.queryByRole("button", { name: /retry|preserve evidence/i })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Reload authoritative inventory" }));
+    await waitFor(() => expect(getConnectorInvocationEvidence).toHaveBeenCalledTimes(2));
+    expect(createConnectorInvocationEvidence).toHaveBeenCalledOnce();
+    expect(getConnectorInvocationEvidenceOptions).toHaveBeenCalledOnce();
+  });
+
+  it("uses normal username and password re-login without a global MFA prompt", async () => {
+    const requestLogin = vi.fn();
+    vi.mocked(getConnectorInvocationEvidence).mockRejectedValue(
+      new ApiRequestError("Session expired", 401),
+    );
+    renderPanel(requestLogin);
+
+    expect(await screen.findByText("Your signed-in session has expired")).toBeVisible();
+    expect(screen.getByText(/username and password/i)).toBeVisible();
+    expect(screen.queryByText(/MFA|authorized browser session/i)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Sign in again" }));
+    expect(requestLogin).toHaveBeenCalledOnce();
   });
 });

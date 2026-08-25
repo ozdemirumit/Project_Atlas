@@ -24,6 +24,15 @@ class InMemoryConnectorInvocationEvidencePolicySource:
     ) -> ConnectorInvocationEvidencePolicySnapshot | None:
         return self._policies.get((organization_id, environment_id, policy_id))
 
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorInvocationEvidencePolicySnapshot, ...]:
+        return tuple(
+            policy
+            for (policy_organization, policy_environment, _), policy in self._policies.items()
+            if policy_organization == organization_id and policy_environment == environment_id
+        )
+
 
 class InMemoryConnectorInvocationEvidenceRepository:
     def __init__(self) -> None:
@@ -78,6 +87,15 @@ class InMemoryConnectorInvocationEvidenceRepository:
     ) -> ConnectorInvocationEvidenceClaim | None:
         return self._claims_by_idempotency.get(
             (organization_id, environment_id, claimed_by, idempotency_digest)
+        )
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[ConnectorInvocationEvidenceRecord, ...]:
+        return tuple(
+            record
+            for (record_organization, record_environment, _), record in self._records.items()
+            if record_organization == organization_id and record_environment == environment_id
         )
 
     async def claim(self, claim: ConnectorInvocationEvidenceClaim) -> bool:

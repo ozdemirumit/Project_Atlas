@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 from hashlib import sha256
@@ -46,6 +46,24 @@ INVOCATION_EVIDENCE_CREATE_PERMISSION = "connectors.invocation-evidence.create"
 INVOCATION_EVIDENCE_READ_PERMISSION = "connectors.invocation-evidence.read"
 INVOCATION_EVIDENCE_SCHEMA = "atlas.connector-invocation-evidence-ingestion.v1"
 INVOCATION_EVIDENCE_CLAIM_SCHEMA = "atlas.connector-invocation-evidence-claim.v1"
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectorInvocationEvidenceOption:
+    source_invocation_id: str
+    source_invocation_digest: str
+    capability_id: str
+    capability_class: str
+    required_permission: str
+    ingestion_policy_id: str
+    ingestion_policy_digest: str
+    ingestion_policy_version: str
+    ingestion_policy_expires_at: datetime
+    required_assurance_level: AssuranceLevel
+    classification: str
+    retention_policy_id: str
+    maximum_evidence_items: int
+    maximum_evidence_bytes: int
 
 
 class ConnectorInvocationEvidenceService:
@@ -168,6 +186,8 @@ class ConnectorInvocationEvidenceService:
             environment_id=source.environment_id,
             correlation_id=correlation_id,
         )
+        if not self._adapter.available:
+            raise ConnectorInvocationEvidenceError("invocation_evidence_adapter_unavailable")
         seed = self._digest(
             [
                 source.organization_id,
@@ -370,8 +390,7 @@ class ConnectorInvocationEvidenceService:
         )
         if record is None:
             raise ConnectorInvocationEvidenceError("invocation_evidence_record_not_found")
-        self._verify_record(record)
-        self._require_scope(actor, record.organization_id, record.environment_id)
+        record = await self._current_record(record, actor=actor, correlation_id=correlation_id)
         await self._audit(
             actor,
             correlation_id,
@@ -381,6 +400,147 @@ class ConnectorInvocationEvidenceService:
             permission_id=INVOCATION_EVIDENCE_READ_PERMISSION,
         )
         return record
+
+    async def list_evidence(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        source_invocation_id: str | None,
+        correlation_id: str,
+    ) -> tuple[ConnectorInvocationEvidenceRecord, ...]:
+        self._require_enterprise_human(actor)
+        if source_invocation_id is None:
+            candidates = await self._repository.list_scope(
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+            )
+        else:
+            candidate = await self._repository.get_by_invocation_in_scope(
+                source_invocation_id=source_invocation_id,
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+            )
+            candidates = (candidate,) if candidate is not None else ()
+        visible = [
+            await self._current_record(record, actor=actor, correlation_id=correlation_id)
+            for record in candidates
+        ]
+        visible.sort(key=lambda item: item.ingestion_id)
+        await self._audit(
+            actor,
+            correlation_id,
+            "connector_invocation_evidence_inventory_listed",
+            source_invocation_id or self._environment_id,
+            (("count", str(len(visible))),),
+            permission_id=INVOCATION_EVIDENCE_READ_PERMISSION,
+        )
+        return tuple(visible)
+
+    async def list_options(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        source_invocation_id: str,
+        correlation_id: str,
+    ) -> tuple[ConnectorInvocationEvidenceOption, ...]:
+        self._require_enterprise_human(actor)
+        if not self._adapter.available:
+            await self._audit(
+                actor,
+                correlation_id,
+                "connector_invocation_evidence_options_listed",
+                source_invocation_id,
+                (("count", "0"),),
+                permission_id=INVOCATION_EVIDENCE_READ_PERMISSION,
+            )
+            return ()
+        try:
+            source, source_actors = await self._source.evidence_ingestion_source(
+                invocation_id=source_invocation_id,
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+            )
+        except ConnectorBoundedInvocationError as error:
+            raise ConnectorInvocationEvidenceError(
+                "invocation_evidence_source_not_found"
+            ) from error
+        self._require_scope(actor, source.organization_id, source.environment_id)
+        claim = await self._repository.get_claim_by_invocation_in_scope(
+            source_invocation_id=source.invocation_id,
+            organization_id=source.organization_id,
+            environment_id=source.environment_id,
+        )
+        options: list[ConnectorInvocationEvidenceOption] = []
+        if claim is not None:
+            self._verify_claim(claim)
+            completed = await self._repository.get_by_invocation_in_scope(
+                source_invocation_id=source.invocation_id,
+                organization_id=source.organization_id,
+                environment_id=source.environment_id,
+            )
+            if completed is not None:
+                await self._current_record(completed, actor=actor, correlation_id=correlation_id)
+        else:
+            policies = await self._policy_source.list_scope(
+                organization_id=source.organization_id,
+                environment_id=source.environment_id,
+            )
+            now = self._clock()
+            for policy in policies:
+                try:
+                    self._verify_snapshot(policy)
+                    self._verify_source(
+                        actor=actor,
+                        source=source,
+                        policy=policy,
+                        source_digest=source.canonical_digest,
+                        policy_digest=policy.canonical_digest,
+                        now=now,
+                    )
+                    if actor.subject_id in source_actors | {
+                        policy.signed_by,
+                        policy.required_adapter_attestor_id,
+                    }:
+                        continue
+                    await self._permission_authorizer.authorize(
+                        actor=actor,
+                        permission_id=source.required_permission,
+                        capability_id=source.capability_id,
+                        capability_class=source.capability_class,
+                        organization_id=source.organization_id,
+                        environment_id=source.environment_id,
+                        correlation_id=correlation_id,
+                    )
+                except ConnectorInvocationEvidenceError:
+                    continue
+                options.append(
+                    ConnectorInvocationEvidenceOption(
+                        source_invocation_id=source.invocation_id,
+                        source_invocation_digest=source.canonical_digest,
+                        capability_id=source.capability_id,
+                        capability_class=source.capability_class,
+                        required_permission=source.required_permission,
+                        ingestion_policy_id=policy.policy_id,
+                        ingestion_policy_digest=policy.canonical_digest,
+                        ingestion_policy_version=policy.policy_version,
+                        ingestion_policy_expires_at=policy.expires_at,
+                        required_assurance_level=policy.required_assurance_level,
+                        classification=policy.required_classification,
+                        retention_policy_id=policy.retention_policy_id,
+                        maximum_evidence_items=policy.maximum_evidence_items,
+                        maximum_evidence_bytes=policy.maximum_evidence_bytes,
+                    )
+                )
+        options.sort(key=lambda item: item.ingestion_policy_id)
+        await self._audit(
+            actor,
+            correlation_id,
+            "connector_invocation_evidence_options_listed",
+            source.invocation_id,
+            (("count", str(len(options))),),
+            permission_id=INVOCATION_EVIDENCE_READ_PERMISSION,
+        )
+        return tuple(options)
 
     async def knowledge_draft_source(
         self, *, ingestion_id: str, organization_id: str, environment_id: str
@@ -463,6 +623,104 @@ class ConnectorInvocationEvidenceService:
             policy.signed_by,
             policy.required_adapter_attestor_id,
         }
+
+    async def _current_record(
+        self,
+        record: ConnectorInvocationEvidenceRecord,
+        *,
+        actor: AuthenticatedSubject,
+        correlation_id: str,
+    ) -> ConnectorInvocationEvidenceRecord:
+        self._verify_record(record)
+        self._require_scope(actor, record.organization_id, record.environment_id)
+        claim = await self._repository.get_claim_by_invocation_in_scope(
+            source_invocation_id=record.source_invocation_id,
+            organization_id=record.organization_id,
+            environment_id=record.environment_id,
+        )
+        if claim is None:
+            raise ConnectorInvocationEvidenceError("invocation_evidence_claim_not_found")
+        self._verify_claim(claim)
+        try:
+            source, _ = await self._source.evidence_ingestion_source(
+                invocation_id=record.source_invocation_id,
+                organization_id=record.organization_id,
+                environment_id=record.environment_id,
+            )
+        except ConnectorBoundedInvocationError as error:
+            raise ConnectorInvocationEvidenceError(
+                "invocation_evidence_source_not_found"
+            ) from error
+        policy = await self._policy_source.get_by_id_in_scope(
+            policy_id=record.ingestion_policy_id,
+            organization_id=record.organization_id,
+            environment_id=record.environment_id,
+        )
+        if policy is None:
+            raise ConnectorInvocationEvidenceError("invocation_evidence_policy_not_found")
+        self._verify_snapshot(policy)
+        if (
+            claim.organization_id != record.organization_id
+            or claim.environment_id != record.environment_id
+            or source.invocation_id != record.source_invocation_id
+            or source.canonical_digest != record.source_invocation_digest
+            or source.package_digest != record.package_digest
+            or source.connector_id != record.connector_id
+            or source.release_version != record.release_version
+            or source.manifest_digest != record.manifest_digest
+            or source.instance_id != record.instance_id
+            or source.instance_key != record.instance_key
+            or source.display_name != record.display_name
+            or source.capability_id != record.capability_id
+            or source.capability_class != record.capability_class
+            or source.required_permission != record.required_permission
+            or source.output_schema_digest != record.output_schema_digest
+            or source.result_policy_digest != record.result_policy_digest
+            or source.normalized_redacted_result_digest != record.normalized_redacted_result_digest
+            or claim.claim_id != record.claim_id
+            or claim.source_invocation_id != record.source_invocation_id
+            or claim.source_invocation_digest != record.source_invocation_digest
+            or claim.ingestion_id != record.ingestion_id
+            or claim.claimed_by != record.ingested_by
+            or claim.purpose != record.purpose
+            or policy.policy_id != record.ingestion_policy_id
+            or policy.canonical_digest != record.ingestion_policy_digest
+            or policy.policy_version != record.ingestion_policy_version
+            or policy.required_adapter_id != record.ingestion_adapter_id
+            or policy.required_classification != record.classification
+            or policy.access_policy_id != record.access_policy_id
+            or policy.access_policy_digest != record.access_policy_digest
+            or policy.retention_policy_id != record.retention_policy_id
+            or policy.retention_policy_digest != record.retention_policy_digest
+            or policy.encryption_profile_id != record.encryption_profile_id
+            or policy.encryption_profile_digest != record.encryption_profile_digest
+            or record.instance_state != ENABLED_INVOCATION_EVIDENCE_INGESTED
+            or not record.evidence_ingested
+            or not record.immutable_storage_confirmed
+            or not record.encrypted_at_rest
+            or not record.transient_buffers_erased
+            or not record.artifact_channel_closed
+            or record.knowledge_item_created
+            or record.retrieval_published
+            or record.model_context_available
+            or record.graph_updated
+            or record.scheduled
+            or record.workflow_continued
+            or record.execution_authorized
+            or record.deployment_approved
+            or record.infrastructure_mutation_performed
+        ):
+            raise ConnectorInvocationEvidenceError("invocation_evidence_record_integrity_failed")
+        await self._permission_authorizer.authorize(
+            actor=actor,
+            permission_id=record.required_permission,
+            capability_id=record.capability_id,
+            capability_class=record.capability_class,
+            organization_id=record.organization_id,
+            environment_id=record.environment_id,
+            correlation_id=correlation_id,
+        )
+        return record
 
     async def close(self) -> None:
         await self._repository.close()
