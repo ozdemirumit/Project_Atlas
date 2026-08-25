@@ -9,6 +9,10 @@ from atlas.api.connector_connection_test_schemas import (
     BundledConnectionConfigurationData,
     BundledConnectionConfigurationInput,
     BundledConnectionConfigurationResponse,
+    BundledRuntimeDisableInput,
+    BundledRuntimeEnableInput,
+    BundledRuntimeStateData,
+    BundledRuntimeStateResponse,
     ConnectorConnectionTestData,
     ConnectorConnectionTestResponse,
 )
@@ -25,6 +29,12 @@ from atlas.modules.connectors.application.bundled_connection_configuration impor
 )
 from atlas.modules.connectors.application.bundled_connection_configuration_ports import (
     BundledConnectionConfigurationError,
+)
+from atlas.modules.connectors.application.bundled_runtime_state import (
+    BundledConnectorRuntimeStateService,
+)
+from atlas.modules.connectors.application.bundled_runtime_state_ports import (
+    BundledConnectorRuntimeStateError,
 )
 from atlas.modules.connectors.application.connection_test import ConnectorConnectionTestService
 from atlas.modules.connectors.application.connection_test_ports import ConnectorConnectionTestError
@@ -168,4 +178,93 @@ async def get_latest_connector_connection_test(
     response.headers["Cache-Control"] = "no-store"
     return ConnectorConnectionTestResponse(
         data=ConnectorConnectionTestData.from_domain(result), meta=_meta(request)
+    )
+
+
+@router.get(
+    "/{instance_id}/runtime-state",
+    response_model=BundledRuntimeStateResponse,
+)
+async def get_bundled_runtime_state(
+    instance_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[AuthorizationDecision, Depends(authorize_connector_target_session_read)],
+) -> BundledRuntimeStateResponse:
+    service: BundledConnectorRuntimeStateService = (
+        request.app.state.bundled_connector_runtime_state_service
+    )
+    try:
+        record = await service.current(
+            actor=subject,
+            instance_id=instance_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except BundledConnectorRuntimeStateError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return BundledRuntimeStateResponse(
+        data=BundledRuntimeStateData.from_domain(record), meta=_meta(request)
+    )
+
+
+@router.post(
+    "/{instance_id}/enable",
+    response_model=BundledRuntimeStateResponse,
+)
+async def enable_bundled_runtime(
+    instance_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    payload: BundledRuntimeEnableInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[AuthorizationDecision, Depends(authorize_connector_target_session_create)],
+) -> BundledRuntimeStateResponse:
+    service: BundledConnectorRuntimeStateService = (
+        request.app.state.bundled_connector_runtime_state_service
+    )
+    try:
+        record = await service.enable(
+            actor=subject,
+            instance_id=instance_id,
+            correlation_id=str(request.state.correlation_id),
+            acknowledged_read_only_operation=payload.acknowledged_read_only_operation,
+        )
+    except BundledConnectorRuntimeStateError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return BundledRuntimeStateResponse(
+        data=BundledRuntimeStateData.from_domain(record), meta=_meta(request)
+    )
+
+
+@router.post(
+    "/{instance_id}/disable",
+    response_model=BundledRuntimeStateResponse,
+)
+async def disable_bundled_runtime(
+    instance_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    payload: BundledRuntimeDisableInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[AuthorizationDecision, Depends(authorize_connector_target_session_create)],
+) -> BundledRuntimeStateResponse:
+    service: BundledConnectorRuntimeStateService = (
+        request.app.state.bundled_connector_runtime_state_service
+    )
+    try:
+        record = await service.disable(
+            actor=subject,
+            instance_id=instance_id,
+            reason=payload.reason,
+            acknowledged_runtime_stop=payload.acknowledged_runtime_stop,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except BundledConnectorRuntimeStateError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return BundledRuntimeStateResponse(
+        data=BundledRuntimeStateData.from_domain(record), meta=_meta(request)
     )

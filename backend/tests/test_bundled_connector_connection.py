@@ -18,6 +18,9 @@ from atlas.api.security import (
 from atlas.modules.connectors.adapters.bundled_connection_configuration_memory import (
     InMemoryBundledConnectionConfigurationRepository,
 )
+from atlas.modules.connectors.adapters.bundled_runtime_state_memory import (
+    InMemoryBundledConnectorRuntimeStateRepository,
+)
 from atlas.modules.connectors.adapters.connection_test_credential_environment import (
     DevelopmentEnvironmentCredentialMaterializer,
 )
@@ -29,6 +32,9 @@ from atlas.modules.connectors.application.bundled_connection_configuration impor
 )
 from atlas.modules.connectors.application.bundled_connection_configuration_ports import (
     BundledConnectionConfigurationError,
+)
+from atlas.modules.connectors.application.bundled_runtime_state import (
+    BundledConnectorRuntimeStateService,
 )
 from atlas.modules.connectors.application.connection_test import ConnectorConnectionTestService
 from atlas.modules.connectors.vendors.hitachi_ops_center.ports import HitachiTransportError
@@ -87,12 +93,14 @@ def build_services(monkeypatch: pytest.MonkeyPatch, *, failure=None):  # type: i
     catalog_service, descriptor, instance_repository, audit = fixture()
     instance = asyncio.run(create(catalog_service, descriptor))
     configuration_repository = InMemoryBundledConnectionConfigurationRepository()
+    runtime_state_repository = InMemoryBundledConnectorRuntimeStateRepository()
     configuration_service = BundledConnectionConfigurationService(
         repository=configuration_repository,
         instance_repository=instance_repository,
         audit_sink=audit,
         environment_id="environment.test",
         deployment_environment="development",
+        runtime_state_repository=runtime_state_repository,
     )
     monkeypatch.setenv("ATLAS_HITACHI_TEST_AUTHORIZATION", RAW_AUTHORIZATION)
     materializer = DevelopmentEnvironmentCredentialMaterializer(
@@ -102,12 +110,22 @@ def build_services(monkeypatch: pytest.MonkeyPatch, *, failure=None):  # type: i
         },
     )
     transport_factory = RecordingTransportFactory(failure=failure)
+    result_repository = InMemoryConnectorConnectionTestResultRepository()
     test_service = ConnectorConnectionTestService(
         configuration_repository=configuration_repository,
-        result_repository=InMemoryConnectorConnectionTestResultRepository(),
+        result_repository=result_repository,
         instance_repository=instance_repository,
         credential_materializer=materializer,
         transport_factory=transport_factory,
+        audit_sink=audit,
+        environment_id="environment.test",
+        deployment_environment="development",
+    )
+    runtime_state_service = BundledConnectorRuntimeStateService(
+        repository=runtime_state_repository,
+        configuration_repository=configuration_repository,
+        connection_test_repository=result_repository,
+        instance_repository=instance_repository,
         audit_sink=audit,
         environment_id="environment.test",
         deployment_environment="development",
@@ -116,16 +134,18 @@ def build_services(monkeypatch: pytest.MonkeyPatch, *, failure=None):  # type: i
         instance,
         configuration_service,
         test_service,
+        runtime_state_service,
         transport_factory,
         audit,
         instance_repository,
     )
 
 
-def build_app(configuration_service, test_service) -> FastAPI:  # type: ignore[no-untyped-def]
+def build_app(configuration_service, test_service, runtime_state_service) -> FastAPI:  # type: ignore[no-untyped-def]
     app = FastAPI()
     app.state.bundled_connection_configuration_service = configuration_service
     app.state.connector_connection_test_service = test_service
+    app.state.bundled_connector_runtime_state_service = runtime_state_service
 
     @app.middleware("http")
     async def correlation_id(request: Request, call_next):  # type: ignore[no-untyped-def]
@@ -143,8 +163,10 @@ def build_app(configuration_service, test_service) -> FastAPI:  # type: ignore[n
 def test_configure_get_and_read_only_connection_test_hide_raw_secret(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    instance, configuration_service, test_service, factory, audit, _ = build_services(monkeypatch)
-    client = TestClient(build_app(configuration_service, test_service))
+    instance, configuration_service, test_service, runtime_service, factory, audit, _ = (
+        build_services(monkeypatch)
+    )
+    client = TestClient(build_app(configuration_service, test_service, runtime_service))
     base = f"/api/v1/connectors/bundled-instances/{instance.instance_id}"
     payload = {
         "hostname": "opscenter.storage.example",
@@ -175,8 +197,10 @@ def test_configure_get_and_read_only_connection_test_hide_raw_secret(
 def test_latest_connection_test_is_not_found_before_first_result(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    instance, configuration_service, test_service, _, _, _ = build_services(monkeypatch)
-    client = TestClient(build_app(configuration_service, test_service))
+    instance, configuration_service, test_service, runtime_service, _, _, _ = build_services(
+        monkeypatch
+    )
+    client = TestClient(build_app(configuration_service, test_service, runtime_service))
 
     response = client.get(
         f"/api/v1/connectors/bundled-instances/{instance.instance_id}/connection-tests/latest"
@@ -189,8 +213,10 @@ def test_latest_connection_test_is_not_found_before_first_result(
 def test_credential_unavailable_failure_is_stored_as_latest_without_secret(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    instance, configuration_service, test_service, _, _, _ = build_services(monkeypatch)
-    client = TestClient(build_app(configuration_service, test_service))
+    instance, configuration_service, test_service, runtime_service, _, _, _ = build_services(
+        monkeypatch
+    )
+    client = TestClient(build_app(configuration_service, test_service, runtime_service))
     base = f"/api/v1/connectors/bundled-instances/{instance.instance_id}"
     configured = client.put(
         f"{base}/connection-configuration",
@@ -219,8 +245,10 @@ def test_credential_unavailable_failure_is_stored_as_latest_without_secret(
 def test_each_connection_test_is_stored_and_latest_replaces_previous_result(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    instance, configuration_service, test_service, factory, _, _ = build_services(monkeypatch)
-    client = TestClient(build_app(configuration_service, test_service))
+    instance, configuration_service, test_service, runtime_service, factory, _, _ = build_services(
+        monkeypatch
+    )
+    client = TestClient(build_app(configuration_service, test_service, runtime_service))
     base = f"/api/v1/connectors/bundled-instances/{instance.instance_id}"
     configured = client.put(
         f"{base}/connection-configuration",
@@ -250,8 +278,10 @@ def test_each_connection_test_is_stored_and_latest_replaces_previous_result(
 def test_configuration_rejects_url_and_secret_material_field(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    instance, configuration_service, test_service, _, _, _ = build_services(monkeypatch)
-    client = TestClient(build_app(configuration_service, test_service))
+    instance, configuration_service, test_service, runtime_service, _, _, _ = build_services(
+        monkeypatch
+    )
+    client = TestClient(build_app(configuration_service, test_service, runtime_service))
     base = f"/api/v1/connectors/bundled-instances/{instance.instance_id}"
     payload = {
         "hostname": "http://opscenter.storage.example",
@@ -273,9 +303,15 @@ def test_failure_is_minimized_and_production_is_fail_closed(
     failure = HitachiTransportError(
         "target_unavailable", "internal target detail must stay hidden", retryable=True
     )
-    instance, configuration_service, test_service, _, audit, instance_repository = build_services(
-        monkeypatch, failure=failure
-    )
+    (
+        instance,
+        configuration_service,
+        test_service,
+        _,
+        _,
+        audit,
+        instance_repository,
+    ) = build_services(monkeypatch, failure=failure)
     asyncio.run(
         configuration_service.configure(
             actor=operator(),
@@ -314,3 +350,65 @@ def test_failure_is_minimized_and_production_is_fail_closed(
                 correlation_id="cor_production",
             )
         )
+
+
+def test_read_only_runtime_enable_disable_and_configuration_invalidation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (
+        instance,
+        configuration_service,
+        test_service,
+        runtime_service,
+        _,
+        audit,
+        _,
+    ) = build_services(monkeypatch)
+    monkeypatch.setenv("ATLAS_HITACHI_OPSCENTER_PROD", RAW_AUTHORIZATION)
+    client = TestClient(build_app(configuration_service, test_service, runtime_service))
+    base = f"/api/v1/connectors/bundled-instances/{instance.instance_id}"
+    configuration = {
+        "hostname": "opscenter.storage.example",
+        "port": 23451,
+        "trust_profile_id": "trust.system-ca",
+        "secret_reference_id": "secret.hitachi.opscenter_prod",
+    }
+
+    initial = client.get(f"{base}/runtime-state")
+    configured = client.put(f"{base}/connection-configuration", json=configuration)
+    tested = client.post(f"{base}/connection-tests")
+    enabled = client.post(f"{base}/enable", json={"acknowledged_read_only_operation": True})
+    reconfigured = client.put(
+        f"{base}/connection-configuration",
+        json={**configuration, "hostname": "opscenter-new.storage.example"},
+    )
+    invalidated = client.get(f"{base}/runtime-state")
+    retested = client.post(f"{base}/connection-tests")
+    reenabled = client.post(f"{base}/enable", json={"acknowledged_read_only_operation": True})
+    disabled = client.post(
+        f"{base}/disable",
+        json={
+            "reason": "Pause scheduled health polling during storage maintenance.",
+            "acknowledged_runtime_stop": True,
+        },
+    )
+
+    assert initial.status_code == 200
+    assert initial.json()["data"]["state"] == "disabled"
+    assert initial.json()["data"]["version"] == 0
+    assert configured.status_code == tested.status_code == enabled.status_code == 200
+    assert enabled.json()["data"]["state"] == "enabled_read_only"
+    assert enabled.json()["data"]["managed_infrastructure_contacted"] is False
+    assert reconfigured.status_code == 200
+    assert invalidated.json()["data"]["state"] == "disabled"
+    assert invalidated.json()["data"]["version"] == 0
+    assert retested.json()["data"]["outcome"] == "passed"
+    assert reenabled.json()["data"]["state"] == "enabled_read_only"
+    assert disabled.status_code == 200
+    assert disabled.json()["data"]["state"] == "disabled"
+    assert disabled.json()["data"]["version"] == 2
+    assert disabled.json()["data"]["infrastructure_mutation_performed"] is False
+    assert {
+        "bundled_runtime_enabled_read_only",
+        "bundled_runtime_disabled",
+    } <= {record.result_code for record in audit.records}

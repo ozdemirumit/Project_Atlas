@@ -4,14 +4,30 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-248 |
-| Title | MVP operator workflows: inventory lifecycle and simplified MCP operations |
+| Task ID | ATLAS-IMP-249 |
+| Title | Operator-managed credential references and read-only MCP runtime control |
 | Status | Review |
-| Branch | `agent/mvp-operator-workflows` |
-| Pull Request | [#263](https://github.com/ozdemirumit/Project_Atlas/pull/263) |
+| Branch | `agent/mvp-credential-enable-disable` |
+| Pull Request | Pending |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-020, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-052, ADR-133 |
 | Last Updated | 2026-08-25 |
-| Next Action | Add operator-managed credential references and complete the short MCP enable/disable workflow |
+| Next Action | Persist operator connector state and continue the real Hitachi read-only health vertical |
+
+### ATLAS-IMP-249 Scope and Verification
+
+- Operators can assign a validated `secret.hitachi.<alias>` credential reference without entering or
+  exposing secret material. Development environments resolve the reference from the matching
+  `ATLAS_HITACHI_<ALIAS>` environment variable and fail closed when it is unavailable.
+- The bundled Hitachi setup is now a concise four-step workflow: connection, credential reference,
+  connection test and read-only runtime. A current passed test is required before enablement.
+- Operators can enable or disable the read-only MCP runtime from Installed MCPs. Disablement requires
+  an explicit acknowledgement and reason; neither action contacts or mutates managed infrastructure.
+- Connection changes invalidate the retained test result and runtime authority. Health checks call the
+  configured Hitachi transport only while the exact current configuration is enabled.
+- Focused verification passed: `12` backend tests and `75` frontend tests. Ruff formatting/lint, strict
+  MyPy, TypeScript and focused ESLint also passed. Live validation confirmed normal username/password
+  login, credential-reference editing and safe failure when credential material is unavailable.
+- This batch deliberately avoids broad new test expansion. Full regression remains a CI merge gate.
 
 ### ATLAS-IMP-248 Scope Rationale
 

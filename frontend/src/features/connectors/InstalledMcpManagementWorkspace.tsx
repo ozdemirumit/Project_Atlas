@@ -33,9 +33,13 @@ import {
 } from "../../api/bundledConnectorCatalog";
 import {
   HITACHI_BUNDLED_CONNECTOR_ID,
+  disableBundledConnectorRuntime,
+  enableBundledConnectorRuntime,
   getBundledConnectionConfiguration,
+  getBundledConnectorRuntimeState,
   getLatestBundledConnectorConnectionTest,
   type BundledConnectionConfiguration,
+  type BundledConnectorRuntimeState,
   type ConnectorConnectionTestResult,
 } from "../../api/bundledConnectorConnections";
 import {
@@ -876,6 +880,89 @@ function RuntimeDeactivationDialog({
           </footer>
         </form>
       </section>
+    </div>
+  );
+}
+
+function BundledRuntimeDisableDialog({
+  instance,
+  error,
+  pending,
+  onCancel,
+  onSubmit,
+}: {
+  instance: ConnectorInstanceRecord;
+  error: unknown;
+  pending: boolean;
+  onCancel: () => void;
+  onSubmit: (reason: string) => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [acknowledged, setAcknowledged] = useState(false);
+  const boundedReason = reason.trim();
+  return (
+    <div className="installed-mcp-dialog-backdrop" role="presentation">
+      <form
+        className="installed-mcp-dialog runtime-activation-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="bundled-runtime-disable-title"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (boundedReason.length >= 20 && acknowledged) onSubmit(boundedReason);
+        }}
+      >
+        <header>
+          <div>
+            <p className="eyebrow">READ-ONLY RUNTIME</p>
+            <h3 id="bundled-runtime-disable-title">Disable {instance.display_name}</h3>
+          </div>
+          <button className="icon-button" type="button" aria-label="Close MCP disable" onClick={onCancel}>
+            <X size={17} />
+          </button>
+        </header>
+        <p className="muted-copy">
+          This stops only the Atlas read-only MCP runtime. It does not contact or change managed
+          infrastructure.
+        </p>
+        <label>
+          <span>Reason</span>
+          <textarea
+            value={reason}
+            rows={3}
+            maxLength={1000}
+            required
+            placeholder="Explain why this read-only MCP is being disabled."
+            onChange={(event) => setReason(event.target.value)}
+          />
+        </label>
+        <label className="approval-check">
+          <input
+            type="checkbox"
+            checked={acknowledged}
+            onChange={(event) => setAcknowledged(event.target.checked)}
+          />
+          <span>
+            Stop Atlas read-only polling for this MCP. No managed infrastructure command will run.
+          </span>
+        </label>
+        {Boolean(error) && (
+          <p className="inline-error" role="alert">
+            {error instanceof Error ? error.message : "Bundled MCP disable failed"}
+          </p>
+        )}
+        <footer>
+          <button type="button" className="secondary-button" onClick={onCancel}>Cancel</button>
+          <button
+            type="submit"
+            className="primary-button"
+            disabled={boundedReason.length < 20 || !acknowledged || pending}
+          >
+            {pending ? <RefreshCw className="spin" size={16} /> : <Power size={16} />}
+            {pending ? "Disabling..." : "Disable MCP"}
+          </button>
+        </footer>
+      </form>
     </div>
   );
 }
@@ -1925,6 +2012,8 @@ export default function InstalledMcpManagementWorkspace({
   const [targeting, setTargeting] = useState<ConnectorInstanceRecord | null>(null);
   const [configuringBundledConnection, setConfiguringBundledConnection] =
     useState<ConnectorInstanceRecord | null>(null);
+  const [disablingBundledRuntime, setDisablingBundledRuntime] =
+    useState<ConnectorInstanceRecord | null>(null);
   const [credentialing, setCredentialing] = useState<ConnectorInstanceRecord | null>(null);
   const [validating, setValidating] = useState<ConnectorInstanceRecord | null>(null);
   const [governingCapabilities, setGoverningCapabilities] =
@@ -2159,6 +2248,25 @@ export default function InstalledMcpManagementWorkspace({
       await queryClient.invalidateQueries({ queryKey: ["connector-instances"] });
     },
   });
+  const enableBundledRuntimeMutation = useMutation({
+    mutationFn: enableBundledConnectorRuntime,
+    onSuccess: (runtimeState) => {
+      queryClient.setQueryData<BundledConnectorRuntimeState>(
+        ["bundled-runtime-state", runtimeState.instance_id],
+        runtimeState,
+      );
+    },
+  });
+  const disableBundledRuntimeMutation = useMutation({
+    mutationFn: disableBundledConnectorRuntime,
+    onSuccess: (runtimeState) => {
+      queryClient.setQueryData<BundledConnectorRuntimeState>(
+        ["bundled-runtime-state", runtimeState.instance_id],
+        runtimeState,
+      );
+      setDisablingBundledRuntime(null);
+    },
+  });
   const instances = instanceQuery.data ?? [];
   const bundledInstances = instances.filter(
     (instance) => instance.connector_id === HITACHI_BUNDLED_CONNECTOR_ID,
@@ -2189,6 +2297,22 @@ export default function InstalledMcpManagementWorkspace({
   });
   const bundledConnectionTestByInstance = new Map(
     bundledConnectionTestQueries.flatMap((query, index) => {
+      const instance = bundledInstances[index];
+      return query.isSuccess && query.data && instance
+        ? [[instance.instance_id, query.data] as const]
+        : [];
+    }),
+  );
+  const bundledRuntimeStateQueries = useQueries({
+    queries: bundledInstances.map((instance) => ({
+      queryKey: ["bundled-runtime-state", instance.instance_id],
+      queryFn: () => getBundledConnectorRuntimeState(instance.instance_id),
+      enabled: Boolean(subjectId),
+      retry: false,
+    })),
+  });
+  const bundledRuntimeStateByInstance = new Map(
+    bundledRuntimeStateQueries.flatMap((query, index) => {
       const instance = bundledInstances[index];
       return query.isSuccess && query.data && instance
         ? [[instance.instance_id, query.data] as const]
@@ -2396,11 +2520,18 @@ export default function InstalledMcpManagementWorkspace({
   const lifecycleQueryFailed = lifecycleQueryErrors.length > 0;
   const sessionAuthenticationFailed = lifecycleQueryErrors.some((error) => hasStatus(error, 401));
   const lifecycleAuthorizationFailed = lifecycleQueryErrors.some((error) => hasStatus(error, 403));
-  const lifecycleMutationError = createMutation.error ?? createBundledMutation.error ?? retireMutation.error;
+  const lifecycleMutationError = createMutation.error ?? createBundledMutation.error ??
+    retireMutation.error ?? enableBundledRuntimeMutation.error ?? disableBundledRuntimeMutation.error;
   const mutationAuthenticationFailed = hasStatus(lifecycleMutationError, 401);
   const mutationAuthorizationFailed = hasStatus(lifecycleMutationError, 403);
   const mutationConflict = hasStatus(lifecycleMutationError, 409);
-  const mutationAction = createMutation.error || createBundledMutation.error ? "creation" : "retirement";
+  const mutationAction = createMutation.error || createBundledMutation.error
+    ? "creation"
+    : enableBundledRuntimeMutation.error
+      ? "read-only enable"
+      : disableBundledRuntimeMutation.error
+        ? "read-only disable"
+        : "retirement";
   const openBuilder = () => {
     setAdding(false);
     if (onOpenBuilder) {
@@ -2428,6 +2559,7 @@ export default function InstalledMcpManagementWorkspace({
     void targetSessionQuery.refetch();
     for (const query of bundledConnectionQueries) void query.refetch();
     for (const query of bundledConnectionTestQueries) void query.refetch();
+    for (const query of bundledRuntimeStateQueries) void query.refetch();
     for (const query of invocationAuthorizationQueries) void query.refetch();
     for (const query of boundedInvocationQueries) void query.refetch();
     for (const query of invocationEvidenceQueries) void query.refetch();
@@ -3130,6 +3262,10 @@ export default function InstalledMcpManagementWorkspace({
                 const bundledConnectionTest = isBundledHitachi
                   ? bundledConnectionTestByInstance.get(instance.instance_id)
                   : undefined;
+                const bundledRuntimeState = isBundledHitachi
+                  ? bundledRuntimeStateByInstance.get(instance.instance_id)
+                  : undefined;
+                const bundledRuntimeEnabled = bundledRuntimeState?.state === "enabled_read_only";
                 const configured = Boolean(binding || bundledConnection);
                 const assignment = binding
                   ? assignmentByBinding.get(binding.binding_id)
@@ -3199,16 +3335,23 @@ export default function InstalledMcpManagementWorkspace({
                     )
                   : undefined;
                 const knowledgeReviewersAssigned = Boolean(knowledgeReviewerAssignment);
-                const setupSteps = [
-                  { complete: configured, label: "Target" },
-                  { complete: credentialsAssigned, label: "Credential" },
-                  { complete: configurationValidated, label: "Validation" },
-                  { complete: capabilitiesGoverned, label: "Capabilities" },
-                  { complete: runtimeTrusted, label: "Runtime trust" },
-                  { complete: secretBrokerageGoverned, label: "Secret brokerage" },
-                  { complete: runtimeHealthy, label: "Runtime" },
-                  { complete: targetSessionVerified, label: "Target session" },
-                ];
+                const setupSteps = isBundledHitachi
+                  ? [
+                      { complete: configured, label: "Connection" },
+                      { complete: credentialsAssigned, label: "Credential reference" },
+                      { complete: configurationValidated, label: "Connection test" },
+                      { complete: bundledRuntimeEnabled, label: "Read-only runtime" },
+                    ]
+                  : [
+                      { complete: configured, label: "Target" },
+                      { complete: credentialsAssigned, label: "Credential" },
+                      { complete: configurationValidated, label: "Validation" },
+                      { complete: capabilitiesGoverned, label: "Capabilities" },
+                      { complete: runtimeTrusted, label: "Runtime trust" },
+                      { complete: secretBrokerageGoverned, label: "Secret brokerage" },
+                      { complete: runtimeHealthy, label: "Runtime" },
+                      { complete: targetSessionVerified, label: "Target session" },
+                    ];
                 const completedSetupSteps = setupSteps.filter((step) => step.complete).length;
                 const nextSetupAction = !configured
                   ? {
@@ -3219,11 +3362,30 @@ export default function InstalledMcpManagementWorkspace({
                         : setTargeting(instance),
                     }
                   : isBundledHitachi
-                    ? {
-                        icon: <Link2 size={15} />,
-                        label: "Test connection",
-                        onClick: () => setConfiguringBundledConnection(instance),
-                      }
+                    ? !configurationValidated
+                      ? {
+                          icon: <Link2 size={15} />,
+                          label: "Test connection",
+                          onClick: () => setConfiguringBundledConnection(instance),
+                        }
+                      : bundledRuntimeEnabled
+                        ? {
+                            icon: <Power size={15} />,
+                            label: "Disable MCP",
+                            onClick: () => {
+                              disableBundledRuntimeMutation.reset();
+                              setDisablingBundledRuntime(instance);
+                            },
+                          }
+                        : bundledRuntimeState
+                          ? {
+                              icon: enableBundledRuntimeMutation.isPending
+                                ? <RefreshCw className="spin" size={15} />
+                                : <Power size={15} />,
+                              label: "Enable read-only MCP",
+                              onClick: () => enableBundledRuntimeMutation.mutate(instance.instance_id),
+                            }
+                          : undefined
                   : !credentialsAssigned
                     ? {
                         icon: <KeyRound size={15} />,
@@ -3276,9 +3438,11 @@ export default function InstalledMcpManagementWorkspace({
                     <td><strong>{instance.connector_id}</strong><span>{instance.release_version}</span></td>
                     <td>
                       <span className={`state-badge ${
-                        instance.instance_state === "retired"
-                          ? "neutral"
-                          : bundledConnectionTest?.outcome === "failed"
+                         instance.instance_state === "retired"
+                           ? "neutral"
+                           : bundledRuntimeEnabled
+                             ? "success"
+                           : bundledConnectionTest?.outcome === "failed"
                             ? "failed"
                           : bundledConnectionTest?.outcome === "passed" || evidencePreserved || capabilityInvoked || invocationAuthorized || targetSessionVerified || runtimeHealthy || secretBrokerageGoverned || runtimeTrusted || capabilitiesGoverned
                             ? "success"
@@ -3286,6 +3450,8 @@ export default function InstalledMcpManagementWorkspace({
                       }`}>
                         {instance.instance_state === "retired"
                           ? "Retired"
+                          : bundledRuntimeEnabled
+                            ? "Enabled / read-only"
                           : runtimeDeactivation
                             ? "Disabled / runtime stopped"
                           : bundledConnectionTest?.outcome === "passed"
@@ -3332,6 +3498,10 @@ export default function InstalledMcpManagementWorkspace({
                       <span className="installed-mcp-event-label">
                         {instance.instance_state === "retired"
                           ? "Retired"
+                          : bundledRuntimeEnabled
+                            ? "Read-only MCP enabled"
+                          : bundledRuntimeState?.changed_at && bundledRuntimeState.state === "disabled"
+                            ? "Read-only MCP disabled"
                           : runtimeDeactivation
                             ? "Runtime disabled"
                           : bundledConnectionTest?.outcome === "passed"
@@ -3372,7 +3542,7 @@ export default function InstalledMcpManagementWorkspace({
                               ? "Target bound"
                               : "Created"}
                       </span>
-                      {new Date(runtimeDeactivation?.deactivated_at ?? bundledConnectionTest?.checked_at ?? bundledConnection?.configured_at ?? knowledgeReviewerAssignment?.created_at ?? knowledgeReviewerAssignmentClaim?.claimed_at ?? knowledgeReviewRequest?.created_at ?? knowledgeDraft?.created_at ?? invocationEvidence?.ingested_at ?? boundedInvocation?.completed_at ?? invocationAuthorization?.authorized_at ?? targetSessionVerification?.verified_at ?? runtimeActivation?.healthy_at ?? secretBrokerageAuthorization?.authorized_at ?? runtimeTrust?.granted_at ?? enablement?.enabled_at ?? validation?.validated_at ?? assignment?.assigned_at ?? binding?.bound_at ?? instance.retired_at ?? instance.created_at).toLocaleString()}
+                      {new Date(bundledRuntimeState?.changed_at ?? runtimeDeactivation?.deactivated_at ?? bundledConnectionTest?.checked_at ?? bundledConnection?.configured_at ?? knowledgeReviewerAssignment?.created_at ?? knowledgeReviewerAssignmentClaim?.claimed_at ?? knowledgeReviewRequest?.created_at ?? knowledgeDraft?.created_at ?? invocationEvidence?.ingested_at ?? boundedInvocation?.completed_at ?? invocationAuthorization?.authorized_at ?? targetSessionVerification?.verified_at ?? runtimeActivation?.healthy_at ?? secretBrokerageAuthorization?.authorized_at ?? runtimeTrust?.granted_at ?? enablement?.enabled_at ?? validation?.validated_at ?? assignment?.assigned_at ?? binding?.bound_at ?? instance.retired_at ?? instance.created_at).toLocaleString()}
                     </td>
                     <td>
                       {instance.instance_state === "disabled_unconfigured" &&
@@ -3410,6 +3580,7 @@ export default function InstalledMcpManagementWorkspace({
                               <button
                                 className="primary-button installed-mcp-row-action"
                                 type="button"
+                                disabled={enableBundledRuntimeMutation.isPending}
                                 aria-label={`${nextSetupAction.label} for ${instance.display_name}`}
                                 onClick={nextSetupAction.onClick}
                               >
@@ -3661,6 +3832,18 @@ export default function InstalledMcpManagementWorkspace({
               result,
             );
           }}
+        />
+      )}
+      {disablingBundledRuntime && (
+        <BundledRuntimeDisableDialog
+          instance={disablingBundledRuntime}
+          error={disableBundledRuntimeMutation.error}
+          pending={disableBundledRuntimeMutation.isPending}
+          onCancel={() => setDisablingBundledRuntime(null)}
+          onSubmit={(reason) => disableBundledRuntimeMutation.mutate({
+            instanceId: disablingBundledRuntime.instance_id,
+            reason,
+          })}
         />
       )}
       {retiring && <RetireMcpDialog instance={retiring} pending={retireMutation.isPending} onCancel={() => setRetiring(null)} onSubmit={(reason) => retireMutation.mutate({ instance: retiring, reason })} />}

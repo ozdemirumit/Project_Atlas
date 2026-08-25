@@ -74,13 +74,22 @@ beforeEach(() => {
 describe("BundledConnectionDialog", () => {
   it("configures target metadata without collecting a raw secret and runs a read-only test", async () => {
     const onTested = vi.fn();
+    const secretReferenceId = "secret.hitachi.opscenter.production-reader";
     renderDialog(onTested);
     fireEvent.change(await screen.findByRole("textbox", { name: "Hostname or IP address" }), {
       target: { value: configuration.hostname },
     });
+    fireEvent.change(screen.getByRole("textbox", { name: "Credential reference ID" }), {
+      target: { value: secretReferenceId },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Save connection" }));
 
-    await waitFor(() => expect(saveBundledConnectionConfiguration).toHaveBeenCalledOnce());
+    await waitFor(() => expect(saveBundledConnectionConfiguration).toHaveBeenCalledWith({
+      instanceId: connectorInstanceRecord.instance_id,
+      hostname: configuration.hostname,
+      port: configuration.port,
+      secretReferenceId,
+    }));
     expect(screen.queryByLabelText(/password|token|authorization header/i)).toBeNull();
     fireEvent.click(await screen.findByRole("button", { name: "Test connection" }));
     await waitFor(() => expect(testBundledConnectorConnection).toHaveBeenCalledWith(

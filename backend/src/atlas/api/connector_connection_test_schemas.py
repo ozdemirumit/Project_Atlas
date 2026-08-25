@@ -9,6 +9,9 @@ from atlas.api.schemas import ResponseMeta
 from atlas.modules.connectors.domain.bundled_connection_configuration import (
     BundledConnectionConfiguration,
 )
+from atlas.modules.connectors.domain.bundled_runtime_state import (
+    BundledConnectorRuntimeState,
+)
 from atlas.modules.connectors.domain.connection_test import ConnectorConnectionTestResult
 
 STABLE_ID = r"^[a-z][a-z0-9_.:-]{2,127}$"
@@ -80,4 +83,41 @@ class ConnectorConnectionTestResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     data: ConnectorConnectionTestData
+    meta: ResponseMeta
+
+
+class BundledRuntimeEnableInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    acknowledged_read_only_operation: Literal[True]
+
+
+class BundledRuntimeDisableInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(min_length=20, max_length=1000)
+    acknowledged_runtime_stop: Literal[True]
+
+
+class BundledRuntimeStateData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    instance_id: str
+    state: Literal["disabled", "enabled_read_only"]
+    version: int
+    changed_at: datetime | None
+    changed_by: str | None
+    reason: str | None
+    managed_infrastructure_contacted: Literal[False]
+    infrastructure_mutation_performed: Literal[False]
+
+    @classmethod
+    def from_domain(cls, record: BundledConnectorRuntimeState) -> BundledRuntimeStateData:
+        return cls.model_validate({field: getattr(record, field) for field in cls.model_fields})
+
+
+class BundledRuntimeStateResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: BundledRuntimeStateData
     meta: ResponseMeta

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -45,6 +46,10 @@ class DevelopmentEnvironmentCredentialMaterializer:
         if not self._enabled:
             raise ConnectorConnectionTestError("connection_test_credentials_unavailable")
         variable_name = self._references.get(secret_reference_id)
+        if variable_name is None:
+            match = re.fullmatch(r"secret\.hitachi\.([a-z0-9_]{3,64})", secret_reference_id)
+            if match is not None:
+                variable_name = f"ATLAS_HITACHI_{match.group(1).upper()}"
         value = os.environ.get(variable_name, "") if variable_name is not None else ""
         if (
             not value

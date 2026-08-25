@@ -345,6 +345,9 @@ from atlas.modules.connectors.adapters.bounded_invocation_synthetic import (
 from atlas.modules.connectors.adapters.bundled_connection_configuration_memory import (
     InMemoryBundledConnectionConfigurationRepository,
 )
+from atlas.modules.connectors.adapters.bundled_runtime_state_memory import (
+    InMemoryBundledConnectorRuntimeStateRepository,
+)
 from atlas.modules.connectors.adapters.capability_enablement_memory import (
     InMemoryConnectorCapabilityEnablementPolicySource,
     InMemoryConnectorCapabilityEnablementRepository,
@@ -633,6 +636,9 @@ from atlas.modules.connectors.application.bundled_catalog import (
 )
 from atlas.modules.connectors.application.bundled_connection_configuration import (
     BundledConnectionConfigurationService,
+)
+from atlas.modules.connectors.application.bundled_runtime_state import (
+    BundledConnectorRuntimeStateService,
 )
 from atlas.modules.connectors.application.capability_enablement import (
     ConnectorCapabilityEnablementService,
@@ -4846,24 +4852,36 @@ def create_app(
         environment_id=resolved_connector_instance_creation_service.environment_id,
     )
     bundled_connection_configuration_repository = InMemoryBundledConnectionConfigurationRepository()
+    bundled_runtime_state_repository = InMemoryBundledConnectorRuntimeStateRepository()
     resolved_bundled_connection_configuration_service = BundledConnectionConfigurationService(
         repository=bundled_connection_configuration_repository,
         instance_repository=resolved_connector_instance_creation_service.repository,
         audit_sink=resolved_audit_sink,
         environment_id=resolved_connector_instance_creation_service.environment_id,
         deployment_environment=resolved_settings.environment,
+        runtime_state_repository=bundled_runtime_state_repository,
     )
     hitachi_credential_materializer = DevelopmentEnvironmentCredentialMaterializer(
         deployment_environment=resolved_settings.environment,
         reference_environment_variables={"secret.hitachi.readonly": "ATLAS_HITACHI_AUTHORIZATION"},
     )
     hitachi_transport_factory = HitachiOpsCenterConnectionTestHttpsFactory()
+    connector_connection_test_result_repository = InMemoryConnectorConnectionTestResultRepository()
     resolved_connector_connection_test_service = ConnectorConnectionTestService(
         configuration_repository=bundled_connection_configuration_repository,
-        result_repository=InMemoryConnectorConnectionTestResultRepository(),
+        result_repository=connector_connection_test_result_repository,
         instance_repository=resolved_connector_instance_creation_service.repository,
         credential_materializer=hitachi_credential_materializer,
         transport_factory=hitachi_transport_factory,
+        audit_sink=resolved_audit_sink,
+        environment_id=resolved_connector_instance_creation_service.environment_id,
+        deployment_environment=resolved_settings.environment,
+    )
+    resolved_bundled_connector_runtime_state_service = BundledConnectorRuntimeStateService(
+        repository=bundled_runtime_state_repository,
+        configuration_repository=bundled_connection_configuration_repository,
+        connection_test_repository=connector_connection_test_result_repository,
+        instance_repository=resolved_connector_instance_creation_service.repository,
         audit_sink=resolved_audit_sink,
         environment_id=resolved_connector_instance_creation_service.environment_id,
         deployment_environment=resolved_settings.environment,
@@ -6872,6 +6890,7 @@ def create_app(
                 fallback_executor=SyntheticStorageHealthExecutor(),
                 organization_id=resolved_settings.development_organization_id,
                 environment_id=f"environment.{resolved_settings.environment}",
+                runtime_state_repository=bundled_runtime_state_repository,
             )
             if configured_hitachi_health_enabled
             else SyntheticStorageHealthExecutor()
@@ -9613,6 +9632,9 @@ def create_app(
             resolved_bundled_connection_configuration_service
         )
         app.state.connector_connection_test_service = resolved_connector_connection_test_service
+        app.state.bundled_connector_runtime_state_service = (
+            resolved_bundled_connector_runtime_state_service
+        )
         app.state.connector_instance_lifecycle_service = (
             resolved_connector_instance_lifecycle_service
         )
