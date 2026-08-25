@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createInventoryDevice,
   getInventoryDevices,
+  reactivateInventoryDevice,
   retireInventoryDevice,
+  updateInventoryDevice,
   type InventoryDevice,
 } from "./inventoryDevices";
 
@@ -165,6 +167,78 @@ describe("inventory device API client", () => {
     });
   });
 
+  it("updates mutable device details through the exact version-bound contract", async () => {
+    const updated = device({
+      version: 2,
+      display_name: "Primary Production VSP",
+      device_type: "storage",
+      vendor: "Hitachi Vantara",
+      model: "VSP E790H",
+      serial_number: null,
+      management_address: "vsp-prod.example.net",
+      purpose: "Use this array for production inventory and health correlation.",
+    });
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(response(updated));
+
+    await updateInventoryDevice({
+      device: device(),
+      changes: {
+        displayName: " Primary Production VSP ",
+        deviceType: "storage",
+        vendor: " Hitachi Vantara ",
+        model: " VSP E790H ",
+        serialNumber: " ",
+        managementAddress: " VSP-PROD.EXAMPLE.NET ",
+        purpose: " Use this array for production inventory and health correlation. ",
+      },
+    });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/api/v1/inventory/devices/inventory-device.test-01",
+    );
+    const request = fetchMock.mock.calls[0]?.[1];
+    expect(request?.method).toBe("PATCH");
+    if (typeof request?.body !== "string") throw new Error("Expected a JSON request body");
+    expect(JSON.parse(request.body)).toEqual({
+      schema_version: "atlas.inventory-device-update-input.v1",
+      expected_version: 1,
+      display_name: "Primary Production VSP",
+      device_type: "storage",
+      vendor: "Hitachi Vantara",
+      model: "VSP E790H",
+      serial_number: null,
+      management_address: "vsp-prod.example.net",
+      purpose: "Use this array for production inventory and health correlation.",
+    });
+  });
+
+  it("reactivates a retired device with only its schema and expected version", async () => {
+    const retired = device({
+      version: 2,
+      lifecycle: "retired",
+      retired_by: "subject.test",
+      retired_at: "2026-08-11T12:10:00Z",
+      retirement_reason: "The governed decommissioning workflow has completed.",
+    });
+    const reactivated = device({ version: 3 });
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(response(reactivated));
+
+    await reactivateInventoryDevice({ device: retired });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/api/v1/inventory/devices/inventory-device.test-01/reactivations",
+    );
+    const request = fetchMock.mock.calls[0]?.[1];
+    const headers = new Headers(request?.headers);
+    expect(request?.method).toBe("POST");
+    expect(headers.get("Idempotency-Key")).toMatch(/^inventory-device-reactivate\./);
+    if (typeof request?.body !== "string") throw new Error("Expected a JSON request body");
+    expect(JSON.parse(request.body)).toEqual({
+      schema_version: "atlas.inventory-device-reactivation-input.v1",
+      expected_version: 2,
+    });
+  });
+
   it("fails closed when list scope or requested lifecycle does not match", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       response({
@@ -233,5 +307,39 @@ describe("inventory device API client", () => {
         reason: "The governed decommissioning workflow has completed.",
       }),
     ).rejects.toMatchObject({ status: 500 });
+  });
+
+  it("fails closed when update or reactivation responses are not request-bound", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      response(device({ version: 2, display_name: "Unexpected name" })),
+    );
+    await expect(
+      updateInventoryDevice({
+        device: device(),
+        changes: {
+          displayName: "Primary Production VSP",
+          deviceType: "storage",
+          vendor: "Hitachi Vantara",
+          model: "VSP E790",
+          serialNumber: "SN-TEST-0001",
+          managementAddress: "vsp-01.lab.example",
+          purpose: "Register the array for governed inventory and health correlation.",
+        },
+      }),
+    ).rejects.toMatchObject({ status: 500 });
+
+    const retired = device({
+      version: 2,
+      lifecycle: "retired",
+      retired_by: "subject.test",
+      retired_at: "2026-08-11T12:10:00Z",
+      retirement_reason: "The governed decommissioning workflow has completed.",
+    });
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      response(device({ device_id: "inventory-device.other", version: 3 })),
+    );
+    await expect(reactivateInventoryDevice({ device: retired })).rejects.toMatchObject({
+      status: 500,
+    });
   });
 });

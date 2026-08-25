@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from typing import Any, cast
@@ -33,9 +34,11 @@ from atlas.api.routes import (
     bootstrap_trust,
     bootstrap_verification,
     bounded_invocations,
+    bundled_connector_catalog,
     capability_enablements,
     change_reviews,
     configuration_validations,
+    connector_connection_tests,
     connector_validations,
     connectors,
     content_policy_scans,
@@ -339,6 +342,9 @@ from atlas.modules.connectors.adapters.bounded_invocation_synthetic import (
     SyntheticConnectorBoundedInvocationAdapter,
     UnavailableConnectorBoundedInvocationAdapter,
 )
+from atlas.modules.connectors.adapters.bundled_connection_configuration_memory import (
+    InMemoryBundledConnectionConfigurationRepository,
+)
 from atlas.modules.connectors.adapters.capability_enablement_memory import (
     InMemoryConnectorCapabilityEnablementPolicySource,
     InMemoryConnectorCapabilityEnablementRepository,
@@ -354,6 +360,12 @@ from atlas.modules.connectors.adapters.configuration_validation_memory import (
 )
 from atlas.modules.connectors.adapters.configuration_validation_postgres import (
     PostgreSQLConnectorConfigurationValidationRepository,
+)
+from atlas.modules.connectors.adapters.connection_test_credential_environment import (
+    DevelopmentEnvironmentCredentialMaterializer,
+)
+from atlas.modules.connectors.adapters.connection_test_memory import (
+    InMemoryConnectorConnectionTestResultRepository,
 )
 from atlas.modules.connectors.adapters.content_policy_scan_memory import (
     InMemoryPackageContentPolicyScanRepository,
@@ -516,6 +528,9 @@ from atlas.modules.connectors.adapters.runtime_activation_synthetic import (
     SyntheticConnectorRuntimeActivator,
     UnavailableConnectorRuntimeActivator,
 )
+from atlas.modules.connectors.adapters.runtime_deactivation_memory import (
+    InMemoryConnectorRuntimeDeactivationRepository,
+)
 from atlas.modules.connectors.adapters.runtime_trust_memory import (
     InMemoryConnectorRuntimeTrustPolicySource,
     InMemoryConnectorRuntimeTrustProfileSource,
@@ -612,6 +627,13 @@ from atlas.modules.connectors.application.bounded_invocation import (
     ConnectorBoundedInvocationService,
     build_development_connector_bounded_invocation_policy,
 )
+from atlas.modules.connectors.application.bundled_catalog import (
+    BundledConnectorCatalogService,
+    build_hitachi_ops_center_bundled_descriptor,
+)
+from atlas.modules.connectors.application.bundled_connection_configuration import (
+    BundledConnectionConfigurationService,
+)
 from atlas.modules.connectors.application.capability_enablement import (
     ConnectorCapabilityEnablementService,
     build_development_connector_capability_enablement_policy,
@@ -620,6 +642,7 @@ from atlas.modules.connectors.application.configuration_validation import (
     ConnectorConfigurationValidationService,
     build_development_connector_configuration_validation_policy,
 )
+from atlas.modules.connectors.application.connection_test import ConnectorConnectionTestService
 from atlas.modules.connectors.application.content_policy_scan import PackageContentPolicyScanService
 from atlas.modules.connectors.application.contract_validation import (
     PackageContractValidationService,
@@ -695,6 +718,9 @@ from atlas.modules.connectors.application.runtime_activation import (
     ConnectorRuntimeActivationService,
     build_development_connector_runtime_activation_policy,
 )
+from atlas.modules.connectors.application.runtime_deactivation import (
+    ConnectorRuntimeDeactivationService,
+)
 from atlas.modules.connectors.application.runtime_trust import (
     ConnectorRuntimeTrustService,
     build_development_connector_runtime_trust_policy,
@@ -747,6 +773,9 @@ from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
     ConnectorUpgradeSigningProviderOnboardingPolicySnapshot,
     ConnectorUpgradeSigningProviderOnboardingPolicyTrustKey,
 )
+from atlas.modules.connectors.vendors.hitachi_ops_center.connection_test_https import (
+    HitachiOpsCenterConnectionTestHttpsFactory,
+)
 from atlas.modules.conversations.adapters.grounded import GroundedConversationGenerator
 from atlas.modules.conversations.adapters.memory import InMemoryConversationRepository
 from atlas.modules.conversations.adapters.postgres import PostgreSQLConversationRepository
@@ -764,6 +793,10 @@ from atlas.modules.conversations.domain.models import (
 from atlas.modules.graph.adapters.synthetic import build_synthetic_graph_snapshot
 from atlas.modules.graph.application.engine import InMemoryGraphImpactAnalyzer
 from atlas.modules.graph.application.service import GraphImpactService
+from atlas.modules.health_checks.adapters.configured_hitachi import (
+    ConfiguredHitachiHealthExecutor,
+)
+from atlas.modules.health_checks.adapters.hitachi import CONTROLLER_DEFINITION_ID
 from atlas.modules.health_checks.adapters.synthetic import (
     SyntheticStorageHealthExecutor,
     build_synthetic_health_check_definitions,
@@ -3230,6 +3263,7 @@ def create_app(
     runtime_trust_service: ConnectorRuntimeTrustService | None = None,
     secret_brokerage_service: ConnectorSecretBrokerageService | None = None,
     runtime_activation_service: ConnectorRuntimeActivationService | None = None,
+    runtime_deactivation_service: ConnectorRuntimeDeactivationService | None = None,
     target_session_service: ConnectorTargetSessionService | None = None,
     invocation_authorization_service: ConnectorInvocationAuthorizationService | None = None,
     bounded_invocation_service: ConnectorBoundedInvocationService | None = None,
@@ -4805,6 +4839,47 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
+    resolved_bundled_connector_catalog_service = BundledConnectorCatalogService(
+        descriptors=(() if is_production else (build_hitachi_ops_center_bundled_descriptor(),)),
+        repository=resolved_connector_instance_creation_service.repository,
+        audit_sink=resolved_audit_sink,
+        environment_id=resolved_connector_instance_creation_service.environment_id,
+    )
+    bundled_connection_configuration_repository = InMemoryBundledConnectionConfigurationRepository()
+    resolved_bundled_connection_configuration_service = BundledConnectionConfigurationService(
+        repository=bundled_connection_configuration_repository,
+        instance_repository=resolved_connector_instance_creation_service.repository,
+        audit_sink=resolved_audit_sink,
+        environment_id=resolved_connector_instance_creation_service.environment_id,
+        deployment_environment=resolved_settings.environment,
+    )
+    hitachi_credential_materializer = DevelopmentEnvironmentCredentialMaterializer(
+        deployment_environment=resolved_settings.environment,
+        reference_environment_variables={"secret.hitachi.readonly": "ATLAS_HITACHI_AUTHORIZATION"},
+    )
+    hitachi_transport_factory = HitachiOpsCenterConnectionTestHttpsFactory()
+    resolved_connector_connection_test_service = ConnectorConnectionTestService(
+        configuration_repository=bundled_connection_configuration_repository,
+        result_repository=InMemoryConnectorConnectionTestResultRepository(),
+        instance_repository=resolved_connector_instance_creation_service.repository,
+        credential_materializer=hitachi_credential_materializer,
+        transport_factory=hitachi_transport_factory,
+        audit_sink=resolved_audit_sink,
+        environment_id=resolved_connector_instance_creation_service.environment_id,
+        deployment_environment=resolved_settings.environment,
+    )
+    if runtime_deactivation_service is not None:
+        resolved_runtime_deactivation_service = runtime_deactivation_service
+    else:
+        resolved_runtime_deactivation_service = ConnectorRuntimeDeactivationService(
+            repository=InMemoryConnectorRuntimeDeactivationRepository(),
+            activation_source=resolved_runtime_activation_service,
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
+    resolved_runtime_activation_service.bind_deactivation_source(
+        resolved_runtime_deactivation_service.repository
+    )
     if target_session_service is not None:
         resolved_target_session_service = target_session_service
     else:
@@ -6758,15 +6833,53 @@ def create_app(
         analyzer=resolved_graph_analyzer,
         audit_sink=resolved_audit_sink,
     )
-    health_check_definitions = build_synthetic_health_check_definitions(
+    base_health_check_definitions = build_synthetic_health_check_definitions(
         organization_id=resolved_settings.development_organization_id,
         environment=resolved_settings.environment,
     )
+    configured_hitachi_health_enabled = resolved_settings.environment == "development"
+    health_check_definitions = (
+        tuple(
+            replace(
+                definition,
+                connector_id="connector.hitachi.opscenter.configuration-manager",
+                connector_version="0.1.0",
+                target_id="target.hitachi.opscenter.configured",
+            )
+            if definition.definition_id == CONTROLLER_DEFINITION_ID
+            else definition
+            for definition in base_health_check_definitions
+        )
+        if configured_hitachi_health_enabled
+        else base_health_check_definitions
+    )
+    synthetic_latest_runs = build_synthetic_latest_runs(health_check_definitions)
     resolved_health_check_service = health_check_service or HealthCheckService(
         definitions=health_check_definitions,
-        latest_runs=build_synthetic_latest_runs(health_check_definitions),
-        executor=SyntheticStorageHealthExecutor(),
+        latest_runs=tuple(
+            run
+            for run in synthetic_latest_runs
+            if not configured_hitachi_health_enabled
+            or run.definition_id != CONTROLLER_DEFINITION_ID
+        ),
+        executor=(
+            ConfiguredHitachiHealthExecutor(
+                configuration_repository=bundled_connection_configuration_repository,
+                instance_repository=resolved_connector_instance_creation_service.repository,
+                inventory_repository=resolved_inventory_device_service.repository,
+                credential_materializer=hitachi_credential_materializer,
+                transport_factory=hitachi_transport_factory,
+                fallback_executor=SyntheticStorageHealthExecutor(),
+                organization_id=resolved_settings.development_organization_id,
+                environment_id=f"environment.{resolved_settings.environment}",
+            )
+            if configured_hitachi_health_enabled
+            else SyntheticStorageHealthExecutor()
+        ),
         audit_sink=resolved_audit_sink,
+        data_profile=(
+            "configured_hitachi_read_only" if configured_hitachi_health_enabled else "synthetic_lab"
+        ),
     )
     resolved_investigation_service = investigation_service or InvestigationService(
         assembler=SyntheticInvestigationAssembler(),
@@ -9495,6 +9608,11 @@ def create_app(
         app.state.package_registration_service = resolved_package_registration_service
         app.state.package_installation_service = resolved_package_installation_service
         app.state.connector_instance_creation_service = resolved_connector_instance_creation_service
+        app.state.bundled_connector_catalog_service = resolved_bundled_connector_catalog_service
+        app.state.bundled_connection_configuration_service = (
+            resolved_bundled_connection_configuration_service
+        )
+        app.state.connector_connection_test_service = resolved_connector_connection_test_service
         app.state.connector_instance_lifecycle_service = (
             resolved_connector_instance_lifecycle_service
         )
@@ -9507,6 +9625,7 @@ def create_app(
         app.state.runtime_trust_service = resolved_runtime_trust_service
         app.state.secret_brokerage_service = resolved_secret_brokerage_service
         app.state.runtime_activation_service = resolved_runtime_activation_service
+        app.state.runtime_deactivation_service = resolved_runtime_deactivation_service
         app.state.target_session_service = resolved_target_session_service
         app.state.invocation_authorization_service = resolved_invocation_authorization_service
         app.state.bounded_invocation_service = resolved_bounded_invocation_service
@@ -9962,6 +10081,7 @@ def create_app(
         await resolved_bounded_invocation_service.close()
         await resolved_invocation_authorization_service.close()
         await resolved_target_session_service.close()
+        await resolved_runtime_deactivation_service.close()
         await resolved_runtime_activation_service.close()
         await resolved_secret_brokerage_service.close()
         await resolved_runtime_trust_service.close()
@@ -10083,6 +10203,8 @@ def create_app(
     app.include_router(package_registrations.router, prefix="/api/v1")
     app.include_router(package_installations.router, prefix="/api/v1")
     app.include_router(instance_creation.router, prefix="/api/v1")
+    app.include_router(bundled_connector_catalog.router, prefix="/api/v1")
+    app.include_router(connector_connection_tests.router, prefix="/api/v1")
     app.include_router(target_configuration.router, prefix="/api/v1")
     app.include_router(credential_assignments.router, prefix="/api/v1")
     app.include_router(configuration_validations.router, prefix="/api/v1")

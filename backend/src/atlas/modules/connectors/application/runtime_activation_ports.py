@@ -15,6 +15,9 @@ from atlas.modules.connectors.domain.runtime_activation import (
     ConnectorRuntimeActivationReceipt,
     ConnectorRuntimeActivationRecord,
 )
+from atlas.modules.connectors.domain.runtime_deactivation import (
+    ConnectorRuntimeDeactivationRecord,
+)
 from atlas.modules.connectors.domain.runtime_trust import ConnectorRuntimeTrustGrantRecord
 from atlas.modules.connectors.domain.secret_brokerage import (
     ConnectorSecretBrokerageAuthorizationRecord,
@@ -176,3 +179,13 @@ class ConnectorRuntimeActivationRepository(Protocol):
     async def add(self, record: ConnectorRuntimeActivationRecord) -> bool: ...
 
     async def close(self) -> None: ...
+
+
+class ConnectorRuntimeDeactivationStatusSource(Protocol):
+    async def get_by_activation_in_scope(
+        self,
+        *,
+        activation_id: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> ConnectorRuntimeDeactivationRecord | None: ...

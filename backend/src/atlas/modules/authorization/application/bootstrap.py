@@ -303,6 +303,7 @@ CONNECTOR_RUNTIME_TRUST_READ = "connectors.runtime-trust-grants.read"
 CONNECTOR_SECRET_BROKERAGE_CREATE = "connectors.secret-brokerage-authorizations.create"
 CONNECTOR_SECRET_BROKERAGE_READ = "connectors.secret-brokerage-authorizations.read"
 CONNECTOR_RUNTIME_ACTIVATION_CREATE = "connectors.runtime-activations.create"
+CONNECTOR_RUNTIME_ACTIVATION_DEACTIVATE = "connectors.runtime-activations.deactivate"
 CONNECTOR_RUNTIME_ACTIVATION_READ = "connectors.runtime-activations.read"
 CONNECTOR_TARGET_SESSION_CREATE = "connectors.target-session-verifications.create"
 CONNECTOR_TARGET_SESSION_READ = "connectors.target-session-verifications.read"
@@ -3184,6 +3185,12 @@ def build_development_authorization_service(
             description="Activate one exact governed connector runtime boundary.",
         ),
         PermissionDefinition(
+            permission_id=CONNECTOR_RUNTIME_ACTIVATION_DEACTIVATE,
+            description=(
+                "Disable one Atlas connector runtime without managed infrastructure action."
+            ),
+        ),
+        PermissionDefinition(
             permission_id=CONNECTOR_RUNTIME_ACTIVATION_READ,
             description="Read one minimized immutable connector runtime activation.",
         ),
@@ -3715,6 +3722,7 @@ def build_development_authorization_service(
                 CONNECTOR_SECRET_BROKERAGE_CREATE,
                 CONNECTOR_SECRET_BROKERAGE_READ,
                 CONNECTOR_RUNTIME_ACTIVATION_CREATE,
+                CONNECTOR_RUNTIME_ACTIVATION_DEACTIVATE,
                 CONNECTOR_RUNTIME_ACTIVATION_READ,
                 CONNECTOR_TARGET_SESSION_CREATE,
                 CONNECTOR_TARGET_SESSION_READ,

@@ -22,6 +22,7 @@ from atlas.modules.connectors.application.runtime_activation_ports import (
     ConnectorRuntimeActivationRepository,
     ConnectorRuntimeActivationSource,
     ConnectorRuntimeActivator,
+    ConnectorRuntimeDeactivationStatusSource,
 )
 from atlas.modules.connectors.application.runtime_trust_ports import ConnectorRuntimeTrustError
 from atlas.modules.connectors.application.secret_brokerage_ports import (
@@ -84,6 +85,7 @@ class ConnectorRuntimeActivationService:
         activator: ConnectorRuntimeActivator,
         audit_sink: AuditSink,
         environment_id: str,
+        deactivation_source: ConnectorRuntimeDeactivationStatusSource | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._repository = repository
@@ -93,12 +95,33 @@ class ConnectorRuntimeActivationService:
         self._activator = activator
         self._audit_sink = audit_sink
         self._environment_id = environment_id
+        self._deactivation_source = deactivation_source
         self._clock = clock or (lambda: datetime.now(UTC))
         self._mutation_lock = asyncio.Lock()
 
     @property
     def repository(self) -> ConnectorRuntimeActivationRepository:
         return self._repository
+
+    def bind_deactivation_source(self, source: ConnectorRuntimeDeactivationStatusSource) -> None:
+        self._deactivation_source = source
+
+    async def get_activation_for_deactivation(
+        self,
+        *,
+        activation_id: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> ConnectorRuntimeActivationRecord | None:
+        record = await self._repository.get_in_scope(
+            activation_id=activation_id,
+            organization_id=organization_id,
+            environment_id=environment_id,
+        )
+        if record is None:
+            return None
+        self._verify_record(record)
+        return record
 
     async def create(
         self,
@@ -482,7 +505,7 @@ class ConnectorRuntimeActivationService:
         )
         if record is None:
             raise ConnectorRuntimeActivationError("runtime_activation_record_not_found")
-        current = await self._current_record(record)
+        current = await self._current_record(record, require_active=False)
         await self._audit(
             actor,
             correlation_id,
@@ -513,7 +536,9 @@ class ConnectorRuntimeActivationService:
                 environment_id=self._environment_id,
             )
             candidates = (candidate,) if candidate is not None else ()
-        visible = [await self._current_record(record) for record in candidates]
+        visible = [
+            await self._current_record(record, require_active=False) for record in candidates
+        ]
         visible.sort(key=lambda item: item.activation_id)
         await self._audit(
             actor,
@@ -724,9 +749,25 @@ class ConnectorRuntimeActivationService:
         return activation, enablement, frozenset(actors | source_actors)
 
     async def _current_record(
-        self, record: ConnectorRuntimeActivationRecord
+        self,
+        record: ConnectorRuntimeActivationRecord,
+        *,
+        require_active: bool = True,
     ) -> ConnectorRuntimeActivationRecord:
         self._verify_record(record)
+        if require_active and self._deactivation_source is not None:
+            try:
+                deactivation = await self._deactivation_source.get_by_activation_in_scope(
+                    activation_id=record.activation_id,
+                    organization_id=record.organization_id,
+                    environment_id=record.environment_id,
+                )
+            except Exception as error:
+                raise ConnectorRuntimeActivationError(
+                    "runtime_activation_deactivation_state_unavailable"
+                ) from error
+            if deactivation is not None:
+                raise ConnectorRuntimeActivationError("runtime_activation_deactivated")
         try:
             (
                 source,

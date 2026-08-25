@@ -4,6 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiRequestError } from "../../api/client";
 import {
+  createBundledConnectorInstance,
+  getBundledConnectorCatalog,
+  type BundledConnectorDescriptor,
+} from "../../api/bundledConnectorCatalog";
+import {
   createConnectorCapabilityEnablement,
   getConnectorCapabilityEnablementOptions,
   getConnectorCapabilityEnablements,
@@ -95,6 +100,11 @@ import {
   getConnectorRuntimeActivations,
 } from "../../api/runtimeActivations";
 import {
+  deactivateConnectorRuntime,
+  getConnectorRuntimeDeactivations,
+  type ConnectorRuntimeDeactivation,
+} from "../../api/runtimeDeactivations";
+import {
   createConnectorSecretBrokerageAuthorization,
   getConnectorSecretBrokerageAuthorizationOptions,
   getConnectorSecretBrokerageAuthorizations,
@@ -174,6 +184,48 @@ const policy: ConnectorInstanceCreationPolicy = {
   expires_at: "2030-01-01T00:00:00Z",
   canonical_digest: "f".repeat(64),
 };
+
+const runtimeDeactivation: ConnectorRuntimeDeactivation = {
+  deactivation_id: "connector-runtime-deactivation.test",
+  activation_id: runtimeActivationInventoryItem.activation_id,
+  activation_version: 1,
+  connector_id: runtimeActivationInventoryItem.connector_id,
+  instance_id: runtimeActivationInventoryItem.instance_id,
+  effective_runtime_state: "disabled_runtime",
+  deactivated_by: "subject.connector-operator",
+  reason: "Disable this Atlas runtime during planned maintenance.",
+  deactivated_at: "2026-08-25T12:00:00Z",
+  atlas_runtime_disabled: true,
+  target_authority_revoked: true,
+  managed_infrastructure_contacted: false,
+  infrastructure_mutation_performed: false,
+  reused: false,
+};
+
+const bundledDescriptor = {
+  catalog_item_id: "catalog.connector.hitachi.opscenter",
+  schema_version: "atlas.bundled-connector-descriptor.v1",
+  version: 1,
+  connector_id: "connector.hitachi.opscenter",
+  display_name: "Hitachi Ops Center API Configuration Manager",
+  vendor_name: "Hitachi Vantara",
+  release_version: "version.0.1.0",
+  sdk_profile: "atlas.python312.v1",
+  capability_ids: ["capability.hitachi.inventory"],
+  capability_classes: ["C1"],
+  canonical_digest: "a".repeat(64),
+  trusted_bundled: true,
+  development_only: true,
+  catalog_evidence_only: true,
+  target_authority_granted: false,
+  credential_authority_granted: false,
+  capability_authority_granted: false,
+  network_authority_granted: false,
+  runtime_authority_granted: false,
+  execution_authorized: false,
+  deployment_approved: false,
+  infrastructure_mutation_performed: false,
+} satisfies BundledConnectorDescriptor;
 
 const configuredBinding = {
   binding_id: "connector-target-configuration-binding.test",
@@ -932,6 +984,24 @@ vi.mock("../../api/runtimeActivations", async (importOriginal) => {
   };
 });
 
+vi.mock("../../api/bundledConnectorCatalog", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../api/bundledConnectorCatalog")>();
+  return {
+    ...original,
+    createBundledConnectorInstance: vi.fn(),
+    getBundledConnectorCatalog: vi.fn(),
+  };
+});
+
+vi.mock("../../api/runtimeDeactivations", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../api/runtimeDeactivations")>();
+  return {
+    ...original,
+    deactivateConnectorRuntime: vi.fn(),
+    getConnectorRuntimeDeactivations: vi.fn(),
+  };
+});
+
 vi.mock("../../api/targetSessionVerifications", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/targetSessionVerifications")>();
   return {
@@ -1049,6 +1119,48 @@ function renderWorkspace(
   );
 }
 
+function openAdvancedGovernance() {
+  const summary = screen.getByText("Advanced governance");
+  const details = summary.closest("details");
+  if (!details) throw new Error("Advanced governance details were not rendered");
+  if (!details.open) fireEvent.click(summary);
+  expect(details.open).toBe(true);
+  return details;
+}
+
+function primeSetupThrough(completedSteps: number) {
+  if (completedSteps >= 1) {
+    vi.mocked(getConnectorTargetConfigurations).mockResolvedValue([configuredBinding]);
+  }
+  if (completedSteps >= 2) {
+    vi.mocked(getConnectorCredentialAssignments).mockResolvedValue([credentialAssignment]);
+  }
+  if (completedSteps >= 3) {
+    vi.mocked(getConnectorConfigurationValidations).mockResolvedValue([configurationValidation]);
+  }
+  if (completedSteps >= 4) {
+    vi.mocked(getConnectorCapabilityEnablements).mockResolvedValue([
+      capabilityEnablementInventoryItem,
+    ]);
+  }
+  if (completedSteps >= 5) {
+    vi.mocked(getConnectorRuntimeTrustGrants).mockResolvedValue([runtimeTrustGrant]);
+  }
+  if (completedSteps >= 6) {
+    vi.mocked(getConnectorSecretBrokerageAuthorizations).mockResolvedValue([
+      secretBrokerageAuthorization,
+    ]);
+  }
+  if (completedSteps >= 7) {
+    vi.mocked(getConnectorRuntimeActivations).mockResolvedValue([runtimeActivationInventoryItem]);
+  }
+  if (completedSteps >= 8) {
+    vi.mocked(getConnectorTargetSessionVerifications).mockResolvedValue([
+      targetSessionVerificationInventoryItem,
+    ]);
+  }
+}
+
 function primeOperationalEvidenceLifecycle() {
   vi.mocked(getConnectorTargetConfigurations).mockResolvedValue([configuredBinding]);
   vi.mocked(getConnectorCredentialAssignments).mockResolvedValue([credentialAssignment]);
@@ -1076,6 +1188,8 @@ function primeOperationalEvidenceLifecycle() {
 }
 
 beforeEach(() => {
+  vi.mocked(getBundledConnectorCatalog).mockResolvedValue([]);
+  vi.mocked(createBundledConnectorInstance).mockRejectedValue(new Error("Not configured"));
   vi.mocked(getConnectorPackageInstallations).mockResolvedValue([installation]);
   vi.mocked(getConnectorInstanceCreationPolicies).mockResolvedValue([policy]);
   vi.mocked(getConnectorInstances).mockResolvedValue([instance]);
@@ -1100,6 +1214,8 @@ beforeEach(() => {
   vi.mocked(createConnectorRuntimeActivation).mockResolvedValue({
     data: runtimeActivationInventoryItem,
   });
+  vi.mocked(getConnectorRuntimeDeactivations).mockResolvedValue([]);
+  vi.mocked(deactivateConnectorRuntime).mockResolvedValue(runtimeDeactivation);
   vi.mocked(getConnectorTargetSessionVerifications).mockResolvedValue([]);
   vi.mocked(getConnectorTargetSessionVerificationOptions).mockResolvedValue([]);
   vi.mocked(createConnectorTargetSessionVerification).mockResolvedValue({
@@ -1184,6 +1300,47 @@ afterEach(() => {
 });
 
 describe("InstalledMcpManagementWorkspace", () => {
+  it.each([
+    [0, "Configure target"],
+    [1, "Assign credential reference"],
+    [2, "Validate configuration"],
+    [3, "Govern capabilities"],
+    [4, "Establish runtime trust"],
+    [5, "Authorize secret brokerage"],
+    [6, "Activate runtime"],
+    [7, "Verify target session"],
+  ])("surfaces setup step %i as the single primary next action", async (completedSteps, action) => {
+    primeSetupThrough(completedSteps);
+    renderWorkspace();
+
+    const progress = await screen.findByRole("progressbar", {
+      name: "Setup progress for Storage East",
+    });
+    expect(progress).toHaveAttribute("aria-valuenow", String(completedSteps));
+    expect(screen.getByRole("button", {
+      name: `${action} for Storage East`,
+    })).toBeVisible();
+    expect(screen.getAllByText("Next action")).toHaveLength(1);
+  });
+
+  it("shows setup completion and keeps advanced governance collapsed by default", async () => {
+    primeSetupThrough(8);
+    renderWorkspace();
+
+    expect(await screen.findByText("Setup complete")).toBeVisible();
+    const summary = screen.getByText("Advanced governance");
+    const details = summary.closest("details") as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    expect(screen.getByRole("button", { name: "Review update for Storage East" }))
+      .not.toBeVisible();
+
+    openAdvancedGovernance();
+    expect(screen.getByRole("button", { name: "Review update for Storage East" }))
+      .toBeVisible();
+    expect(screen.getByRole("button", { name: "View target session for Storage East" }))
+      .toBeVisible();
+  });
+
   it("refreshes runtime trust, secret brokerage, runtime activation and target session inventory", async () => {
     renderWorkspace();
 
@@ -1210,12 +1367,13 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(await screen.findByRole("heading", { name: "Installed MCPs" })).toBeVisible();
     expect(await screen.findByText("Storage East")).toBeVisible();
     expect(screen.getByText("Backend authorization enforced")).toBeVisible();
-    expect(screen.getByText("1 governed package")).toBeVisible();
+    expect(screen.getByText("1 MCP available")).toBeVisible();
     expect(screen.getByText("1 creation policy")).toBeVisible();
     expect(screen.getByRole("button", { name: "Add MCP" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Remove Storage East" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "Review update for Storage East" }))
-      .toHaveTextContent("Review update");
+    const reviewUpdate = screen.getByRole("button", { name: "Review update for Storage East" });
+    expect(reviewUpdate).toHaveTextContent("Review update");
+    expect(reviewUpdate).not.toBeVisible();
     expect(screen.getByRole("button", { name: "Remove Storage East" }))
       .toHaveTextContent("Remove");
     expect(screen.getByText("Security and onboarding diagnostics")).toBeVisible();
@@ -1241,11 +1399,37 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(screen.getAllByText("key.connector-upgrade-evidence.test")).toHaveLength(2);
     expect(screen.getByText("Verification trusted")).toBeVisible();
     expect(screen.getByText(/No key management or signing authority/i)).toBeVisible();
+    openAdvancedGovernance();
     expect(screen.getByRole("button", { name: "Review update for Storage East" })).toBeVisible();
     expect(screen.queryByRole("button", { name: /delete/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /rotate|revoke|disable|export key/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /configure provider|approve provider/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /upload|trust key|sign policy/i })).toBeNull();
+  });
+
+  it("adds the bundled Hitachi MCP directly from the visible catalog", async () => {
+    vi.mocked(getConnectorPackageInstallations).mockResolvedValue([]);
+    vi.mocked(getConnectorInstanceCreationPolicies).mockResolvedValue([]);
+    vi.mocked(getBundledConnectorCatalog).mockResolvedValue([bundledDescriptor]);
+    vi.mocked(createBundledConnectorInstance).mockResolvedValue({} as never);
+    renderWorkspace();
+
+    expect(await screen.findByText("1 MCP available")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Add MCP" }));
+    const dialog = screen.getByRole("dialog", { name: "Add MCP" });
+    expect(within(dialog).getByRole("combobox", { name: "Available MCP" }))
+      .toHaveValue(bundledDescriptor.catalog_item_id);
+    expect(within(dialog).getByText("Hitachi Vantara")).toBeVisible();
+    fireEvent.click(within(dialog).getByRole("checkbox"));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add disabled MCP" }));
+
+    await waitFor(() => expect(createBundledConnectorInstance).toHaveBeenCalledOnce());
+    expect(vi.mocked(createBundledConnectorInstance).mock.calls[0]?.[0]).toEqual({
+      descriptor: bundledDescriptor,
+      instanceKey: `${bundledDescriptor.connector_id}-managed`,
+      displayName: `${bundledDescriptor.display_name} managed`,
+      purpose: "Create a disabled MCP identity for governed lifecycle management.",
+    });
   });
 
   it("restores configured target state and hides retirement for the bound MCP", async () => {
@@ -1254,6 +1438,7 @@ describe("InstalledMcpManagementWorkspace", () => {
 
     expect(await screen.findByText("Disabled / target configured")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Remove Storage East" })).toBeNull();
+    openAdvancedGovernance();
     const viewTarget = screen.getByRole("button", { name: "View target for Storage East" });
     expect(viewTarget).toBeVisible();
     fireEvent.click(viewTarget);
@@ -1272,6 +1457,7 @@ describe("InstalledMcpManagementWorkspace", () => {
 
     expect(await screen.findByText("Disabled / credentials assigned")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Remove Storage East" })).toBeNull();
+    openAdvancedGovernance();
     expect(screen.getByRole("button", { name: "View target for Storage East" })).toBeVisible();
     const viewCredentials = screen.getByRole("button", {
       name: "View credentials for Storage East",
@@ -1296,6 +1482,7 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(await screen.findByText("Disabled / configuration validated")).toBeVisible();
     expect(screen.getByText("Configuration validated")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Remove Storage East" })).toBeNull();
+    openAdvancedGovernance();
     expect(screen.getByRole("button", { name: "View target for Storage East" })).toBeVisible();
     expect(screen.getByRole("button", { name: "View credentials for Storage East" })).toBeVisible();
     const viewValidation = screen.getByRole("button", {
@@ -1350,9 +1537,9 @@ describe("InstalledMcpManagementWorkspace", () => {
 
     expect(await screen.findByText("Disabled / configuration validated")).toBeVisible();
     const manageCapabilities = screen.getByRole("button", {
-      name: "Manage capabilities for Storage East",
+      name: "Govern capabilities for Storage East",
     });
-    expect(manageCapabilities).toHaveTextContent("Enable governed capabilities");
+    expect(manageCapabilities).toHaveTextContent("Govern capabilities");
     fireEvent.click(manageCapabilities);
 
     expect(
@@ -1374,6 +1561,7 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(await screen.findByText(capabilityEnablement.enablement_id)).toBeVisible();
     expect(screen.getByText("Enabled / capabilities governed")).toBeVisible();
     expect(screen.getByText("Capabilities governed")).toBeVisible();
+    openAdvancedGovernance();
     expect(screen.getByRole("button", { name: "View capabilities for Storage East" }))
       .toHaveTextContent("View capabilities");
     const dialog = screen.getByRole("dialog", { name: "Manage capabilities for Storage East" });
@@ -1594,6 +1782,34 @@ describe("InstalledMcpManagementWorkspace", () => {
     })).toBeNull();
   });
 
+  it("disables only the Atlas runtime and reflects the revoked authority", async () => {
+    primeSetupThrough(7);
+    renderWorkspace();
+
+    expect(await screen.findByText("Enabled / runtime healthy")).toBeVisible();
+    const governance = openAdvancedGovernance();
+    fireEvent.click(within(governance).getByRole("button", {
+      name: "Disable runtime for Storage East",
+    }));
+    const dialog = screen.getByRole("dialog", {
+      name: "Disable runtime for Storage East",
+    });
+    expect(within(dialog).getByText(/does not contact or change the managed infrastructure/i))
+      .toBeVisible();
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Reason" }), {
+      target: { value: runtimeDeactivation.reason },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Disable runtime" }));
+
+    await waitFor(() => expect(deactivateConnectorRuntime).toHaveBeenCalledWith({
+      activation: runtimeActivationInventoryItem,
+      reason: runtimeDeactivation.reason,
+    }));
+    expect(await screen.findByText("Disabled / runtime stopped")).toBeVisible();
+    expect(screen.getAllByText("Runtime disabled")).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: "Activate runtime for Storage East" })).toBeNull();
+  });
+
   it("removes stale runtime-health state when authoritative refresh fails", async () => {
     vi.mocked(getConnectorTargetConfigurations).mockResolvedValue([configuredBinding]);
     vi.mocked(getConnectorCredentialAssignments).mockResolvedValue([credentialAssignment]);
@@ -1712,7 +1928,9 @@ describe("InstalledMcpManagementWorkspace", () => {
     ]);
     renderWorkspace();
 
-    fireEvent.click(await screen.findByRole("button", {
+    await screen.findByText("Enabled / target session verified");
+    openAdvancedGovernance();
+    fireEvent.click(screen.getByRole("button", {
       name: "Authorize invocation for Storage East",
     }));
     const dialog = screen.getByRole("dialog", {
@@ -1761,7 +1979,9 @@ describe("InstalledMcpManagementWorkspace", () => {
     ]);
     renderWorkspace();
 
-    fireEvent.click(await screen.findByRole("button", {
+    await screen.findByText("Enabled / invocation authorized");
+    openAdvancedGovernance();
+    fireEvent.click(screen.getByRole("button", {
       name: "View authorization for Storage East",
     }));
     const dialog = screen.getByRole("dialog", {
@@ -1835,7 +2055,9 @@ describe("InstalledMcpManagementWorkspace", () => {
     ]);
     renderWorkspace();
 
-    fireEvent.click(await screen.findByRole("button", {
+    await screen.findByText("Enabled / invocation authorized");
+    openAdvancedGovernance();
+    fireEvent.click(screen.getByRole("button", {
       name: "Invoke once for Storage East",
     }));
     const dialog = screen.getByRole("dialog", {
@@ -1889,6 +2111,7 @@ describe("InstalledMcpManagementWorkspace", () => {
     renderWorkspace();
 
     expect(await screen.findByText("Enabled / capability invoked")).toBeVisible();
+    openAdvancedGovernance();
     fireEvent.click(screen.getByRole("button", {
       name: "View invocation for Storage East",
     }));
@@ -1967,7 +2190,9 @@ describe("InstalledMcpManagementWorkspace", () => {
     ]);
     renderWorkspace();
 
-    fireEvent.click(await screen.findByRole("button", {
+    await screen.findByText("Enabled / capability invoked");
+    openAdvancedGovernance();
+    fireEvent.click(screen.getByRole("button", {
       name: "Preserve evidence for Storage East",
     }));
     const dialog = screen.getByRole("dialog", {
@@ -2027,6 +2252,7 @@ describe("InstalledMcpManagementWorkspace", () => {
     renderWorkspace();
 
     expect(await screen.findByText("Enabled / evidence preserved")).toBeVisible();
+    openAdvancedGovernance();
     fireEvent.click(screen.getByRole("button", {
       name: "View evidence for Storage East",
     }));
@@ -2052,7 +2278,9 @@ describe("InstalledMcpManagementWorkspace", () => {
     ]);
     renderWorkspace();
 
-    fireEvent.click(await screen.findByRole("button", {
+    await screen.findByText("Enabled / evidence preserved");
+    openAdvancedGovernance();
+    fireEvent.click(screen.getByRole("button", {
       name: "Curate knowledge for Storage East",
     }));
     const dialog = screen.getByRole("dialog", { name: "Curate knowledge for Storage East" });
@@ -2085,7 +2313,9 @@ describe("InstalledMcpManagementWorkspace", () => {
     ]);
     renderWorkspace();
 
-    fireEvent.click(await screen.findByRole("button", { name: "View draft for Storage East" }));
+    await screen.findByText("Enabled / knowledge draft");
+    openAdvancedGovernance();
+    fireEvent.click(screen.getByRole("button", { name: "View draft for Storage East" }));
     const dialog = screen.getByRole("dialog", { name: "Curate knowledge for Storage East" });
     expect(within(dialog).getByText(evidenceKnowledgeDraftInventoryItem.title)).toBeVisible();
     expect(within(dialog).getByText(evidenceKnowledgeDraftInventoryItem.draft_id)).toBeVisible();
@@ -2102,6 +2332,7 @@ describe("InstalledMcpManagementWorkspace", () => {
 
     expect(await screen.findByText("Knowledge draft inventory is unavailable")).toBeVisible();
     expect(screen.getByText("Enabled / evidence preserved")).toBeVisible();
+    openAdvancedGovernance();
     expect(screen.getByRole("button", { name: "View evidence for Storage East" })).toBeVisible();
     expect(screen.queryByRole("button", { name: /knowledge|draft for Storage East/i })).toBeNull();
   });
@@ -2124,7 +2355,9 @@ describe("InstalledMcpManagementWorkspace", () => {
     });
     renderWorkspace();
 
-    fireEvent.click(await screen.findByRole("button", {
+    await screen.findByText("Enabled / knowledge draft");
+    openAdvancedGovernance();
+    fireEvent.click(screen.getByRole("button", {
       name: "Request review for Storage East",
     }));
     const dialog = screen.getByRole("dialog", {
@@ -2161,6 +2394,7 @@ describe("InstalledMcpManagementWorkspace", () => {
     renderWorkspace();
 
     expect(await screen.findByText("Enabled / review requested")).toBeVisible();
+    openAdvancedGovernance();
     fireEvent.click(screen.getByRole("button", { name: "View request for Storage East" }));
     const dialog = screen.getByRole("dialog", {
       name: "Request knowledge review for Storage East",
@@ -2184,6 +2418,7 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(await screen.findByText("Knowledge review request inventory is unavailable"))
       .toBeVisible();
     expect(screen.getByText("Enabled / knowledge draft")).toBeVisible();
+    openAdvancedGovernance();
     expect(screen.getByRole("button", { name: "View draft for Storage East" })).toBeVisible();
     expect(screen.queryByRole("button", { name: /request review|view request/i })).toBeNull();
   });
@@ -2209,7 +2444,9 @@ describe("InstalledMcpManagementWorkspace", () => {
     });
     renderWorkspace();
 
-    fireEvent.click(await screen.findByRole("button", {
+    await screen.findByText("Enabled / review requested");
+    openAdvancedGovernance();
+    fireEvent.click(screen.getByRole("button", {
       name: "Assign reviewers for Storage East",
     }));
     const dialog = screen.getByRole("dialog", {
@@ -2250,7 +2487,9 @@ describe("InstalledMcpManagementWorkspace", () => {
     ]);
     renderWorkspace();
 
-    fireEvent.click(await screen.findByRole("button", {
+    await screen.findByText("Enabled / reviewers assigned");
+    openAdvancedGovernance();
+    fireEvent.click(screen.getByRole("button", {
       name: "View assignment for Storage East",
     }));
     const dialog = screen.getByRole("dialog", {
@@ -2281,6 +2520,7 @@ describe("InstalledMcpManagementWorkspace", () => {
 
     expect(await screen.findByText("Reviewer assignment inventory is unavailable")).toBeVisible();
     expect(screen.getByText("Enabled / review requested")).toBeVisible();
+    openAdvancedGovernance();
     expect(screen.getByRole("button", { name: "View request for Storage East" })).toBeVisible();
     expect(screen.queryByRole("button", { name: /assign reviewers|view assignment/i })).toBeNull();
   });
@@ -2307,7 +2547,9 @@ describe("InstalledMcpManagementWorkspace", () => {
       boundedInvocationInventoryItem,
     ]);
     renderWorkspace();
-    expect(await screen.findByRole("button", {
+    await screen.findByText("Enabled / capability invoked");
+    openAdvancedGovernance();
+    expect(screen.getByRole("button", {
       name: "Preserve evidence for Storage East",
     })).toBeVisible();
     vi.mocked(getConnectorInvocationEvidence).mockRejectedValue(
@@ -2372,6 +2614,7 @@ describe("InstalledMcpManagementWorkspace", () => {
 
     expect(await screen.findByText("Enabled / runtime healthy")).toBeVisible();
     expect(screen.getByText("Target session verification permission is required")).toBeVisible();
+    openAdvancedGovernance();
     expect(screen.getByRole("button", {
       name: "View runtime activation for Storage East",
     })).toBeVisible();
@@ -2391,6 +2634,7 @@ describe("InstalledMcpManagementWorkspace", () => {
     renderWorkspace();
 
     expect(await screen.findByText("Enabled / capabilities governed")).toBeVisible();
+    openAdvancedGovernance();
     expect(screen.getByRole("button", { name: "View target for Storage East" })).toBeVisible();
     expect(screen.getByRole("button", { name: "View capabilities for Storage East" })).toBeVisible();
     expect(screen.queryByRole("button", { name: /runtime trust for Storage East/i })).toBeNull();
@@ -2407,6 +2651,7 @@ describe("InstalledMcpManagementWorkspace", () => {
     renderWorkspace();
 
     expect(await screen.findByText("Disabled / configuration validated")).toBeVisible();
+    openAdvancedGovernance();
     expect(screen.getByRole("button", { name: "View target for Storage East" })).toBeVisible();
     expect(screen.getByRole("button", { name: "View credentials for Storage East" })).toBeVisible();
     expect(screen.getByRole("button", { name: "View configuration for Storage East" })).toBeVisible();
@@ -2419,7 +2664,8 @@ describe("InstalledMcpManagementWorkspace", () => {
     vi.mocked(getLatestConnectorUpgradeSigningProviderConformance).mockResolvedValue(null);
     renderWorkspace();
 
-    fireEvent.click(await screen.findByText("Security and onboarding diagnostics"));
+    const diagnosticsSummary = await screen.findByText("Security and onboarding diagnostics");
+    fireEvent.click(diagnosticsSummary);
     const run = await screen.findByRole("button", { name: "Run assessment" });
     expect(await screen.findByText(/No bounded provider assessment/i)).toBeVisible();
     fireEvent.click(run);
@@ -2473,7 +2719,8 @@ describe("InstalledMcpManagementWorkspace", () => {
     });
     renderWorkspace();
 
-    fireEvent.click(await screen.findByText("Security and onboarding diagnostics"));
+    const diagnosticsSummary = await screen.findByText("Security and onboarding diagnostics");
+    fireEvent.click(diagnosticsSummary);
     expect(await screen.findByText("4 provenance checks blocked")).toBeVisible();
     expect(screen.getAllByText("prerequisite unavailable")).toHaveLength(3);
     expect(screen.getByText("security policy attestation owner")).toBeVisible();
@@ -2484,7 +2731,8 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(screen.getByText(/No verified validity horizon/i)).toBeVisible();
     expect(screen.getByText(/No trust-store, policy, key or provider mutation authority/i))
       .toBeVisible();
-    expect(screen.queryByRole("button", { name: /upload|trust|sign|approve|configure/i }))
+    expect(within(diagnosticsSummary.closest("details") as HTMLDetailsElement)
+      .queryByRole("button", { name: /upload|trust|sign|approve|configure/i }))
       .toBeNull();
   });
 

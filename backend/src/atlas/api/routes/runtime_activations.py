@@ -14,9 +14,16 @@ from atlas.api.runtime_activation_schemas import (
     ConnectorRuntimeActivationOptionsResponse,
     ConnectorRuntimeActivationViewResponse,
 )
+from atlas.api.runtime_deactivation_schemas import (
+    ConnectorRuntimeDeactivationData,
+    ConnectorRuntimeDeactivationInput,
+    ConnectorRuntimeDeactivationInventoryResponse,
+    ConnectorRuntimeDeactivationResponse,
+)
 from atlas.api.schemas import ResponseMeta
 from atlas.api.security import (
     authorize_connector_runtime_activation_create,
+    authorize_connector_runtime_activation_deactivate,
     authorize_connector_runtime_activation_read,
     browser_session_subject,
 )
@@ -26,6 +33,12 @@ from atlas.modules.connectors.application.runtime_activation import (
 )
 from atlas.modules.connectors.application.runtime_activation_ports import (
     ConnectorRuntimeActivationError,
+)
+from atlas.modules.connectors.application.runtime_deactivation import (
+    ConnectorRuntimeDeactivationService,
+)
+from atlas.modules.connectors.application.runtime_deactivation_ports import (
+    ConnectorRuntimeDeactivationError,
 )
 from atlas.modules.connectors.domain.runtime_activation import ConnectorRuntimeActivationRecord
 from atlas.modules.identity.domain.models import AuthenticatedSubject
@@ -51,6 +64,24 @@ def _raise(error: ConnectorRuntimeActivationError) -> NoReturn:
         code=code,
         title="Connector runtime activation unavailable",
         detail="The governed connector runtime activation could not be completed.",
+    ) from error
+
+
+def _raise_deactivation(error: ConnectorRuntimeDeactivationError) -> NoReturn:
+    code = str(error)
+    if code.endswith(("required", "human_required")):
+        status = 403
+    elif code.endswith("not_found"):
+        status = 404
+    elif code.endswith("invalid"):
+        status = 422
+    else:
+        status = 409
+    raise AtlasError(
+        status=status,
+        code=code,
+        title="Connector runtime deactivation unavailable",
+        detail="The connector runtime could not be safely deactivated.",
     ) from error
 
 
@@ -162,6 +193,107 @@ async def create_connector_runtime_activation(
     except ConnectorRuntimeActivationError as error:
         _raise(error)
     return _response(record, request, response)
+
+
+@router.get(
+    "/deactivations",
+    response_model=ConnectorRuntimeDeactivationInventoryResponse,
+)
+async def list_connector_runtime_deactivations(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_connector_runtime_activation_read)
+    ],
+    activation_id: Annotated[str | None, Query(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")] = None,
+) -> ConnectorRuntimeDeactivationInventoryResponse:
+    service: ConnectorRuntimeDeactivationService = request.app.state.runtime_deactivation_service
+    try:
+        records = await service.list_deactivations(
+            actor=subject,
+            activation_id=activation_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ConnectorRuntimeDeactivationError as error:
+        _raise_deactivation(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorRuntimeDeactivationInventoryResponse(
+        data=tuple(ConnectorRuntimeDeactivationData.from_domain(record) for record in records),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.get(
+    "/{activation_id}/deactivations",
+    response_model=ConnectorRuntimeDeactivationInventoryResponse,
+)
+async def list_connector_runtime_activation_deactivations(
+    activation_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_connector_runtime_activation_read)
+    ],
+) -> ConnectorRuntimeDeactivationInventoryResponse:
+    service: ConnectorRuntimeDeactivationService = request.app.state.runtime_deactivation_service
+    try:
+        records = await service.list_deactivations(
+            actor=subject,
+            activation_id=activation_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ConnectorRuntimeDeactivationError as error:
+        _raise_deactivation(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorRuntimeDeactivationInventoryResponse(
+        data=tuple(ConnectorRuntimeDeactivationData.from_domain(record) for record in records),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.post(
+    "/{activation_id}/deactivations",
+    response_model=ConnectorRuntimeDeactivationResponse,
+    status_code=201,
+)
+async def deactivate_connector_runtime_activation(
+    activation_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    payload: ConnectorRuntimeDeactivationInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_connector_runtime_activation_deactivate)
+    ],
+    idempotency_key: Annotated[str, IDEMPOTENCY],
+) -> ConnectorRuntimeDeactivationResponse:
+    service: ConnectorRuntimeDeactivationService = request.app.state.runtime_deactivation_service
+    try:
+        record = await service.create(
+            actor=subject,
+            activation_id=activation_id,
+            expected_activation_version=payload.expected_activation_version,
+            expected_activation_digest=payload.expected_activation_digest,
+            reason=payload.reason,
+            runtime_only_acknowledged=payload.acknowledged_runtime_only_deactivation,
+            idempotency_key=idempotency_key,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ConnectorRuntimeDeactivationError as error:
+        _raise_deactivation(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorRuntimeDeactivationResponse(
+        data=ConnectorRuntimeDeactivationData.from_domain(record),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
 
 
 @router.get("/{activation_id}", response_model=ConnectorRuntimeActivationViewResponse)

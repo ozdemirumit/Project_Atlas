@@ -63,6 +63,7 @@ class HealthCheckService:
         latest_runs: tuple[HealthCheckRun, ...],
         executor: HealthCheckExecutor,
         audit_sink: AuditSink,
+        data_profile: str = "synthetic_lab",
     ) -> None:
         if len({item.definition_id for item in definitions}) != len(definitions):
             raise ValueError("health-check definition identifiers must be unique")
@@ -70,6 +71,7 @@ class HealthCheckService:
         self._latest_runs = {item.definition_id: item for item in latest_runs}
         self._executor = executor
         self._audit_sink = audit_sink
+        self._data_profile = data_profile
 
     async def get_overview(self, context: HealthCheckAccessContext) -> HealthCheckOverview:
         self._validate_scope(context)
@@ -86,7 +88,7 @@ class HealthCheckService:
         )
         overview = HealthCheckOverview(
             generated_at=context.requested_at,
-            data_profile="synthetic_lab",
+            data_profile=self._data_profile,
             definitions=definitions,
             schedules=schedules,
             latest_runs=tuple(

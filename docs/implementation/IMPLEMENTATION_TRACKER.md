@@ -4,14 +4,105 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-247 |
-| Title | Installed MCP tenant-scoped operational knowledge reviewer-assignment inventory and server-provided signed assignment options |
-| Status | In Review |
-| Branch | `agent/installed-mcp-reviewer-assignment-governance` |
-| Pull Request | [#262](https://github.com/ozdemirumit/Project_Atlas/pull/262) |
-| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-052, ADR-043, ADR-044, ADR-100, ADR-123, ADR-133 |
+| Task ID | ATLAS-IMP-248 |
+| Title | MVP operator workflows: inventory lifecycle and simplified MCP operations |
+| Status | Review |
+| Branch | `agent/mvp-operator-workflows` |
+| Pull Request | [#263](https://github.com/ozdemirumit/Project_Atlas/pull/263) |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-020, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-052, ADR-133 |
 | Last Updated | 2026-08-25 |
-| Next Action | Require exact-head PR CI, merge and verify exact merge-commit `main` CI |
+| Next Action | Add operator-managed credential references and complete the short MCP enable/disable workflow |
+
+### ATLAS-IMP-248 Scope Rationale
+
+- A user-visible MVP audit found that login, inventory registration and several governed backend
+  boundaries work, but the usable end-to-end product is only approximately 35 percent complete.
+- Deep lifecycle governance has advanced faster than the operator experience. Further protected-
+  inspection, review and policy-hardening slices are deferred until the MVP workflows are usable.
+- This slice prioritizes visible operator outcomes: edit and reactivate inventory devices, then make
+  MCP add, connection test, enable, disable and retire actions reachable through a concise workflow.
+- Normal username/password authentication remains sufficient by default. AD/LDAP remains
+  authentication-only; no global MFA or second authorized-browser prompt is introduced.
+
+### ATLAS-IMP-248 Acceptance Criteria
+
+- Active and retired inventory devices remain searchable; authorized users can edit mutable device
+  metadata, retire active devices and reactivate retired devices from the inventory screen.
+- Device keys, tenant scope and audit history remain immutable. Mutations use optimistic version
+  checks and never store credentials or contact infrastructure.
+- Installed MCPs expose a concise operator path for add, target/credential reference, connection
+  test, enable, disable and retire without requiring users to traverse unrelated governance panels.
+- At least one real connector transport replaces the synthetic-only path in a subsequent contiguous
+  MVP batch; this slice must leave that integration point explicit and reachable.
+- Development verification uses changed-module tests, lint/type checks for touched files and live
+  browser smoke checks. Full regression remains a merge or milestone gate rather than a local loop.
+
+### ATLAS-IMP-248 Inventory Verification
+
+- Backend inventory route tests passed: `9 passed` in `tests/test_inventory_devices.py`.
+- Frontend inventory API and workspace tests passed: `19 passed` across the two focused test files;
+  focused TypeScript and ESLint checks also passed.
+- Live validation at `http://127.0.0.1:5227/#/health/overview` used the normal
+  `atlas-demo` / `local-demo` username/password session. One device was added, edited, retired and
+  reactivated successfully. The stable device key remained immutable and each lifecycle result was
+  visible immediately in the registry without a second browser authorization or MFA step.
+
+### ATLAS-IMP-248 MCP Operator Verification
+
+- Installed MCPs now separates the concise operator inventory from Builder and advanced governance.
+  Each active instance exposes one visible next action and an eight-step progress summary.
+- A development-only bundled catalog exposes Hitachi Ops Center as the first directly addable MCP.
+  Live validation created a `disabled_unconfigured` Hitachi instance from the normal username/password
+  session and immediately displayed `Configure target` as its next action.
+- Runtime deactivation is now a first-class lifecycle record and UI action. It revokes Atlas runtime
+  and target authority without contacting or mutating managed infrastructure. Reactivation of a
+  deactivated activation is not falsely offered until an explicit reactivation contract exists.
+- The responsive Installed MCP view was changed from a horizontally clipped table to a compact
+  operator record at narrow desktop and mobile widths; the next action and retirement command remain
+  visible without horizontal scrolling.
+- Focused verification passed: `34 passed, 1 skipped` for bundled catalog/runtime backend tests and
+  `9 passed` for affected frontend API/workspace scenarios; Ruff, strict MyPy, TypeScript and focused
+  ESLint passed. Live catalog creation and responsive browser smoke validation also passed.
+- Live validation found one remaining blocking workflow gap: the legacy signed target-option service
+  returns `404` for bundled catalog lineage. The next batch replaces that unreachable path for bundled
+  connectors with a direct, bounded Hitachi target, credential-reference and read-only connection-test
+  vertical rather than extending the synthetic package-governance chain.
+- The bundled Hitachi path now provides a direct operator connection dialog for HTTPS hostname and
+  port metadata, uses the fixed `secret.hitachi.readonly` reference without accepting secret material,
+  and performs only a bounded read of the Ops Center version endpoint. Live browser validation saved
+  the connection, advanced setup to `2 of 8 complete`, and exposed `Test connection` as the next action.
+- With no local Hitachi credential configured, the live test failed closed as
+  `connection_test_credentials_unavailable` without contacting infrastructure or disclosing target or
+  secret details. Focused verification passed: `7` backend tests and `71` frontend tests; Ruff, strict
+  MyPy, TypeScript and focused ESLint passed. The narrow-screen dialog was visually checked without
+  clipped or overlapping controls.
+- The latest minimized connection-test result is now retained per organization, environment and MCP
+  instance and exposed through a read-only `latest` endpoint. Installed MCPs restores that result after
+  a page reload and displays distinct connection-passed or connection-failed state; only a passed test
+  completes the Validation setup step. The retained result remains process-local until the development
+  profile is backed by the configured PostgreSQL deployment.
+- Post-integration focused verification passed: `6` backend tests and `72` frontend tests. Live browser
+  validation confirmed the safe credential-unavailable result remained visible after closing the dialog
+  and reloading the page.
+- The development Health controller check now routes through the configured Hitachi HTTPS transport,
+  discovers only active inventory records whose vendor and serial number form an explicit storage
+  allowlist, and maps bounded component health into observations, findings and digest-only evidence.
+  Capacity remains explicitly synthetic until its real vendor response contract is implemented.
+- Health no longer seeds a synthetic controller run in the development profile. Live validation showed
+  `Configured Hitachi / read-only`, `No run` initially, then a safe failed result with zero target calls
+  when no configured MCP existed. The result explained that controller health remained unknown rather
+  than presenting a false healthy state. Focused integration verification passed: `28` backend tests,
+  `5` frontend tests, Ruff, strict MyPy, TypeScript and ESLint.
+- Current estimate after this batch: approximately 50 percent of the user-visible MVP and 25
+  percent of the complete long-term product vision. These are scope estimates, not line-count metrics.
+
+### Deferred Until MVP Completion
+
+- Operational knowledge protected-inspection inventory hardening, additional tenant migrations,
+  digital-twin simulation and deeper review governance.
+- Broad test expansion that does not protect the current user-visible workflow.
+- Additional architecture documents or ADRs unless a blocking design decision cannot be represented
+  in the implementation tracker.
 
 ### ATLAS-IMP-247 Scope Rationale
 

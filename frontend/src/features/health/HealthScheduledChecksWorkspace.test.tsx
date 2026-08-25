@@ -164,6 +164,21 @@ describe("HealthScheduledChecksWorkspace", () => {
     expect(onRunCheck).toHaveBeenCalledOnce();
   });
 
+  it("labels a configured Hitachi health source without implying mutation authority", () => {
+    render(
+      <HealthScheduledChecksWorkspace
+        {...baseProps}
+        overview={{ ...overview, data_profile: "configured_hitachi_read_only" }}
+        selectedDefinition={definition}
+        selectedRun={run}
+        selectedSchedule={schedule}
+      />,
+    );
+
+    expect(screen.getByText("Configured Hitachi / read-only")).toBeVisible();
+    expect(screen.getByText(/does not authorize infrastructure change/)).toBeVisible();
+  });
+
   it("presents observations and limits while enforcing disabled and pending gates", () => {
     const { rerender } = render(
       <HealthScheduledChecksWorkspace
