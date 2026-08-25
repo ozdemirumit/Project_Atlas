@@ -68,6 +68,7 @@ export const evidenceKnowledgeDraftInventoryItem = {
   artifact_channel_closed: true,
   domain_review_completed: false,
   security_review_completed: false,
+  review_requested: false,
   knowledge_approved: false,
   knowledge_published: false,
   chunks_created: false,

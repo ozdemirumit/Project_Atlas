@@ -68,6 +68,18 @@ describe("operational evidence knowledge draft API client", () => {
       .rejects.toThrow("unsafe records");
   });
 
+  it("rejects a draft that has already entered review", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({ data: [{ ...draft, review_requested: true }], meta }),
+        { status: 200 },
+      ),
+    );
+
+    await expect(getOperationalEvidenceKnowledgeDrafts({ evidence }))
+      .rejects.toThrow("unsafe records");
+  });
+
   it.each([
     ["claim_id", "claim.internal"],
     ["purpose", "hidden internal purpose"],

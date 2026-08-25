@@ -271,6 +271,22 @@ async def test_review_request_denies_non_human_identity() -> None:
 
 
 @pytest.mark.asyncio
+async def test_review_request_rejects_foreign_tenant_draft_before_authorization() -> None:
+    service, repository, draft, policy, authorizer, adapter, _ = await review_request_fixture()
+    foreign_actor = replace(
+        development_target_session_operator("subject.connector-independent-knowledge-curator"),
+        organization_id="organization.foreign",
+    )
+
+    with pytest.raises(OperationalKnowledgeReviewRequestError, match="source_not_found"):
+        await request_review(service, draft, policy, actor=foreign_actor)
+
+    assert authorizer.calls == []
+    assert getattr(adapter, "call_count", 0) == 0
+    assert await repository.get_claim_by_source(source_draft_id=draft.draft_id) is None
+
+
+@pytest.mark.asyncio
 async def test_review_request_atomically_rejects_concurrent_second_claim() -> None:
     adapter = BlockingReviewRequestAdapter()
     service, _, draft, policy, _, _, _ = await review_request_fixture(adapter=adapter)

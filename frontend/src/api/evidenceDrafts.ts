@@ -109,6 +109,7 @@ export type OperationalEvidenceKnowledgeDraftInventoryItem = {
   artifact_channel_closed: true;
   domain_review_completed: false;
   security_review_completed: false;
+  review_requested: false;
   knowledge_approved: false;
   knowledge_published: false;
   chunks_created: false;
@@ -168,7 +169,7 @@ const inventoryFields = new Set([
   "observed_from", "observed_to", "created_at", "instance_state", "canonical_digest",
   "evidence_ingested", "knowledge_item_created", "immutable_draft_confirmed",
   "encrypted_at_rest", "transient_buffers_erased", "artifact_channel_closed",
-  "domain_review_completed", "security_review_completed", "knowledge_approved",
+  "domain_review_completed", "security_review_completed", "review_requested", "knowledge_approved",
   "knowledge_published", "chunks_created", "embeddings_created", "retrieval_published",
   "model_context_available", "graph_updated", "scheduled", "workflow_continued",
   "execution_authorized", "deployment_approved", "infrastructure_mutation_performed", "reused",
@@ -227,6 +228,7 @@ function hasDraftBoundary(record: Record<string, unknown>): boolean {
     record.immutable_draft_confirmed === true && record.encrypted_at_rest === true &&
     record.transient_buffers_erased === true && record.artifact_channel_closed === true &&
     record.domain_review_completed === false && record.security_review_completed === false &&
+    record.review_requested === false &&
     record.knowledge_approved === false && record.knowledge_published === false &&
     record.chunks_created === false && record.embeddings_created === false &&
     record.retrieval_published === false && record.model_context_available === false &&

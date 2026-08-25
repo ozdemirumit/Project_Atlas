@@ -581,7 +581,9 @@ async def test_evidence_draft_postgres_round_trip_excludes_content() -> None:
 
 
 @pytest.mark.asyncio
-async def test_live_postgres_evidence_drafts_isolate_same_identifiers_by_tenant() -> None:
+async def test_live_postgres_evidence_drafts_isolate_same_identifiers_by_tenant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     database_url = os.getenv("ATLAS_TEST_POSTGRES_DSN")
     if not database_url:
         pytest.skip("ATLAS_TEST_POSTGRES_DSN is not configured")
@@ -664,14 +666,27 @@ async def test_live_postgres_evidence_drafts_isolate_same_identifiers_by_tenant(
             )
             == second_record
         )
-        assert (
-            await second_repository.get_in_scope(
-                draft_id=draft_id,
-                organization_id="organization.missing",
-                environment_id=second_record.environment_id,
+
+        def reject_deserialization(
+            raw: dict[str, Any],
+        ) -> OperationalEvidenceKnowledgeDraftRecord:
+            del raw
+            raise AssertionError("foreign tenant payload must not be deserialized")
+
+        with monkeypatch.context() as scoped_patch:
+            scoped_patch.setattr(
+                PostgreSQLOperationalEvidenceKnowledgeDraftRepository,
+                "_record_to_domain",
+                staticmethod(reject_deserialization),
             )
-            is None
-        )
+            assert (
+                await second_repository.get_in_scope(
+                    draft_id=draft_id,
+                    organization_id="organization.missing",
+                    environment_id=second_record.environment_id,
+                )
+                is None
+            )
         first_inventory = await first_repository.list_scope(
             organization_id=first_record.organization_id,
             environment_id=first_record.environment_id,
@@ -709,6 +724,7 @@ def test_live_postgres_populated_legacy_draft_migration_preserves_digests(
     config.set_main_option("script_location", str(BACKEND_ROOT / "migrations"))
     suffix = uuid4().hex[:12]
     organization_id = f"organization.legacy-draft-{suffix}"
+    second_organization_id = f"organization.legacy-draft-other-{suffix}"
     environment_id = "environment.development"
     claim_id = f"operational-evidence-knowledge-draft-claim.legacy-{suffix}"
     draft_id = f"operational-evidence-knowledge-draft.legacy-{suffix}"
@@ -787,21 +803,58 @@ def test_live_postgres_populated_legacy_draft_migration_preserves_digests(
         assert schema.get_pk_constraint("operational_evidence_knowledge_drafts")[
             "constrained_columns"
         ] == ["draft_id", "organization_id", "environment_id"]
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO operational_evidence_knowledge_draft_claims "
+                    "(claim_id, source_ingestion_id, draft_id, claimed_by, idempotency_digest, "
+                    "organization_id, environment_id, canonical_digest, payload) "
+                    "SELECT claim_id, source_ingestion_id, draft_id, claimed_by, "
+                    "idempotency_digest, :second_organization_id, environment_id, "
+                    "canonical_digest, payload FROM operational_evidence_knowledge_draft_claims "
+                    "WHERE organization_id = :organization_id AND claim_id = :claim_id"
+                ),
+                {
+                    "second_organization_id": second_organization_id,
+                    "organization_id": organization_id,
+                    "claim_id": claim_id,
+                },
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO operational_evidence_knowledge_drafts "
+                    "(draft_id, claim_id, source_ingestion_id, instance_id, capability_id, "
+                    "evidence_package_id, curated_by, organization_id, environment_id, "
+                    "canonical_digest, payload) SELECT draft_id, claim_id, "
+                    "source_ingestion_id, instance_id, capability_id, evidence_package_id, "
+                    "curated_by, :second_organization_id, environment_id, canonical_digest, "
+                    "payload FROM operational_evidence_knowledge_drafts "
+                    "WHERE organization_id = :organization_id AND draft_id = :draft_id"
+                ),
+                {
+                    "second_organization_id": second_organization_id,
+                    "organization_id": organization_id,
+                    "draft_id": draft_id,
+                },
+            )
+
+        with pytest.raises(RuntimeError, match="identifiers overlap between tenants"):
+            command.downgrade(config, "20260825_0162")
     finally:
         with engine.begin() as connection:
             connection.execute(
                 text(
                     "DELETE FROM operational_evidence_knowledge_drafts "
-                    "WHERE organization_id = :organization_id"
+                    "WHERE source_ingestion_id = :source_ingestion_id"
                 ),
-                {"organization_id": organization_id},
+                {"source_ingestion_id": source_ingestion_id},
             )
             connection.execute(
                 text(
                     "DELETE FROM operational_evidence_knowledge_draft_claims "
-                    "WHERE organization_id = :organization_id"
+                    "WHERE source_ingestion_id = :source_ingestion_id"
                 ),
-                {"organization_id": organization_id},
+                {"source_ingestion_id": source_ingestion_id},
             )
         command.upgrade(config, "head")
         engine.dispose()
