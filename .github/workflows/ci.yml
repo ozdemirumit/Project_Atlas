@@ -58,7 +58,32 @@ jobs:
         run: >-
           uv run alembic downgrade 20260816_0134 &&
           uv run alembic upgrade head
-      - name: Test PostgreSQL integration
+      - name: Prepare time-bounded PostgreSQL integration database
+        working-directory: backend
+        env:
+          ATLAS_DATABASE_URL: >-
+            postgresql+psycopg://atlas:atlas@localhost:5432/atlas_process_creation_test
+        run: |
+          uv run python -c "import psycopg; connection = psycopg.connect('postgresql://atlas:atlas@localhost:5432/postgres', autocommit=True); connection.execute('CREATE DATABASE atlas_process_creation_test'); connection.close()"
+          uv run alembic upgrade head
+      - name: Prepare downstream PostgreSQL integration database
+        working-directory: backend
+        env:
+          ATLAS_DATABASE_URL: >-
+            postgresql+psycopg://atlas:atlas@localhost:5432/atlas_downstream_test
+        run: |
+          uv run python -c "import psycopg; connection = psycopg.connect('postgresql://atlas:atlas@localhost:5432/postgres', autocommit=True); connection.execute('CREATE DATABASE atlas_downstream_test'); connection.close()"
+          uv run alembic upgrade head
+      - name: Test time-bounded process creation consumption
+        working-directory: backend
+        env:
+          ATLAS_TEST_POSTGRES_DSN: >-
+            postgresql+psycopg://atlas:atlas@localhost:5432/atlas_process_creation_test
+        run: >-
+          uv run pytest -q
+          tests/test_workflow_protected_runtime_process_creation_consumptions_postgres.py
+          -k live_postgres
+      - name: Test foundation PostgreSQL integration
         working-directory: backend
         env:
           ATLAS_TEST_POSTGRES_DSN: postgresql+psycopg://atlas:atlas@localhost:5432/atlas_test
@@ -91,7 +116,14 @@ jobs:
           tests/test_workflow_protected_runtime_readiness_authorizations_postgres.py
           tests/test_workflow_protected_runtime_readiness_consumptions_postgres.py
           tests/test_workflow_protected_runtime_process_creation_authorizations_postgres.py
-          tests/test_workflow_protected_runtime_process_creation_consumptions_postgres.py
+          -k live_postgres
+      - name: Test downstream PostgreSQL integration
+        working-directory: backend
+        env:
+          ATLAS_TEST_POSTGRES_DSN: >-
+            postgresql+psycopg://atlas:atlas@localhost:5432/atlas_downstream_test
+        run: >-
+          uv run pytest -q
           tests/test_workflow_protected_runtime_process_scheduling_consumptions_postgres.py
           tests/test_workflow_protected_runtime_process_scheduling_authorizations_postgres.py
           tests/test_workflow_protected_runtime_process_resume_authorizations_postgres.py
