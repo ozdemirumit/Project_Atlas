@@ -103,6 +103,7 @@ from atlas.modules.authorization.application.bootstrap import (
     CONNECTOR_REGISTRY_PUBLICATION_CREATE,
     CONNECTOR_REGISTRY_PUBLICATION_READ,
     CONNECTOR_RUNTIME_ACTIVATION_CREATE,
+    CONNECTOR_RUNTIME_ACTIVATION_DEACTIVATE,
     CONNECTOR_RUNTIME_ACTIVATION_READ,
     CONNECTOR_RUNTIME_TRUST_CREATE,
     CONNECTOR_RUNTIME_TRUST_READ,
@@ -6983,6 +6984,18 @@ async def authorize_connector_runtime_activation_create(
         request,
         subject,
         permission_id=CONNECTOR_RUNTIME_ACTIVATION_CREATE,
+        capability_class=CapabilityClass.C3_CONTROLLED_CHANGE,
+    )
+
+
+async def authorize_connector_runtime_activation_deactivate(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_connector_runtime_activation(
+        request,
+        subject,
+        permission_id=CONNECTOR_RUNTIME_ACTIVATION_DEACTIVATE,
         capability_class=CapabilityClass.C3_CONTROLLED_CHANGE,
     )
 

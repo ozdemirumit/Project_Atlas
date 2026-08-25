@@ -516,6 +516,9 @@ from atlas.modules.connectors.adapters.runtime_activation_synthetic import (
     SyntheticConnectorRuntimeActivator,
     UnavailableConnectorRuntimeActivator,
 )
+from atlas.modules.connectors.adapters.runtime_deactivation_memory import (
+    InMemoryConnectorRuntimeDeactivationRepository,
+)
 from atlas.modules.connectors.adapters.runtime_trust_memory import (
     InMemoryConnectorRuntimeTrustPolicySource,
     InMemoryConnectorRuntimeTrustProfileSource,
@@ -694,6 +697,9 @@ from atlas.modules.connectors.application.runner_validation import PackageRunner
 from atlas.modules.connectors.application.runtime_activation import (
     ConnectorRuntimeActivationService,
     build_development_connector_runtime_activation_policy,
+)
+from atlas.modules.connectors.application.runtime_deactivation import (
+    ConnectorRuntimeDeactivationService,
 )
 from atlas.modules.connectors.application.runtime_trust import (
     ConnectorRuntimeTrustService,
@@ -3230,6 +3236,7 @@ def create_app(
     runtime_trust_service: ConnectorRuntimeTrustService | None = None,
     secret_brokerage_service: ConnectorSecretBrokerageService | None = None,
     runtime_activation_service: ConnectorRuntimeActivationService | None = None,
+    runtime_deactivation_service: ConnectorRuntimeDeactivationService | None = None,
     target_session_service: ConnectorTargetSessionService | None = None,
     invocation_authorization_service: ConnectorInvocationAuthorizationService | None = None,
     bounded_invocation_service: ConnectorBoundedInvocationService | None = None,
@@ -4805,6 +4812,18 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
+    if runtime_deactivation_service is not None:
+        resolved_runtime_deactivation_service = runtime_deactivation_service
+    else:
+        resolved_runtime_deactivation_service = ConnectorRuntimeDeactivationService(
+            repository=InMemoryConnectorRuntimeDeactivationRepository(),
+            activation_source=resolved_runtime_activation_service,
+            audit_sink=resolved_audit_sink,
+            environment_id=f"environment.{resolved_settings.environment}",
+        )
+    resolved_runtime_activation_service.bind_deactivation_source(
+        resolved_runtime_deactivation_service.repository
+    )
     if target_session_service is not None:
         resolved_target_session_service = target_session_service
     else:
@@ -9507,6 +9526,7 @@ def create_app(
         app.state.runtime_trust_service = resolved_runtime_trust_service
         app.state.secret_brokerage_service = resolved_secret_brokerage_service
         app.state.runtime_activation_service = resolved_runtime_activation_service
+        app.state.runtime_deactivation_service = resolved_runtime_deactivation_service
         app.state.target_session_service = resolved_target_session_service
         app.state.invocation_authorization_service = resolved_invocation_authorization_service
         app.state.bounded_invocation_service = resolved_bounded_invocation_service
@@ -9962,6 +9982,7 @@ def create_app(
         await resolved_bounded_invocation_service.close()
         await resolved_invocation_authorization_service.close()
         await resolved_target_session_service.close()
+        await resolved_runtime_deactivation_service.close()
         await resolved_runtime_activation_service.close()
         await resolved_secret_brokerage_service.close()
         await resolved_runtime_trust_service.close()
