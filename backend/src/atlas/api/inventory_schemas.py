@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from atlas.api.schemas import ResponseMeta
 from atlas.modules.inventory.domain.devices import (
@@ -41,6 +41,44 @@ class RetireInventoryDeviceInput(BaseModel):
     expected_version: int = Field(ge=1)
     reason: str = Field(min_length=20, max_length=1000)
     acknowledged_retirement_preserves_history_and_stops_active_use: bool
+
+
+class UpdateInventoryDeviceInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, str_strip_whitespace=True)
+
+    schema_version: str = Field(default="atlas.inventory-device-update-input.v1", pattern=STABLE_ID)
+    expected_version: int = Field(ge=1)
+    display_name: str | None = Field(default=None, min_length=3, max_length=160)
+    device_type: str | None = Field(
+        default=None,
+        pattern=r"^(storage|san_switch|virtualization|server|backup|network|other)$",
+    )
+    vendor: str | None = Field(default=None, min_length=2, max_length=120)
+    model: str | None = Field(default=None, min_length=1, max_length=160)
+    serial_number: str | None = Field(default=None, min_length=1, max_length=160)
+    management_address: str | None = Field(
+        default=None, min_length=1, max_length=253, pattern=MANAGEMENT_ADDRESS
+    )
+    purpose: str | None = Field(default=None, min_length=20, max_length=1000)
+
+    @model_validator(mode="after")
+    def require_change(self) -> UpdateInventoryDeviceInput:
+        mutable_fields = self.model_fields_set - {"schema_version", "expected_version"}
+        if not mutable_fields:
+            raise ValueError("At least one mutable inventory device field is required")
+        non_nullable_fields = mutable_fields - {"serial_number", "management_address"}
+        if any(getattr(self, field) is None for field in non_nullable_fields):
+            raise ValueError("Inventory device fields other than nullable metadata cannot be null")
+        return self
+
+
+class ReactivateInventoryDeviceInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    schema_version: str = Field(
+        default="atlas.inventory-device-reactivation-input.v1", pattern=STABLE_ID
+    )
+    expected_version: int = Field(ge=1)
 
 
 class InventoryDeviceData(BaseModel):

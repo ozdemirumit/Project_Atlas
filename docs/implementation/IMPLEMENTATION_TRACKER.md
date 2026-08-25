@@ -4,14 +4,46 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-247 |
-| Title | Installed MCP tenant-scoped operational knowledge reviewer-assignment inventory and server-provided signed assignment options |
-| Status | In Review |
-| Branch | `agent/installed-mcp-reviewer-assignment-governance` |
-| Pull Request | [#262](https://github.com/ozdemirumit/Project_Atlas/pull/262) |
-| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-052, ADR-043, ADR-044, ADR-100, ADR-123, ADR-133 |
+| Task ID | ATLAS-IMP-248 |
+| Title | MVP operator workflows: inventory lifecycle and simplified MCP operations |
+| Status | In Progress |
+| Branch | `agent/mvp-operator-workflows` |
+| Pull Request | Pending |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-020, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-052, ADR-133 |
 | Last Updated | 2026-08-25 |
-| Next Action | Require exact-head PR CI, merge and verify exact merge-commit `main` CI |
+| Next Action | Complete user-visible inventory edit/reactivate and MCP add/test/enable/disable/retire workflows with focused smoke verification |
+
+### ATLAS-IMP-248 Scope Rationale
+
+- A user-visible MVP audit found that login, inventory registration and several governed backend
+  boundaries work, but the usable end-to-end product is only approximately 35 percent complete.
+- Deep lifecycle governance has advanced faster than the operator experience. Further protected-
+  inspection, review and policy-hardening slices are deferred until the MVP workflows are usable.
+- This slice prioritizes visible operator outcomes: edit and reactivate inventory devices, then make
+  MCP add, connection test, enable, disable and retire actions reachable through a concise workflow.
+- Normal username/password authentication remains sufficient by default. AD/LDAP remains
+  authentication-only; no global MFA or second authorized-browser prompt is introduced.
+
+### ATLAS-IMP-248 Acceptance Criteria
+
+- Active and retired inventory devices remain searchable; authorized users can edit mutable device
+  metadata, retire active devices and reactivate retired devices from the inventory screen.
+- Device keys, tenant scope and audit history remain immutable. Mutations use optimistic version
+  checks and never store credentials or contact infrastructure.
+- Installed MCPs expose a concise operator path for add, target/credential reference, connection
+  test, enable, disable and retire without requiring users to traverse unrelated governance panels.
+- At least one real connector transport replaces the synthetic-only path in a subsequent contiguous
+  MVP batch; this slice must leave that integration point explicit and reachable.
+- Development verification uses changed-module tests, lint/type checks for touched files and live
+  browser smoke checks. Full regression remains a merge or milestone gate rather than a local loop.
+
+### Deferred Until MVP Completion
+
+- Operational knowledge protected-inspection inventory hardening, additional tenant migrations,
+  digital-twin simulation and deeper review governance.
+- Broad test expansion that does not protect the current user-visible workflow.
+- Additional architecture documents or ADRs unless a blocking design decision cannot be represented
+  in the implementation tracker.
 
 ### ATLAS-IMP-247 Scope Rationale
 

@@ -12,7 +12,9 @@ from atlas.api.inventory_schemas import (
     InventoryDeviceInventoryData,
     InventoryDeviceInventoryResponse,
     InventoryDeviceResponse,
+    ReactivateInventoryDeviceInput,
     RetireInventoryDeviceInput,
+    UpdateInventoryDeviceInput,
 )
 from atlas.api.schemas import ResponseMeta
 from atlas.api.security import (
@@ -140,6 +142,30 @@ async def get_inventory_device(
     return _response(record, request, response)
 
 
+@router.patch("/{device_id}", response_model=InventoryDeviceResponse)
+async def update_inventory_device(
+    device_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    payload: UpdateInventoryDeviceInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(inventory_device_mutation_subject)],
+    _decision: Annotated[AuthorizationDecision, Depends(authorize_inventory_device_create)],
+) -> InventoryDeviceResponse:
+    service: InventoryDeviceService = request.app.state.inventory_device_service
+    changes = payload.model_dump(exclude={"schema_version", "expected_version"}, exclude_unset=True)
+    try:
+        record = await service.update_device(
+            actor=subject,
+            device_id=device_id,
+            expected_version=payload.expected_version,
+            changes=changes,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except InventoryDeviceError as error:
+        _raise(error)
+    return _response(record, request, response)
+
+
 @router.post("/{device_id}/retirements", response_model=InventoryDeviceResponse)
 async def retire_inventory_device(
     device_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
@@ -158,6 +184,28 @@ async def retire_inventory_device(
             idempotency_key=idempotency_key,
             correlation_id=str(request.state.correlation_id),
             **payload.model_dump(exclude={"schema_version"}),
+        )
+    except InventoryDeviceError as error:
+        _raise(error)
+    return _response(record, request, response)
+
+
+@router.post("/{device_id}/reactivations", response_model=InventoryDeviceResponse)
+async def reactivate_inventory_device(
+    device_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    payload: ReactivateInventoryDeviceInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(inventory_device_mutation_subject)],
+    _decision: Annotated[AuthorizationDecision, Depends(authorize_inventory_device_create)],
+) -> InventoryDeviceResponse:
+    service: InventoryDeviceService = request.app.state.inventory_device_service
+    try:
+        record = await service.reactivate(
+            actor=subject,
+            device_id=device_id,
+            expected_version=payload.expected_version,
+            correlation_id=str(request.state.correlation_id),
         )
     except InventoryDeviceError as error:
         _raise(error)

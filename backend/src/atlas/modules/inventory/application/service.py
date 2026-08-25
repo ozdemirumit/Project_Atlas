@@ -295,6 +295,140 @@ class InventoryDeviceService:
         )
         return retired
 
+    async def update_device(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        device_id: str,
+        expected_version: int,
+        changes: dict[str, object],
+        correlation_id: str,
+    ) -> InventoryDeviceRecord:
+        self._require_human(actor)
+        allowed_fields = {
+            "display_name",
+            "device_type",
+            "vendor",
+            "model",
+            "serial_number",
+            "management_address",
+            "purpose",
+        }
+        if not changes or not set(changes).issubset(allowed_fields):
+            raise InventoryDeviceError("inventory_device_update_request_invalid")
+
+        async with self._mutation_lock:
+            current = await self._repository.get(device_id=device_id)
+            if current is None:
+                raise InventoryDeviceError("inventory_device_not_found")
+            self._verify_record(current)
+            self._require_scope(actor, current)
+            if current.lifecycle is not InventoryDeviceLifecycle.ACTIVE:
+                raise InventoryDeviceError("inventory_device_not_active")
+            if current.version != expected_version:
+                raise InventoryDeviceError("inventory_device_version_conflict")
+
+            normalized = self._normalize_update_changes(changes)
+            now = self._clock()
+            try:
+                updated = replace(
+                    current,
+                    **normalized,
+                    version=current.version + 1,
+                    updated_by=actor.subject_id,
+                    updated_at=now,
+                    canonical_digest="0" * 64,
+                    reused=False,
+                )
+            except ValueError as error:
+                raise InventoryDeviceError("inventory_device_update_request_invalid") from error
+            updated = replace(updated, canonical_digest=self._digest(self._record_payload(updated)))
+            await self._audit(
+                actor=actor,
+                correlation_id=correlation_id,
+                permission_id=INVENTORY_DEVICE_CREATE_PERMISSION,
+                result_code="inventory_device_update_requested",
+                scope_reference=device_id,
+                idempotency_key=None,
+                metadata=(
+                    ("expected_version", str(expected_version)),
+                    ("updated_fields", ",".join(sorted(normalized))),
+                ),
+            )
+            if not await self._repository.update(updated, expected_version=expected_version):
+                raise InventoryDeviceError("inventory_device_version_conflict")
+        await self._audit(
+            actor=actor,
+            correlation_id=correlation_id,
+            permission_id=INVENTORY_DEVICE_CREATE_PERMISSION,
+            result_code="inventory_device_updated",
+            scope_reference=device_id,
+            idempotency_key=None,
+            metadata=(("version", str(updated.version)),),
+        )
+        return updated
+
+    async def reactivate(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        device_id: str,
+        expected_version: int,
+        correlation_id: str,
+    ) -> InventoryDeviceRecord:
+        self._require_human(actor)
+        async with self._mutation_lock:
+            current = await self._repository.get(device_id=device_id)
+            if current is None:
+                raise InventoryDeviceError("inventory_device_not_found")
+            self._verify_record(current)
+            self._require_scope(actor, current)
+            if current.lifecycle is not InventoryDeviceLifecycle.RETIRED:
+                raise InventoryDeviceError("inventory_device_already_active")
+            if current.version != expected_version:
+                raise InventoryDeviceError("inventory_device_version_conflict")
+
+            now = self._clock()
+            reactivated = replace(
+                current,
+                version=current.version + 1,
+                lifecycle=InventoryDeviceLifecycle.ACTIVE,
+                updated_by=actor.subject_id,
+                updated_at=now,
+                retired_by=None,
+                retired_at=None,
+                retirement_reason=None,
+                retirement_request_fingerprint=None,
+                retirement_idempotency_key=None,
+                canonical_digest="0" * 64,
+                reused=False,
+            )
+            reactivated = replace(
+                reactivated,
+                canonical_digest=self._digest(self._record_payload(reactivated)),
+            )
+            await self._audit(
+                actor=actor,
+                correlation_id=correlation_id,
+                permission_id=INVENTORY_DEVICE_CREATE_PERMISSION,
+                result_code="inventory_device_reactivation_requested",
+                scope_reference=device_id,
+                idempotency_key=None,
+                metadata=(("expected_version", str(expected_version)),),
+            )
+            if not await self._repository.update(reactivated, expected_version=expected_version):
+                raise InventoryDeviceError("inventory_device_version_conflict")
+        await self._audit(
+            actor=actor,
+            correlation_id=correlation_id,
+            permission_id=INVENTORY_DEVICE_CREATE_PERMISSION,
+            result_code="inventory_device_reactivated",
+            scope_reference=device_id,
+            idempotency_key=None,
+            metadata=(("lifecycle", reactivated.lifecycle.value),),
+        )
+        return reactivated
+
     async def close(self) -> None:
         await self._repository.close()
 
@@ -310,6 +444,33 @@ class InventoryDeviceService:
     def _require_human(actor: AuthenticatedSubject) -> None:
         if actor.kind is not SubjectKind.HUMAN:
             raise InventoryDeviceError("inventory_device_human_required")
+
+    @staticmethod
+    def _normalize_update_changes(changes: dict[str, object]) -> dict[str, object]:
+        normalized = dict(changes)
+        for field in ("display_name", "vendor", "model", "purpose"):
+            value = normalized.get(field)
+            if value is not None:
+                if not isinstance(value, str):
+                    raise InventoryDeviceError("inventory_device_update_request_invalid")
+                normalized[field] = value.strip()
+        for field in ("serial_number", "management_address"):
+            if field not in normalized:
+                continue
+            value = normalized[field]
+            if value is not None and not isinstance(value, str):
+                raise InventoryDeviceError("inventory_device_update_request_invalid")
+            normalized[field] = value.strip() if isinstance(value, str) else None
+        management_address = normalized.get("management_address")
+        if isinstance(management_address, str):
+            normalized["management_address"] = management_address.lower()
+        device_type = normalized.get("device_type")
+        if device_type is not None:
+            try:
+                normalized["device_type"] = InventoryDeviceType(device_type)
+            except (TypeError, ValueError) as error:
+                raise InventoryDeviceError("inventory_device_update_request_invalid") from error
+        return normalized
 
     @classmethod
     def _verify_record(cls, record: InventoryDeviceRecord) -> None:
