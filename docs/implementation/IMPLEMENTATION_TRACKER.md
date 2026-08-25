@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-245 |
 | Title | Installed MCP tenant-scoped operational knowledge-draft inventory and server-provided signed curation options |
-| Status | Implementation In Progress |
+| Status | Pull Request Preparation |
 | Branch | `agent/installed-mcp-knowledge-draft-governance` |
 | Pull Request | Not opened |
 | Governing Documents | ATLAS-003, ATLAS-020, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-052, ADR-041, ADR-042, ADR-100, ADR-123, ADR-133 |
 | Last Updated | 2026-08-25 |
-| Next Action | Implement the tenant-scoped knowledge-draft backend and Installed MCP curation workflow |
+| Next Action | Open the pull request and require exact-head CI before merge |
 
 ### ATLAS-IMP-245 Scope Rationale
 
@@ -68,6 +68,30 @@
 - Live API/browser verification will cover username/password login, immutable draft reload,
   no-store payload minimization and desktop plus `390x844` responsive behavior. Exact-head PR CI
   and exact merge-commit post-main CI must pass before delivery.
+
+### ATLAS-IMP-245 Verification Evidence
+
+- Focused backend knowledge-draft and downstream review-request coverage passed with `30 passed`
+  against live PostgreSQL. The suite covers same identifiers in separate tenants, scope filtering
+  before deserialization, legacy-data migration, fail-closed downgrade collision detection,
+  adapter availability before claim and permanently consumed uncertain outcomes.
+- Ruff and MyPy passed over the changed backend contracts and tests. Alembic head validation and
+  the populated `0162 -> 0163` migration cycle preserve historical canonical digests.
+- Focused frontend API, curation panel and Installed MCP workspace coverage passed with `80 passed`.
+  TypeScript project checking, changed-file ESLint and the production Vite build all passed.
+- The exact frontend parser now accepts the backend's mandatory `review_requested: false` draft
+  boundary and rejects records that have already entered review. The browser continues to submit
+  only the selected server option, purpose and explicit unapproved-draft acknowledgement.
+- Live backend verification at `127.0.0.1:8064` reported `alive`, exposed the tenant-scoped draft
+  inventory and signed-option routes, and returned minimized no-store `{data, meta}` envelopes. The
+  live frontend at `127.0.0.1:5225` accepted normal `operator` username/password login without MFA
+  or a second authorized browser session and loaded the Installed MCP inventory without page-level
+  horizontal overflow at the active desktop viewport.
+- Two independent read-only review passes found no remaining P0-P3 issue after fixes. They confirmed
+  exact frontend/backend response parity, tenant filtering before deserialization, fail-closed
+  downgrade behavior, adapter fail-closed ordering, irreversible retry locking, default
+  `SINGLE_FACTOR` assurance and the absence of review, publication, model, workflow, execution,
+  deployment or infrastructure-mutation authority.
 
 ### ATLAS-IMP-244 Scope Rationale
 
