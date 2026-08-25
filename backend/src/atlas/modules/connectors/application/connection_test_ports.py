@@ -4,6 +4,7 @@ from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from typing import Protocol
 
+from atlas.modules.connectors.domain.connection_test import ConnectorConnectionTestResult
 from atlas.modules.connectors.vendors.hitachi_ops_center.ports import HitachiOpsCenterTransport
 
 
@@ -22,6 +23,24 @@ class ConnectorCredentialMaterializer(Protocol):
         secret_reference_id: str,
         maximum_lease_seconds: int,
     ) -> AbstractAsyncContextManager[ConnectorAuthorizationHeaderLease]: ...
+
+
+class ConnectorConnectionTestResultRepository(Protocol):
+    async def put(
+        self,
+        *,
+        organization_id: str,
+        environment_id: str,
+        result: ConnectorConnectionTestResult,
+    ) -> None: ...
+
+    async def get_latest(
+        self,
+        *,
+        organization_id: str,
+        environment_id: str,
+        instance_id: str,
+    ) -> ConnectorConnectionTestResult | None: ...
 
 
 class HitachiConnectionTestTransportFactory(Protocol):

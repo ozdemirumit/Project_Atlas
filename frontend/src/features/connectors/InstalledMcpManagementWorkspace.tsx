@@ -34,7 +34,9 @@ import {
 import {
   HITACHI_BUNDLED_CONNECTOR_ID,
   getBundledConnectionConfiguration,
+  getLatestBundledConnectorConnectionTest,
   type BundledConnectionConfiguration,
+  type ConnectorConnectionTestResult,
 } from "../../api/bundledConnectorConnections";
 import {
   getConnectorCapabilityEnablements,
@@ -2177,6 +2179,22 @@ export default function InstalledMcpManagementWorkspace({
         : [];
     }),
   );
+  const bundledConnectionTestQueries = useQueries({
+    queries: bundledInstances.map((instance) => ({
+      queryKey: ["bundled-connection-test", instance.instance_id],
+      queryFn: () => getLatestBundledConnectorConnectionTest(instance.instance_id),
+      enabled: Boolean(subjectId),
+      retry: false,
+    })),
+  });
+  const bundledConnectionTestByInstance = new Map(
+    bundledConnectionTestQueries.flatMap((query, index) => {
+      const instance = bundledInstances[index];
+      return query.isSuccess && query.data && instance
+        ? [[instance.instance_id, query.data] as const]
+        : [];
+    }),
+  );
   const targetBindings = bindingQuery.data ?? [];
   const bindingByInstance = new Map(
     targetBindings.map((binding) => [binding.source_instance_record_id, binding]),
@@ -2409,6 +2427,7 @@ export default function InstalledMcpManagementWorkspace({
     void runtimeDeactivationQuery.refetch();
     void targetSessionQuery.refetch();
     for (const query of bundledConnectionQueries) void query.refetch();
+    for (const query of bundledConnectionTestQueries) void query.refetch();
     for (const query of invocationAuthorizationQueries) void query.refetch();
     for (const query of boundedInvocationQueries) void query.refetch();
     for (const query of invocationEvidenceQueries) void query.refetch();
@@ -3108,6 +3127,9 @@ export default function InstalledMcpManagementWorkspace({
                 const bundledConnection = isBundledHitachi
                   ? bundledConnectionByInstance.get(instance.instance_id)
                   : undefined;
+                const bundledConnectionTest = isBundledHitachi
+                  ? bundledConnectionTestByInstance.get(instance.instance_id)
+                  : undefined;
                 const configured = Boolean(binding || bundledConnection);
                 const assignment = binding
                   ? assignmentByBinding.get(binding.binding_id)
@@ -3116,7 +3138,9 @@ export default function InstalledMcpManagementWorkspace({
                 const validation = assignment
                   ? validationByAssignment.get(assignment.assignment_id)
                   : undefined;
-                const configurationValidated = Boolean(validation);
+                const configurationValidated = Boolean(
+                  validation || bundledConnectionTest?.outcome === "passed",
+                );
                 const enablement = validation
                   ? enablementByValidation.get(validation.validation_id)
                   : undefined;
@@ -3254,7 +3278,9 @@ export default function InstalledMcpManagementWorkspace({
                       <span className={`state-badge ${
                         instance.instance_state === "retired"
                           ? "neutral"
-                          : evidencePreserved || capabilityInvoked || invocationAuthorized || targetSessionVerified || runtimeHealthy || secretBrokerageGoverned || runtimeTrusted || capabilitiesGoverned
+                          : bundledConnectionTest?.outcome === "failed"
+                            ? "failed"
+                          : bundledConnectionTest?.outcome === "passed" || evidencePreserved || capabilityInvoked || invocationAuthorized || targetSessionVerified || runtimeHealthy || secretBrokerageGoverned || runtimeTrusted || capabilitiesGoverned
                             ? "success"
                             : "pending"
                       }`}>
@@ -3262,6 +3288,10 @@ export default function InstalledMcpManagementWorkspace({
                           ? "Retired"
                           : runtimeDeactivation
                             ? "Disabled / runtime stopped"
+                          : bundledConnectionTest?.outcome === "passed"
+                            ? "Disabled / connection passed"
+                          : bundledConnectionTest?.outcome === "failed"
+                            ? "Disabled / connection failed"
                           : bundledConnection
                             ? "Disabled / connection configured"
                           : knowledgeReviewersAssigned
@@ -3304,6 +3334,10 @@ export default function InstalledMcpManagementWorkspace({
                           ? "Retired"
                           : runtimeDeactivation
                             ? "Runtime disabled"
+                          : bundledConnectionTest?.outcome === "passed"
+                            ? "Connection passed"
+                          : bundledConnectionTest?.outcome === "failed"
+                            ? "Connection failed"
                           : bundledConnection
                             ? "Connection configured"
                           : knowledgeReviewerAssignment
@@ -3338,7 +3372,7 @@ export default function InstalledMcpManagementWorkspace({
                               ? "Target bound"
                               : "Created"}
                       </span>
-                      {new Date(runtimeDeactivation?.deactivated_at ?? bundledConnection?.configured_at ?? knowledgeReviewerAssignment?.created_at ?? knowledgeReviewerAssignmentClaim?.claimed_at ?? knowledgeReviewRequest?.created_at ?? knowledgeDraft?.created_at ?? invocationEvidence?.ingested_at ?? boundedInvocation?.completed_at ?? invocationAuthorization?.authorized_at ?? targetSessionVerification?.verified_at ?? runtimeActivation?.healthy_at ?? secretBrokerageAuthorization?.authorized_at ?? runtimeTrust?.granted_at ?? enablement?.enabled_at ?? validation?.validated_at ?? assignment?.assigned_at ?? binding?.bound_at ?? instance.retired_at ?? instance.created_at).toLocaleString()}
+                      {new Date(runtimeDeactivation?.deactivated_at ?? bundledConnectionTest?.checked_at ?? bundledConnection?.configured_at ?? knowledgeReviewerAssignment?.created_at ?? knowledgeReviewerAssignmentClaim?.claimed_at ?? knowledgeReviewRequest?.created_at ?? knowledgeDraft?.created_at ?? invocationEvidence?.ingested_at ?? boundedInvocation?.completed_at ?? invocationAuthorization?.authorized_at ?? targetSessionVerification?.verified_at ?? runtimeActivation?.healthy_at ?? secretBrokerageAuthorization?.authorized_at ?? runtimeTrust?.granted_at ?? enablement?.enabled_at ?? validation?.validated_at ?? assignment?.assigned_at ?? binding?.bound_at ?? instance.retired_at ?? instance.created_at).toLocaleString()}
                     </td>
                     <td>
                       {instance.instance_state === "disabled_unconfigured" &&
@@ -3619,6 +3653,12 @@ export default function InstalledMcpManagementWorkspace({
             queryClient.setQueryData<BundledConnectionConfiguration>(
               ["bundled-connection-configuration", configuration.instance_id],
               configuration,
+            );
+          }}
+          onTested={(result) => {
+            queryClient.setQueryData<ConnectorConnectionTestResult>(
+              ["bundled-connection-test", result.instance_id],
+              result,
             );
           }}
         />

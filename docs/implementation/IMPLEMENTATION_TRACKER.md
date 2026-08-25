@@ -76,6 +76,14 @@
   secret details. Focused verification passed: `7` backend tests and `71` frontend tests; Ruff, strict
   MyPy, TypeScript and focused ESLint passed. The narrow-screen dialog was visually checked without
   clipped or overlapping controls.
+- The latest minimized connection-test result is now retained per organization, environment and MCP
+  instance and exposed through a read-only `latest` endpoint. Installed MCPs restores that result after
+  a page reload and displays distinct connection-passed or connection-failed state; only a passed test
+  completes the Validation setup step. The retained result remains process-local until the development
+  profile is backed by the configured PostgreSQL deployment.
+- Post-integration focused verification passed: `6` backend tests and `72` frontend tests. Live browser
+  validation confirmed the safe credential-unavailable result remained visible after closing the dialog
+  and reloading the page.
 - Current estimate after this batch: approximately 45 percent of the user-visible MVP and 20-25
   percent of the complete long-term product vision. These are scope estimates, not line-count metrics.
 

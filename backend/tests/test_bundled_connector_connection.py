@@ -21,6 +21,9 @@ from atlas.modules.connectors.adapters.bundled_connection_configuration_memory i
 from atlas.modules.connectors.adapters.connection_test_credential_environment import (
     DevelopmentEnvironmentCredentialMaterializer,
 )
+from atlas.modules.connectors.adapters.connection_test_memory import (
+    InMemoryConnectorConnectionTestResultRepository,
+)
 from atlas.modules.connectors.application.bundled_connection_configuration import (
     BundledConnectionConfigurationService,
 )
@@ -101,6 +104,7 @@ def build_services(monkeypatch: pytest.MonkeyPatch, *, failure=None):  # type: i
     transport_factory = RecordingTransportFactory(failure=failure)
     test_service = ConnectorConnectionTestService(
         configuration_repository=configuration_repository,
+        result_repository=InMemoryConnectorConnectionTestResultRepository(),
         instance_repository=instance_repository,
         credential_materializer=materializer,
         transport_factory=transport_factory,
@@ -152,6 +156,7 @@ def test_configure_get_and_read_only_connection_test_hide_raw_secret(
     configured = client.put(f"{base}/connection-configuration", json=payload)
     fetched = client.get(f"{base}/connection-configuration")
     tested = client.post(f"{base}/connection-tests")
+    latest = client.get(f"{base}/connection-tests/latest")
 
     assert configured.status_code == 200 and fetched.status_code == 200
     assert configured.json()["data"]["protocol"] == "https"
@@ -159,9 +164,87 @@ def test_configure_get_and_read_only_connection_test_hide_raw_secret(
     assert tested.status_code == 200
     assert tested.json()["data"]["result_code"] == "hitachi_api_compatible"
     assert tested.json()["data"]["infrastructure_mutation_performed"] is False
+    assert latest.status_code == 200
+    assert latest.json()["data"] == tested.json()["data"]
+    assert latest.headers["cache-control"] == "no-store"
     assert factory.transport is not None and factory.transport.paths == ["/configuration/version"]
     assert RAW_AUTHORIZATION not in tested.text
     assert RAW_AUTHORIZATION not in repr(audit.records)
+
+
+def test_latest_connection_test_is_not_found_before_first_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    instance, configuration_service, test_service, _, _, _ = build_services(monkeypatch)
+    client = TestClient(build_app(configuration_service, test_service))
+
+    response = client.get(
+        f"/api/v1/connectors/bundled-instances/{instance.instance_id}/connection-tests/latest"
+    )
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "connection_test_result_not_found"
+
+
+def test_credential_unavailable_failure_is_stored_as_latest_without_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    instance, configuration_service, test_service, _, _, _ = build_services(monkeypatch)
+    client = TestClient(build_app(configuration_service, test_service))
+    base = f"/api/v1/connectors/bundled-instances/{instance.instance_id}"
+    configured = client.put(
+        f"{base}/connection-configuration",
+        json={
+            "hostname": "opscenter.storage.example",
+            "port": 23451,
+            "trust_profile_id": "trust.system-ca",
+            "secret_reference_id": "secret.hitachi.readonly",
+        },
+    )
+    assert configured.status_code == 200
+    monkeypatch.delenv("ATLAS_HITACHI_TEST_AUTHORIZATION")
+
+    tested = client.post(f"{base}/connection-tests")
+    latest = client.get(f"{base}/connection-tests/latest")
+
+    assert tested.status_code == 200
+    assert tested.json()["data"]["result_code"] == "connection_test_credentials_unavailable"
+    assert tested.json()["data"]["managed_infrastructure_contacted"] is False
+    assert latest.status_code == 200
+    assert latest.json()["data"] == tested.json()["data"]
+    assert RAW_AUTHORIZATION not in tested.text
+    assert RAW_AUTHORIZATION not in latest.text
+
+
+def test_each_connection_test_is_stored_and_latest_replaces_previous_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    instance, configuration_service, test_service, factory, _, _ = build_services(monkeypatch)
+    client = TestClient(build_app(configuration_service, test_service))
+    base = f"/api/v1/connectors/bundled-instances/{instance.instance_id}"
+    configured = client.put(
+        f"{base}/connection-configuration",
+        json={
+            "hostname": "opscenter.storage.example",
+            "port": 23451,
+            "trust_profile_id": "trust.system-ca",
+            "secret_reference_id": "secret.hitachi.readonly",
+        },
+    )
+    assert configured.status_code == 200
+
+    first = client.post(f"{base}/connection-tests")
+    factory.failure = HitachiTransportError(
+        "target_unavailable", "hidden target detail", retryable=True
+    )
+    second = client.post(f"{base}/connection-tests")
+    latest = client.get(f"{base}/connection-tests/latest")
+
+    assert first.json()["data"]["outcome"] == "passed"
+    assert second.json()["data"]["result_code"] == "target_unavailable"
+    assert latest.json()["data"] == second.json()["data"]
+    assert latest.json()["data"]["test_id"] != first.json()["data"]["test_id"]
+    assert "hidden target detail" not in latest.text
 
 
 def test_configuration_rejects_url_and_secret_material_field(

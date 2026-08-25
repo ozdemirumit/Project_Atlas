@@ -363,6 +363,9 @@ from atlas.modules.connectors.adapters.configuration_validation_postgres import 
 from atlas.modules.connectors.adapters.connection_test_credential_environment import (
     DevelopmentEnvironmentCredentialMaterializer,
 )
+from atlas.modules.connectors.adapters.connection_test_memory import (
+    InMemoryConnectorConnectionTestResultRepository,
+)
 from atlas.modules.connectors.adapters.content_policy_scan_memory import (
     InMemoryPackageContentPolicyScanRepository,
 )
@@ -4853,6 +4856,7 @@ def create_app(
     )
     resolved_connector_connection_test_service = ConnectorConnectionTestService(
         configuration_repository=bundled_connection_configuration_repository,
+        result_repository=InMemoryConnectorConnectionTestResultRepository(),
         instance_repository=resolved_connector_instance_creation_service.repository,
         credential_materializer=DevelopmentEnvironmentCredentialMaterializer(
             deployment_environment=resolved_settings.environment,

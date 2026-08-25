@@ -14,6 +14,7 @@ from atlas.modules.connectors.application.bundled_connection_configuration_ports
 )
 from atlas.modules.connectors.application.connection_test_ports import (
     ConnectorConnectionTestError,
+    ConnectorConnectionTestResultRepository,
     ConnectorCredentialMaterializer,
     HitachiConnectionTestTransportFactory,
 )
@@ -33,6 +34,7 @@ class ConnectorConnectionTestService:
         self,
         *,
         configuration_repository: BundledConnectionConfigurationRepository,
+        result_repository: ConnectorConnectionTestResultRepository,
         instance_repository: ConnectorInstanceRepository,
         credential_materializer: ConnectorCredentialMaterializer,
         transport_factory: HitachiConnectionTestTransportFactory,
@@ -46,6 +48,7 @@ class ConnectorConnectionTestService:
         if not 0 < timeout_seconds <= 30 or not 1 <= maximum_response_bytes <= 1_048_576:
             raise ValueError("Connection test bounds are invalid")
         self._configuration_repository = configuration_repository
+        self._result_repository = result_repository
         self._instance_repository = instance_repository
         self._credential_materializer = credential_materializer
         self._transport_factory = transport_factory
@@ -63,10 +66,7 @@ class ConnectorConnectionTestService:
         instance_id: str,
         correlation_id: str,
     ) -> ConnectorConnectionTestResult:
-        if not self._development_enabled:
-            raise ConnectorConnectionTestError("connection_test_development_only")
-        if actor.kind is not SubjectKind.HUMAN:
-            raise ConnectorConnectionTestError("connection_test_human_required")
+        self._require_development_human(actor)
         await self._require_bundled_instance(actor=actor, instance_id=instance_id)
         configuration = await self._configuration_repository.get(
             organization_id=actor.organization_id,
@@ -132,8 +132,43 @@ class ConnectorConnectionTestService:
             read_only_request_performed=request_performed,
             managed_infrastructure_contacted=target_contacted,
         )
+        await self._result_repository.put(
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+            result=result,
+        )
         await self._audit(actor, correlation_id, result.result_code, instance_id)
         return result
+
+    async def latest(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        instance_id: str,
+        correlation_id: str,
+    ) -> ConnectorConnectionTestResult:
+        self._require_development_human(actor)
+        await self._require_bundled_instance(actor=actor, instance_id=instance_id)
+        result = await self._result_repository.get_latest(
+            organization_id=actor.organization_id,
+            environment_id=self._environment_id,
+            instance_id=instance_id,
+        )
+        if result is None:
+            raise ConnectorConnectionTestError("connection_test_result_not_found")
+        await self._audit(
+            actor,
+            correlation_id,
+            "connection_test_latest_read",
+            instance_id,
+        )
+        return result
+
+    def _require_development_human(self, actor: AuthenticatedSubject) -> None:
+        if not self._development_enabled:
+            raise ConnectorConnectionTestError("connection_test_development_only")
+        if actor.kind is not SubjectKind.HUMAN:
+            raise ConnectorConnectionTestError("connection_test_human_required")
 
     async def _require_bundled_instance(
         self, *, actor: AuthenticatedSubject, instance_id: str

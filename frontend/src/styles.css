@@ -1009,6 +1009,18 @@ textarea:focus-visible {
   overflow-wrap: anywhere;
 }
 
+.installed-mcp-table .state-badge.success {
+  border-color: #b8d6cb;
+  color: #245f4b;
+  background: #e8f3ef;
+}
+
+.installed-mcp-table .state-badge.failed {
+  border-color: #e4bcbc;
+  color: #833b3b;
+  background: #f9ebeb;
+}
+
 .bundled-connection-test {
   display: flex;
   min-width: 0;

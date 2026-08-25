@@ -35,7 +35,7 @@ const configuration = {
   infrastructure_mutation_performed: false as const,
 };
 
-function renderDialog() {
+function renderDialog(onTested = vi.fn()) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -45,6 +45,7 @@ function renderDialog() {
         instance={connectorInstanceRecord}
         onCancel={vi.fn()}
         onConfigured={vi.fn()}
+        onTested={onTested}
       />
     </QueryClientProvider>,
   );
@@ -72,7 +73,8 @@ beforeEach(() => {
 
 describe("BundledConnectionDialog", () => {
   it("configures target metadata without collecting a raw secret and runs a read-only test", async () => {
-    renderDialog();
+    const onTested = vi.fn();
+    renderDialog(onTested);
     fireEvent.change(await screen.findByRole("textbox", { name: "Hostname or IP address" }), {
       target: { value: configuration.hostname },
     });
@@ -86,5 +88,9 @@ describe("BundledConnectionDialog", () => {
     ));
     expect(await screen.findByText("Connection passed")).toBeVisible();
     expect(screen.getByText(/hitachi api compatible/i)).toBeVisible();
+    expect(onTested).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: "passed",
+      infrastructure_mutation_performed: false,
+    }));
   });
 });

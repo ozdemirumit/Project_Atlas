@@ -143,3 +143,29 @@ async def test_connector_connection(
     return ConnectorConnectionTestResponse(
         data=ConnectorConnectionTestData.from_domain(result), meta=_meta(request)
     )
+
+
+@router.get(
+    "/{instance_id}/connection-tests/latest",
+    response_model=ConnectorConnectionTestResponse,
+)
+async def get_latest_connector_connection_test(
+    instance_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[AuthorizationDecision, Depends(authorize_connector_target_session_read)],
+) -> ConnectorConnectionTestResponse:
+    service: ConnectorConnectionTestService = request.app.state.connector_connection_test_service
+    try:
+        result = await service.latest(
+            actor=subject,
+            instance_id=instance_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ConnectorConnectionTestError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ConnectorConnectionTestResponse(
+        data=ConnectorConnectionTestData.from_domain(result), meta=_meta(request)
+    )

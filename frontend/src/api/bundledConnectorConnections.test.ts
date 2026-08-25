@@ -4,6 +4,7 @@ import {
   HITACHI_AUTHORIZATION_SECRET_REFERENCE,
   HITACHI_SYSTEM_CA_TRUST_PROFILE,
   getBundledConnectionConfiguration,
+  getLatestBundledConnectorConnectionTest,
   saveBundledConnectionConfiguration,
   testBundledConnectorConnection,
 } from "./bundledConnectorConnections";
@@ -63,5 +64,29 @@ describe("bundled connector connection API", () => {
     };
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: result }))));
     await expect(testBundledConnectorConnection(instanceId)).resolves.toEqual(result);
+  });
+
+  it("retrieves the latest minimized test result and treats absence as no test", async () => {
+    const result = {
+      test_id: "connection-test.hitachi-latest",
+      connector_id: configuration.connector_id,
+      instance_id: instanceId,
+      outcome: "failed",
+      result_code: "connection_test_credentials_unavailable",
+      retryable: false,
+      checked_at: "2026-08-25T12:02:00Z",
+      duration_ms: 0,
+      read_only_request_performed: false,
+      target_details_disclosed: false,
+      secret_material_disclosed: false,
+      managed_infrastructure_contacted: false,
+      infrastructure_mutation_performed: false,
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: result })))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(getLatestBundledConnectorConnectionTest(instanceId)).resolves.toEqual(result);
+    await expect(getLatestBundledConnectorConnectionTest(instanceId)).resolves.toBeNull();
   });
 });

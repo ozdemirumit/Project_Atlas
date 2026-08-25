@@ -8,6 +8,7 @@ import {
   saveBundledConnectionConfiguration,
   testBundledConnectorConnection,
   type BundledConnectionConfiguration,
+  type ConnectorConnectionTestResult,
 } from "../../api/bundledConnectorConnections";
 import type { ConnectorInstanceRecord } from "../../api/connectorInstances";
 
@@ -16,11 +17,13 @@ export function BundledConnectionDialog({
   instance,
   onCancel,
   onConfigured,
+  onTested,
 }: {
   configuration?: BundledConnectionConfiguration | null;
   instance: ConnectorInstanceRecord;
   onCancel: () => void;
   onConfigured: (configuration: BundledConnectionConfiguration) => void;
+  onTested?: (result: ConnectorConnectionTestResult) => void;
 }) {
   const queryClient = useQueryClient();
   const queryKey = ["bundled-connection-configuration", instance.instance_id] as const;
@@ -49,6 +52,13 @@ export function BundledConnectionDialog({
   });
   const testMutation = useMutation({
     mutationFn: () => testBundledConnectorConnection(instance.instance_id),
+    onSuccess: (result) => {
+      queryClient.setQueryData(
+        ["bundled-connection-test", instance.instance_id],
+        result,
+      );
+      onTested?.(result);
+    },
   });
   const valid = /^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$/.test(hostname.trim()) &&
     port >= 1 && port <= 65_535;

@@ -128,3 +128,19 @@ export async function testBundledConnectorConnection(
   }
   return data;
 }
+
+export async function getLatestBundledConnectorConnectionTest(
+  instanceId: string,
+): Promise<ConnectorConnectionTestResult | null> {
+  const response = await apiFetch(
+    `/api/v1/connectors/bundled-instances/${encodeURIComponent(instanceId)}/connection-tests/latest`,
+    { headers: { Accept: "application/json" } },
+  );
+  if (response.status === 404) return null;
+  if (!response.ok) throw new ApiRequestError("Latest connection test failed", response.status);
+  const data = responseData(await response.json());
+  if (!isConnectionTest(data) || data.instance_id !== instanceId) {
+    throw new Error("Latest connection test returned unsafe data");
+  }
+  return data;
+}
