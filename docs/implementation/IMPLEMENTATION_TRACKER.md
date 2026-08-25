@@ -4,14 +4,70 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-245 |
-| Title | Installed MCP tenant-scoped operational knowledge-draft inventory and server-provided signed curation options |
-| Status | Pull Request CI In Progress |
-| Branch | `agent/installed-mcp-knowledge-draft-governance` |
-| Pull Request | [PR #259](https://github.com/ozdemirumit/Project_Atlas/pull/259) |
-| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-052, ADR-041, ADR-042, ADR-100, ADR-123, ADR-133 |
+| Task ID | ATLAS-IMP-246 |
+| Title | Installed MCP tenant-scoped knowledge review-request inventory and server-provided signed orchestration options |
+| Status | In Progress |
+| Branch | `agent/installed-mcp-review-request-governance` |
+| Pull Request | Not opened |
+| Governing Documents | ATLAS-003, ATLAS-020, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-052, ADR-042, ADR-043, ADR-100, ADR-123, ADR-133 |
 | Last Updated | 2026-08-25 |
-| Next Action | Require exact-head PR CI before merge |
+| Next Action | Implement tenant-scoped review-request inventory and signed option discovery |
+
+### ATLAS-IMP-246 Scope Rationale
+
+- IMP-245 makes one unapproved operational knowledge draft authoritative and reloadable in
+  Installed MCPs, but review orchestration remains an unreachable form with browser-entered policy
+  identifiers and digests, no tenant-scoped inventory and no signed option discovery.
+- This slice atomically claims one exact immutable draft and creates only one unassigned domain-and-
+  security review request through the existing trusted ADR-043 boundary.
+- Reviewer assignment, protected inspection, findings, decisions, correction, approval,
+  publication, retrieval, model context, workflow, execution, deployment and infrastructure
+  mutation remain separate later actions.
+
+### ATLAS-IMP-246 Acceptance Criteria
+
+- Review-request claims, records, policies, source reads and downstream reviewer-assignment source
+  reads use organization-and-environment-scoped contracts; persistence uniqueness and idempotency
+  coordinates remain tenant scoped.
+- Installed MCP rows expose `Request review` or `View request` only after authoritative draft and
+  review-request inventory reads both succeed.
+- The browser selects only an exact server-provided signed orchestration option and cannot provide
+  policy identifiers or digests, reviewer identities, queues, routing, classification, access,
+  retention, encryption, content, storage coordinates or mutable lineage fields.
+- The server reloads and independently validates exact draft lineage, signed orchestration policy,
+  assurance, separation of duty, tenant scope, freshness, inherited governance and adapter
+  availability before creating the irreversible claim.
+- Claim creation remains the point of no return. Any existing claim suppresses new options;
+  timeout, cancellation, adapter failure or uncertain outcome never enables automatic or user-
+  controlled retry and resolves only through authoritative inventory reload.
+- Production remains fail closed without trusted policy and orchestration adapters. Development
+  uses only deterministic synthetic manifest evidence and performs no network, secret-store,
+  filesystem, model, vector, workflow, deployment or infrastructure operation.
+- API and persistence projections exclude draft or evidence content, excerpts, observations,
+  storage coordinates, ACL principals, reviewer identities, secrets, signatures, raw idempotency
+  keys, request fingerprints and unrelated mutable lineage fields.
+- Successful orchestration exposes only minimized immutable review-request catalog metadata with
+  both tracks awaiting reviewers; assignment, inspection, decisions, approval, publication,
+  retrieval, model, workflow, execution, deployment and infrastructure-mutation flags remain false.
+- Normal username/password authentication satisfies the default `SINGLE_FACTOR` policy. No global
+  MFA requirement or second browser session is introduced.
+
+### ATLAS-IMP-246 Verification Plan
+
+- Focused backend tests will cover tenant isolation, identical identifiers in separate tenants,
+  authoritative inventory/options, exact signed-option matching, adapter fail-closed behavior,
+  permission, assurance, separation of duty, claim suppression, idempotent replay, uncertain
+  permanent consumption, downstream scope-before-deserialization and live PostgreSQL concurrency.
+- Migration verification will include upgrade, downgrade and re-upgrade plus a populated legacy
+  upgrade while preserving historical canonical digests and rejecting unsafe global downgrade
+  collisions before changing constraints.
+- Focused frontend tests will cover exact-field fail-closed parsing, authoritative empty/error
+  refresh, server-option-only submission, permanent retry suppression, `Request review` to
+  `View request`, normal login and absence of assignment, inspection, decision, approval,
+  publication, retrieval, workflow, execution, deployment or mutation controls.
+- Live API/browser verification will cover username/password login, immutable request reload,
+  no-store payload minimization and desktop plus `390x844` responsive behavior. Exact-head PR CI
+  and exact merge-commit post-main CI must pass before delivery.
 
 ### ATLAS-IMP-245 Scope Rationale
 
