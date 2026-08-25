@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-246 |
 | Title | Installed MCP tenant-scoped knowledge review-request inventory and server-provided signed orchestration options |
-| Status | In Progress |
+| Status | Pull Request CI In Progress |
 | Branch | `agent/installed-mcp-review-request-governance` |
-| Pull Request | Not opened |
+| Pull Request | [#260](https://github.com/ozdemirumit/Project_Atlas/pull/260) |
 | Governing Documents | ATLAS-003, ATLAS-020, ATLAS-027, ATLAS-030, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-052, ADR-042, ADR-043, ADR-100, ADR-123, ADR-133 |
 | Last Updated | 2026-08-25 |
-| Next Action | Implement tenant-scoped review-request inventory and signed option discovery |
+| Next Action | Pass exact-head PR CI, merge, and verify the exact merge commit on `main` |
 
 ### ATLAS-IMP-246 Scope Rationale
 
@@ -68,6 +68,27 @@
 - Live API/browser verification will cover username/password login, immutable request reload,
   no-store payload minimization and desktop plus `390x844` responsive behavior. Exact-head PR CI
   and exact merge-commit post-main CI must pass before delivery.
+
+### ATLAS-IMP-246 Verification Evidence
+
+- Initial focused backend review-request, reviewer-assignment and correction-resubmission coverage
+  passed with `39 passed, 2 deselected`. A dedicated migrated PostgreSQL database then passed both
+  tenant-isolation and migration cases with `2 passed, 15 deselected`.
+- Two independent read-only reviews found five boundary issues: adapter identity was not bound before
+  claim, a raced idempotency conflict could be reported as uncertain, correction fallback scope ended
+  too early, the browser attempt lock reset after dialog remount and a legacy assignment type was
+  coupled to the minimized inventory API. All five findings were corrected before opening the PR.
+- Post-review backend regression coverage passed with `50 passed, 2 deselected` across review request,
+  correction resubmission, review decision and final resolution. Ruff and MyPy passed over all changed
+  backend contracts, adapters and tests.
+- Focused frontend API, panel and Installed MCP workspace coverage passed with `77 passed`; the
+  post-review permanent-lock and isolated legacy-assignment regressions passed with `6 passed`.
+  TypeScript project checking, changed-file ESLint and the production Vite build passed.
+- The live frontend at `127.0.0.1:5226` exposed only the normal username/password sign-in path with no
+  global MFA or authorized-browser-session prompt. At `390x844`, both document and body widths remained
+  exactly `390px` with no page-level horizontal overflow.
+- [PR #260](https://github.com/ozdemirumit/Project_Atlas/pull/260) contains the exact-head implementation;
+  CI and merge evidence remain pending.
 
 ### ATLAS-IMP-245 Scope Rationale
 
