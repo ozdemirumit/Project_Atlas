@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import replace
 from pathlib import Path
+from typing import TypedDict, cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -18,6 +19,9 @@ from atlas.api.app import create_app
 from atlas.modules.connectors.adapters.runtime_deactivation_memory import (
     InMemoryConnectorRuntimeDeactivationRepository,
 )
+from atlas.modules.connectors.application.runtime_activation import (
+    ConnectorRuntimeActivationService,
+)
 from atlas.modules.connectors.application.runtime_activation_ports import (
     ConnectorRuntimeActivationError,
 )
@@ -27,9 +31,22 @@ from atlas.modules.connectors.application.runtime_deactivation import (
 from atlas.modules.connectors.application.runtime_deactivation_ports import (
     ConnectorRuntimeDeactivationError,
 )
-from atlas.modules.identity.domain.models import SubjectKind
+from atlas.modules.connectors.domain.runtime_activation import ConnectorRuntimeActivationRecord
+from atlas.modules.connectors.domain.runtime_trust import ConnectorRuntimeTrustGrantRecord
+from atlas.modules.identity.domain.models import AuthenticatedSubject, SubjectKind
 
 ACKNOWLEDGEMENT_FIELD = "acknowledged_runtime_only_deactivation"
+
+
+class DeactivationArguments(TypedDict):
+    actor: AuthenticatedSubject
+    activation_id: str
+    expected_activation_version: int | None
+    expected_activation_digest: str | None
+    reason: str
+    runtime_only_acknowledged: bool
+    idempotency_key: str
+    correlation_id: str
 
 
 class FailingAuditSink:
@@ -40,7 +57,12 @@ class FailingAuditSink:
 
 async def deactivation_fixture(
     *, audit_sink: CollectingAuditSink | FailingAuditSink | None = None
-) -> tuple[object, ConnectorRuntimeDeactivationService, object, object]:
+) -> tuple[
+    ConnectorRuntimeActivationService,
+    ConnectorRuntimeDeactivationService,
+    ConnectorRuntimeActivationRecord,
+    ConnectorRuntimeTrustGrantRecord,
+]:
     (
         activation_service,
         _,
@@ -69,7 +91,7 @@ async def test_runtime_deactivation_is_immutable_idempotent_and_blocks_runtime_u
     audit = CollectingAuditSink()
     activation_service, service, activation, _ = await deactivation_fixture(audit_sink=audit)
     actor = runtime_activation_operator()
-    kwargs = {
+    kwargs: DeactivationArguments = {
         "actor": actor,
         "activation_id": activation.activation_id,
         "expected_activation_version": activation.version,
@@ -102,10 +124,15 @@ async def test_runtime_deactivation_is_immutable_idempotent_and_blocks_runtime_u
     ) == (activation,)
     with pytest.raises(ConnectorRuntimeDeactivationError, match="idempotency_conflict"):
         await service.create(
-            **{
-                **kwargs,
-                "reason": "Disable this Atlas connector runtime for a different reviewed reason.",
-            }
+            **cast(
+                DeactivationArguments,
+                {
+                    **kwargs,
+                    "reason": (
+                        "Disable this Atlas connector runtime for a different reviewed reason."
+                    ),
+                },
+            )
         )
     assert {record.result_code for record in audit.records} >= {
         "connector_runtime_deactivation_requested",
@@ -119,7 +146,7 @@ async def test_runtime_deactivation_enforces_preconditions_scope_human_and_ackno
 ):
     _, service, activation, _ = await deactivation_fixture()
     actor = runtime_activation_operator()
-    base = {
+    base: DeactivationArguments = {
         "actor": actor,
         "activation_id": activation.activation_id,
         "expected_activation_version": activation.version,
@@ -141,7 +168,7 @@ async def test_runtime_deactivation_enforces_preconditions_scope_human_and_ackno
     )
     for changes, expected in cases:
         with pytest.raises(ConnectorRuntimeDeactivationError, match=expected):
-            await service.create(**{**base, **changes})
+            await service.create(**cast(DeactivationArguments, {**base, **changes}))
 
 
 @pytest.mark.asyncio

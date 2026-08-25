@@ -333,7 +333,22 @@ class InventoryDeviceService:
             try:
                 updated = replace(
                     current,
-                    **normalized,
+                    display_name=cast(str, normalized.get("display_name", current.display_name)),
+                    device_type=cast(
+                        InventoryDeviceType,
+                        normalized.get("device_type", current.device_type),
+                    ),
+                    vendor=cast(str, normalized.get("vendor", current.vendor)),
+                    model=cast(str, normalized.get("model", current.model)),
+                    serial_number=cast(
+                        str | None,
+                        normalized.get("serial_number", current.serial_number),
+                    ),
+                    management_address=cast(
+                        str | None,
+                        normalized.get("management_address", current.management_address),
+                    ),
+                    purpose=cast(str, normalized.get("purpose", current.purpose)),
                     version=current.version + 1,
                     updated_by=actor.subject_id,
                     updated_at=now,
@@ -466,6 +481,8 @@ class InventoryDeviceService:
             normalized["management_address"] = management_address.lower()
         device_type = normalized.get("device_type")
         if device_type is not None:
+            if not isinstance(device_type, str):
+                raise InventoryDeviceError("inventory_device_update_request_invalid")
             try:
                 normalized["device_type"] = InventoryDeviceType(device_type)
             except (TypeError, ValueError) as error:

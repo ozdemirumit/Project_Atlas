@@ -1,17 +1,29 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator, Callable, Iterable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
+from atlas.modules.connectors.application.bundled_connection_configuration_ports import (
+    BundledConnectionConfigurationRepository,
+)
 from atlas.modules.connectors.application.connection_test_ports import (
+    ConnectorAuthorizationHeaderLease,
     ConnectorConnectionTestError,
+    ConnectorCredentialMaterializer,
+    HitachiConnectionTestTransportFactory,
+)
+from atlas.modules.connectors.application.instance_creation_ports import (
+    ConnectorInstanceRepository,
 )
 from atlas.modules.connectors.domain.instance_creation import DISABLED_UNCONFIGURED
 from atlas.modules.connectors.vendors.hitachi_ops_center.manifest import PACKAGE_ID
+from atlas.modules.connectors.vendors.hitachi_ops_center.ports import HitachiOpsCenterTransport
 from atlas.modules.connectors.vendors.hitachi_ops_center.synthetic import (
     SyntheticHitachiResponse,
     SyntheticHitachiTransport,
@@ -23,7 +35,8 @@ from atlas.modules.health_checks.adapters.synthetic import (
     SyntheticStorageHealthExecutor,
     build_synthetic_health_check_definitions,
 )
-from atlas.modules.health_checks.domain.models import HealthCheckRunState
+from atlas.modules.health_checks.domain.models import HealthCheckDefinition, HealthCheckRunState
+from atlas.modules.inventory.application.ports import InventoryDeviceRepository
 from atlas.modules.inventory.domain.devices import (
     InventoryDeviceLifecycle,
     InventoryDeviceType,
@@ -34,12 +47,18 @@ INSTANCE_ID = "connector-instance.hitachi-health"
 STORAGE_ID = "836000123456"
 
 
-class ScopeRepository:
-    def __init__(self, records):  # type: ignore[no-untyped-def]
+class ScopeRepository[T]:
+    def __init__(self, records: Iterable[T]) -> None:
         self.records = tuple(records)
 
-    async def list_scope(self, **_kwargs):  # type: ignore[no-untyped-def]
+    async def list_scope(self, **_kwargs: object) -> tuple[T, ...]:
         return self.records
+
+
+class AuthorizationHeaderLease:
+    @staticmethod
+    def authorization_header() -> str:
+        return "Basic hidden"
 
 
 class CredentialMaterializer:
@@ -47,21 +66,44 @@ class CredentialMaterializer:
         self.available = available
 
     @asynccontextmanager
-    async def lease_authorization_header(self, **_kwargs):  # type: ignore[no-untyped-def]
+    async def lease_authorization_header(
+        self,
+        *,
+        secret_reference_id: str,
+        maximum_lease_seconds: int,
+    ) -> AsyncIterator[ConnectorAuthorizationHeaderLease]:
+        del secret_reference_id, maximum_lease_seconds
         if not self.available:
             raise ConnectorConnectionTestError("connection_test_credentials_unavailable")
-        yield SimpleNamespace(authorization_header=lambda: "Basic hidden")
+        yield AuthorizationHeaderLease()
 
 
 class TransportFactory:
     def __init__(self, transport: SyntheticHitachiTransport) -> None:
         self.transport = transport
 
-    def create(self, **_kwargs):  # type: ignore[no-untyped-def]
+    def create(
+        self,
+        *,
+        hostname: str,
+        port: int,
+        trust_profile_id: str,
+        authorization_header_provider: Callable[[], str],
+        timeout_seconds: float,
+        maximum_response_bytes: int,
+    ) -> HitachiOpsCenterTransport:
+        del (
+            hostname,
+            port,
+            trust_profile_id,
+            authorization_header_provider,
+            timeout_seconds,
+            maximum_response_bytes,
+        )
         return self.transport
 
 
-def definitions():  # type: ignore[no-untyped-def]
+def definitions() -> tuple[HealthCheckDefinition, ...]:
     controller, capacity = build_synthetic_health_check_definitions(
         organization_id="organization.atlas.local",
         environment="development",
@@ -80,19 +122,24 @@ def definitions():  # type: ignore[no-untyped-def]
 
 def build_executor(
     *,
-    configurations=(),  # type: ignore[no-untyped-def]
-    instances=(),  # type: ignore[no-untyped-def]
-    devices=(),  # type: ignore[no-untyped-def]
+    configurations: Iterable[object] = (),
+    instances: Iterable[object] = (),
+    devices: Iterable[object] = (),
     credentials_available: bool = True,
-    routes=None,  # type: ignore[no-untyped-def]
-):
+    routes: Mapping[str, SyntheticHitachiResponse] | None = None,
+) -> tuple[ConfiguredHitachiHealthExecutor, SyntheticHitachiTransport]:
     transport = SyntheticHitachiTransport(routes or {})
     executor = ConfiguredHitachiHealthExecutor(
-        configuration_repository=ScopeRepository(configurations),
-        instance_repository=ScopeRepository(instances),
-        inventory_repository=ScopeRepository(devices),
-        credential_materializer=CredentialMaterializer(available=credentials_available),
-        transport_factory=TransportFactory(transport),
+        configuration_repository=cast(
+            BundledConnectionConfigurationRepository, ScopeRepository(configurations)
+        ),
+        instance_repository=cast(ConnectorInstanceRepository, ScopeRepository(instances)),
+        inventory_repository=cast(InventoryDeviceRepository, ScopeRepository(devices)),
+        credential_materializer=cast(
+            ConnectorCredentialMaterializer,
+            CredentialMaterializer(available=credentials_available),
+        ),
+        transport_factory=cast(HitachiConnectionTestTransportFactory, TransportFactory(transport)),
         fallback_executor=SyntheticStorageHealthExecutor(),
         organization_id="organization.atlas.local",
         environment_id="environment.development",
