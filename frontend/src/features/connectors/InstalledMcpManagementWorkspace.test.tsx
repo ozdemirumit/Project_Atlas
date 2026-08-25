@@ -80,6 +80,11 @@ import {
   getOperationalKnowledgeReviewRequests,
 } from "../../api/knowledgeReviewRequests";
 import {
+  createOperationalKnowledgeReviewerAssignment,
+  getOperationalKnowledgeReviewerAssignmentOptions,
+  getOperationalKnowledgeReviewerAssignments,
+} from "../../api/reviewerAssignments";
+import {
   createConnectorRuntimeTrustGrant,
   getConnectorRuntimeTrustGrantOptions,
   getConnectorRuntimeTrustGrants,
@@ -149,6 +154,10 @@ import {
   knowledgeReviewRequestInventoryItem,
   knowledgeReviewRequestOption,
 } from "./testKnowledgeReviewRequestFixture";
+import {
+  reviewerAssignmentInventoryItem,
+  reviewerAssignmentOption,
+} from "./testReviewerAssignmentFixture";
 
 const policy: ConnectorInstanceCreationPolicy = {
   policy_id: "connector-instance-creation-policy.development",
@@ -983,6 +992,16 @@ vi.mock("../../api/knowledgeReviewRequests", async (importOriginal) => {
   };
 });
 
+vi.mock("../../api/reviewerAssignments", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../api/reviewerAssignments")>();
+  return {
+    ...original,
+    createOperationalKnowledgeReviewerAssignment: vi.fn(),
+    getOperationalKnowledgeReviewerAssignmentOptions: vi.fn(),
+    getOperationalKnowledgeReviewerAssignments: vi.fn(),
+  };
+});
+
 vi.mock("../../api/connectorUpgradeReadiness", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/connectorUpgradeReadiness")>();
   return {
@@ -1110,6 +1129,11 @@ beforeEach(() => {
   vi.mocked(getOperationalKnowledgeReviewRequestOptions).mockResolvedValue([]);
   vi.mocked(createOperationalKnowledgeReviewRequest).mockResolvedValue({
     data: knowledgeReviewRequestInventoryItem,
+  });
+  vi.mocked(getOperationalKnowledgeReviewerAssignments).mockResolvedValue([]);
+  vi.mocked(getOperationalKnowledgeReviewerAssignmentOptions).mockResolvedValue([]);
+  vi.mocked(createOperationalKnowledgeReviewerAssignment).mockResolvedValue({
+    data: reviewerAssignmentInventoryItem,
   });
   vi.mocked(getConnectorUpgradeReadiness).mockResolvedValue(upgradeReadiness);
   vi.mocked(getConnectorUpgradePlan).mockResolvedValue(upgradePlan);
@@ -2162,6 +2186,103 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(screen.getByText("Enabled / knowledge draft")).toBeVisible();
     expect(screen.getByRole("button", { name: "View draft for Storage East" })).toBeVisible();
     expect(screen.queryByRole("button", { name: /request review|view request/i })).toBeNull();
+  });
+
+  it("assigns reviewers from a server option and transitions to View assignment", async () => {
+    primeOperationalEvidenceLifecycle();
+    vi.mocked(getOperationalEvidenceKnowledgeDrafts).mockResolvedValue([
+      evidenceKnowledgeDraftInventoryItem,
+    ]);
+    vi.mocked(getOperationalKnowledgeReviewRequests).mockResolvedValue([
+      knowledgeReviewRequestInventoryItem,
+    ]);
+    let inventory = [] as typeof reviewerAssignmentInventoryItem[];
+    vi.mocked(getOperationalKnowledgeReviewerAssignments).mockImplementation(
+      () => Promise.resolve(inventory),
+    );
+    vi.mocked(getOperationalKnowledgeReviewerAssignmentOptions).mockResolvedValue([
+      reviewerAssignmentOption,
+    ]);
+    vi.mocked(createOperationalKnowledgeReviewerAssignment).mockImplementation(() => {
+      inventory = [reviewerAssignmentInventoryItem];
+      return Promise.resolve({ data: reviewerAssignmentInventoryItem });
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", {
+      name: "Assign reviewers for Storage East",
+    }));
+    const dialog = screen.getByRole("dialog", {
+      name: "Assign reviewers for Storage East",
+    });
+    expect(await within(dialog).findByText(reviewerAssignmentOption.assignment_policy_id))
+      .toBeVisible();
+    expect(within(dialog).getByText("single factor")).toBeVisible();
+    expect(within(dialog).queryByRole("textbox", {
+      name: /policy|digest|reviewer|group|directory|queue|routing|result/i,
+    })).toBeNull();
+    fireEvent.click(within(dialog).getByLabelText(/assigns distinct eligible domain and security/i));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Assign reviewers" }));
+
+    await waitFor(() => expect(createOperationalKnowledgeReviewerAssignment).toHaveBeenCalledOnce());
+    expect(vi.mocked(createOperationalKnowledgeReviewerAssignment).mock.calls[0]?.[0])
+      .toMatchObject({
+        reviewRequest: knowledgeReviewRequestInventoryItem,
+        option: reviewerAssignmentOption,
+      });
+    expect(await screen.findByText("Enabled / reviewers assigned")).toBeVisible();
+    expect(screen.getByRole("button", { name: "View assignment for Storage East" })).toBeVisible();
+    expect(within(dialog).queryByRole("button", {
+      name: /inspect|finding|decide|approve|publish|retrieve|model|workflow|execute|deploy|mutate/i,
+    })).toBeNull();
+  });
+
+  it("restores minimized assignment state without reviewer identity", async () => {
+    primeOperationalEvidenceLifecycle();
+    vi.mocked(getOperationalEvidenceKnowledgeDrafts).mockResolvedValue([
+      evidenceKnowledgeDraftInventoryItem,
+    ]);
+    vi.mocked(getOperationalKnowledgeReviewRequests).mockResolvedValue([
+      knowledgeReviewRequestInventoryItem,
+    ]);
+    vi.mocked(getOperationalKnowledgeReviewerAssignments).mockResolvedValue([
+      reviewerAssignmentInventoryItem,
+    ]);
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole("button", {
+      name: "View assignment for Storage East",
+    }));
+    const dialog = screen.getByRole("dialog", {
+      name: "Assign reviewers for Storage East",
+    });
+    expect(await within(dialog).findByText("reviewers assigned")).toBeVisible();
+    expect(within(dialog).getAllByText("assigned")).toHaveLength(2);
+    expect(within(dialog).getByText(
+      new Date(reviewerAssignmentInventoryItem.expires_at).toLocaleString(),
+    )).toBeVisible();
+    expect(getOperationalKnowledgeReviewerAssignmentOptions).not.toHaveBeenCalled();
+    expect(within(dialog).queryByText(/username|email|subject digest|requester/i)).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: "Assign reviewers" })).toBeNull();
+  });
+
+  it("hides assignment controls when authoritative assignment inventory fails", async () => {
+    primeOperationalEvidenceLifecycle();
+    vi.mocked(getOperationalEvidenceKnowledgeDrafts).mockResolvedValue([
+      evidenceKnowledgeDraftInventoryItem,
+    ]);
+    vi.mocked(getOperationalKnowledgeReviewRequests).mockResolvedValue([
+      knowledgeReviewRequestInventoryItem,
+    ]);
+    vi.mocked(getOperationalKnowledgeReviewerAssignments).mockRejectedValue(
+      new ApiRequestError("Reviewer assignment inventory unavailable", 422),
+    );
+    renderWorkspace();
+
+    expect(await screen.findByText("Reviewer assignment inventory is unavailable")).toBeVisible();
+    expect(screen.getByText("Enabled / review requested")).toBeVisible();
+    expect(screen.getByRole("button", { name: "View request for Storage East" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /assign reviewers|view assignment/i })).toBeNull();
   });
 
   it("hides preservation controls when authoritative evidence inventory reload fails", async () => {

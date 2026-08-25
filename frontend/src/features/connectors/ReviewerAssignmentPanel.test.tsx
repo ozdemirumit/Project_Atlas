@@ -1,158 +1,144 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type {
-  OperationalKnowledgeReviewerAssignmentSource,
-} from "../../api/reviewerAssignments";
+import { knowledgeReviewRequestInventoryItem as reviewRequest } from
+  "./testKnowledgeReviewRequestFixture";
+import {
+  reviewerAssignmentInventoryItem as assignment,
+  reviewerAssignmentOption as option,
+} from "./testReviewerAssignmentFixture";
 import { ReviewerAssignmentPanel } from "./ReviewerAssignmentPanel";
 
-const policyDigest = "caa0be534d5b205f4f5184da47a75e961aa9871e986e7392aa75d9bfb289cc58";
-const reviewRequest = {
-  review_request_id: "operational-knowledge-review-request.test",
-  schema_version: "atlas.operational-knowledge-review-request.v1",
-  version: 1,
-  source_draft_id: "operational-evidence-knowledge-draft.test",
-  source_draft_digest: "3".repeat(64),
-  organization_id: "organization.local",
-  environment_id: "environment.development",
-  knowledge_item_id: "knowledge-item.operational-evidence.test",
-  draft_version_id: "knowledge-draft-version.test",
-  source_ingestion_id: "connector-invocation-evidence-ingestion.test",
-  source_invocation_id: "connector-bounded-invocation.test",
-  connector_id: "connector.test",
-  instance_id: "connector-instance.test",
-  capability_id: "capability.storage.health.read",
-  title: "Test connector storage health operational evidence",
-  manifest_id: "operational-knowledge-review-manifest.test",
-  knowledge_lifecycle: "review_requested",
-  canonical_digest: "4".repeat(64),
-  review_requested: true,
-  reviewer_assigned: false,
-  content_inspection_opened: false,
-  domain_review_completed: false,
-  security_review_completed: false,
-} as OperationalKnowledgeReviewerAssignmentSource;
-
-const assignment = {
-  assignment_set_id: "operational-knowledge-reviewer-assignment.test",
-  schema_version: "atlas.operational-knowledge-reviewer-assignment.v1",
-  version: 1,
-  source_review_request_id: reviewRequest.review_request_id,
-  source_review_request_digest: reviewRequest.canonical_digest,
-  source_draft_id: reviewRequest.source_draft_id,
-  source_draft_digest: reviewRequest.source_draft_digest,
-  organization_id: reviewRequest.organization_id,
-  environment_id: reviewRequest.environment_id,
-  knowledge_item_id: reviewRequest.knowledge_item_id,
-  draft_version_id: reviewRequest.draft_version_id,
-  source_ingestion_id: reviewRequest.source_ingestion_id,
-  source_invocation_id: reviewRequest.source_invocation_id,
-  connector_id: reviewRequest.connector_id,
-  instance_id: reviewRequest.instance_id,
-  capability_id: reviewRequest.capability_id,
-  title: reviewRequest.title,
-  knowledge_lifecycle: "reviewer_assigned",
-  classification: "classification.internal",
-  access_policy_id: "access-policy.knowledge.internal",
-  retention_policy_id: "retention-policy.knowledge.standard",
-  encryption_profile_id: "encryption-profile.knowledge",
-  manifest_id: reviewRequest.manifest_id,
-  manifest_digest: "5".repeat(64),
-  domain_assignment_id: "knowledge-review-assignment.domain.test",
-  security_assignment_id: "knowledge-review-assignment.security.test",
-  domain_reviewer_subject_digest: "6".repeat(64),
-  security_reviewer_subject_digest: "7".repeat(64),
-  domain_track_code: "review-track.domain",
-  security_track_code: "review-track.security",
-  domain_queue_id: "review-queue.operational-domain",
-  security_queue_id: "review-queue.knowledge-security",
-  domain_status: "assigned",
-  security_status: "assigned",
-  assignment_policy_id: "operational-knowledge-reviewer-assignment-policy.development",
-  assignment_policy_digest: policyDigest,
-  created_at: "2026-08-06T12:00:00+00:00",
-  expires_at: "2026-08-07T12:00:00+00:00",
-  instance_state: "operational_knowledge_reviewers_assigned",
-  canonical_digest: "8".repeat(64),
-  review_requested: true,
-  reviewer_assigned: true,
-  immutable_assignments_confirmed: true,
-  encrypted_identity_references: true,
-  transient_identity_buffers_erased: true,
-  directory_channel_closed: true,
-  content_inspection_opened: false,
-  domain_review_completed: false,
-  security_review_completed: false,
-  correction_created: false,
-  knowledge_approved: false,
-  knowledge_published: false,
-  chunks_created: false,
-  embeddings_created: false,
-  retrieval_published: false,
-  model_context_available: false,
-  graph_updated: false,
-  scheduled: false,
-  workflow_continued: false,
-  execution_authorized: false,
-  deployment_approved: false,
-  infrastructure_mutation_performed: false,
-  reused: false,
+const meta = {
+  correlation_id: "cor_reviewer_assignment_panel_test",
+  generated_at: "2026-08-25T00:10:10Z",
 };
 
-afterEach(() => vi.unstubAllGlobals());
+function createQueryClient() {
+  return new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+}
+
+function renderPanel(
+  onRequestEnterpriseLogin?: () => void,
+  queryClient = createQueryClient(),
+) {
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <ReviewerAssignmentPanel
+        reviewRequest={reviewRequest}
+        onRequestEnterpriseLogin={onRequestEnterpriseLogin}
+        sessionScopeKey="test-session"
+      />
+    </QueryClientProvider>,
+  );
+}
+
+function requestUrl(input: RequestInfo | URL): string {
+  return input instanceof Request ? input.url : input.toString();
+}
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 describe("ReviewerAssignmentPanel", () => {
-  it("assigns distinct reviewers without caller-selected identity or review authority", async () => {
-    document.cookie = "atlas_csrf=test-csrf; path=/";
-    const fetchMock = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(new Response(JSON.stringify({ data: assignment }), { status: 201 }));
-    vi.stubGlobal("fetch", fetchMock);
-    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
-    render(
-      <QueryClientProvider client={client}>
-        <ReviewerAssignmentPanel reviewRequest={reviewRequest} />
-      </QueryClientProvider>,
-    );
+  it("assigns from a signed option and exposes only minimized lifecycle state", async () => {
+    let inventory = [] as typeof assignment[];
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = requestUrl(input);
+      if (init?.method === "POST") {
+        inventory = [assignment];
+        return Promise.resolve(
+          new Response(JSON.stringify({ data: assignment, meta }), { status: 201 }),
+        );
+      }
+      if (url.includes("/options")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ data: [option], meta }), { status: 200 }),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ data: inventory, meta }), { status: 200 }),
+      );
+    });
+    renderPanel();
 
-    expect(screen.queryByRole("textbox", { name: /reviewer|group|queue/i })).toBeNull();
-    expect(screen.queryByRole("button", { name: /approve|reject|publish|inspect/i })).toBeNull();
-    fireEvent.click(screen.getByLabelText(/assigns distinct eligible reviewers/i));
+    expect(await screen.findByText(option.assignment_policy_id)).toBeVisible();
+    expect(screen.getByText("single factor")).toBeVisible();
+    expect(screen.queryByRole("textbox", {
+      name: /policy|digest|reviewer|group|directory|queue|routing|result/i,
+    })).toBeNull();
+    fireEvent.click(screen.getByLabelText(/assigns distinct eligible domain and security/i));
     fireEvent.click(screen.getByRole("button", { name: "Assign reviewers" }));
 
+    await waitFor(() => expect(
+      fetchMock.mock.calls.filter(([, init]) => init?.method === "POST"),
+    ).toHaveLength(1));
     expect(await screen.findByText("reviewers assigned")).toBeVisible();
     expect(screen.getAllByText("assigned")).toHaveLength(2);
-    expect(screen.getByText("protected")).toBeVisible();
-    expect(screen.getByText("locked")).toBeVisible();
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
-    const init = fetchMock.mock.calls[0]?.[1];
-    const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as Record<
-      string,
-      unknown
-    >;
-    expect(body).toEqual({
-      schema_version: "atlas.operational-knowledge-reviewer-assignment-input.v1",
-      source_review_request_id: reviewRequest.review_request_id,
-      source_review_request_digest: reviewRequest.canonical_digest,
-      assignment_policy_id: assignment.assignment_policy_id,
-      assignment_policy_digest: policyDigest,
-      purpose: "Assign distinct eligible domain and security reviewers without exposing identity.",
-      acknowledged_assignment_opens_no_content_and_records_no_decision: true,
+    expect(screen.getByText(new Date(assignment.expires_at).toLocaleString())).toBeVisible();
+    for (const secret of [
+      "reviewer@example.invalid", "hidden.reviewer", "group.reviewers", "subject.requester",
+      "c".repeat(64),
+    ]) expect(screen.queryByText(secret)).toBeNull();
+    expect(screen.queryByRole("button", {
+      name: /inspect|finding|decide|approve|publish|retrieve|model|workflow|execute|deploy|mutate/i,
+    })).toBeNull();
+  });
+
+  it("renders an authoritative existing assignment without loading options", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ data: [assignment], meta }), { status: 200 }),
+    );
+    renderPanel();
+
+    expect(await screen.findByText("reviewers assigned")).toBeVisible();
+    expect(fetchMock.mock.calls.some(([input]) => requestUrl(input).includes("/options"))).toBe(false);
+    expect(screen.queryByRole("button", { name: "Assign reviewers" })).toBeNull();
+  });
+
+  it("permanently locks a failed POST across panel remount", async () => {
+    const queryClient = createQueryClient();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      if (init?.method === "POST") return Promise.resolve(new Response(null, { status: 503 }));
+      if (requestUrl(input).includes("/options")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ data: [option], meta }), { status: 200 }),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ data: [], meta }), { status: 200 }),
+      );
     });
-    for (const forbidden of [
-      "domain_reviewer_id",
-      "security_reviewer_id",
-      "reviewer_group",
-      "domain_queue_id",
-      "security_queue_id",
-      "review_decision",
-      "approval",
-      "publication",
-      "content_inspection_opened",
-      "execution_authorized",
-    ])
-      expect(body).not.toHaveProperty(forbidden);
-    expect(new Headers(init?.headers).get("X-CSRF-Token")).toBe("test-csrf");
+    const firstRender = renderPanel(undefined, queryClient);
+
+    await screen.findByText(option.assignment_policy_id);
+    fireEvent.click(screen.getByLabelText(/assigns distinct eligible domain and security/i));
+    fireEvent.click(screen.getByRole("button", { name: "Assign reviewers" }));
+    expect(await screen.findByText(/permanently locked/i)).toBeVisible();
+    firstRender.unmount();
+    const secondRender = renderPanel(undefined, queryClient);
+
+    expect(await within(secondRender.container).findByText(/permanently locked/i)).toBeVisible();
+    expect(within(secondRender.container).queryByRole(
+      "button",
+      { name: "Assign reviewers" },
+    )).toBeNull();
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+  });
+
+  it("uses normal username and password recovery for a verified 401", async () => {
+    const onRequestEnterpriseLogin = vi.fn();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 401 }));
+    renderPanel(onRequestEnterpriseLogin);
+
+    expect(await screen.findByText(/username and password/i)).toBeVisible();
+    expect(screen.queryByText(/MFA|authorized browser session/i)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Sign in again" }));
+    expect(onRequestEnterpriseLogin).toHaveBeenCalledOnce();
   });
 });
