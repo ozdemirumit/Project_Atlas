@@ -57,7 +57,11 @@ class OperationalKnowledgeCorrectionRepository(Protocol):
     ) -> OperationalKnowledgeCorrectionRecord | None: ...
 
     async def get_by_new_review_request(
-        self, *, new_review_request_id: str
+        self,
+        *,
+        new_review_request_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> OperationalKnowledgeCorrectionRecord | None: ...
 
     async def get_claim_by_source_request(

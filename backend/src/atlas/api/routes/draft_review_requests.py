@@ -3,12 +3,15 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated, NoReturn
 
-from fastapi import APIRouter, Depends, Header, Path, Request, Response
+from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response
 
 from atlas.api.draft_review_request_schemas import (
-    OperationalKnowledgeReviewRequestData,
     OperationalKnowledgeReviewRequestInput,
-    OperationalKnowledgeReviewRequestResponse,
+    OperationalKnowledgeReviewRequestInventoryData,
+    OperationalKnowledgeReviewRequestInventoryItemResponse,
+    OperationalKnowledgeReviewRequestInventoryResponse,
+    OperationalKnowledgeReviewRequestOptionData,
+    OperationalKnowledgeReviewRequestOptionsResponse,
 )
 from atlas.api.errors import AtlasError
 from atlas.api.schemas import ResponseMeta
@@ -34,6 +37,7 @@ router = APIRouter(prefix="/knowledge/operational-review-requests", tags=["knowl
 IDEMPOTENCY = Header(
     alias="Idempotency-Key", min_length=8, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$"
 )
+STABLE_ID = r"^[a-z][a-z0-9_.:-]{2,127}$"
 
 
 def _raise(error: OperationalKnowledgeReviewRequestError) -> NoReturn:
@@ -64,17 +68,88 @@ def _response(
     record: OperationalKnowledgeReviewRequestRecord,
     request: Request,
     response: Response,
-) -> OperationalKnowledgeReviewRequestResponse:
+) -> OperationalKnowledgeReviewRequestInventoryItemResponse:
     response.headers["Cache-Control"] = "no-store"
-    return OperationalKnowledgeReviewRequestResponse(
-        data=OperationalKnowledgeReviewRequestData.from_domain(record),
+    return OperationalKnowledgeReviewRequestInventoryItemResponse(
+        data=OperationalKnowledgeReviewRequestInventoryData.from_domain(record),
         meta=ResponseMeta(
             correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
         ),
     )
 
 
-@router.post("", response_model=OperationalKnowledgeReviewRequestResponse, status_code=201)
+@router.get("", response_model=OperationalKnowledgeReviewRequestInventoryResponse)
+async def list_operational_knowledge_review_requests(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_operational_knowledge_review_request_read),
+    ],
+    source_draft_id: Annotated[str | None, Query(pattern=STABLE_ID)] = None,
+) -> OperationalKnowledgeReviewRequestInventoryResponse:
+    service: OperationalKnowledgeReviewRequestService = (
+        request.app.state.operational_knowledge_review_request_service
+    )
+    try:
+        records = await service.list_requests(
+            actor=subject,
+            source_draft_id=source_draft_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except OperationalKnowledgeReviewRequestError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return OperationalKnowledgeReviewRequestInventoryResponse(
+        data=tuple(
+            OperationalKnowledgeReviewRequestInventoryData.from_domain(record) for record in records
+        ),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.get("/options", response_model=OperationalKnowledgeReviewRequestOptionsResponse)
+async def list_operational_knowledge_review_request_options(
+    source_draft_id: Annotated[str, Query(pattern=STABLE_ID)],
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision,
+        Depends(authorize_operational_knowledge_review_request_read),
+    ],
+) -> OperationalKnowledgeReviewRequestOptionsResponse:
+    service: OperationalKnowledgeReviewRequestService = (
+        request.app.state.operational_knowledge_review_request_service
+    )
+    try:
+        options = await service.list_options(
+            actor=subject,
+            source_draft_id=source_draft_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except OperationalKnowledgeReviewRequestError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return OperationalKnowledgeReviewRequestOptionsResponse(
+        data=tuple(
+            OperationalKnowledgeReviewRequestOptionData.from_application(option)
+            for option in options
+        ),
+        meta=ResponseMeta(
+            correlation_id=str(request.state.correlation_id), generated_at=datetime.now(UTC)
+        ),
+    )
+
+
+@router.post(
+    "",
+    response_model=OperationalKnowledgeReviewRequestInventoryItemResponse,
+    status_code=201,
+)
 async def create_operational_knowledge_review_request(
     payload: OperationalKnowledgeReviewRequestInput,
     request: Request,
@@ -85,7 +160,7 @@ async def create_operational_knowledge_review_request(
         Depends(authorize_operational_knowledge_review_request_create),
     ],
     idempotency_key: Annotated[str, IDEMPOTENCY],
-) -> OperationalKnowledgeReviewRequestResponse:
+) -> OperationalKnowledgeReviewRequestInventoryItemResponse:
     service: OperationalKnowledgeReviewRequestService = (
         request.app.state.operational_knowledge_review_request_service
     )
@@ -93,9 +168,7 @@ async def create_operational_knowledge_review_request(
         record = await service.create(
             actor=subject,
             source_draft_id=payload.source_draft_id,
-            source_draft_digest=payload.source_draft_digest,
-            orchestration_policy_id=payload.orchestration_policy_id,
-            orchestration_policy_digest=payload.orchestration_policy_digest,
+            review_request_option_id=payload.review_request_option_id,
             purpose=payload.purpose,
             review_request_only_acknowledged=(
                 payload.acknowledged_result_is_only_an_unassigned_review_request
@@ -108,9 +181,12 @@ async def create_operational_knowledge_review_request(
     return _response(record, request, response)
 
 
-@router.get("/{review_request_id}", response_model=OperationalKnowledgeReviewRequestResponse)
+@router.get(
+    "/{review_request_id}",
+    response_model=OperationalKnowledgeReviewRequestInventoryItemResponse,
+)
 async def get_operational_knowledge_review_request(
-    review_request_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    review_request_id: Annotated[str, Path(pattern=STABLE_ID)],
     request: Request,
     response: Response,
     subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
@@ -118,7 +194,7 @@ async def get_operational_knowledge_review_request(
         AuthorizationDecision,
         Depends(authorize_operational_knowledge_review_request_read),
     ],
-) -> OperationalKnowledgeReviewRequestResponse:
+) -> OperationalKnowledgeReviewRequestInventoryItemResponse:
     service: OperationalKnowledgeReviewRequestService = (
         request.app.state.operational_knowledge_review_request_service
     )

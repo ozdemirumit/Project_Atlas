@@ -28,11 +28,11 @@ class OperationalKnowledgeReviewerAssignmentUncertainError(
 
 class OperationalKnowledgeReviewerAssignmentSource(Protocol):
     async def reviewer_assignment_source(
-        self, *, review_request_id: str
+        self, *, review_request_id: str, organization_id: str, environment_id: str
     ) -> tuple[OperationalKnowledgeReviewRequestRecord, frozenset[str]]: ...
 
     async def protected_content_lineage(
-        self, *, review_request_id: str
+        self, *, review_request_id: str, organization_id: str, environment_id: str
     ) -> tuple[
         OperationalKnowledgeReviewRequestRecord,
         OperationalEvidenceKnowledgeDraftRecord,

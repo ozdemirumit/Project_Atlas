@@ -283,6 +283,21 @@ async def test_reviewer_assignment_denies_non_human_identity() -> None:
 
 
 @pytest.mark.asyncio
+async def test_reviewer_assignment_source_lookup_is_tenant_scoped() -> None:
+    service, _, review_request, policy, authorizer, adapter, _ = await reviewer_assignment_fixture()
+    actor = replace(
+        development_target_session_operator("subject.knowledge-review-coordinator"),
+        organization_id="organization.foreign",
+    )
+
+    with pytest.raises(OperationalKnowledgeReviewerAssignmentError, match="source_not_found"):
+        await assign_reviewers(service, review_request, policy, actor=actor)
+
+    assert authorizer.calls == []
+    assert getattr(adapter, "call_count", 0) == 0
+
+
+@pytest.mark.asyncio
 async def test_reviewer_assignment_atomically_rejects_concurrent_second_claim() -> None:
     adapter = BlockingReviewerAssignmentAdapter()
     service, _, review_request, policy, _, _, _ = await reviewer_assignment_fixture(adapter=adapter)

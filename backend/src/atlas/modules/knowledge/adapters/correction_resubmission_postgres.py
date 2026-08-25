@@ -71,13 +71,19 @@ class PostgreSQLOperationalKnowledgeCorrectionRepository:
             return self._claim_to_domain(row.payload) if row else None
 
     async def get_by_new_review_request(
-        self, *, new_review_request_id: str
+        self,
+        *,
+        new_review_request_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> OperationalKnowledgeCorrectionRecord | None:
         async with self._sessions() as session:
             row = await session.scalar(
                 select(OperationalKnowledgeCorrectionModel).where(
                     OperationalKnowledgeCorrectionModel.new_review_request_id
-                    == new_review_request_id
+                    == new_review_request_id,
+                    OperationalKnowledgeCorrectionModel.organization_id == organization_id,
+                    OperationalKnowledgeCorrectionModel.environment_id == environment_id,
                 )
             )
             return self._record_to_domain(row.payload) if row else None

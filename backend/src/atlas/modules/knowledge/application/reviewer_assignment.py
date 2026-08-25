@@ -112,7 +112,9 @@ class OperationalKnowledgeReviewerAssignmentService:
             return await self._reuse(existing, actor, request_binding_digest, idempotency_digest)
         try:
             source, source_actors = await self._source.reviewer_assignment_source(
-                review_request_id=source_review_request_id
+                review_request_id=source_review_request_id,
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
             )
         except Exception as error:
             raise OperationalKnowledgeReviewerAssignmentError(
@@ -313,7 +315,9 @@ class OperationalKnowledgeReviewerAssignmentService:
             assignment_set_id=assignment_set_id
         )
         review_request, draft = await self._source.protected_content_lineage(
-            review_request_id=record.source_review_request_id
+            review_request_id=record.source_review_request_id,
+            organization_id=record.organization_id,
+            environment_id=record.environment_id,
         )
         if (
             review_request.review_request_id != record.source_review_request_id
