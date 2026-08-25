@@ -11,7 +11,7 @@
 | Pull Request | Pending |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-020, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-052, ADR-133 |
 | Last Updated | 2026-08-25 |
-| Next Action | Persist the Hitachi connection and latest test result, then connect it to scheduled health execution |
+| Next Action | Add operator-managed credential references and complete the short MCP enable/disable workflow |
 
 ### ATLAS-IMP-248 Scope Rationale
 
@@ -84,7 +84,16 @@
 - Post-integration focused verification passed: `6` backend tests and `72` frontend tests. Live browser
   validation confirmed the safe credential-unavailable result remained visible after closing the dialog
   and reloading the page.
-- Current estimate after this batch: approximately 45 percent of the user-visible MVP and 20-25
+- The development Health controller check now routes through the configured Hitachi HTTPS transport,
+  discovers only active inventory records whose vendor and serial number form an explicit storage
+  allowlist, and maps bounded component health into observations, findings and digest-only evidence.
+  Capacity remains explicitly synthetic until its real vendor response contract is implemented.
+- Health no longer seeds a synthetic controller run in the development profile. Live validation showed
+  `Configured Hitachi / read-only`, `No run` initially, then a safe failed result with zero target calls
+  when no configured MCP existed. The result explained that controller health remained unknown rather
+  than presenting a false healthy state. Focused integration verification passed: `28` backend tests,
+  `5` frontend tests, Ruff, strict MyPy, TypeScript and ESLint.
+- Current estimate after this batch: approximately 50 percent of the user-visible MVP and 25
   percent of the complete long-term product vision. These are scope estimates, not line-count metrics.
 
 ### Deferred Until MVP Completion

@@ -60,7 +60,9 @@ export default function HealthScheduledChecksWorkspace({
           <h2>Governed read-only checks</h2>
         </div>
         <span className="data-profile">
-          <Clock3 size={14} /> Deterministic schedule
+          <Clock3 size={14} /> {overview?.data_profile === "configured_hitachi_read_only"
+            ? "Configured Hitachi / read-only"
+            : "Deterministic schedule"}
         </span>
       </div>
 

@@ -12,6 +12,10 @@ class BundledConnectionConfigurationError(RuntimeError):
 
 
 class BundledConnectionConfigurationRepository(Protocol):
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[BundledConnectionConfiguration, ...]: ...
+
     async def get(
         self, *, organization_id: str, environment_id: str, instance_id: str
     ) -> BundledConnectionConfiguration | None: ...

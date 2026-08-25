@@ -17,6 +17,15 @@ class InMemoryBundledConnectionConfigurationRepository(
         self._records: dict[tuple[str, str, str], BundledConnectionConfiguration] = {}
         self._lock = asyncio.Lock()
 
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[BundledConnectionConfiguration, ...]:
+        return tuple(
+            record
+            for (record_organization, record_environment, _), record in self._records.items()
+            if record_organization == organization_id and record_environment == environment_id
+        )
+
     async def get(
         self, *, organization_id: str, environment_id: str, instance_id: str
     ) -> BundledConnectionConfiguration | None:

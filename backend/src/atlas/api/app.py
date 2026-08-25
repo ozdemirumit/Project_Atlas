@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from typing import Any, cast
@@ -792,6 +793,10 @@ from atlas.modules.conversations.domain.models import (
 from atlas.modules.graph.adapters.synthetic import build_synthetic_graph_snapshot
 from atlas.modules.graph.application.engine import InMemoryGraphImpactAnalyzer
 from atlas.modules.graph.application.service import GraphImpactService
+from atlas.modules.health_checks.adapters.configured_hitachi import (
+    ConfiguredHitachiHealthExecutor,
+)
+from atlas.modules.health_checks.adapters.hitachi import CONTROLLER_DEFINITION_ID
 from atlas.modules.health_checks.adapters.synthetic import (
     SyntheticStorageHealthExecutor,
     build_synthetic_health_check_definitions,
@@ -4854,17 +4859,19 @@ def create_app(
             deployment_environment=resolved_settings.environment,
         )
     )
+    hitachi_credential_materializer = DevelopmentEnvironmentCredentialMaterializer(
+        deployment_environment=resolved_settings.environment,
+        reference_environment_variables={
+            "secret.hitachi.readonly": "ATLAS_HITACHI_AUTHORIZATION"
+        },
+    )
+    hitachi_transport_factory = HitachiOpsCenterConnectionTestHttpsFactory()
     resolved_connector_connection_test_service = ConnectorConnectionTestService(
         configuration_repository=bundled_connection_configuration_repository,
         result_repository=InMemoryConnectorConnectionTestResultRepository(),
         instance_repository=resolved_connector_instance_creation_service.repository,
-        credential_materializer=DevelopmentEnvironmentCredentialMaterializer(
-            deployment_environment=resolved_settings.environment,
-            reference_environment_variables={
-                "secret.hitachi.readonly": "ATLAS_HITACHI_AUTHORIZATION"
-            },
-        ),
-        transport_factory=HitachiOpsCenterConnectionTestHttpsFactory(),
+        credential_materializer=hitachi_credential_materializer,
+        transport_factory=hitachi_transport_factory,
         audit_sink=resolved_audit_sink,
         environment_id=resolved_connector_instance_creation_service.environment_id,
         deployment_environment=resolved_settings.environment,
@@ -6834,15 +6841,55 @@ def create_app(
         analyzer=resolved_graph_analyzer,
         audit_sink=resolved_audit_sink,
     )
-    health_check_definitions = build_synthetic_health_check_definitions(
+    base_health_check_definitions = build_synthetic_health_check_definitions(
         organization_id=resolved_settings.development_organization_id,
         environment=resolved_settings.environment,
     )
+    configured_hitachi_health_enabled = resolved_settings.environment == "development"
+    health_check_definitions = (
+        tuple(
+            replace(
+                definition,
+                connector_id="connector.hitachi.opscenter.configuration-manager",
+                connector_version="0.1.0",
+                target_id="target.hitachi.opscenter.configured",
+            )
+            if definition.definition_id == CONTROLLER_DEFINITION_ID
+            else definition
+            for definition in base_health_check_definitions
+        )
+        if configured_hitachi_health_enabled
+        else base_health_check_definitions
+    )
+    synthetic_latest_runs = build_synthetic_latest_runs(health_check_definitions)
     resolved_health_check_service = health_check_service or HealthCheckService(
         definitions=health_check_definitions,
-        latest_runs=build_synthetic_latest_runs(health_check_definitions),
-        executor=SyntheticStorageHealthExecutor(),
+        latest_runs=tuple(
+            run
+            for run in synthetic_latest_runs
+            if not configured_hitachi_health_enabled
+            or run.definition_id != CONTROLLER_DEFINITION_ID
+        ),
+        executor=(
+            ConfiguredHitachiHealthExecutor(
+                configuration_repository=bundled_connection_configuration_repository,
+                instance_repository=resolved_connector_instance_creation_service.repository,
+                inventory_repository=resolved_inventory_device_service.repository,
+                credential_materializer=hitachi_credential_materializer,
+                transport_factory=hitachi_transport_factory,
+                fallback_executor=SyntheticStorageHealthExecutor(),
+                organization_id=resolved_settings.development_organization_id,
+                environment_id=f"environment.{resolved_settings.environment}",
+            )
+            if configured_hitachi_health_enabled
+            else SyntheticStorageHealthExecutor()
+        ),
         audit_sink=resolved_audit_sink,
+        data_profile=(
+            "configured_hitachi_read_only"
+            if configured_hitachi_health_enabled
+            else "synthetic_lab"
+        ),
     )
     resolved_investigation_service = investigation_service or InvestigationService(
         assembler=SyntheticInvestigationAssembler(),
