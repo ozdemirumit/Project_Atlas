@@ -8,7 +8,7 @@
 | Title | Durable bundled MCP operator state |
 | Status | Review |
 | Branch | `agent/mvp-bundled-persistence` |
-| Pull Request | Pending |
+| Pull Request | [#267](https://github.com/ozdemirumit/Project_Atlas/pull/267) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-020, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-053, ADR-133 |
 | Last Updated | 2026-08-25 |
 | Next Action | Replace remaining synthetic Health projections with connector-backed inventory and evidence |
