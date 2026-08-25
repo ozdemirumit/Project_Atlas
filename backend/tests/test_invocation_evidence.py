@@ -37,6 +37,7 @@ from atlas.modules.connectors.adapters.invocation_evidence_postgres import (
 )
 from atlas.modules.connectors.adapters.invocation_evidence_synthetic import (
     SyntheticConnectorInvocationEvidenceAdapter,
+    UnavailableConnectorInvocationEvidenceAdapter,
 )
 from atlas.modules.connectors.adapters.invocation_permission import (
     AuthorizationConnectorCapabilityPermissionAuthorizer,
@@ -235,6 +236,96 @@ async def test_invocation_evidence_is_immutable_minimized_and_idempotent() -> No
 
 
 @pytest.mark.asyncio
+async def test_invocation_evidence_inventory_and_exact_signed_options_are_authoritative() -> None:
+    service, invocation, policy, _, _, _ = await evidence_fixture()
+    actor = target_session_operator("subject.connector-independent-evidence-ingestor")
+
+    options = await service.list_options(
+        actor=actor,
+        source_invocation_id=invocation.invocation_id,
+        correlation_id="cor_invocation_evidence_options",
+    )
+    assert len(options) == 1
+    option = options[0]
+    assert option.source_invocation_id == invocation.invocation_id
+    assert option.source_invocation_digest == invocation.canonical_digest
+    assert option.ingestion_policy_id == policy.policy_id
+    assert option.ingestion_policy_digest == policy.canonical_digest
+    assert option.required_assurance_level is AssuranceLevel.SINGLE_FACTOR
+    assert option.classification == policy.required_classification
+    assert option.retention_policy_id == policy.retention_policy_id
+    assert (
+        await service.list_evidence(
+            actor=actor,
+            source_invocation_id=invocation.invocation_id,
+            correlation_id="cor_invocation_evidence_empty_inventory",
+        )
+        == ()
+    )
+
+    record = await ingest_evidence(service, invocation, policy, actor=actor)
+
+    assert await service.list_options(
+        actor=actor,
+        source_invocation_id=invocation.invocation_id,
+        correlation_id="cor_invocation_evidence_claimed_options",
+    ) == ()
+    assert await service.list_evidence(
+        actor=actor,
+        source_invocation_id=invocation.invocation_id,
+        correlation_id="cor_invocation_evidence_inventory",
+    ) == (record,)
+
+
+@pytest.mark.asyncio
+async def test_invocation_evidence_options_reject_stale_policy_and_production_fail_closed(
+) -> None:
+    _, invocation, policy, _, _, bounded = await evidence_fixture()
+    actor = target_session_operator("subject.connector-independent-evidence-ingestor")
+    stale_policy = replace(
+        policy,
+        expires_at=invocation.completed_at,
+        canonical_digest="0" * 64,
+    )
+    stale_policy = replace(stale_policy, canonical_digest=_signed_policy(stale_policy))
+    source = bounded[0]
+
+    stale_service = ConnectorInvocationEvidenceService(
+        repository=InMemoryConnectorInvocationEvidenceRepository(),
+        source=source,
+        policy_source=InMemoryConnectorInvocationEvidencePolicySource((stale_policy,)),
+        permission_authorizer=RecordingPermissionAuthorizer(),
+        adapter=UnavailableConnectorInvocationEvidenceAdapter(),
+        audit_sink=CollectingAuditSink(),
+        environment_id=invocation.environment_id,
+        clock=lambda: invocation.completed_at,
+    )
+    assert await stale_service.list_options(
+        actor=actor,
+        source_invocation_id=invocation.invocation_id,
+        correlation_id="cor_invocation_evidence_stale_options",
+    ) == ()
+
+    closed_service = ConnectorInvocationEvidenceService(
+        repository=InMemoryConnectorInvocationEvidenceRepository(),
+        source=source,
+        policy_source=InMemoryConnectorInvocationEvidencePolicySource(()),
+        permission_authorizer=RecordingPermissionAuthorizer(),
+        adapter=UnavailableConnectorInvocationEvidenceAdapter(),
+        audit_sink=CollectingAuditSink(),
+        environment_id=invocation.environment_id,
+        clock=lambda: invocation.completed_at,
+    )
+    assert await closed_service.list_options(
+        actor=actor,
+        source_invocation_id=invocation.invocation_id,
+        correlation_id="cor_invocation_evidence_closed_options",
+    ) == ()
+    with pytest.raises(ConnectorInvocationEvidenceError, match="policy_not_found"):
+        await ingest_evidence(closed_service, invocation, policy, actor=actor)
+
+
+@pytest.mark.asyncio
 async def test_invocation_evidence_binds_idempotency_and_reads_to_tenant_scope() -> None:
     service, invocation, policy, _, adapter, _ = await evidence_fixture()
     actor = target_session_operator("subject.connector-independent-evidence-ingestor")
@@ -373,6 +464,18 @@ async def test_invocation_evidence_memory_contract_allows_same_ids_in_separate_t
         )
         == foreign_record
     )
+    assert await service.repository.list_scope(
+        organization_id=record.organization_id,
+        environment_id=record.environment_id,
+    ) == (record,)
+    assert await service.repository.list_scope(
+        organization_id=foreign_record.organization_id,
+        environment_id=foreign_record.environment_id,
+    ) == (foreign_record,)
+    assert await service.repository.list_scope(
+        organization_id="org-missing",
+        environment_id=record.environment_id,
+    ) == ()
 
     policy_source = InMemoryConnectorInvocationEvidencePolicySource(
         (
@@ -399,6 +502,20 @@ async def test_invocation_evidence_memory_contract_allows_same_ids_in_separate_t
             environment_id="env-foreign",
         )
         is None
+    )
+    assert await policy_source.list_scope(
+        organization_id=policy.organization_id,
+        environment_id=policy.environment_id,
+    ) == (policy,)
+    assert await policy_source.list_scope(
+        organization_id="org-foreign",
+        environment_id="env-foreign",
+    ) == (
+        replace(
+            policy,
+            organization_id="org-foreign",
+            environment_id="env-foreign",
+        ),
     )
 
 
@@ -500,6 +617,14 @@ async def test_live_postgres_invocation_evidence_isolates_same_identifiers_by_te
             )
             is None
         )
+        assert await first_repository.list_scope(
+            organization_id=first_record.organization_id,
+            environment_id=first_record.environment_id,
+        ) == (first_record,)
+        assert await second_repository.list_scope(
+            organization_id=second_record.organization_id,
+            environment_id=second_record.environment_id,
+        ) == (second_record,)
     finally:
         async with first_engine.begin() as connection:
             await connection.execute(
@@ -676,6 +801,18 @@ async def test_invocation_evidence_uncertain_or_invalid_receipt_stays_claimed() 
     with pytest.raises(ConnectorInvocationEvidenceError, match="already_claimed"):
         await ingest_evidence(service, invocation, policy)
     assert uncertain.calls == 1
+    actor = target_session_operator("subject.connector-independent-evidence-ingestor")
+    assert await service.list_options(
+        actor=actor,
+        source_invocation_id=invocation.invocation_id,
+        correlation_id="cor_invocation_evidence_uncertain_options",
+    ) == ()
+    assert await service.list_evidence(
+        actor=actor,
+        source_invocation_id=invocation.invocation_id,
+        correlation_id="cor_invocation_evidence_uncertain_inventory",
+    ) == ()
+    assert uncertain.calls == 1
 
     altered = AlteredReceiptAdapter(clock=lambda: invocation.completed_at)
     altered_service, invocation, policy, _, _, _ = await evidence_fixture(adapter=altered)
@@ -793,6 +930,12 @@ def test_invocation_evidence_api_forbids_content_and_returns_minimized_metadata(
     ) as client:
         login_response = login(client)
         endpoint = "/api/v1/connectors/invocation-evidence"
+        options_before = client.get(
+            f"{endpoint}/options", params={"source_invocation_id": invocation.invocation_id}
+        )
+        inventory_before = client.get(
+            endpoint, params={"source_invocation_id": invocation.invocation_id}
+        )
         denied = client.post(endpoint, json=payload, headers={"Idempotency-Key": "evidence-api-1"})
         forbidden = client.post(
             endpoint,
@@ -813,10 +956,36 @@ def test_invocation_evidence_api_forbids_content_and_returns_minimized_metadata(
         assert created.status_code == 201, created.text
         ingestion_id = created.json()["data"]["ingestion_id"]
         read = client.get(f"{endpoint}/{ingestion_id}")
+        options_after = client.get(
+            f"{endpoint}/options", params={"source_invocation_id": invocation.invocation_id}
+        )
+        inventory_after = client.get(
+            endpoint, params={"source_invocation_id": invocation.invocation_id}
+        )
 
     assert denied.status_code == 403 and forbidden.status_code == 422
     assert read.status_code == 200
-    assert created.headers["Cache-Control"] == read.headers["Cache-Control"] == "no-store"
+    assert options_before.status_code == inventory_before.status_code == 200
+    assert options_after.status_code == inventory_after.status_code == 200
+    assert len(options_before.json()["data"]) == 1
+    option = options_before.json()["data"][0]
+    assert option["source_invocation_digest"] == invocation.canonical_digest
+    assert option["ingestion_policy_digest"] == policy.canonical_digest
+    assert option["required_assurance_level"] == "single_factor"
+    assert option["irreversible_claim_required"] is True
+    assert option["automatic_retry_allowed"] is False
+    assert option["knowledge_item_created"] is False
+    assert inventory_before.json()["data"] == []
+    assert options_after.json()["data"] == []
+    assert inventory_after.json()["data"][0]["ingestion_id"] == ingestion_id
+    assert {
+        created.headers["Cache-Control"],
+        read.headers["Cache-Control"],
+        options_before.headers["Cache-Control"],
+        inventory_before.headers["Cache-Control"],
+        options_after.headers["Cache-Control"],
+        inventory_after.headers["Cache-Control"],
+    } == {"no-store"}
     data = created.json()["data"]
     assert data["evidence_ingested"] is True
     assert data["immutable_storage_confirmed"] is True
@@ -839,3 +1008,14 @@ def test_invocation_evidence_api_forbids_content_and_returns_minimized_metadata(
         "idempotency_key",
     ):
         assert hidden not in data
+        assert hidden not in option
+    for hidden in (
+        "access_policy_id",
+        "access_policy_digest",
+        "retention_policy_digest",
+        "encryption_profile_id",
+        "encryption_profile_digest",
+        "ingestion_adapter_id",
+        "signature",
+    ):
+        assert hidden not in option
