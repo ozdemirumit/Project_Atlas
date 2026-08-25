@@ -995,6 +995,83 @@ textarea:focus-visible {
   order: 4;
 }
 
+@media (max-width: 800px) {
+  .installed-mcp-table-wrap {
+    overflow-x: visible;
+    border: 0;
+  }
+
+  .installed-mcp-table {
+    display: block;
+    min-width: 0;
+  }
+
+  .installed-mcp-table thead {
+    display: none;
+  }
+
+  .installed-mcp-table tbody {
+    display: grid;
+    gap: 10px;
+  }
+
+  .installed-mcp-table tr {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 7px 12px;
+    padding: 12px;
+    border: 1px solid #d5dfdc;
+    border-radius: 6px;
+    background: #fff;
+  }
+
+  .installed-mcp-table td,
+  .installed-mcp-table td:first-child,
+  .installed-mcp-table td:nth-child(2),
+  .installed-mcp-table td:last-child {
+    width: auto;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    text-align: left;
+  }
+
+  .installed-mcp-table td:nth-child(2) {
+    grid-column: 1 / -1;
+  }
+
+  .installed-mcp-table td:nth-child(3) {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: start;
+    justify-self: end;
+  }
+
+  .installed-mcp-table td:nth-child(4),
+  .installed-mcp-table td:nth-child(5) {
+    display: none;
+  }
+
+  .installed-mcp-table td:last-child {
+    grid-column: 1 / -1;
+    padding-top: 9px;
+    border-top: 1px solid #e0e6e4;
+  }
+
+  .installed-mcp-operator-flow {
+    min-width: 0;
+  }
+
+  .installed-mcp-setup-progress ol {
+    gap: 5px 10px;
+  }
+
+  .installed-mcp-next-action {
+    align-items: flex-start;
+  }
+}
+
 .installed-mcp-status.enterprise-login-required,
 .inventory-device-status.enterprise-login-required {
   border-style: solid;
