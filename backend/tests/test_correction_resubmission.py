@@ -67,13 +67,21 @@ class StaticCorrectionSource:
         self.draft = draft
 
     async def correction_resubmission_source(
-        self, *, review_request_id: str
+        self,
+        *,
+        review_request_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> tuple[
         tuple[OperationalKnowledgeTrackReviewDecisionRecord, ...],
         OperationalKnowledgeReviewRequestRecord,
         OperationalEvidenceKnowledgeDraftRecord,
     ]:
-        if review_request_id != self.request.review_request_id:
+        if (
+            review_request_id != self.request.review_request_id
+            or organization_id != self.request.organization_id
+            or environment_id != self.request.environment_id
+        ):
             raise OperationalKnowledgeCorrectionError(
                 "operational_knowledge_correction_source_not_found"
             )
@@ -278,7 +286,9 @@ async def test_correction_accepts_development_password_and_is_immutable_idempote
     assert repeated.reused and replay.reused and len(adapter.calls) == 1
     assert await repository.get(correction_id=record.correction_id) == record
     new_request, new_draft = await service.protected_content_lineage(
-        review_request_id=record.new_review_request_id
+        review_request_id=record.new_review_request_id,
+        organization_id=record.organization_id,
+        environment_id=record.environment_id,
     )
     assert new_draft.draft_id == record.new_draft_id
     assert new_draft.draft_version_id != source.draft.draft_version_id

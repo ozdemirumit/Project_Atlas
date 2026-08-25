@@ -45,10 +45,21 @@ class InMemoryOperationalKnowledgeCorrectionRepository:
         return self._claims.get(claim_id) if claim_id else None
 
     async def get_by_new_review_request(
-        self, *, new_review_request_id: str
+        self,
+        *,
+        new_review_request_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> OperationalKnowledgeCorrectionRecord | None:
         correction_id = self._record_new_requests.get(new_review_request_id)
-        return self._records.get(correction_id) if correction_id else None
+        record = self._records.get(correction_id) if correction_id else None
+        if (
+            record is None
+            or record.organization_id != organization_id
+            or record.environment_id != environment_id
+        ):
+            return None
+        return record
 
     async def get_claim_by_idempotency(
         self, *, claimed_by_subject_digest: str, idempotency_digest: str

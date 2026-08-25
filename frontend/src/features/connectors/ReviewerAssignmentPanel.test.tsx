@@ -2,7 +2,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { OperationalKnowledgeReviewRequest } from "../../api/knowledgeReviewRequests";
+import type {
+  OperationalKnowledgeReviewerAssignmentSource,
+} from "../../api/reviewerAssignments";
 import { ReviewerAssignmentPanel } from "./ReviewerAssignmentPanel";
 
 const policyDigest = "caa0be534d5b205f4f5184da47a75e961aa9871e986e7392aa75d9bfb289cc58";
@@ -30,7 +32,7 @@ const reviewRequest = {
   content_inspection_opened: false,
   domain_review_completed: false,
   security_review_completed: false,
-} as unknown as OperationalKnowledgeReviewRequest;
+} as OperationalKnowledgeReviewerAssignmentSource;
 
 const assignment = {
   assignment_set_id: "operational-knowledge-reviewer-assignment.test",

@@ -201,7 +201,7 @@ def test_alembic_graph_keeps_0152_as_parent_and_identifiers_fit_postgresql() -> 
     config.set_main_option("script_location", str(ROOT / "migrations"))
     script = ScriptDirectory.from_config(config)
 
-    assert script.get_heads() == ["20260825_0163"]
+    assert script.get_heads() == ["20260825_0164"]
     revision = script.get_revision("20260820_0152")
     assert revision is not None
     assert revision.down_revision == "20260820_0151"

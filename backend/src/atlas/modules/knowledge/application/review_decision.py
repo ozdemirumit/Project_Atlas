@@ -362,14 +362,20 @@ class OperationalKnowledgeTrackReviewDecisionService:
         await self._repository.close()
 
     async def correction_resubmission_source(
-        self, *, review_request_id: str
+        self,
+        *,
+        review_request_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> tuple[
         tuple[OperationalKnowledgeTrackReviewDecisionRecord, ...],
         OperationalKnowledgeReviewRequestRecord,
         OperationalEvidenceKnowledgeDraftRecord,
     ]:
         decisions = await self._repository.list_by_review_request(
-            review_request_id=review_request_id
+            review_request_id=review_request_id,
+            organization_id=organization_id,
+            environment_id=environment_id,
         )
         if not decisions:
             raise OperationalKnowledgeTrackReviewDecisionError(
@@ -398,13 +404,21 @@ class OperationalKnowledgeTrackReviewDecisionService:
         return decisions, request, draft
 
     async def final_resolution_source(
-        self, *, review_request_id: str
+        self,
+        *,
+        review_request_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> tuple[
         tuple[OperationalKnowledgeTrackReviewDecisionRecord, ...],
         OperationalKnowledgeReviewRequestRecord,
         OperationalEvidenceKnowledgeDraftRecord,
     ]:
-        return await self.correction_resubmission_source(review_request_id=review_request_id)
+        return await self.correction_resubmission_source(
+            review_request_id=review_request_id,
+            organization_id=organization_id,
+            environment_id=environment_id,
+        )
 
     async def _authorize(
         self,
@@ -563,7 +577,9 @@ class OperationalKnowledgeTrackReviewDecisionService:
         self, record: OperationalKnowledgeTrackReviewDecisionRecord
     ) -> OperationalKnowledgeTrackReviewDecisionGrant:
         records = await self._repository.list_by_review_request(
-            review_request_id=record.review_request_id
+            review_request_id=record.review_request_id,
+            organization_id=record.organization_id,
+            environment_id=record.environment_id,
         )
         tracks: dict[str, OperationalKnowledgeTrackReviewDecisionRecord] = {}
         for candidate in records:

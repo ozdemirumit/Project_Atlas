@@ -30,37 +30,64 @@ class PostgreSQLOperationalKnowledgeReviewRequestRepository:
     def from_url(cls, database_url: str) -> PostgreSQLOperationalKnowledgeReviewRequestRepository:
         return cls(create_async_engine(database_url))
 
-    async def get(
-        self, *, review_request_id: str
-    ) -> OperationalKnowledgeReviewRequestRecord | None:
-        async with self._sessions() as session:
-            row = await session.get(OperationalKnowledgeReviewRequestModel, review_request_id)
-            return self._record_to_domain(row.payload) if row else None
-
-    async def get_by_source(
-        self, *, source_draft_id: str
+    async def get_in_scope(
+        self,
+        *,
+        review_request_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> OperationalKnowledgeReviewRequestRecord | None:
         async with self._sessions() as session:
             row = await session.scalar(
                 select(OperationalKnowledgeReviewRequestModel).where(
-                    OperationalKnowledgeReviewRequestModel.source_draft_id == source_draft_id
+                    OperationalKnowledgeReviewRequestModel.review_request_id == review_request_id,
+                    OperationalKnowledgeReviewRequestModel.organization_id == organization_id,
+                    OperationalKnowledgeReviewRequestModel.environment_id == environment_id,
                 )
             )
             return self._record_to_domain(row.payload) if row else None
 
-    async def get_claim_by_source(
-        self, *, source_draft_id: str
+    async def get_by_source_in_scope(
+        self,
+        *,
+        source_draft_id: str,
+        organization_id: str,
+        environment_id: str,
+    ) -> OperationalKnowledgeReviewRequestRecord | None:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(OperationalKnowledgeReviewRequestModel).where(
+                    OperationalKnowledgeReviewRequestModel.source_draft_id == source_draft_id,
+                    OperationalKnowledgeReviewRequestModel.organization_id == organization_id,
+                    OperationalKnowledgeReviewRequestModel.environment_id == environment_id,
+                )
+            )
+            return self._record_to_domain(row.payload) if row else None
+
+    async def get_claim_by_source_in_scope(
+        self,
+        *,
+        source_draft_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> OperationalKnowledgeReviewRequestClaim | None:
         async with self._sessions() as session:
             row = await session.scalar(
                 select(OperationalKnowledgeReviewRequestClaimModel).where(
-                    OperationalKnowledgeReviewRequestClaimModel.source_draft_id == source_draft_id
+                    OperationalKnowledgeReviewRequestClaimModel.source_draft_id == source_draft_id,
+                    OperationalKnowledgeReviewRequestClaimModel.organization_id == organization_id,
+                    OperationalKnowledgeReviewRequestClaimModel.environment_id == environment_id,
                 )
             )
             return self._claim_to_domain(row.payload) if row else None
 
-    async def get_claim_by_idempotency(
-        self, *, claimed_by: str, idempotency_digest: str
+    async def get_claim_by_idempotency_in_scope(
+        self,
+        *,
+        claimed_by: str,
+        idempotency_digest: str,
+        organization_id: str,
+        environment_id: str,
     ) -> OperationalKnowledgeReviewRequestClaim | None:
         async with self._sessions() as session:
             row = await session.scalar(
@@ -68,9 +95,30 @@ class PostgreSQLOperationalKnowledgeReviewRequestRepository:
                     OperationalKnowledgeReviewRequestClaimModel.claimed_by == claimed_by,
                     OperationalKnowledgeReviewRequestClaimModel.idempotency_digest
                     == idempotency_digest,
+                    OperationalKnowledgeReviewRequestClaimModel.organization_id == organization_id,
+                    OperationalKnowledgeReviewRequestClaimModel.environment_id == environment_id,
                 )
             )
             return self._claim_to_domain(row.payload) if row else None
+
+    async def list_scope(
+        self, *, organization_id: str, environment_id: str
+    ) -> tuple[OperationalKnowledgeReviewRequestRecord, ...]:
+        async with self._sessions() as session:
+            rows = tuple(
+                (
+                    await session.scalars(
+                        select(OperationalKnowledgeReviewRequestModel)
+                        .where(
+                            OperationalKnowledgeReviewRequestModel.organization_id
+                            == organization_id,
+                            OperationalKnowledgeReviewRequestModel.environment_id == environment_id,
+                        )
+                        .order_by(OperationalKnowledgeReviewRequestModel.review_request_id)
+                    )
+                ).all()
+            )
+        return tuple(self._record_to_domain(row.payload) for row in rows)
 
     async def claim(self, claim: OperationalKnowledgeReviewRequestClaim) -> bool:
         payload = OperationalKnowledgeReviewRequestService._normalize(asdict(claim))

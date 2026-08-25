@@ -37,6 +37,7 @@ def _digest(payload: object) -> str:
 
 
 class SyntheticOperationalKnowledgeReviewRequestAdapter:
+    available = True
     adapter_id = "operational-knowledge-review-request-adapter.synthetic"
     attestor_id = "subject.operational-knowledge-review-request-adapter-attestor"
     receipt_schema = "atlas.operational-knowledge-review-request-receipt.v1"
@@ -114,6 +115,10 @@ class SyntheticOperationalKnowledgeReviewRequestAdapter:
 
 
 class UnavailableOperationalKnowledgeReviewRequestAdapter(OperationalKnowledgeReviewRequestAdapter):
+    available = False
+    adapter_id = "operational-knowledge-review-request-adapter.unavailable"
+    attestor_id = "subject.operational-knowledge-review-request-adapter-unavailable"
+
     async def create_review_request(
         self, instruction: OperationalKnowledgeReviewRequestInstruction
     ) -> OperationalKnowledgeReviewRequestReceipt:

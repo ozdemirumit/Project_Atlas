@@ -54,12 +54,18 @@ class InMemoryOperationalKnowledgeTrackReviewDecisionRepository:
         return self._claims.get(claim_id) if claim_id else None
 
     async def list_by_review_request(
-        self, *, review_request_id: str
+        self,
+        *,
+        review_request_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> tuple[OperationalKnowledgeTrackReviewDecisionRecord, ...]:
         return tuple(
             record
             for record in self._records.values()
             if record.review_request_id == review_request_id
+            and record.organization_id == organization_id
+            and record.environment_id == environment_id
         )
 
     async def claim(self, claim: OperationalKnowledgeTrackReviewDecisionClaim) -> bool:

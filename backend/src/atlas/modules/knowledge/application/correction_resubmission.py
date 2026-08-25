@@ -129,7 +129,9 @@ class OperationalKnowledgeCorrectionService:
             )
         try:
             source = await self._source.correction_resubmission_source(
-                review_request_id=source_review_request_id
+                review_request_id=source_review_request_id,
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
             )
         except Exception as error:
             raise OperationalKnowledgeCorrectionError(
@@ -363,21 +365,25 @@ class OperationalKnowledgeCorrectionService:
         await self._repository.close()
 
     async def reviewer_assignment_source(
-        self, *, review_request_id: str
+        self, *, review_request_id: str, organization_id: str, environment_id: str
     ) -> tuple[OperationalKnowledgeReviewRequestRecord, frozenset[str]]:
         review_request, draft = await self.protected_content_lineage(
-            review_request_id=review_request_id
+            review_request_id=review_request_id,
+            organization_id=organization_id,
+            environment_id=environment_id,
         )
         return review_request, frozenset((draft.curated_by,))
 
     async def protected_content_lineage(
-        self, *, review_request_id: str
+        self, *, review_request_id: str, organization_id: str, environment_id: str
     ) -> tuple[
         OperationalKnowledgeReviewRequestRecord,
         OperationalEvidenceKnowledgeDraftRecord,
     ]:
         record = await self._repository.get_by_new_review_request(
-            new_review_request_id=review_request_id
+            new_review_request_id=review_request_id,
+            organization_id=organization_id,
+            environment_id=environment_id,
         )
         if record is None:
             raise OperationalKnowledgeCorrectionError("operational_knowledge_correction_not_found")
@@ -387,7 +393,9 @@ class OperationalKnowledgeCorrectionService:
             source_request,
             source_draft,
         ) = await self._source.correction_resubmission_source(
-            review_request_id=record.source_review_request_id
+            review_request_id=record.source_review_request_id,
+            organization_id=record.organization_id,
+            environment_id=record.environment_id,
         )
         if (
             source_request.canonical_digest != record.source_review_request_digest

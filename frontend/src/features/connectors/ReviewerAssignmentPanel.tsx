@@ -2,8 +2,10 @@ import { useMutation } from "@tanstack/react-query";
 import { AlertTriangle, RefreshCw, ShieldCheck, UserRoundCheck } from "lucide-react";
 import { useState } from "react";
 
-import type { OperationalKnowledgeReviewRequest } from "../../api/knowledgeReviewRequests";
-import { createOperationalKnowledgeReviewerAssignment } from "../../api/reviewerAssignments";
+import {
+  createOperationalKnowledgeReviewerAssignment,
+  type OperationalKnowledgeReviewerAssignmentSource,
+} from "../../api/reviewerAssignments";
 import { ProtectedInspectionLeasePanel } from "./ProtectedInspectionLeasePanel";
 
 const POLICY_DIGESTS: Record<string, string> = {
@@ -15,7 +17,7 @@ const POLICY_DIGESTS: Record<string, string> = {
 export function ReviewerAssignmentPanel({
   reviewRequest,
 }: {
-  reviewRequest: OperationalKnowledgeReviewRequest;
+  reviewRequest: OperationalKnowledgeReviewerAssignmentSource;
 }) {
   const [policyId, setPolicyId] = useState(
     "operational-knowledge-reviewer-assignment-policy.development",

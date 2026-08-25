@@ -124,7 +124,9 @@ class OperationalKnowledgeFinalResolutionService:
             )
         try:
             decisions, request, draft = await self._source.final_resolution_source(
-                review_request_id=review_request_id
+                review_request_id=review_request_id,
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
             )
         except Exception as error:
             raise OperationalKnowledgeFinalResolutionError(
@@ -434,7 +436,9 @@ class OperationalKnowledgeFinalResolutionService:
                 "operational_knowledge_final_resolution_not_found"
             )
         decisions, request, draft = await self._source.final_resolution_source(
-            review_request_id=record.review_request_id
+            review_request_id=record.review_request_id,
+            organization_id=record.organization_id,
+            environment_id=record.environment_id,
         )
         return record, decisions, request, draft
 

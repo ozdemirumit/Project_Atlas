@@ -1,5 +1,28 @@
 import { apiFetch } from "./client";
-import type { OperationalKnowledgeReviewRequest } from "./knowledgeReviewRequests";
+
+export type OperationalKnowledgeReviewerAssignmentSource = {
+  review_request_id: string;
+  source_draft_id: string;
+  source_draft_digest: string;
+  organization_id: string;
+  environment_id: string;
+  knowledge_item_id: string;
+  draft_version_id: string;
+  source_ingestion_id: string;
+  source_invocation_id: string;
+  connector_id: string;
+  instance_id: string;
+  capability_id: string;
+  title: string;
+  manifest_id: string;
+  knowledge_lifecycle: "review_requested";
+  canonical_digest: string;
+  review_requested: true;
+  reviewer_assigned: false;
+  content_inspection_opened: false;
+  domain_review_completed: false;
+  security_review_completed: false;
+};
 
 export type OperationalKnowledgeReviewerAssignment = {
   assignment_set_id: string;
@@ -133,7 +156,7 @@ function isSafeReviewerAssignment(
 }
 
 export async function createOperationalKnowledgeReviewerAssignment(input: {
-  reviewRequest: OperationalKnowledgeReviewRequest;
+  reviewRequest: OperationalKnowledgeReviewerAssignmentSource;
   policyId: string;
   policyDigest: string;
   purpose: string;

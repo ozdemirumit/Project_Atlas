@@ -91,7 +91,11 @@ class OperationalKnowledgeTrackReviewDecisionRepository(Protocol):
     ) -> OperationalKnowledgeTrackReviewDecisionClaim | None: ...
 
     async def list_by_review_request(
-        self, *, review_request_id: str
+        self,
+        *,
+        review_request_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> tuple[OperationalKnowledgeTrackReviewDecisionRecord, ...]: ...
 
     async def claim(self, claim: OperationalKnowledgeTrackReviewDecisionClaim) -> bool: ...

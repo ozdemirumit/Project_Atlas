@@ -74,6 +74,14 @@ jobs:
         run: |
           uv run python -c "import psycopg; connection = psycopg.connect('postgresql://atlas:atlas@localhost:5432/postgres', autocommit=True); connection.execute('CREATE DATABASE atlas_downstream_test'); connection.close()"
           uv run alembic upgrade head
+      - name: Prepare review-request PostgreSQL integration database
+        working-directory: backend
+        env:
+          ATLAS_DATABASE_URL: >-
+            postgresql+psycopg://atlas:atlas@localhost:5432/atlas_review_request_test
+        run: |
+          uv run python -c "import psycopg; connection = psycopg.connect('postgresql://atlas:atlas@localhost:5432/postgres', autocommit=True); connection.execute('CREATE DATABASE atlas_review_request_test'); connection.close()"
+          uv run alembic upgrade head
       - name: Test time-bounded process creation consumption
         working-directory: backend
         env:
@@ -129,6 +137,15 @@ jobs:
           tests/test_workflow_protected_runtime_process_resume_authorizations_postgres.py
           tests/test_bounded_invocation.py
           tests/test_invocation_evidence.py
+          -k live_postgres
+      - name: Test review-request PostgreSQL integration
+        working-directory: backend
+        env:
+          ATLAS_TEST_POSTGRES_DSN: >-
+            postgresql+psycopg://atlas:atlas@localhost:5432/atlas_review_request_test
+        run: >-
+          uv run pytest -q
+          tests/test_draft_review_request.py
           -k live_postgres
       - name: Test
         working-directory: backend

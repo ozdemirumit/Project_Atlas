@@ -29,7 +29,11 @@ class OperationalKnowledgeFinalResolutionUncertainError(OperationalKnowledgeFina
 
 class OperationalKnowledgeFinalResolutionSource(Protocol):
     async def final_resolution_source(
-        self, *, review_request_id: str
+        self,
+        *,
+        review_request_id: str,
+        organization_id: str,
+        environment_id: str,
     ) -> tuple[
         tuple[OperationalKnowledgeTrackReviewDecisionRecord, ...],
         OperationalKnowledgeReviewRequestRecord,

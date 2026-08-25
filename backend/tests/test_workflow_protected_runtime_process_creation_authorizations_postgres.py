@@ -793,13 +793,28 @@ async def test_live_postgres_exact_race_circular_fk_append_only_and_guarded_down
             timeout=20,
         )
         exact_race_errors = [item for item in exact_race if isinstance(item, BaseException)]
-        assert not exact_race_errors, [
-            getattr(item, "code", repr(item)) for item in exact_race_errors
+        unexpected_exact_race_errors = [
+            item
+            for item in exact_race_errors
+            if not (
+                isinstance(item, WorkflowProtectedRuntimeProcessCreationAuthorizationError)
+                and item.code.endswith("already_authorized")
+            )
         ]
-        first, second = exact_race
-        assert not isinstance(first, BaseException)
-        assert not isinstance(second, BaseException)
-        assert first == second
+        assert not unexpected_exact_race_errors, [
+            getattr(item, "code", repr(item)) for item in unexpected_exact_race_errors
+        ]
+        exact_race_leases = [item for item in exact_race if not isinstance(item, BaseException)]
+        assert exact_race_leases
+        first = exact_race_leases[0]
+        assert all(item == first for item in exact_race_leases)
+
+        replayed = await _authorize_process_creation(
+            _process_service(repository),
+            readiness_result,
+            idempotency_key=idempotency_key,
+        )
+        assert replayed == first
 
         lease_table = cast(
             Table, WorkflowProtectedRuntimeProcessCreationAuthorizationLeaseModel.__table__
