@@ -1573,7 +1573,8 @@ from atlas.modules.security_export.adapters.synthetic import (
     build_synthetic_syslog_destinations,
 )
 from atlas.modules.security_export.application.service import SecurityExportService
-from atlas.modules.storage.adapters.synthetic import build_synthetic_storage_overview
+from atlas.modules.storage.adapters.configured_hitachi import ConfiguredHitachiStorageProvider
+from atlas.modules.storage.adapters.synthetic import SyntheticStorageOverviewProvider
 from atlas.modules.storage.application.service import StorageOperationsService
 from atlas.modules.support.adapters.filesystem import FilesystemSupportBundlePublisher
 from atlas.modules.support.adapters.memory import InMemorySupportBundleExportRepository
@@ -6792,13 +6793,6 @@ def create_app(
         probes=(database_probe,),
         operational_posture=operational_posture,
     )
-    resolved_storage_operations_service = storage_operations_service or StorageOperationsService(
-        overview=build_synthetic_storage_overview(
-            organization_id=resolved_settings.development_organization_id,
-            environment=resolved_settings.environment,
-        ),
-        audit_sink=resolved_audit_sink,
-    )
     resolved_inventory_device_service = inventory_device_service or InventoryDeviceService(
         repository=(
             PostgreSQLInventoryDeviceRepository.from_url(resolved_settings.database_url)
@@ -6919,6 +6913,29 @@ def create_app(
         data_profile=(
             "configured_hitachi_read_only" if configured_hitachi_health_enabled else "synthetic_lab"
         ),
+    )
+    resolved_storage_operations_service = storage_operations_service or StorageOperationsService(
+        provider=(
+            ConfiguredHitachiStorageProvider(
+                configuration_repository=bundled_connection_configuration_repository,
+                instance_repository=resolved_connector_instance_creation_service.repository,
+                inventory_repository=resolved_inventory_device_service.repository,
+                credential_materializer=hitachi_credential_materializer,
+                transport_factory=hitachi_transport_factory,
+                organization_id=resolved_settings.development_organization_id,
+                environment_id=f"environment.{resolved_settings.environment}",
+                runtime_state_repository=bundled_runtime_state_repository,
+            )
+            if configured_hitachi_health_enabled
+            else SyntheticStorageOverviewProvider(
+                organization_id=resolved_settings.development_organization_id,
+                environment=resolved_settings.environment,
+            )
+        ),
+        organization_id=resolved_settings.development_organization_id,
+        environment_id=f"environment.{resolved_settings.environment}",
+        site_id="site.local",
+        audit_sink=resolved_audit_sink,
     )
     resolved_investigation_service = investigation_service or InvestigationService(
         assembler=SyntheticInvestigationAssembler(),

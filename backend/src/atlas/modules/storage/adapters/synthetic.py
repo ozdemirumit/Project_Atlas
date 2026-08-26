@@ -163,3 +163,18 @@ def build_synthetic_storage_overview(
         investigation=investigation,
         report=report,
     )
+
+
+class SyntheticStorageOverviewProvider:
+    """Serves the fixed synthetic storage overview as a StorageOverviewProvider."""
+
+    def __init__(self, *, organization_id: str, environment: str) -> None:
+        self._organization_id = organization_id
+        self._environment = environment
+
+    async def get_overview(self, *, requested_at: datetime) -> StorageOverview:
+        return build_synthetic_storage_overview(
+            organization_id=self._organization_id,
+            environment=self._environment,
+            generated_at=requested_at,
+        )

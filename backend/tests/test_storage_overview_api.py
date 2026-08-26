@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from atlas.api.app import create_app
 from atlas.core.audit import AuditRecord
 from atlas.core.config import Settings
-from atlas.modules.storage.adapters.synthetic import build_synthetic_storage_overview
+from atlas.modules.storage.adapters.synthetic import SyntheticStorageOverviewProvider
 from atlas.modules.storage.application.service import (
     StorageOperationsError,
     StorageOperationsService,
@@ -110,11 +110,13 @@ def test_storage_audit_failure_blocks_data_response() -> None:
 async def test_storage_service_rejects_scope_mismatch_before_audit() -> None:
     audit_sink = CollectingAuditSink()
     service = StorageOperationsService(
-        overview=build_synthetic_storage_overview(
+        provider=SyntheticStorageOverviewProvider(
             organization_id="organization.development",
             environment="test",
-            generated_at=NOW,
         ),
+        organization_id="organization.development",
+        environment_id="environment.test",
+        site_id="site.local",
         audit_sink=audit_sink,
     )
     context = StorageReadContext(

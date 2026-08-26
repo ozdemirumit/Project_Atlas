@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from atlas import __version__
 from atlas.core.audit import AuditRecord, AuditSink
+from atlas.modules.storage.application.ports import StorageOverviewProvider
 from atlas.modules.storage.domain.models import StorageOverview
 
 
@@ -32,21 +33,31 @@ class StorageOperationsError(Exception):
 
 
 class StorageOperationsService:
-    def __init__(self, *, overview: StorageOverview, audit_sink: AuditSink) -> None:
-        self._overview = overview
+    def __init__(
+        self,
+        *,
+        provider: StorageOverviewProvider,
+        organization_id: str,
+        environment_id: str,
+        site_id: str,
+        audit_sink: AuditSink,
+        resource_id: str = "resource.storage.lab-overview",
+    ) -> None:
+        self._provider = provider
+        self._organization_id = organization_id
+        self._environment_id = environment_id
+        self._site_id = site_id
+        self._resource_id = resource_id
         self._audit_sink = audit_sink
 
     async def get_overview(self, context: StorageReadContext) -> StorageOverview:
-        expected = (
-            self._overview.organization_id,
-            self._overview.environment_id,
-            self._overview.site_id,
-        )
+        expected = (self._organization_id, self._environment_id, self._site_id)
         actual = (context.organization_id, context.environment_id, context.site_id)
-        if actual != expected or context.resource_id != "resource.storage.lab-overview":
+        if actual != expected or context.resource_id != self._resource_id:
             raise StorageOperationsError(
                 "storage_scope_mismatch", "The storage overview is outside the authorized scope."
             )
+        overview = await self._provider.get_overview(requested_at=context.requested_at)
         await self._audit_sink.record(
             AuditRecord(
                 event_id=f"evt_{uuid4().hex}",
@@ -68,4 +79,4 @@ class StorageOperationsService:
                 result_code="storage_overview_returned",
             )
         )
-        return self._overview
+        return overview

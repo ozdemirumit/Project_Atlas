@@ -4,14 +4,58 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-251 |
-| Title | Durable bundled MCP operator state |
-| Status | Review |
-| Branch | `agent/mvp-bundled-persistence` |
-| Pull Request | [#267](https://github.com/ozdemirumit/Project_Atlas/pull/267) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-020, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-053, ADR-133 |
-| Last Updated | 2026-08-25 |
-| Next Action | Replace remaining synthetic Health projections with connector-backed inventory and evidence |
+| Task ID | ATLAS-IMP-252 |
+| Title | Connector-backed storage overview (inventory and evidence) |
+| Status | Implemented, verification pending |
+| Branch | (working tree) |
+| Pull Request | none yet |
+| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-020, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-053 |
+| Last Updated | 2026-08-26 |
+| Next Action | Run `ruff format --check` / `ruff check` / `mypy` (strict) and the full backend test suite in an environment with the project's Python/uv toolchain, then confirm live behavior (unconfigured and configured) before opening a PR. |
+
+### ATLAS-IMP-252 Scope and Verification
+
+- Replaces the previously unconditional, always-synthetic `atlas.modules.storage` overview
+  (`StorageOperationsService` holding one frozen `StorageOverview` built once at process startup) with
+  a per-request `StorageOverviewProvider` seam, mirroring how `atlas.modules.health_checks` already
+  separates `HealthCheckService` from its `HealthCheckExecutor`.
+- Adds `ConfiguredHitachiStorageProvider` (`atlas/modules/storage/adapters/configured_hitachi.py`),
+  which reuses the exact connector-selection contract already proven by
+  `ConfiguredHitachiHealthExecutor` (single active configured instance, `ENABLED_READ_ONLY` runtime
+  state, allowlisted Hitachi storage serials from inventory, leased credential, bounded
+  `HitachiOpsCenterClient`) and calls the connector's existing `read_inventory()` +
+  `read_hardware_health()` capabilities to populate real `StorageAsset`/`HealthFinding`/
+  `EvidenceRecord` data. No new connector capability was added.
+- `investigation`/`report` content on the real-data path is generated deterministically from real
+  read counts (no LLM, no fabricated per-device narrative) to avoid presenting fiction alongside real
+  device data, replacing the old hardcoded "VSP One B28 controller warning" synthetic storyline for
+  the configured path. A failed per-array `read_hardware_health()` degrades only that asset to
+  `UNKNOWN` and is recorded in `unknowns` text; a failed `read_inventory()` or unconfigured/disabled
+  connector returns an honest `INCONCLUSIVE`-state overview with zero fabricated assets.
+- Wired in `api/app.py`: the real provider activates under the same `configured_hitachi_health_enabled`
+  gate (`environment == "development"`) already used by `health_checks`, reusing its already-built
+  connector/inventory/credential/transport dependencies; falls back to the unchanged
+  `build_synthetic_storage_overview()` fixture (via a new thin `SyntheticStorageOverviewProvider`
+  wrapper) everywhere else.
+- New test file `backend/tests/test_configured_hitachi_storage_provider.py` (modeled on
+  `test_configured_hitachi_health_executor.py`) covers: no/multiple configurations, disabled runtime
+  state, no allowlisted storage, a real two-array success mapping, one array's health read failing
+  without failing the whole overview, missing credentials, and a simulated timeout — all asserting the
+  provider never raises. `backend/tests/test_storage_overview_api.py`'s one direct-construction test
+  was updated to the new `provider=`/`organization_id=`/`environment_id=`/`site_id=` constructor
+  signature; its other four tests are unchanged and still exercise the synthetic path
+  (`environment="test"` never satisfies the `"development"` gate).
+- **Verification status: NOT executed.** This sandbox has no Python/uv toolchain, Docker, or existing
+  virtualenv available, so `ruff`, `mypy`, and `pytest` could not be run here. The implementation was
+  checked manually instead: traced every new/changed dataclass construction against
+  `StorageOverview.__post_init__`'s evidence-reference invariant and each domain model's own
+  `__post_init__` validation, traced the credential-lease scope to confirm all `HitachiOpsCenterClient`
+  calls (including the per-array `read_hardware_health()` loop) happen inside the
+  `async with ... lease:` block (an initial draft incorrectly left the loop outside the lease scope;
+  corrected before finalizing), and cross-checked exception handling against
+  `HitachiOpsCenterClient`'s actual `HitachiConnectorError`/`HitachiTransportError` propagation in
+  `client.py`. **A human or a Python-toolchain-equipped session must run the commands in "Next Action"
+  before this task is considered done or a PR is opened.**
 
 ### ATLAS-IMP-251 Scope and Verification
 
