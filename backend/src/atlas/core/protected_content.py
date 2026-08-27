@@ -8,6 +8,7 @@ key. See ADR-184.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import os
 from collections.abc import Callable
@@ -16,7 +17,12 @@ from typing import Protocol
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from atlas.core.persistence.models import ProtectedContentBlobModel
 
@@ -121,6 +127,15 @@ class PostgreSQLProtectedContentStore:
         self._aead = AESGCM(key)
         self._engine = engine
         self._sessions = session_factory or async_sessionmaker(engine, expire_on_commit=False)
+
+    @classmethod
+    def from_url_and_key_b64(
+        cls, database_url: str, *, key_b64: str
+    ) -> PostgreSQLProtectedContentStore:
+        return cls(
+            engine=create_async_engine(database_url, pool_pre_ping=True),
+            key=base64.b64decode(key_b64),
+        )
 
     async def store(self, *, organization_id: str, environment_id: str, content: bytes) -> str:
         digest = content_digest(content)

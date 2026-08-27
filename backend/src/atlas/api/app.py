@@ -48,6 +48,7 @@ from atlas.api.routes import (
     credential_assignments,
     deployment_configuration,
     deterministic_chunking,
+    document_knowledge,
     draft_review_requests,
     embedding_generation,
     evidence_drafts,
@@ -133,6 +134,12 @@ from atlas.core.audit import AuditSink, LoggingAuditSink
 from atlas.core.classification import DataClassification
 from atlas.core.config import Settings, get_settings
 from atlas.core.persistence.database import DatabaseHealthProbe
+from atlas.core.protected_content import (
+    InMemoryProtectedContentStore,
+    PostgreSQLProtectedContentStore,
+    ProtectedContentStore,
+    UnavailableProtectedContentStore,
+)
 from atlas.modules.ai.adapters.openai_compatible import OpenAICompatibleTransport
 from atlas.modules.ai.adapters.protected_answer_presentation_memory import (
     InMemoryProtectedAnswerPresentationPolicySource,
@@ -882,6 +889,15 @@ from atlas.modules.knowledge.adapters.deterministic_chunking_synthetic import (
     SyntheticOperationalKnowledgeChunker,
     UnavailableOperationalKnowledgeChunker,
 )
+from atlas.modules.knowledge.adapters.document_knowledge_memory import (
+    InMemoryDocumentKnowledgeRepository,
+)
+from atlas.modules.knowledge.adapters.document_knowledge_permission import (
+    AuthorizationDocumentKnowledgePermissionAuthorizer,
+)
+from atlas.modules.knowledge.adapters.document_knowledge_postgres import (
+    PostgreSQLDocumentKnowledgeRepository,
+)
 from atlas.modules.knowledge.adapters.draft_review_request_memory import (
     InMemoryOperationalKnowledgeReviewRequestPolicySource,
     InMemoryOperationalKnowledgeReviewRequestRepository,
@@ -1116,6 +1132,7 @@ from atlas.modules.knowledge.application.deterministic_chunking import (
     OperationalKnowledgeDeterministicChunkingService,
     build_development_operational_knowledge_chunking_policy,
 )
+from atlas.modules.knowledge.application.document_knowledge import DocumentKnowledgeService
 from atlas.modules.knowledge.application.draft_review_request import (
     OperationalKnowledgeReviewRequestService,
     build_development_operational_knowledge_review_request_policy,
@@ -3011,6 +3028,7 @@ def create_app(
     identity_provider: IdentityProvider | None = None,
     authorization_service: AuthorizationService | None = None,
     storage_operations_service: StorageOperationsService | None = None,
+    document_knowledge_service: DocumentKnowledgeService | None = None,
     inventory_device_service: InventoryDeviceService | None = None,
     itsm_integration_service: ItsmIntegrationService | None = None,
     graph_impact_service: GraphImpactService | None = None,
@@ -6937,6 +6955,33 @@ def create_app(
         site_id="site.local",
         audit_sink=resolved_audit_sink,
     )
+    resolved_protected_content_store: ProtectedContentStore
+    if (
+        resolved_settings.database_url
+        and resolved_settings.protected_content_encryption_key_b64 is not None
+    ):
+        resolved_protected_content_store = PostgreSQLProtectedContentStore.from_url_and_key_b64(
+            resolved_settings.database_url,
+            key_b64=resolved_settings.protected_content_encryption_key_b64.get_secret_value(),
+        )
+    elif is_production:
+        resolved_protected_content_store = UnavailableProtectedContentStore()
+    else:
+        resolved_protected_content_store = InMemoryProtectedContentStore()
+    resolved_document_knowledge_service = document_knowledge_service or DocumentKnowledgeService(
+        repository=(
+            PostgreSQLDocumentKnowledgeRepository.from_url(resolved_settings.database_url)
+            if resolved_settings.database_url
+            else InMemoryDocumentKnowledgeRepository()
+        ),
+        protected_content=resolved_protected_content_store,
+        permission_authorizer=AuthorizationDocumentKnowledgePermissionAuthorizer(
+            service=resolved_authorization_service,
+            environment=resolved_settings.environment,
+        ),
+        audit_sink=resolved_audit_sink,
+        subject_salt=f"document-knowledge-subject-salt.{resolved_settings.environment}",
+    )
     resolved_investigation_service = investigation_service or InvestigationService(
         assembler=SyntheticInvestigationAssembler(),
         audit_sink=resolved_audit_sink,
@@ -9791,6 +9836,7 @@ def create_app(
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
+        app.state.document_knowledge_service = resolved_document_knowledge_service
         app.state.inventory_device_service = resolved_inventory_device_service
         app.state.itsm_integration_service = resolved_itsm_integration_service
         app.state.graph_impact_service = resolved_graph_impact_service
@@ -10329,6 +10375,7 @@ def create_app(
     app.include_router(final_recommendation_dispositions.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
+    app.include_router(document_knowledge.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
     app.include_router(health_checks.router, prefix="/api/v1")
     app.include_router(investigations.router, prefix="/api/v1")

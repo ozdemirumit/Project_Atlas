@@ -156,6 +156,11 @@ from atlas.modules.authorization.application.bootstrap import (
     KNOWLEDGE_CORRECTION_RESUBMISSION_READ,
     KNOWLEDGE_DETERMINISTIC_CHUNKING_CREATE,
     KNOWLEDGE_DETERMINISTIC_CHUNKING_READ,
+    KNOWLEDGE_DOCUMENT_APPROVAL_CREATE,
+    KNOWLEDGE_DOCUMENT_DRAFT_CREATE,
+    KNOWLEDGE_DOCUMENT_DRAFT_READ,
+    KNOWLEDGE_DOCUMENT_PUBLICATION_PREPARATION_CREATE,
+    KNOWLEDGE_DOCUMENT_REVIEW_CREATE,
     KNOWLEDGE_DRAFT_REVIEW_REQUEST_CREATE,
     KNOWLEDGE_DRAFT_REVIEW_REQUEST_READ,
     KNOWLEDGE_EMBEDDING_GENERATION_CREATE,
@@ -342,6 +347,7 @@ from atlas.modules.authorization.application.bootstrap import (
     conversation_scope,
     current_identity_scope,
     deployment_configuration_scope,
+    document_knowledge_scope,
     graph_storage_impact_scope,
     health_check_scope,
     identity_governance_scope,
@@ -2351,6 +2357,87 @@ async def authorize_storage_overview_read(
         )
     request.state.authorization_decision = decision
     return decision
+
+
+async def _authorize_document_knowledge(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    capability_class = (
+        CapabilityClass.C1_READ_ONLY
+        if permission_id.endswith(".read")
+        else CapabilityClass.C2_DIAGNOSTIC
+    )
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.knowledge.document-governance",
+            scope=document_knowledge_scope(
+                subject.organization_id, settings.environment, capability_class
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_document_knowledge_draft_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_document_knowledge(
+        request, subject, permission_id=KNOWLEDGE_DOCUMENT_DRAFT_CREATE
+    )
+
+
+async def authorize_document_knowledge_draft_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_document_knowledge(
+        request, subject, permission_id=KNOWLEDGE_DOCUMENT_DRAFT_READ
+    )
+
+
+async def authorize_document_knowledge_review_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_document_knowledge(
+        request, subject, permission_id=KNOWLEDGE_DOCUMENT_REVIEW_CREATE
+    )
+
+
+async def authorize_document_knowledge_approval_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_document_knowledge(
+        request, subject, permission_id=KNOWLEDGE_DOCUMENT_APPROVAL_CREATE
+    )
+
+
+async def authorize_document_knowledge_publication_preparation_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_document_knowledge(
+        request, subject, permission_id=KNOWLEDGE_DOCUMENT_PUBLICATION_PREPARATION_CREATE
+    )
 
 
 async def _authorize_inventory_device(

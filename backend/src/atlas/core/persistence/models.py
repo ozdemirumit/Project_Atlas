@@ -19892,3 +19892,52 @@ class ProtectedContentBlobModel(Base):
     ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     byte_count: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class DocumentKnowledgeDraftModel(Base):
+    __tablename__ = "document_knowledge_drafts"
+
+    draft_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    protected_material_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class DocumentKnowledgeReviewModel(Base):
+    __tablename__ = "document_knowledge_reviews"
+    __table_args__ = (UniqueConstraint("draft_id", name="uq_document_knowledge_review_draft"),)
+
+    review_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    draft_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class DocumentKnowledgeApprovalModel(Base):
+    __tablename__ = "document_knowledge_approvals"
+    __table_args__ = (UniqueConstraint("review_id", name="uq_document_knowledge_approval_review"),)
+
+    approval_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    review_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class DocumentKnowledgePreparationModel(Base):
+    __tablename__ = "document_knowledge_preparations"
+    __table_args__ = (
+        UniqueConstraint("approval_id", name="uq_document_knowledge_preparation_approval"),
+    )
+
+    preparation_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    approval_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

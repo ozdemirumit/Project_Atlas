@@ -4,14 +4,75 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-253 |
-| Title | Real encrypted-content-at-rest boundary (protected content store) |
+| Task ID | ATLAS-IMP-254 |
+| Title | Compact document-sourced knowledge governance chain (ADR-184, all 4 stages) |
 | Status | Verified, merged to main |
 | Branch | `main` |
 | Pull Request | none (pushed directly to `main`; no PR tooling available in this environment) |
-| Governing Documents | ATLAS-003, ATLAS-015, ATLAS-027, ATLAS-053, ATLAS-054, ADR-183, ADR-184 |
+| Governing Documents | ATLAS-003, ATLAS-015, ATLAS-027, ATLAS-037, ATLAS-047, ADR-184 |
 | Last Updated | 2026-08-27 |
-| Next Action | Implement ADR-184 Stage 1: Document Knowledge Draft Curation (accepts uploaded document bytes, stores them via this new protected-content store, produces a digest-only draft receipt). |
+| Next Action | Generalize `source_materialization`'s Source protocol to accept `PublicationReadyKnowledgeSource` (ADR-184's remaining unimplemented piece) so a Document Knowledge Publication Preparation record can actually enter the ADR-053-058 RAG pipeline; then replace that pipeline's Synthetic/Unavailable adapters with real ADR-183 (fastembed + pgvector) implementations. |
+
+### ATLAS-IMP-254 Scope and Verification
+
+- Implements all four stages of ADR-184's compact document-sourced knowledge chain: Document
+  Knowledge Draft Curation (real, using the ATLAS-IMP-253 protected-content store — not
+  synthetic), Review and Decision, Final Approval, and Publication Preparation. New module
+  `atlas.modules.knowledge.domain.document_knowledge` (all four stages' frozen/slots dataclasses
+  in one file), `application/document_knowledge.py` (`DocumentKnowledgeService`, one orchestration
+  class for all four stages), `application/document_knowledge_ports.py`, and three adapters
+  (`document_knowledge_memory.py`, `document_knowledge_postgres.py`,
+  `document_knowledge_permission.py` — one reusable authorizer parameterized by `permission_id`
+  per call, not four dedicated per-stage classes, matching ADR-184's "lean but safe" scope
+  decision made explicitly with the user before implementation).
+- Deliberately lower ceremony than the Operational chain's per-stage services (e.g.
+  `embedding_generation.py` is 626 lines for one stage): single-pass validation instead of
+  repeated cross-field digest reconstruction at every read, one canonical-digest check per record
+  instead of several. The load-bearing safety properties are still real and tested: separation of
+  duties (curator != reviewer != approver, enforced by comparing salted subject digests, not just
+  documented), claim-based idempotency (resubmitting a review/approval/preparation for the same
+  draft returns the existing record rather than erroring or duplicating), digest-only persistence
+  (raw content only ever touches `atlas.core.protected_content`, never an ordinary table), and a
+  full `atlas.knowledge.document-governance` audit event per stage.
+- New API surface: `POST /api/v1/knowledge/documents/{drafts,reviews,approvals,
+  publication-preparations}` (`api/routes/document_knowledge.py`,
+  `api/document_knowledge_schemas.py`). Document upload uses a base64 JSON field rather than
+  multipart/form-data, matching this codebase's existing pure-JSON API convention (no
+  `UploadFile`/multipart usage exists anywhere else in this API today).
+- New RBAC permissions `knowledge.document-{draft,review,approval,publication-preparation}.
+  {create,read}` registered in `authorization/application/bootstrap.py`, granted to
+  `DEVELOPMENT_ROLE_ID`, with two new `RoleAssignment`s (`C2_DIAGNOSTIC` for create,
+  `C1_READ_ONLY` for read) — required because this authorization system matches assignments by
+  exact `ResourceScope` equality (org/env/site/domain/resource/capability-class), not just
+  permission-set membership; a new resource scope needs its own assignment regardless of role
+  permissions. Caught via a live end-to-end smoke test (`TestClient` + real login + CSRF + POST)
+  that initially returned `403 authorization_denied` after the unit tests already passed — the
+  service-level tests used a stub `AllowAllAuthorizer` and could not have caught this; only
+  driving the real HTTP stack did.
+- Migration `20260827_0168` adds `document_knowledge_{drafts,reviews,approvals,preparations}`
+  (metadata/digest-only, no vector or content columns, matching the established
+  `payload: JSONB` pattern). Verified new identifiers stay under PostgreSQL's 63-byte limit
+  (longest is 50 characters).
+- **Self-caught bug during this task**: an early design passed `permission_id` to the
+  authorizer's constructor, meaning one authorizer instance could only ever check one fixed
+  permission — but the service needs to check four different permissions (draft/review/approval/
+  publication-preparation create) through the same authorizer object. Fixed by moving
+  `permission_id` from the constructor to a parameter of `authorize()` itself, before any test was
+  run against it.
+- Verified: `ruff format --check`, `ruff check`, and strict `mypy` clean across 1516 source files.
+  `alembic upgrade`/`downgrade`/`upgrade` round-trip passed against local PostgreSQL 18. 6/6 new
+  service-level unit tests pass (real content round-trip through the protected-content store,
+  empty-content rejection, both separation-of-duties checks, review/decision idempotency, full
+  chain reaching publication preparation). A live end-to-end HTTP smoke test (login → CSRF →
+  authenticated POST) confirmed the full stack end-to-end, including the RBAC gap above. A
+  regression sweep of 8 related test files (84 tests) covering authorization, evidence-draft,
+  embedding-generation, storage, and the new protected-content/document-knowledge tests passed
+  with zero failures. A full-suite run without PostgreSQL initially showed 67 failures — 5 more
+  than the 62-failure pre-existing baseline confirmed in ATLAS-IMP-252; investigation found all 5
+  were hardcoded `script.get_heads() == ["20260825_0166"]` assertions in unrelated workflow tests
+  (a "frozen migration head" pattern that legitimately needs bumping whenever a task adds new
+  migrations, same as every prior task in this chain did) — updated all 5 to `"20260827_0168"` and
+  reverified each passes. This restores the pre-existing-only failure count.
 
 ### ATLAS-IMP-253 Scope and Verification
 

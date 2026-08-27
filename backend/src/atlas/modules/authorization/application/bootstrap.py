@@ -345,6 +345,16 @@ KNOWLEDGE_INDEX_STAGING_CREATE = "knowledge.index-staging.create"
 KNOWLEDGE_INDEX_STAGING_READ = "knowledge.index-staging.read"
 KNOWLEDGE_RETRIEVAL_PUBLICATION_CREATE = "knowledge.retrieval-publication.create"
 KNOWLEDGE_RETRIEVAL_PUBLICATION_READ = "knowledge.retrieval-publication.read"
+KNOWLEDGE_DOCUMENT_DRAFT_CREATE = "knowledge.document-draft.create"
+KNOWLEDGE_DOCUMENT_DRAFT_READ = "knowledge.document-draft.read"
+KNOWLEDGE_DOCUMENT_REVIEW_CREATE = "knowledge.document-review.create"
+KNOWLEDGE_DOCUMENT_REVIEW_READ = "knowledge.document-review.read"
+KNOWLEDGE_DOCUMENT_APPROVAL_CREATE = "knowledge.document-approval.create"
+KNOWLEDGE_DOCUMENT_APPROVAL_READ = "knowledge.document-approval.read"
+KNOWLEDGE_DOCUMENT_PUBLICATION_PREPARATION_CREATE = (
+    "knowledge.document-publication-preparation.create"
+)
+KNOWLEDGE_DOCUMENT_PUBLICATION_PREPARATION_READ = "knowledge.document-publication-preparation.read"
 KNOWLEDGE_PROTECTED_RETRIEVAL_CREATE = "knowledge.protected-retrieval.create"
 KNOWLEDGE_PROTECTED_RETRIEVAL_READ = "knowledge.protected-retrieval.read"
 AI_PROTECTED_MODEL_CONTEXT_CREATE = "ai.protected-model-context.create"
@@ -1208,6 +1218,19 @@ def operational_evidence_knowledge_draft_scope(
         site_id="site.local",
         domain_id="domain.knowledge",
         resource_id="resource.knowledge.operational-evidence-drafts",
+        capability_class=capability_class,
+    )
+
+
+def document_knowledge_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.knowledge",
+        resource_id="resource.knowledge.document-governance",
         capability_class=capability_class,
     )
 
@@ -3343,6 +3366,38 @@ def build_development_authorization_service(
             description="Read minimized protected knowledge embedding-set metadata.",
         ),
         PermissionDefinition(
+            permission_id=KNOWLEDGE_DOCUMENT_DRAFT_CREATE,
+            description="Curate one document-sourced knowledge draft (ADR-184).",
+        ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_DOCUMENT_DRAFT_READ,
+            description="Read document-sourced knowledge draft metadata.",
+        ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_DOCUMENT_REVIEW_CREATE,
+            description="Record one document-sourced knowledge review decision.",
+        ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_DOCUMENT_REVIEW_READ,
+            description="Read document-sourced knowledge review decision metadata.",
+        ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_DOCUMENT_APPROVAL_CREATE,
+            description="Record one document-sourced knowledge final approval.",
+        ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_DOCUMENT_APPROVAL_READ,
+            description="Read document-sourced knowledge final approval metadata.",
+        ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_DOCUMENT_PUBLICATION_PREPARATION_CREATE,
+            description="Prepare one document-sourced knowledge item for RAG publication.",
+        ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_DOCUMENT_PUBLICATION_PREPARATION_READ,
+            description="Read document-sourced knowledge publication-preparation metadata.",
+        ),
+        PermissionDefinition(
             permission_id=KNOWLEDGE_INDEX_STAGING_CREATE,
             description="Stage and validate one governed protected knowledge index projection.",
         ),
@@ -3761,6 +3816,14 @@ def build_development_authorization_service(
                 KNOWLEDGE_DETERMINISTIC_CHUNKING_READ,
                 KNOWLEDGE_EMBEDDING_GENERATION_CREATE,
                 KNOWLEDGE_EMBEDDING_GENERATION_READ,
+                KNOWLEDGE_DOCUMENT_DRAFT_CREATE,
+                KNOWLEDGE_DOCUMENT_DRAFT_READ,
+                KNOWLEDGE_DOCUMENT_REVIEW_CREATE,
+                KNOWLEDGE_DOCUMENT_REVIEW_READ,
+                KNOWLEDGE_DOCUMENT_APPROVAL_CREATE,
+                KNOWLEDGE_DOCUMENT_APPROVAL_READ,
+                KNOWLEDGE_DOCUMENT_PUBLICATION_PREPARATION_CREATE,
+                KNOWLEDGE_DOCUMENT_PUBLICATION_PREPARATION_READ,
                 KNOWLEDGE_INDEX_STAGING_CREATE,
                 KNOWLEDGE_INDEX_STAGING_READ,
                 KNOWLEDGE_RETRIEVAL_PUBLICATION_CREATE,
@@ -5295,6 +5358,30 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=operational_knowledge_embedding_generation_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.knowledge-document-governance-create",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=document_knowledge_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.knowledge-document-governance-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=document_knowledge_scope(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C1_READ_ONLY,
