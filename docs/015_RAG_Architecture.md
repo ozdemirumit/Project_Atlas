@@ -5,14 +5,14 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-015 |
-| Version | 1.0.0 |
+| Version | 1.1.0 |
 | Status | Approved |
 | Document Owner | Knowledge and AI Architecture |
 | Reviewers | Architecture Owner, Security Architecture, Data Governance, Infrastructure Domain Architects, AI Architecture |
 | Approver | Umit Ozdemir (acting Architecture Owner) |
 | Approval Date | 2026-08-03 |
-| Last Updated | 2026-08-03 |
-| Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-004](004_Glossary.md), [ATLAS-010](010_System_Architecture.md), [ATLAS-014](014_AI_Architecture.md), [ATLAS-027](027_Knowledge_Engine.md), [ATLAS-054](054_VectorDB.md) |
+| Last Updated | 2026-08-27 |
+| Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-004](004_Glossary.md), [ATLAS-010](010_System_Architecture.md), [ATLAS-014](014_AI_Architecture.md), [ATLAS-027](027_Knowledge_Engine.md), [ATLAS-054](054_VectorDB.md), [ADR-183](adr/ADR-183_Vector_Store_and_Embedding_Model_Selection.md) |
 | Supersedes | ATLAS-015 version 0.1.0 |
 
 ## 1. Purpose
@@ -645,8 +645,7 @@ Interactive retrieval has bounded latency. Large ingestion and re-indexing run a
 
 ## 36. Open Questions and ADR Backlog
 
-- Which vector or hybrid retrieval store is selected first?
-- Which embedding model supports the required languages and restricted deployment?
+- Resolved by [ADR-183](adr/ADR-183_Vector_Store_and_Embedding_Model_Selection.md): the first retrieval store is PostgreSQL with `pgvector`, and the first embedding model is `fastembed`'s `BAAI/bge-small-en-v1.5`. Hybrid (lexical + vector) fusion remains open.
 - Which document formats and parser libraries are supported in MVP?
 - Which source is the first automated integration?
 - Which access-control metadata is enforced at document versus chunk level?
@@ -673,3 +672,4 @@ This document is ready to enter Review when:
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial source, ingestion, and retrieval principles |
 | 0.2.0 | 2026-08-03 | Knowledge and AI Architecture | Added source lifecycle, ingestion pipeline, access controls, metadata, hybrid retrieval, citations, safety, evaluation, deletion, and recovery architecture |
 | 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |
+| 1.1.0 | 2026-08-27 | Umit Ozdemir | Recorded ADR-183's vector-store and embedding-model selection in the Open Questions section |

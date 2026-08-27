@@ -5,14 +5,14 @@
 | Field | Value |
 | --- | --- |
 | Document ID | ATLAS-054 |
-| Version | 1.0.0 |
+| Version | 1.1.0 |
 | Status | Approved |
 | Document Owner | Knowledge Retrieval Engineering Owner |
 | Reviewers | AI Architecture, Data Architecture, Security Architecture, Knowledge Management Owner, Platform Engineering, Site Reliability Engineering, Privacy and Data Governance, Quality Engineering |
 | Approver | Umit Ozdemir (acting Architecture Owner) |
 | Approval Date | 2026-08-03 |
-| Last Updated | 2026-08-03 |
-| Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-015](015_RAG_Architecture.md), [ATLAS-027](027_Knowledge_Engine.md), [ATLAS-032](032_Audit.md), [ATLAS-038](038_Deployment_and_Bootstrap.md), [ATLAS-041](041_Reasoning.md), [ATLAS-047](047_Guardrails.md), [ATLAS-051](051_Backend.md), [ATLAS-053](053_Database.md), [ATLAS-056](056_Testing.md), [ATLAS-057](057_Deployment.md) |
+| Last Updated | 2026-08-27 |
+| Related Documents | [ATLAS-003](003_Project_Principles.md), [ATLAS-015](015_RAG_Architecture.md), [ATLAS-027](027_Knowledge_Engine.md), [ATLAS-032](032_Audit.md), [ATLAS-038](038_Deployment_and_Bootstrap.md), [ATLAS-041](041_Reasoning.md), [ATLAS-047](047_Guardrails.md), [ATLAS-051](051_Backend.md), [ATLAS-053](053_Database.md), [ATLAS-056](056_Testing.md), [ATLAS-057](057_Deployment.md), [ADR-183](adr/ADR-183_Vector_Store_and_Embedding_Model_Selection.md) |
 | Supersedes | ATLAS-054 version 0.1.0 |
 
 ## 1. Purpose
@@ -445,8 +445,7 @@ Evaluation includes empty-answer and no-authorized-result cases.
 
 ## 34. Open Questions and ADR Backlog
 
-- Is the first store PostgreSQL vector extension or Qdrant?
-- Which local embedding model, dimension, metric, and language coverage are selected?
+- Resolved by [ADR-183](adr/ADR-183_Vector_Store_and_Embedding_Model_Selection.md): the first store is PostgreSQL 18 with the `pgvector` extension, and the first approved local embedding model is `fastembed`'s `BAAI/bge-small-en-v1.5` (384 dimensions, cosine distance). A fully offline/restricted-network production model-artifact mirror remains a tracked follow-up under that ADR.
 - What collection and organization-isolation strategy is required?
 - What recall, latency, deletion, and isolation thresholds block release?
 - Is store-native backup needed for MVP, or is verified rebuild sufficient?
@@ -470,3 +469,4 @@ This document is ready to enter Review when:
 | 0.1.0 | 2026-07-21 | Project Atlas Team | Initial vector-store goals, capabilities, candidates, and questions |
 | 0.2.0 | 2026-08-03 | Knowledge Retrieval Engineering Owner | Added vector and embedding contracts, access filtering, hybrid retrieval, score and citation semantics, lifecycle invalidation, deletion, re-index, migration, offline operation, recovery, evaluation, and testing |
 | 1.0.0 | 2026-08-03 | Umit Ozdemir | Approved as the first binding documentation baseline under the designated approver authority |
+| 1.1.0 | 2026-08-27 | Umit Ozdemir | Recorded ADR-183's vector-store and embedding-model selection in the Open Questions section |
