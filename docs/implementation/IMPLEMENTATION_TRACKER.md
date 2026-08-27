@@ -4,14 +4,60 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-258 |
-| Title | Real connector-backed RCA (real facts into the existing fault-family templates) |
-| Status | Verified — see "Verification gap closed" below |
+| Task ID | ATLAS-IMP-259 |
+| Title | Fix recommendation assembler for real RCA cases (regression from ATLAS-IMP-258) |
+| Status | Verified (backend, tool-verified with real toolchain) |
 | Branch | `main` |
 | Pull Request | none (pushed directly to `main`; no PR tooling available in this environment) |
 | Governing Documents | ATLAS-003, ATLAS-026 (Graph Engine), `docs/042_Root_Cause_Analysis.md` |
 | Last Updated | 2026-08-27 |
-| Next Action | pgvector live verification on Linux — the last item of the user's ordered list. This sandbox has no WSL and no Docker (confirmed: `wsl.exe --status` reports WSL absent); installing either is a system-level change left for the user. |
+| Next Action | pgvector live verification on Linux — the last item of the user's ordered list. This sandbox has no WSL and no Docker (confirmed: `wsl.exe --status` reports WSL absent); installing either is a system-level change left for the user. Separately worth a look, found but not pursued in this task: `modules/investigations` (real, reachable, but requires stitching three evidence types RCA deliberately routed around) and the grounded-answer retrieval path (`modules/knowledge/adapters/synthetic.py`'s `build_synthetic_knowledge_chunks`, wired to `GroundedAnswerService` instead of the real fastembed/pgvector retriever already built for ATLAS-IMP-255 — a small, low-risk loose end). |
+
+### ATLAS-IMP-259 Scope and Verification
+
+- **Found via investigation, not requested**: after closing the ATLAS-IMP-256/257/258 verification
+  gap, asked what to do next since the user's three-item list was complete and pgvector Linux
+  verification is blocked. An investigation agent surfaced a real, live regression: when
+  `configured_hitachi_health_enabled` is `True`, `RcaService` now emits real `RcaCase` objects
+  (ATLAS-IMP-258) with dynamically-named evidence ids (`evidence.rca.health.{hash}`,
+  `evidence.rca.inventory.{hash}`), but `RecommendationService` was still unconditionally wired to
+  `SyntheticStorageRecommendationAssembler`, which hard-requires four literal evidence ids
+  (`evidence.investigation.health.latest`, `...peer.signal`, `...graph.path`,
+  `...vendor.guidance`) that a real case never has — every recommendation request against a real
+  RCA case would raise `ValueError("source RCA evidence is incomplete")`. `RecommendationService._validate_scope`
+  also still hardcoded the two synthetic-fixture target ids, exactly the bug ATLAS-IMP-258 fixed
+  for RCA itself, so a real target would have been rejected even earlier, at the scope check.
+- Fix mirrors ATLAS-IMP-258 exactly: removed the hardcoded target-id check from
+  `RecommendationService._validate_scope` (target validity is already covered by
+  `self._source_provider.get_case(...)` raising `KeyError` -> `recommendation_source_unavailable`
+  for any case that doesn't resolve, so the extra check was redundant once relaxed, not replaced).
+  New `ConfiguredHitachiRecommendationAssembler` (`modules/recommendations/adapters/configured_hitachi.py`)
+  needs **no connector access of its own** — unlike RCA/graph, `RecommendationAssembler.build()` is
+  synchronous and receives an already-fetched `RcaCase`, so no `async`/wiring-shape change was
+  needed here, only a new assembler and one `if configured_hitachi_health_enabled` branch in
+  `api/app.py`.
+- Keeps the same five expert-authored option categories (investigate, escalate, defer, restoration
+  planning, remediation planning) and their governed C1/C0 diagnostic plan steps unchanged — same
+  domain-reasoning-is-not-data principle as RCA. What's real: evidence references are limited to
+  the two evidence units a real case actually has (no peer-array signal, graph-path corroboration,
+  or vendor guidance exist for a real case, so those argument slots were dropped from every option
+  builder rather than faked), `Applicability.products` is left empty rather than regex-scraping a
+  vendor/model string out of prose (`RcaCase` carries no structured model field), and `build()`
+  raises `ValueError` up front when the source case has zero hypotheses (RCA's honest "no active
+  finding" case) rather than fabricating recommendations against nothing.
+- New test `backend/tests/test_configured_hitachi_recommendation_assembler.py`: a hand-built real
+  `RcaCase` fixture (real-shaped evidence ids, `data_profile="configured_hitachi_read_only"`)
+  confirms all 5 options build, every evidence reference resolves, none of the three
+  synthetic-only evidence ids ever appear, and `applicability.products == ()`; a second test
+  confirms `ValueError` when `hypotheses=()`.
+- **Verified with the real toolchain this time** (not manual review): `ruff format`, `ruff check`,
+  `mypy` strict all clean. Targeted tests (this new file plus
+  `test_recommendation_api.py`, `test_approval_api.py`, `test_rca_api.py`,
+  `test_configured_hitachi_rca_assembler.py`): 42/42 passed — confirming the `_validate_scope`
+  change didn't break the existing synthetic-path tests (none of them exercised the removed
+  hardcoded-target-id branch; they test resource_id mismatch and missing/mismatched RCA case ids,
+  both unaffected). Also ran everything matching `report or itsm` (125 tests) since `ReportService`
+  sits downstream of `RecommendationService`: all passed, confirming no further ripple.
 
 ### Verification gap closed (ATLAS-IMP-256, 257, 258)
 

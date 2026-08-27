@@ -144,15 +144,11 @@ class RecommendationService:
         request: RecommendationRequest,
         context: RecommendationAccessContext,
     ) -> None:
+        del request
         if context.resource_id != RECOMMENDATION_RESOURCE_ID:
             raise RecommendationOperationsError(
                 "recommendation_scope_mismatch",
                 "The recommendation target is outside the authorized scope.",
-            )
-        if request.target_id not in {"asset.storage.lab.b28", "asset.storage.lab.g400"}:
-            raise RecommendationOperationsError(
-                "recommendation_source_unavailable",
-                "The requested recommendation source is unavailable.",
             )
 
     @staticmethod

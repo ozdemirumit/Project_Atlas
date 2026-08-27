@@ -1374,6 +1374,9 @@ from atlas.modules.platform.domain.advisory_posture import (
 from atlas.modules.rca.adapters.configured_hitachi import ConfiguredHitachiRcaAssembler
 from atlas.modules.rca.adapters.synthetic import SyntheticStorageRcaAssembler
 from atlas.modules.rca.application.service import RcaService
+from atlas.modules.recommendations.adapters.configured_hitachi import (
+    ConfiguredHitachiRecommendationAssembler,
+)
 from atlas.modules.recommendations.adapters.correction_resubmission_memory import (
     InMemoryRecommendationCorrectionPolicySource,
     InMemoryRecommendationCorrectionRepository,
@@ -7067,7 +7070,11 @@ def create_app(
     )
     resolved_recommendation_service = recommendation_service or RecommendationService(
         source_provider=resolved_rca_service,
-        assembler=SyntheticStorageRecommendationAssembler(),
+        assembler=(
+            ConfiguredHitachiRecommendationAssembler()
+            if configured_hitachi_health_enabled
+            else SyntheticStorageRecommendationAssembler()
+        ),
         audit_sink=resolved_audit_sink,
     )
     resolved_report_service = report_service or ReportService(
