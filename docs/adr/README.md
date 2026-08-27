@@ -64,3 +64,4 @@ ADR numbers are permanent and never reused. Material changes require a new ADR r
 | [ADR-181](ADR-181_Bounded_Single_Use_Protected_Runtime_Process_Resume_Authorization_Lease.md) | Bounded single-use protected runtime process-resume authorization lease | Accepted |
 | [ADR-182](ADR-182_Advisory_Only_Terminal_Execution_Boundary.md) | Advisory-only terminal execution boundary | Accepted |
 | [ADR-183](ADR-183_Vector_Store_and_Embedding_Model_Selection.md) | Vector store and embedding model selection | Accepted |
+| [ADR-184](ADR-184_Compact_Document_Sourced_Knowledge_Governance_Chain.md) | Compact document-sourced knowledge governance chain | Accepted |
