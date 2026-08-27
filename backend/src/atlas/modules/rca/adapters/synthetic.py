@@ -38,7 +38,7 @@ class SyntheticStorageRcaAssembler:
     def __init__(self) -> None:
         self._investigation_assembler = SyntheticInvestigationAssembler()
 
-    def build(
+    async def build(
         self,
         request: RcaCreateRequest,
         *,
@@ -50,6 +50,8 @@ class SyntheticStorageRcaAssembler:
         version: int,
         prior_version_id: str | None,
     ) -> RcaCase:
+        if request.target_id not in {"asset.storage.lab.b28", "asset.storage.lab.g400"}:
+            raise KeyError(request.target_id)
         investigation = self._investigation_assembler.build(
             InvestigationRequest(
                 target_id=request.target_id,

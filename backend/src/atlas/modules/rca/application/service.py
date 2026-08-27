@@ -64,7 +64,7 @@ class RcaService:
                 result_code="rca_request_accepted",
             )
             try:
-                case = self._assembler.build(
+                case = await self._assembler.build(
                     request,
                     requested_by=context.subject_id,
                     organization_id=context.organization_id,
@@ -105,15 +105,11 @@ class RcaService:
 
     @staticmethod
     def _validate_scope(request: RcaCreateRequest, context: RcaAccessContext) -> None:
+        del request
         if context.resource_id != RCA_RESOURCE_ID:
             raise RcaOperationsError(
                 "rca_scope_mismatch",
                 "The RCA target is outside the authorized scope.",
-            )
-        if request.target_id not in {"asset.storage.lab.b28", "asset.storage.lab.g400"}:
-            raise RcaOperationsError(
-                "rca_target_unavailable",
-                "The requested RCA target is unavailable.",
             )
 
     @staticmethod

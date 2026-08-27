@@ -4,14 +4,86 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-257 |
-| Title | Real connector-backed graph engine (storage-system layer) |
+| Task ID | ATLAS-IMP-258 |
+| Title | Real connector-backed RCA (real facts into the existing fault-family templates) |
 | Status | Code-complete; NOT tool-verified in this sandbox (this session has no Python/uv, no Node.js/npm, and no Docker at all — see caveat below) |
 | Branch | `main` |
 | Pull Request | none (pushed directly to `main`; no PR tooling available in this environment) |
-| Governing Documents | ATLAS-003, ATLAS-026 (Graph Engine) |
+| Governing Documents | ATLAS-003, ATLAS-026 (Graph Engine), `docs/042_Root_Cause_Analysis.md` |
 | Last Updated | 2026-08-27 |
-| Next Action | Run `ruff format --check`, `ruff check`, `mypy`, and `pytest` for this change (and ATLAS-IMP-256's frontend `npm` checks) on a machine/session with real tooling — this sandbox currently has none. Then continue the user's ordered list: RCA real-implementation (now naturally easier, since it can build on this real graph instead of a second synthetic-on-synthetic layer), then pgvector live verification on Linux. |
+| Next Action | Run `ruff format --check`, `ruff check`, `mypy`, and `pytest` for this change and ATLAS-IMP-256/257 on a machine/session with real tooling — this sandbox has none. Attempt Windows Subsystem for Linux or Docker installation is a system-level change and was left for the user (WSL confirmed not installed; `wsl.exe --status` reports it absent). Then: pgvector live verification on Linux, the last item of the user's ordered list. |
+
+### ATLAS-IMP-258 Scope and Verification
+
+- **Scope decision, made explicitly with the user before writing any code**: the RCA engine's
+  synthetic adapter (`SyntheticStorageRcaAssembler`) isn't fake *data* the way storage/graph were —
+  its two fault-family hypotheses, mechanisms, and diagnostic-step branching are hand-authored
+  domain reasoning content, hardcoded for exactly two fixture target_ids. There is no real
+  hypothesis-ranking engine anywhere in this codebase to swap in the way `ConfiguredHitachiStorageProvider`
+  swapped in for synthetic storage data. Presented this to the user with three options; they chose
+  the lean one: **keep the two expert-authored fault-family hypothesis templates and their governed
+  C1 diagnostic-step recommendations exactly as they are (this is domain expertise, not data to
+  fabricate), but source the target, component, severity, and evidence those templates are
+  populated with from a real, single, current Hitachi hardware-health read** instead of the
+  hardcoded b28/g400 fixture. Building an actual AI reasoning component instead was explicitly
+  ruled out as out of scope and a separate governance question under ADR-182's advisory-only
+  boundary.
+- **Architecture change, larger than storage/graph's**: `RcaAssembler.build()` was synchronous
+  (the synthetic adapter needs no I/O); a real adapter needs `await`ed connector reads, so the
+  `RcaAssembler` Protocol and `RcaService.create()`'s call to it both became `async`. The
+  hardcoded `request.target_id not in {"asset.storage.lab.b28", "asset.storage.lab.g400"}` check
+  was moved out of `RcaService._validate_scope` (a hardcoded literal has no meaning once real
+  target ids exist) and into each assembler itself, which now owns "do I know this target" —
+  `SyntheticStorageRcaAssembler.build()` raises `KeyError` for the same two-id check it always
+  implicitly had; `ConfiguredHitachiRcaAssembler.build()` raises `KeyError` for any target that
+  doesn't resolve to a real, currently-configured Hitachi storage device. `RcaService.create()`'s
+  existing `except KeyError` -> `rca_target_unavailable` handling needed **no change at all** — this
+  was the whole point of relocating the check there rather than special-casing it further.
+  `RecommendationService`/`ReportService`, both downstream consumers of `RcaService`, only call the
+  unchanged, still-synchronous `get_case()` read path — confirmed via grep before assuming this was
+  safe, not touched.
+- New `ConfiguredHitachiRcaAssembler` (`modules/rca/adapters/configured_hitachi.py`) resolves a
+  real-shaped `target_id` (`asset.storage.{sha256-derived-id}`, the same identity scheme as
+  ATLAS-IMP-252/257's storage asset_id / graph entity_id) back to a real `storage_device_id` by
+  checking it against every currently-allowlisted real Hitachi device's own id under the same
+  hash — a one-way hash, so this had to search forward rather than decode backward. Reads live
+  inventory (for the model name) and hardware health (for real per-component severity and vendor
+  status) for exactly that one device. Two honest outcomes: if any component is not `NORMAL`, the
+  worst one populates the two existing hypothesis templates with real facts (real model, real
+  `category:location`, real vendor status text, real evidence digests) and a real severity mapped
+  from the Hitachi `HealthSeverity` (not always hardcoded `WARNING` as the synthetic fixture was);
+  if every component is `NORMAL`, the case returns **zero hypotheses** and an explicit
+  `INCONCLUSIVE` state saying no active finding was observed, rather than fabricating a diagnosis
+  for nothing. Every evidence-fact the synthetic template referenced that isn't real in this
+  environment (peer-array signal, graph-path corroboration, vendor guidance, a "possibly affected
+  service") was dropped rather than faked — `expected_unaffected_entities`,
+  `possibly_affected_services`, and similar fields are honestly empty here, same "no CMDB/hypervisor
+  mapping exists" honesty as ATLAS-IMP-257's graph work.
+- New test `backend/tests/test_configured_hitachi_rca_assembler.py`: unavailable (raises
+  `KeyError`, no transport contact) when no configured instance, when the MCP isn't enabled, when
+  the requested target doesn't resolve to a real device, and when the credential lease fails;
+  real active-finding case built from a real `Warning` component read (two hypotheses, ranks
+  `[1, 2]`, real model name in the statement text, all evidence cross-references resolve); real
+  no-active-finding case from an all-`Normal` read (empty hypotheses, `INCONCLUSIVE` state).
+  Updated `test_rca_api.py`'s two custom `SyntheticStorageRcaAssembler` subclasses
+  (`CountingAssembler`, `UnsafeDiagnosticAssembler`) to the new `async def build` /
+  `await super().build(...)` signature — both override `build()` to instrument or corrupt the
+  synthetic case, and would otherwise have tried to `await` a bare `RcaCase` instead of a
+  coroutine. Confirmed by grep that `test_recommendation_api.py` and `test_approval_api.py`'s
+  own `SyntheticStorageRcaAssembler()` constructions need no change (they don't subclass or
+  override `build`).
+- **Verification gap — identical to ATLAS-IMP-257's, not repeated in full here**: no Python/uv,
+  Node, or Docker in this sandbox; `ruff`/`mypy`/`pytest` could not be run. This change is riskier
+  to leave unverified than ATLAS-IMP-257's, because it changes a Protocol's calling convention
+  (`build()` becoming `async`) across four call sites (the service, the synthetic adapter, and two
+  test-only subclasses) rather than adding a purely-additive new adapter — a missed `await` or
+  un-migrated subclass would fail loudly at the first `TestClient` request, not silently, but it
+  was not possible to confirm that here. Every one of the identified call sites was updated and
+  re-read by hand; `RcaCase`'s roughly dozen `__post_init__` invariants (rank contiguity, evidence
+  cross-reference resolution, `ImpactScope.impact_confirmed` must be `False`,
+  `ProvisionalCauseStatement.confirmation_level` must not be `CONFIRMED`, `HumanReview` field
+  consistency by status, etc.) were each traced by hand against the values
+  `ConfiguredHitachiRcaAssembler` constructs, in both the active-finding and no-finding branches.
 
 ### ATLAS-IMP-257 Scope and Verification
 

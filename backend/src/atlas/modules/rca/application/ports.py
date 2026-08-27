@@ -7,7 +7,7 @@ from atlas.modules.rca.domain.models import RcaCase, RcaCreateRequest
 
 
 class RcaAssembler(Protocol):
-    def build(
+    async def build(
         self,
         request: RcaCreateRequest,
         *,

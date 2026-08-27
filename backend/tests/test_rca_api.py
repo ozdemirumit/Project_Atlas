@@ -41,14 +41,14 @@ class CountingAssembler(SyntheticStorageRcaAssembler):
         super().__init__()
         self.calls = 0
 
-    def build(self, *args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+    async def build(self, *args: object, **kwargs: object):  # type: ignore[no-untyped-def]
         self.calls += 1
-        return super().build(*args, **kwargs)  # type: ignore[arg-type]
+        return await super().build(*args, **kwargs)  # type: ignore[arg-type]
 
 
 class UnsafeDiagnosticAssembler(SyntheticStorageRcaAssembler):
-    def build(self, *args: object, **kwargs: object):  # type: ignore[no-untyped-def]
-        case = super().build(*args, **kwargs)  # type: ignore[arg-type]
+    async def build(self, *args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+        case = await super().build(*args, **kwargs)  # type: ignore[arg-type]
         hypothesis = case.hypotheses[0]
         diagnostic = replace(hypothesis.diagnostic_steps[0], capability_id="vendor.storage.restart")
         return replace(
