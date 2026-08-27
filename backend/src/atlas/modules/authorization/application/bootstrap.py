@@ -355,6 +355,8 @@ KNOWLEDGE_DOCUMENT_PUBLICATION_PREPARATION_CREATE = (
     "knowledge.document-publication-preparation.create"
 )
 KNOWLEDGE_DOCUMENT_PUBLICATION_PREPARATION_READ = "knowledge.document-publication-preparation.read"
+KNOWLEDGE_DOCUMENT_INDEXING_CREATE = "knowledge.document-indexing.create"
+KNOWLEDGE_DOCUMENT_RETRIEVAL_CREATE = "knowledge.document-retrieval.create"
 KNOWLEDGE_PROTECTED_RETRIEVAL_CREATE = "knowledge.protected-retrieval.create"
 KNOWLEDGE_PROTECTED_RETRIEVAL_READ = "knowledge.protected-retrieval.read"
 AI_PROTECTED_MODEL_CONTEXT_CREATE = "ai.protected-model-context.create"
@@ -3398,6 +3400,14 @@ def build_development_authorization_service(
             description="Read document-sourced knowledge publication-preparation metadata.",
         ),
         PermissionDefinition(
+            permission_id=KNOWLEDGE_DOCUMENT_INDEXING_CREATE,
+            description="Chunk, embed, and index one approved document-sourced knowledge item.",
+        ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_DOCUMENT_RETRIEVAL_CREATE,
+            description="Run one governed semantic retrieval query over indexed document knowledge",
+        ),
+        PermissionDefinition(
             permission_id=KNOWLEDGE_INDEX_STAGING_CREATE,
             description="Stage and validate one governed protected knowledge index projection.",
         ),
@@ -3824,6 +3834,8 @@ def build_development_authorization_service(
                 KNOWLEDGE_DOCUMENT_APPROVAL_READ,
                 KNOWLEDGE_DOCUMENT_PUBLICATION_PREPARATION_CREATE,
                 KNOWLEDGE_DOCUMENT_PUBLICATION_PREPARATION_READ,
+                KNOWLEDGE_DOCUMENT_INDEXING_CREATE,
+                KNOWLEDGE_DOCUMENT_RETRIEVAL_CREATE,
                 KNOWLEDGE_INDEX_STAGING_CREATE,
                 KNOWLEDGE_INDEX_STAGING_READ,
                 KNOWLEDGE_RETRIEVAL_PUBLICATION_CREATE,

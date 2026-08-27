@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -19941,3 +19942,30 @@ class DocumentKnowledgePreparationModel(Base):
     environment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class DocumentKnowledgeVectorModel(Base):
+    """Real vector storage (pgvector). See atlas.modules.knowledge.domain.document_retrieval.
+
+    Requires `CREATE EXTENSION vector` (migration 20260827_0169). No ordinary
+    application table may reference the `embedding` column directly.
+    """
+
+    __tablename__ = "document_knowledge_vectors"
+    __table_args__ = (
+        Index(
+            "ix_document_knowledge_vectors_scope",
+            "organization_id",
+            "environment_id",
+        ),
+    )
+
+    chunk_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    knowledge_item_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    classification: Mapped[str] = mapped_column(String(128), nullable=False)
+    content_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    model_profile_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    embedding: Mapped[list[float]] = mapped_column(Vector(384), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

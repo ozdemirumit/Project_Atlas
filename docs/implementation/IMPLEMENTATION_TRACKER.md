@@ -4,14 +4,71 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-254 |
-| Title | Compact document-sourced knowledge governance chain (ADR-184, all 4 stages) |
-| Status | Verified, merged to main |
+| Task ID | ATLAS-IMP-255 |
+| Title | Real document chunking, embedding, vector indexing, and retrieval (ADR-183, ADR-184 amendment) |
+| Status | Verified (pgvector path code-complete, not live-verifiable in this sandbox), merged to main |
 | Branch | `main` |
 | Pull Request | none (pushed directly to `main`; no PR tooling available in this environment) |
-| Governing Documents | ATLAS-003, ATLAS-015, ATLAS-027, ATLAS-037, ATLAS-047, ADR-184 |
+| Governing Documents | ATLAS-003, ATLAS-015, ATLAS-054, ADR-183, ADR-184 (amended) |
 | Last Updated | 2026-08-27 |
-| Next Action | Generalize `source_materialization`'s Source protocol to accept `PublicationReadyKnowledgeSource` (ADR-184's remaining unimplemented piece) so a Document Knowledge Publication Preparation record can actually enter the ADR-053-058 RAG pipeline; then replace that pipeline's Synthetic/Unavailable adapters with real ADR-183 (fastembed + pgvector) implementations. |
+| Next Action | Install the `pgvector` PostgreSQL extension in a Linux/CI environment and run the (already-written, currently sandbox-blocked) live migration + `PgVectorDocumentVectorIndex` verification. Separately: pre-stage an offline-cached `fastembed` model artifact for the fully restricted-network production profile (tracked since ADR-183). Then: frontend document-upload UI, and/or extend real coverage to a second Operational-chain gap (graph engine or RCA, per the original code-assessment findings). |
+
+### ATLAS-IMP-255 Scope and Verification
+
+- Investigation of `OperationalKnowledgeSourceMaterializationService.create()` found it
+  cross-validates a full four-record Operational lineage (resolution/review/request/draft), not
+  just a publication-preparation record — narrowing one Protocol's return type (this task's
+  original plan) would not have been enough without rewriting ~20 field cross-checks in
+  already-tested code. Confirmed with the user, then amended ADR-184 (see its "Amendment"
+  section) and built a separate real RAG path for documents instead: `DocumentKnowledgeDraft`'s
+  `protected_material_digest` (already real content from ATLAS-IMP-253/254) is chunked and
+  indexed directly — no materialization stage, and the ADR-042-058 Operational chain is not
+  touched at all.
+- New real (not synthetic) components: `ParagraphBoundedChunker` (deterministic paragraph-boundary
+  splitter, never produces empty chunks), `FastEmbedDocumentEmbedder` (ADR-183: local `fastembed`
+  `BAAI/bge-small-en-v1.5`, 384-dim, lazy-loaded so constructing it costs nothing until first real
+  use — important because `create_app()` runs in hundreds of existing tests),
+  `InMemoryDocumentVectorIndex` (real cosine similarity via numpy, process-local),
+  `PgVectorDocumentVectorIndex` (real pgvector-backed cosine search, migration `20260827_0169`),
+  and `DocumentKnowledgeRetrievalService` (`index_document()`, `retrieve()`).
+- Gated behind a new `document_retrieval_enabled` setting (default `False`) precisely so the
+  existing test suite's hundreds of `create_app()` calls never pay any embedding-model cost unless
+  a test explicitly opts in — mirrors this codebase's existing `local_model_enabled` pattern for
+  the chat model gateway.
+- New API: `POST /api/v1/knowledge/documents/{index,search}`, gated by two new RBAC permissions
+  reusing the existing `resource.knowledge.document-governance` scope/assignment from
+  ATLAS-IMP-254 (no new RoleAssignment needed — same scope tuple).
+- **Environment blocker hit and resolved**: `fastembed`'s Hugging Face download initially failed
+  with `SSL: CERTIFICATE_VERIFY_FAILED` (this sandbox sits behind a corporate TLS-intercepting
+  proxy, same class of issue ADR-183 flagged as a known follow-up, already solved once before in
+  the sibling `AI-IT-OPS` project). Fixed by exporting the Windows Root/CA certificate stores to a
+  PEM bundle and setting `SSL_CERT_FILE`/`REQUESTS_CA_BUNDLE` for the one-time model download;
+  confirmed the model then runs fully offline from cache with those variables unset. This
+  workaround is local-session-only; production/CI on the intended Linux targets does not need it
+  (docs/adr/ADR-183 already tracks the proper offline-artifact-mirror follow-up).
+- **Verified with the real model, not mocked**: `test_fastembed_produces_a_real_384_dimension_vector`
+  confirms real non-zero 384-dim output; `test_fastembed_query_and_passage_embeddings_are_semantically_close`
+  confirms cosine(passage, on-topic query) > cosine(passage, off-topic query); the full pipeline
+  test chunks, embeds, and indexes two real documents (a storage runbook and an unrelated backup
+  policy) then confirms a storage-related query ranks the storage document's chunk first — genuine
+  semantic retrieval, not a stub. 10/10 new tests pass.
+- **`pgvector` extension is not installed in this Windows PostgreSQL 18 sandbox**
+  (`CREATE EXTENSION vector` fails with `FeatureNotSupported`, transactional DDL rolled back
+  cleanly, no partial state) — a Windows-only sandbox gap (no prebuilt binary for this PostgreSQL
+  install), not a code defect: `PgVectorDocumentVectorIndex` uses the same proven
+  `pgvector.sqlalchemy.Vector`/`cosine_distance()` API, and this project's actual CI/production
+  target is Linux where the extension installs trivially. Migration `20260827_0169` and the
+  adapter are code-complete and mypy/ruff-clean but **not live-verified**; flagged explicitly as
+  the top item in Next Action rather than silently claimed as tested.
+- Verified: `ruff format --check`, `ruff check`, and strict `mypy` clean across 1525 source files
+  (added `pgvector.*`/`fastembed.*` to the mypy untyped-import overrides, matching the existing
+  `ldap3.*`/`alembic.*` pattern). A targeted regression sweep of 6 related test files (56 tests:
+  document retrieval, document knowledge, protected content, authorization, evidence draft,
+  embedding generation) passed with zero failures. An HTTP-level smoke test confirmed real
+  base64-upload draft creation end-to-end and — as a positive signal, not a bug — correctly
+  triggered `document_knowledge_separation_of_duties_required` when the same single test identity
+  was used for both curation and review, proving the RBAC/separation-of-duties wiring is live and
+  correct over real HTTP, not just in unit tests with a stub authorizer.
 
 ### ATLAS-IMP-254 Scope and Verification
 

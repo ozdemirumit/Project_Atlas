@@ -889,6 +889,10 @@ from atlas.modules.knowledge.adapters.deterministic_chunking_synthetic import (
     SyntheticOperationalKnowledgeChunker,
     UnavailableOperationalKnowledgeChunker,
 )
+from atlas.modules.knowledge.adapters.document_chunking import ParagraphBoundedChunker
+from atlas.modules.knowledge.adapters.document_embedding_fastembed import (
+    FastEmbedDocumentEmbedder,
+)
 from atlas.modules.knowledge.adapters.document_knowledge_memory import (
     InMemoryDocumentKnowledgeRepository,
 )
@@ -897,6 +901,12 @@ from atlas.modules.knowledge.adapters.document_knowledge_permission import (
 )
 from atlas.modules.knowledge.adapters.document_knowledge_postgres import (
     PostgreSQLDocumentKnowledgeRepository,
+)
+from atlas.modules.knowledge.adapters.document_vector_index_memory import (
+    InMemoryDocumentVectorIndex,
+)
+from atlas.modules.knowledge.adapters.document_vector_index_postgres import (
+    PgVectorDocumentVectorIndex,
 )
 from atlas.modules.knowledge.adapters.draft_review_request_memory import (
     InMemoryOperationalKnowledgeReviewRequestPolicySource,
@@ -1133,6 +1143,9 @@ from atlas.modules.knowledge.application.deterministic_chunking import (
     build_development_operational_knowledge_chunking_policy,
 )
 from atlas.modules.knowledge.application.document_knowledge import DocumentKnowledgeService
+from atlas.modules.knowledge.application.document_retrieval import (
+    DocumentKnowledgeRetrievalService,
+)
 from atlas.modules.knowledge.application.draft_review_request import (
     OperationalKnowledgeReviewRequestService,
     build_development_operational_knowledge_review_request_policy,
@@ -3029,6 +3042,7 @@ def create_app(
     authorization_service: AuthorizationService | None = None,
     storage_operations_service: StorageOperationsService | None = None,
     document_knowledge_service: DocumentKnowledgeService | None = None,
+    document_knowledge_retrieval_service: DocumentKnowledgeRetrievalService | None = None,
     inventory_device_service: InventoryDeviceService | None = None,
     itsm_integration_service: ItsmIntegrationService | None = None,
     graph_impact_service: GraphImpactService | None = None,
@@ -6968,12 +6982,13 @@ def create_app(
         resolved_protected_content_store = UnavailableProtectedContentStore()
     else:
         resolved_protected_content_store = InMemoryProtectedContentStore()
+    resolved_document_knowledge_repository = (
+        PostgreSQLDocumentKnowledgeRepository.from_url(resolved_settings.database_url)
+        if resolved_settings.database_url
+        else InMemoryDocumentKnowledgeRepository()
+    )
     resolved_document_knowledge_service = document_knowledge_service or DocumentKnowledgeService(
-        repository=(
-            PostgreSQLDocumentKnowledgeRepository.from_url(resolved_settings.database_url)
-            if resolved_settings.database_url
-            else InMemoryDocumentKnowledgeRepository()
-        ),
+        repository=resolved_document_knowledge_repository,
         protected_content=resolved_protected_content_store,
         permission_authorizer=AuthorizationDocumentKnowledgePermissionAuthorizer(
             service=resolved_authorization_service,
@@ -6982,6 +6997,28 @@ def create_app(
         audit_sink=resolved_audit_sink,
         subject_salt=f"document-knowledge-subject-salt.{resolved_settings.environment}",
     )
+    resolved_document_knowledge_retrieval_service: DocumentKnowledgeRetrievalService | None
+    if document_knowledge_retrieval_service is not None:
+        resolved_document_knowledge_retrieval_service = document_knowledge_retrieval_service
+    elif resolved_settings.document_retrieval_enabled:
+        resolved_document_knowledge_retrieval_service = DocumentKnowledgeRetrievalService(
+            repository=resolved_document_knowledge_repository,
+            protected_content=resolved_protected_content_store,
+            chunker=ParagraphBoundedChunker(),
+            embedder=FastEmbedDocumentEmbedder(),
+            vector_index=(
+                PgVectorDocumentVectorIndex.from_url(resolved_settings.database_url)
+                if resolved_settings.database_url
+                else InMemoryDocumentVectorIndex()
+            ),
+            permission_authorizer=AuthorizationDocumentKnowledgePermissionAuthorizer(
+                service=resolved_authorization_service,
+                environment=resolved_settings.environment,
+            ),
+            audit_sink=resolved_audit_sink,
+        )
+    else:
+        resolved_document_knowledge_retrieval_service = None
     resolved_investigation_service = investigation_service or InvestigationService(
         assembler=SyntheticInvestigationAssembler(),
         audit_sink=resolved_audit_sink,
@@ -9837,6 +9874,9 @@ def create_app(
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
         app.state.document_knowledge_service = resolved_document_knowledge_service
+        app.state.document_knowledge_retrieval_service = (
+            resolved_document_knowledge_retrieval_service
+        )
         app.state.inventory_device_service = resolved_inventory_device_service
         app.state.itsm_integration_service = resolved_itsm_integration_service
         app.state.graph_impact_service = resolved_graph_impact_service

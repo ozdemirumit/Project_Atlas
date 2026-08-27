@@ -159,7 +159,9 @@ from atlas.modules.authorization.application.bootstrap import (
     KNOWLEDGE_DOCUMENT_APPROVAL_CREATE,
     KNOWLEDGE_DOCUMENT_DRAFT_CREATE,
     KNOWLEDGE_DOCUMENT_DRAFT_READ,
+    KNOWLEDGE_DOCUMENT_INDEXING_CREATE,
     KNOWLEDGE_DOCUMENT_PUBLICATION_PREPARATION_CREATE,
+    KNOWLEDGE_DOCUMENT_RETRIEVAL_CREATE,
     KNOWLEDGE_DOCUMENT_REVIEW_CREATE,
     KNOWLEDGE_DRAFT_REVIEW_REQUEST_CREATE,
     KNOWLEDGE_DRAFT_REVIEW_REQUEST_READ,
@@ -2437,6 +2439,24 @@ async def authorize_document_knowledge_publication_preparation_create(
 ) -> AuthorizationDecision:
     return await _authorize_document_knowledge(
         request, subject, permission_id=KNOWLEDGE_DOCUMENT_PUBLICATION_PREPARATION_CREATE
+    )
+
+
+async def authorize_document_knowledge_indexing_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_document_knowledge(
+        request, subject, permission_id=KNOWLEDGE_DOCUMENT_INDEXING_CREATE
+    )
+
+
+async def authorize_document_knowledge_retrieval_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_document_knowledge(
+        request, subject, permission_id=KNOWLEDGE_DOCUMENT_RETRIEVAL_CREATE
     )
 
 
