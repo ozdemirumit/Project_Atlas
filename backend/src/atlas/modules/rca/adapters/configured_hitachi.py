@@ -178,11 +178,20 @@ class ConfiguredHitachiRcaAssembler:
                 )
                 inventory = await client.read_inventory()
                 health = await client.read_hardware_health(storage_device_id)
-        except (ConnectorConnectionTestError, HitachiConnectorError, TimeoutError, ValueError) as exc:
+        except (
+            ConnectorConnectionTestError,
+            HitachiConnectorError,
+            TimeoutError,
+            ValueError,
+        ) as exc:
             raise KeyError(request.target_id) from exc
 
         model = next(
-            (array.model for array in inventory.arrays if array.storage_device_id == storage_device_id),
+            (
+                array.model
+                for array in inventory.arrays
+                if array.storage_device_id == storage_device_id
+            ),
             "unknown model",
         )
         return self._assemble_case(
@@ -199,9 +208,7 @@ class ConfiguredHitachiRcaAssembler:
             health=health,
         )
 
-    def _resolve_storage_device_id(
-        self, target_id: str, storage_ids: frozenset[str]
-    ) -> str | None:
+    def _resolve_storage_device_id(self, target_id: str, storage_ids: frozenset[str]) -> str | None:
         if not target_id.startswith(_TARGET_PREFIX):
             return None
         suffix = target_id[len(_TARGET_PREFIX) :]
@@ -228,8 +235,11 @@ class ConfiguredHitachiRcaAssembler:
         authorization_reference = "/".join(
             (organization_id, environment_id, site_id, request.target_id)
         )
+        health_evidence_id = (
+            f"evidence.rca.health.{_identity(request.target_id, str(health.observed_at))}"
+        )
         health_evidence = EvidenceUnit(
-            evidence_id=f"evidence.rca.health.{_identity(request.target_id, str(health.observed_at))}",
+            evidence_id=health_evidence_id,
             artifact_version="1",
             source_type="storage_hardware_health",
             source_system="Hitachi Ops Center",
@@ -254,8 +264,11 @@ class ConfiguredHitachiRcaAssembler:
             ),
             citation=f"Hitachi Ops Center hardware-health read for {model}.",
         )
+        inventory_evidence_id = (
+            f"evidence.rca.inventory.{_identity(request.target_id, str(inventory.observed_at))}"
+        )
         inventory_evidence = EvidenceUnit(
-            evidence_id=f"evidence.rca.inventory.{_identity(request.target_id, str(inventory.observed_at))}",
+            evidence_id=inventory_evidence_id,
             artifact_version="1",
             source_type="storage_inventory",
             source_system="Hitachi Ops Center",
@@ -287,7 +300,9 @@ class ConfiguredHitachiRcaAssembler:
             ),
         )
         non_normal = tuple(
-            component for component in health.components if component.severity is not HealthSeverity.NORMAL
+            component
+            for component in health.components
+            if component.severity is not HealthSeverity.NORMAL
         )
         evidence = (health_evidence, inventory_evidence)
 
@@ -371,7 +386,9 @@ class ConfiguredHitachiRcaAssembler:
             target_id=request.target_id,
             capability_id="atlas.telemetry.service-health.read",
             evidence_source="Atlas authorized service telemetry projection",
-            expected_if_supported="A scoped latency or availability symptom aligns with the window.",
+            expected_if_supported=(
+                "A scoped latency or availability symptom aligns with the window."
+            ),
             expected_if_not_supported="No scoped service symptom is observed in the same window.",
             supported_branch="Retain possible impact and continue dependency validation.",
             unsupported_branch="Do not infer service impact from graph reachability.",
@@ -459,7 +476,9 @@ class ConfiguredHitachiRcaAssembler:
                     "A repeat health observation.",
                     "Observation-source health and parsing diagnostics.",
                 ),
-                confounders=("A single read cannot distinguish a persistent from a transient state.",),
+                confounders=(
+                    "A single read cannot distinguish a persistent from a transient state.",
+                ),
                 assumptions=("The connector's read reflects the array's true current state.",),
                 confirmation_level=ConfirmationLevel.SUSPECTED,
                 confidence_rationale=(

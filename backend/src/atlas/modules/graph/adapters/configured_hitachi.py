@@ -175,8 +175,7 @@ class ConfiguredHitachiGraphSnapshotProvider:
         entities: list[GraphEntity] = []
         evidence: list[GraphEvidence] = []
         evidence_refs = tuple(
-            f"evidence.graph.inventory.{reference}"
-            for reference in inventory.evidence_references
+            f"evidence.graph.inventory.{reference}" for reference in inventory.evidence_references
         )
         for reference, source_reference in zip(
             evidence_refs, inventory.evidence_references, strict=True

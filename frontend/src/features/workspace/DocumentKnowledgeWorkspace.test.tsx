@@ -101,7 +101,7 @@ function renderWorkspace() {
   );
 }
 
-async function fillUploadStage() {
+function fillUploadStage() {
   const file = new File(["fake-content"], "runbook.pdf", { type: "application/pdf" });
   fireEvent.change(screen.getByLabelText("Document file"), { target: { files: [file] } });
   fireEvent.change(screen.getByLabelText("Title"), {
@@ -123,7 +123,7 @@ describe("DocumentKnowledgeWorkspace", () => {
     vi.mocked(createDocumentKnowledgeDraft).mockResolvedValue(draft);
     renderWorkspace();
 
-    await fillUploadStage();
+    fillUploadStage();
 
     expect(await screen.findByRole("heading", { name: /Review decision/ })).toBeVisible();
     expect(screen.getByText("Storage capacity runbook")).toBeVisible();
@@ -142,9 +142,12 @@ describe("DocumentKnowledgeWorkspace", () => {
       ),
     );
     renderWorkspace();
-    await fillUploadStage();
+    fillUploadStage();
     await screen.findByRole("heading", { name: /Review decision/ });
 
+    fireEvent.change(screen.getByLabelText(/Findings/), {
+      target: { value: "Content is accurate." },
+    });
     fireEvent.click(screen.getByRole("button", { name: /Submit review/ }));
 
     expect(
@@ -162,9 +165,12 @@ describe("DocumentKnowledgeWorkspace", () => {
       chunk_count: 3,
     });
     renderWorkspace();
-    await fillUploadStage();
+    fillUploadStage();
     await screen.findByRole("heading", { name: /Review decision/ });
 
+    fireEvent.change(screen.getByLabelText(/Findings/), {
+      target: { value: "Content is accurate." },
+    });
     fireEvent.click(screen.getByRole("button", { name: /Submit review/ }));
     await screen.findByRole("heading", { name: /Final approval/ });
 

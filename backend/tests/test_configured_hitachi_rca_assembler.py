@@ -36,7 +36,12 @@ from atlas.modules.connectors.vendors.hitachi_ops_center.synthetic import (
 from atlas.modules.inventory.application.ports import InventoryDeviceRepository
 from atlas.modules.inventory.domain.devices import InventoryDeviceLifecycle, InventoryDeviceType
 from atlas.modules.rca.adapters.configured_hitachi import ConfiguredHitachiRcaAssembler, _identity
-from atlas.modules.rca.domain.models import ConfirmationLevel, RcaCaseState, RcaCreateRequest
+from atlas.modules.rca.domain.models import (
+    ConfirmationLevel,
+    RcaCase,
+    RcaCaseState,
+    RcaCreateRequest,
+)
 
 NOW = datetime(2026, 8, 27, 12, 0, tzinfo=UTC)
 INSTANCE_ID = "connector-instance.hitachi-rca"
@@ -170,7 +175,7 @@ def _request(target_id: str = TARGET_ID) -> RcaCreateRequest:
     )
 
 
-async def _build(assembler: ConfiguredHitachiRcaAssembler, target_id: str = TARGET_ID):
+async def _build(assembler: ConfiguredHitachiRcaAssembler, target_id: str = TARGET_ID) -> RcaCase:
     return await assembler.build(
         _request(target_id),
         requested_by="subject.development.operator",

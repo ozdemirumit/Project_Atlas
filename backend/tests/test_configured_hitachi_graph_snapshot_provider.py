@@ -200,9 +200,7 @@ async def test_snapshot_is_empty_without_allowlisted_storage() -> None:
 
 
 @pytest.mark.asyncio
-async def test_snapshot_maps_real_inventory_into_storage_system_entities_with_no_relationships() -> (
-    None
-):
+async def test_snapshot_maps_real_inventory_into_storage_entities_with_no_relationships() -> None:
     routes = {
         "/v1/objects/storages": SyntheticHitachiResponse(
             payload={

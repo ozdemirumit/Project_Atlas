@@ -6,12 +6,47 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-258 |
 | Title | Real connector-backed RCA (real facts into the existing fault-family templates) |
-| Status | Code-complete; NOT tool-verified in this sandbox (this session has no Python/uv, no Node.js/npm, and no Docker at all — see caveat below) |
+| Status | Verified — see "Verification gap closed" below |
 | Branch | `main` |
 | Pull Request | none (pushed directly to `main`; no PR tooling available in this environment) |
 | Governing Documents | ATLAS-003, ATLAS-026 (Graph Engine), `docs/042_Root_Cause_Analysis.md` |
 | Last Updated | 2026-08-27 |
-| Next Action | Run `ruff format --check`, `ruff check`, `mypy`, and `pytest` for this change and ATLAS-IMP-256/257 on a machine/session with real tooling — this sandbox has none. Attempt Windows Subsystem for Linux or Docker installation is a system-level change and was left for the user (WSL confirmed not installed; `wsl.exe --status` reports it absent). Then: pgvector live verification on Linux, the last item of the user's ordered list. |
+| Next Action | pgvector live verification on Linux — the last item of the user's ordered list. This sandbox has no WSL and no Docker (confirmed: `wsl.exe --status` reports WSL absent); installing either is a system-level change left for the user. |
+
+### Verification gap closed (ATLAS-IMP-256, 257, 258)
+
+The prior entries below documented these three tasks as tool-unverified because this sandbox's
+Python/uv/Node/Docker toolchain had gone missing mid-session. It turned out `winget` was still
+functional even though the tools themselves weren't on `PATH`; with the user's explicit approval,
+`winget install Python.Python.3.12` and `winget install OpenJS.NodeJS.LTS` were run. Python 3.12.10
+and `uv` turned out to already be installed from earlier in this same session (just not on this
+particular shell's `PATH` — a persisted user-level `PATH` entry confirmed it), so only Node.js
+needed a fresh install. Ran the real verification for all three tasks:
+
+- Backend (`ruff format --check`, `ruff check`, `mypy` strict): all clean after fixing 4 line-length
+  violations and reformatting 2 files — no logic changes, formatting only.
+- Backend targeted tests (`test_graph_impact_api.py`, `test_configured_hitachi_graph_snapshot_provider.py`,
+  `test_rca_api.py`, `test_configured_hitachi_rca_assembler.py`, `test_recommendation_api.py`,
+  `test_approval_api.py`): 54/54 passed.
+- Backend full suite (`pytest -n 4 --dist loadfile`): 3790 passed, 67 failed, 68 skipped. Confirmed
+  by grep that **none** of the 67 failing test files import `atlas.modules.graph`,
+  `atlas.modules.rca`, or `atlas.modules.storage` — they're bootstrap/upgrade/backup/mcp-builder
+  tests with filesystem/symlink error signatures, a pre-existing Windows-sandbox category unrelated
+  to this work (the same class of issue this project's CI, on Linux, does not hit).
+- Frontend (`npm run typecheck`, `npm run lint`): both clean after one real fix — `npx eslint`
+  caught `fillUploadStage` in `DocumentKnowledgeWorkspace.test.tsx` declared `async` with no
+  `await` inside it (`@typescript-eslint/require-await`); removed the unneeded `async`/`await`.
+- Frontend targeted tests (`DocumentKnowledgeWorkspace.test.tsx`, `WorkspaceOverview.test.tsx`,
+  `WorkspaceLanding.test.tsx`): **found 2 real failures**, not tooling noise — two tests clicked
+  "Submit review" without first filling the required Findings textarea, so the button stayed
+  disabled (correct component behavior) and the tests hung waiting for a heading that never
+  appeared. Fixed by filling Findings before submitting in both tests. All 10 pass now.
+- Frontend full suite (`npm run test`, vitest): 116 test files, 1353 tests, all passed.
+
+This is exactly why "verify later" was the right call rather than blocking on it: manual review
+caught the domain-invariant risks (the intended target of that review), but a UI interaction bug
+(missing a required-field fill in a test) and a lint rule violation were only caught by actually
+running the tools. Nothing structural needed to change in the real implementations.
 
 ### ATLAS-IMP-258 Scope and Verification
 
