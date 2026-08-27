@@ -19874,3 +19874,21 @@ class WorkflowProtectedRuntimeProcessResumeAuthorizationClaimModel(
     canonical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     authorization_audit_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class ProtectedContentBlobModel(Base):
+    """Encrypted-content-at-rest boundary storage. See atlas.core.protected_content.
+
+    No ordinary application table may reference the ciphertext or nonce columns; other
+    tables reference only ``digest`` as an opaque provenance identifier.
+    """
+
+    __tablename__ = "protected_content_blobs"
+
+    organization_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    environment_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    digest: Mapped[str] = mapped_column(String(64), primary_key=True)
+    nonce: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    byte_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

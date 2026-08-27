@@ -4,14 +4,56 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-252 |
-| Title | Connector-backed storage overview (inventory and evidence) |
+| Task ID | ATLAS-IMP-253 |
+| Title | Real encrypted-content-at-rest boundary (protected content store) |
 | Status | Verified, merged to main |
 | Branch | `main` |
 | Pull Request | none (pushed directly to `main`; no PR tooling available in this environment) |
-| Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-020, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-053 |
+| Governing Documents | ATLAS-003, ATLAS-015, ATLAS-027, ATLAS-053, ATLAS-054, ADR-183, ADR-184 |
 | Last Updated | 2026-08-27 |
-| Next Action | None for this task. Candidate follow-ups: replace the remaining synthetic RAG embedding/retrieval path, add a second real read-only connector capability/vendor, or continue the graph/RCA synthetic-adapter gaps noted in the implementation assessment. |
+| Next Action | Implement ADR-184 Stage 1: Document Knowledge Draft Curation (accepts uploaded document bytes, stores them via this new protected-content store, produces a digest-only draft receipt). |
+
+### ATLAS-IMP-253 Scope and Verification
+
+- First real, durable, encrypted-content-at-rest implementation anywhere in this codebase.
+  Confirmed by direct code survey (ADR-184's own research) that every existing
+  `protected_content`/`source_materialization` adapter across the entire ADR-042–058 pipeline is
+  digest-only with zero bytes ever written to durable storage; this task adds the boundary ADR-184
+  requires before any stage of that pipeline (or the new compact document chain) can become real.
+- New `atlas.core.protected_content` module: `ProtectedContentStore` protocol (`store`/`retrieve`),
+  `content_digest()` (SHA-256), `UnavailableProtectedContentStore` (fails closed),
+  `InMemoryProtectedContentStore` (process-local dev/test), and `PostgreSQLProtectedContentStore` —
+  AES-256-GCM authenticated encryption via the `cryptography` package, keyed by
+  `(organization_id, environment_id, digest)`, migration `20260827_0167`. The encryption key never
+  leaves process memory and is never persisted; only nonce + ciphertext are stored. Content-addressed
+  storage makes `store()` naturally idempotent for identical content.
+- Added `protected_content_encryption_key_b64` to `Settings` (unset by default; production wiring is
+  expected to select `UnavailableProtectedContentStore` when absent, matching this codebase's existing
+  `is_production` availability-gate convention — not yet wired into `app.py` since no caller exists
+  until Stage 1 is built).
+- Also adds the `pgvector` and `fastembed` dependencies selected by ADR-183 (not yet used by any code;
+  the `vector` PostgreSQL extension is deliberately NOT enabled by this migration since this table has
+  no vector column — extension enablement is deferred to the migration that actually adds one).
+- New test file `backend/tests/test_core_protected_content.py`: digest determinism, in-memory
+  round-trip, organization/environment isolation, idempotent identical-content storage, ciphertext
+  tamper detection (`InvalidTag` → `ProtectedContentError`), unavailable-store fail-closed behavior,
+  key-length validation, and a live-PostgreSQL round-trip/isolation test.
+- **Self-caught error during this task**: an early draft of the test file was written directly to
+  `backend/tests/test_protected_content.py`, which already existed (shared fixtures for the ADR-046
+  protected-content-presentation tests, used by `test_review_finding.py`,
+  `test_finding_presentation.py`, and `test_review_decision.py`) and was overwritten. Caught via a
+  `git status`/mypy cross-check before committing; restored with `git checkout HEAD --` and the new
+  tests moved to `test_core_protected_content.py` instead. All three dependent test files and the
+  restored file were re-verified passing after the fix.
+- Verified: `ruff format --check`, `ruff check`, and strict `mypy` clean across 1507 source files.
+  `alembic upgrade head` / `downgrade` / `upgrade` round-trip passed against local PostgreSQL 18.
+  8 of 9 new tests pass directly; the 9th (the live-PostgreSQL test) hits a pre-existing Windows-only
+  `psycopg`/`ProactorEventLoop` incompatibility when run in isolation — confirmed NOT specific to this
+  task's code by reproducing the identical failure on the already-existing, already-passing
+  `test_bundled_connector_operator_state_postgres.py` under the same isolated-invocation condition on
+  this Windows sandbox (this project's CI runs on Linux, where this does not occur). The new
+  `PostgreSQLProtectedContentStore` uses the identical `create_async_engine`/`async_sessionmaker`
+  connection pattern already proven by every other working `_postgres.py` adapter in this codebase.
 
 ### ATLAS-IMP-252 Scope and Verification
 

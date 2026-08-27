@@ -186,6 +186,7 @@ class Settings(BaseSettings):
     local_model_id: str | None = None
     local_model_reader_token: SecretStr | None = None
     local_model_secret_reference_id: str = "secret.model.local-reader"
+    protected_content_encryption_key_b64: SecretStr | None = None
 
     @model_validator(mode="after")
     def enforce_production_security_defaults(self) -> Self:
