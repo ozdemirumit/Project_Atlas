@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Accepted |
+| Status | Accepted (amended) |
 | Decision Date | 2026-08-27 |
 | Decision Owner | Umit Ozdemir, acting Architecture Owner |
 | Related Documents | ATLAS-003, ATLAS-015, ATLAS-027, ATLAS-037, ATLAS-047, ATLAS-054, ADR-042, ADR-043, ADR-046, ADR-052, ADR-053, ADR-183 |
@@ -39,6 +39,14 @@ New domain/application modules: `atlas.modules.knowledge.domain.document_draft`,
 - The RAG pipeline (ADR-053–058, now to be made real per this and following tasks) serves both source types through one shared, narrower `PublicationReadyKnowledgeSource` seam — future knowledge domains (Runbook, Incident, Change, Generated) can plug into materialization the same way without a third full pipeline mirror, as long as their own governance chain produces this same structural type.
 - Four new governed stages (versus the Operational chain's eleven) means less audit granularity for the human document-review workflow specifically — accepted here because the compact chain still enforces the load-bearing safety properties (distinct curator/reviewer/approver identities, encrypted-at-rest content, immutable digest-bound receipts, full `atlas.*` audit events per stage) that this repository's principles actually require (`ATLAS-003` PRN-016, PRN-017); the eleven-stage split was a stylistic choice in the Operational chain, not itself a named requirement.
 - A real protected-content-at-rest boundary must be built (tracked as the first implementation task under this ADR) since none exists anywhere in this codebase today — confirmed by direct inspection of every `protected_content`/`source_materialization` adapter variant.
+
+## Amendment (2026-08-27, same day, before implementation of the RAG-pipeline seam)
+
+Direct inspection of `atlas.modules.knowledge.application.source_materialization.OperationalKnowledgeSourceMaterializationService.create()` found the coupling to the Operational chain is deeper than this ADR's original "Materialization boundary generalization" section assumed. The service does not only call `preparation_source.source_materialization_preparation()`; it also calls a second dependency, `lineage_source` (`OperationalKnowledgeSourceLineage = OperationalKnowledgePublicationPreparationSource`), which returns the full four-tuple `(FinalResolutionRecord, TrackReviewDecisionRecords, ReviewRequestRecord, DraftRecord)`, and then cross-validates roughly twenty fields across all five objects (resolution/review/draft digests, id chains, steward digests) before materializing. Narrowing one Protocol's return type to `PublicationReadyKnowledgeSource` would not be sufficient; the service's entire body would need rewriting to validate against an abstract lineage instead of concrete Operational types — a materially larger and riskier change to already-tested, working code than this ADR's "Rejected Alternatives" section considered when it dismissed "a second parallel RAG pipeline" as pure waste.
+
+**Revised decision**: build a separate, compact materialization-through-retrieval path for document-sourced knowledge instead of modifying `OperationalKnowledgeSourceMaterializationService` or any other Operational-chain RAG stage. This path does not need its own materialization stage at all: `DocumentKnowledgeDraft.protected_material_digest` already references the real uploaded bytes in the ADR-184 protected-content store (curation itself *is* materialization for the document case, since there is no separate acquisition/canonicalization step to govern). The document path proceeds directly from `DocumentKnowledgePublicationPreparation` to chunking, embedding (ADR-183: fastembed), vector indexing, and retrieval, all new and specific to this chain — not reusing or modifying any ADR-053–058 Operational-chain code. The "Materialization boundary generalization" section above and its `PublicationReadyKnowledgeSource` type are superseded by this amendment and were not implemented.
+
+This keeps the original goal (a real, tested, second-source RAG capability) while honoring the same proportionality principle that justified the four-stage compact chain over an eleven-stage mirror: extend where extension is cheap and safe, build fresh where the existing code's coupling makes reuse the riskier option.
 
 ## Rejected Alternatives
 
