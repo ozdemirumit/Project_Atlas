@@ -6,6 +6,7 @@ import {
   Boxes,
   BrainCircuit,
   FileChartColumn,
+  FileUp,
   GitBranch,
   KeyRound,
   Network,
@@ -59,6 +60,7 @@ const capabilityGroups: CapabilityGroup[] = [
   {
     title: "AI decision support",
     capabilities: [
+      { label: "Document knowledge", destination: { workspace: "Workspace", view: "documents" }, icon: FileUp },
       { label: "Knowledge indexing", destination: { workspace: "Connectors", view: "knowledge" }, icon: BrainCircuit },
       { label: "Protected model context", destination: { workspace: "Connectors", view: "knowledge" }, icon: Bot },
       { label: "Recommendation review", destination: { workspace: "Connectors", view: "knowledge" }, icon: Workflow },
@@ -92,7 +94,7 @@ export function WorkspaceOverview({ onNavigate }: WorkspaceOverviewProps) {
           <span>operational domains</span>
         </div>
         <div>
-          <strong>15</strong>
+          <strong>16</strong>
           <span>available capabilities</span>
         </div>
         <div>

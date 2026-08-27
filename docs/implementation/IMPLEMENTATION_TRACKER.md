@@ -4,14 +4,61 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-255 |
-| Title | Real document chunking, embedding, vector indexing, and retrieval (ADR-183, ADR-184 amendment) |
-| Status | Verified (pgvector path code-complete, not live-verifiable in this sandbox), merged to main |
+| Task ID | ATLAS-IMP-256 |
+| Title | Document knowledge governance and retrieval frontend (Workspace / Documents) |
+| Status | Code-complete; NOT tool-verified in this sandbox (no Node.js/npm installed — see caveat below) |
 | Branch | `main` |
 | Pull Request | none (pushed directly to `main`; no PR tooling available in this environment) |
-| Governing Documents | ATLAS-003, ATLAS-015, ATLAS-054, ADR-183, ADR-184 (amended) |
+| Governing Documents | ATLAS-003, ATLAS-015, ADR-079, ADR-183, ADR-184 (amended) |
 | Last Updated | 2026-08-27 |
-| Next Action | Install the `pgvector` PostgreSQL extension in a Linux/CI environment and run the (already-written, currently sandbox-blocked) live migration + `PgVectorDocumentVectorIndex` verification. Separately: pre-stage an offline-cached `fastembed` model artifact for the fully restricted-network production profile (tracked since ADR-183). Then: frontend document-upload UI, and/or extend real coverage to a second Operational-chain gap (graph engine or RCA, per the original code-assessment findings). |
+| Next Action | Run `npm run lint`, `npm run typecheck`, and `npm run test` for this change on a machine/session with Node.js available (this sandbox has none), and exercise the flow live in a browser against a running backend. Then continue the user's ordered list: graph engine or RCA real-implementation, then pgvector live verification on Linux. |
+
+### ATLAS-IMP-256 Scope and Verification
+
+- New Workspace sub-view "Documents" (`#/workspace/documents`), added as a third `WorkspaceViewId`
+  alongside the existing `home`/`workflows`, not as a fourth top-level nav destination — keeps
+  ADR-079's deliberate 3-destination (Workspace/Health/Connectors) contract intact. Reachable from
+  the Workspace capability directory ("Document knowledge" tile under "AI decision support") and
+  directly via hash.
+- New `frontend/src/api/documentKnowledge.ts`: a typed client for all six ATLAS-IMP-254/255
+  endpoints (`POST .../drafts`, `/reviews`, `/approvals`, `/publication-preparations`, `/index`,
+  `/search`), plus two small browser-only helpers used by the UI: `fileToBase64` (chunked, so large
+  files do not overflow `String.fromCharCode`'s argument limit) and `chunkingProfileDigest` (SHA-256
+  via `crypto.subtle`, so the user never has to hand-produce a digest for publication preparation).
+  Deliberately follows `storage.ts`'s lighter validation convention (envelope-shape check, no
+  exhaustive per-field runtime type guards) rather than `knowledgeReviewRequests.ts`'s — that
+  file's heavier apparatus guards operational-chain records carrying many execution-authority
+  boolean flags; document-knowledge records carry none, so the same weight is not proportionate.
+- New `frontend/src/features/workspace/DocumentKnowledgeWorkspace.tsx` (+ `.css`, `.test.tsx`): a
+  five-stage wizard (curate → review → approve → prepare → index) mirroring the backend's compact
+  chain exactly, plus an always-available search panel underneath (retrieval is independent of
+  wherever the current wizard document sits). Each stage's client-side validation mirrors the
+  backend's own dataclass invariants (stable-identifier regex, media-type regex, 20-1000 char
+  purpose/rationale bounds) so the user gets same-page feedback before a request is sent, not just
+  a 422 after the fact. Terminal states (a review that did not pass, an approval that was not
+  granted) are shown as an explicit stop, not a dead end.
+- Because separation-of-duties is enforced by comparing the *same browser session's* subject digest
+  across curator/reviewer/approver, a single logged-in operator exercising the whole wizard back to
+  back will legitimately hit `document_knowledge_separation_of_duties_required` at the review step
+  (this is the guard working correctly, not a bug — the backend's own HTTP smoke test in
+  ATLAS-IMP-255 hit the identical wall). The review stage recognizes this specific error code and
+  shows an explanatory message instead of a generic failure, and the workspace lets the user restart
+  with a fresh document at any point via "Start another document".
+- **Verification gap, stated plainly**: this sandbox has no Node.js/npm installation (confirmed:
+  not on `PATH`, no install under the usual `Program Files`/`nvm`/`scoop` locations, no
+  `frontend/node_modules`). `npm run lint`, `npm run typecheck`, and `npm run test` could not be
+  run for this change, and the dev server could not be started to exercise it live in a browser.
+  What was done instead, to reduce risk without a compiler: every new import was checked against
+  actual usage elsewhere in this exact codebase (all `lucide-react` icon names confirmed present via
+  grep against existing imports — two initial icon choices, `Stamp` and `Layers`, were not found
+  anywhere else in the repo and were swapped for confirmed ones, `LockKeyhole` and `Layers3`), every
+  API endpoint path and request/response field was cross-checked line-by-line against the actual
+  Pydantic schemas and FastAPI routes in `document_knowledge_schemas.py`,
+  `document_retrieval_schemas.py`, and `routes/document_knowledge.py`, and the new
+  `DocumentKnowledgeWorkspace.test.tsx` was written to cover the upload-to-review handoff, the
+  separation-of-duties message, the full happy path through indexing, and independent search — but
+  none of it has actually executed. This must be run for real (locally with Node available, or in
+  CI) before this is trusted the way ATLAS-IMP-252 through 255's backend work was.
 
 ### ATLAS-IMP-255 Scope and Verification
 

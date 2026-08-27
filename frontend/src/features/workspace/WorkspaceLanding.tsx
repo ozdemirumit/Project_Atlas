@@ -13,6 +13,7 @@ import type {
   WorkspaceId,
   WorkspaceViewId,
 } from "../shell/workspace";
+import DocumentKnowledgeWorkspace from "./DocumentKnowledgeWorkspace";
 import OperationsConversationWorkspace from "./OperationsConversationWorkspace";
 import WorkflowPlanningWorkspace from "./WorkflowPlanningWorkspace";
 import { WorkspaceOverview } from "./WorkspaceOverview";
@@ -82,7 +83,13 @@ export function WorkspaceLanding({
   return (
     <div className="app-frame">
       <ApplicationSidebar
-        activeTaskLabel={activeView === "workflows" ? "Workflow planning" : "Operations workspace"}
+        activeTaskLabel={
+          activeView === "workflows"
+            ? "Workflow planning"
+            : activeView === "documents"
+              ? "Document knowledge"
+              : "Operations workspace"
+        }
         activeWorkspace="Workspace"
         authenticationMethod={identity.authentication.method}
         credentialKind={identity.credential_kind}
@@ -118,7 +125,7 @@ export function WorkspaceLanding({
                 Sign-out was not completed. Your current session remains authoritative.
               </div>
             )}
-            {activeView === "home" ? (
+            {activeView === "home" && (
               <>
                 <OperationsConversationWorkspace
                   organizationId={identity.organization_id}
@@ -141,7 +148,9 @@ export function WorkspaceLanding({
                   <WorkspaceOverview onNavigate={onNavigateCapability} />
                 </div>
               </>
-            ) : (
+            )}
+            {activeView === "documents" && <DocumentKnowledgeWorkspace />}
+            {activeView === "workflows" && (
               <WorkflowPlanningWorkspace
                 environmentId={identity.scope.environment_id}
                 onBack={() => onNavigateView("home")}

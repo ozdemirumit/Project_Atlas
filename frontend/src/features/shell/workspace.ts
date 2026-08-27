@@ -1,5 +1,5 @@
 export const workspaceIds = ["Workspace", "Health", "Connectors"] as const;
-export const workspaceViewIds = ["home", "workflows"] as const;
+export const workspaceViewIds = ["home", "workflows", "documents"] as const;
 export const healthViewIds = ["overview", "investigate", "deployments", "governance"] as const;
 export const connectorViewIds = ["inventory", "builder", "runtime", "knowledge"] as const;
 
@@ -9,7 +9,7 @@ export type HealthViewId = (typeof healthViewIds)[number];
 export type ConnectorViewId = (typeof connectorViewIds)[number];
 
 export type WorkspaceCapabilityDestination =
-  | { workspace: "Workspace"; view: "workflows" }
+  | { workspace: "Workspace"; view: Exclude<WorkspaceViewId, "home"> }
   | { workspace: "Health"; view: HealthViewId }
   | { workspace: "Connectors"; view: ConnectorViewId };
 
@@ -31,7 +31,7 @@ export function isKnownWorkspaceHash(hash: string): boolean {
     return connectorViewIds.some((candidate) => candidate === view);
   }
   if (workspace === "workspace" && view) {
-    return view === "workflows";
+    return view === "workflows" || view === "documents";
   }
   return !view && workspaceIds.some((candidate) => candidate.toLowerCase() === workspace);
 }
@@ -50,11 +50,15 @@ export function workspaceHash(workspace: WorkspaceId): string {
 export function workspaceViewFromHash(hash: string): WorkspaceViewId {
   const [workspace, view] = hashSegments(hash);
   if (workspace !== "workspace") return "home";
-  return view === "workflows" ? "workflows" : "home";
+  if (view === "workflows") return "workflows";
+  if (view === "documents") return "documents";
+  return "home";
 }
 
 export function workspaceViewHash(view: WorkspaceViewId): string {
-  return view === "workflows" ? "#/workspace/workflows" : "#/workspace";
+  if (view === "workflows") return "#/workspace/workflows";
+  if (view === "documents") return "#/workspace/documents";
+  return "#/workspace";
 }
 
 export function healthViewFromHash(hash: string): HealthViewId {
