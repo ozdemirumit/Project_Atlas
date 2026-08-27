@@ -808,7 +808,11 @@ from atlas.modules.conversations.domain.models import (
     AuthorizedConversationTarget,
     ConversationScope,
 )
-from atlas.modules.graph.adapters.synthetic import build_synthetic_graph_snapshot
+from atlas.modules.graph.adapters.configured_hitachi import ConfiguredHitachiGraphSnapshotProvider
+from atlas.modules.graph.adapters.synthetic import (
+    SyntheticGraphSnapshotProvider,
+    build_synthetic_graph_snapshot,
+)
 from atlas.modules.graph.application.engine import InMemoryGraphImpactAnalyzer
 from atlas.modules.graph.application.service import GraphImpactService
 from atlas.modules.health_checks.adapters.configured_hitachi import (
@@ -6134,6 +6138,10 @@ def create_app(
                 environment_id=f"environment.{resolved_settings.environment}",
             )
         )
+    # Frozen at startup, synthetic-only: the AI candidate-impact enrichment path below is a
+    # downstream consumer of the graph engine, not the graph engine itself, and (unlike
+    # GraphImpactService below) is not yet refactored to fetch a snapshot per request. Making it
+    # real too is tracked as a follow-up in ATLAS-IMP-257.
     resolved_graph_analyzer = InMemoryGraphImpactAnalyzer(
         snapshot=build_synthetic_graph_snapshot(
             organization_id=resolved_settings.development_organization_id,
@@ -6893,10 +6901,6 @@ def create_app(
             else development_itsm_policy_authenticity[2]
         ),
     )
-    resolved_graph_impact_service = graph_impact_service or GraphImpactService(
-        analyzer=resolved_graph_analyzer,
-        audit_sink=resolved_audit_sink,
-    )
     base_health_check_definitions = build_synthetic_health_check_definitions(
         organization_id=resolved_settings.development_organization_id,
         environment=resolved_settings.environment,
@@ -6967,6 +6971,26 @@ def create_app(
         organization_id=resolved_settings.development_organization_id,
         environment_id=f"environment.{resolved_settings.environment}",
         site_id="site.local",
+        audit_sink=resolved_audit_sink,
+    )
+    resolved_graph_impact_service = graph_impact_service or GraphImpactService(
+        provider=(
+            ConfiguredHitachiGraphSnapshotProvider(
+                configuration_repository=bundled_connection_configuration_repository,
+                instance_repository=resolved_connector_instance_creation_service.repository,
+                inventory_repository=resolved_inventory_device_service.repository,
+                credential_materializer=hitachi_credential_materializer,
+                transport_factory=hitachi_transport_factory,
+                organization_id=resolved_settings.development_organization_id,
+                environment_id=f"environment.{resolved_settings.environment}",
+                runtime_state_repository=bundled_runtime_state_repository,
+            )
+            if configured_hitachi_health_enabled
+            else SyntheticGraphSnapshotProvider(
+                organization_id=resolved_settings.development_organization_id,
+                environment=resolved_settings.environment,
+            )
+        ),
         audit_sink=resolved_audit_sink,
     )
     resolved_protected_content_store: ProtectedContentStore

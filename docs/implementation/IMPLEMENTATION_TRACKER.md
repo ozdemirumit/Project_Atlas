@@ -4,14 +4,91 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-256 |
-| Title | Document knowledge governance and retrieval frontend (Workspace / Documents) |
-| Status | Code-complete; NOT tool-verified in this sandbox (no Node.js/npm installed — see caveat below) |
+| Task ID | ATLAS-IMP-257 |
+| Title | Real connector-backed graph engine (storage-system layer) |
+| Status | Code-complete; NOT tool-verified in this sandbox (this session has no Python/uv, no Node.js/npm, and no Docker at all — see caveat below) |
 | Branch | `main` |
 | Pull Request | none (pushed directly to `main`; no PR tooling available in this environment) |
-| Governing Documents | ATLAS-003, ATLAS-015, ADR-079, ADR-183, ADR-184 (amended) |
+| Governing Documents | ATLAS-003, ATLAS-026 (Graph Engine) |
 | Last Updated | 2026-08-27 |
-| Next Action | Run `npm run lint`, `npm run typecheck`, and `npm run test` for this change on a machine/session with Node.js available (this sandbox has none), and exercise the flow live in a browser against a running backend. Then continue the user's ordered list: graph engine or RCA real-implementation, then pgvector live verification on Linux. |
+| Next Action | Run `ruff format --check`, `ruff check`, `mypy`, and `pytest` for this change (and ATLAS-IMP-256's frontend `npm` checks) on a machine/session with real tooling — this sandbox currently has none. Then continue the user's ordered list: RCA real-implementation (now naturally easier, since it can build on this real graph instead of a second synthetic-on-synthetic layer), then pgvector live verification on Linux. |
+
+### ATLAS-IMP-257 Scope and Verification
+
+- Investigated the graph engine (`modules/graph`) and RCA engine (`modules/rca`) to decide which to
+  make real next. Found both were still 100% synthetic at the data layer (not "~10% real" as an
+  earlier assessment suggested — the traversal/validation/audit logic was already real and
+  well-built, but every adapter was a fixed fixture, with no gated real path at all, unlike
+  storage/health_checks). Chose the graph engine: ATLAS-026 (Graph Engine architecture, `docs/026_Graph_Engine.md`)
+  states the Graph Engine feeds RCA's hypothesis ranking, not the reverse, so a real graph
+  naturally unblocks a better RCA later; building RCA first would have meant reasoning over
+  synthetic graph data.
+- **Honest scope limit, load-bearing**: the Hitachi Ops Center connector (the only real connector
+  in this codebase) exposes storage-array-level inventory and hardware health only — no volume,
+  LDEV, datastore, virtual-machine, or business-service data exists anywhere in this project (no
+  CMDB or hypervisor connector). So the real path this task builds is deliberately **entities-only**:
+  `ConfiguredHitachiGraphSnapshotProvider` produces real `STORAGE_SYSTEM` `GraphEntity` records (one
+  per live-read Hitachi array, real evidence from the inventory read) but **zero relationships** —
+  fabricating a volume/datastore/VM/service dependency chain above real storage systems would be
+  exactly the kind of invented data this codebase's governance model exists to prevent. This is
+  stated plainly in the snapshot's own `known_gaps` and in `ConfiguredHitachiGraphSnapshotProvider`'s
+  docstring, not buried. Querying `/graph/storage-impact/{a-real-storage-system-entity_id}` in this
+  mode returns that one entity with its real evidence and an empty dependency chain — an honest "we
+  know this system exists, we know nothing about what depends on it" rather than a fabricated
+  answer.
+- The new entity's `entity_id` (`asset.storage.{sha256-derived-id}`) uses the exact same identity
+  scheme as `ConfiguredHitachiStorageProvider`'s `asset_id` (ATLAS-IMP-252) for the same
+  `storage_device_id`, so a real storage system found in the Storage Overview and the same system
+  in the Graph view carry the same id — deliberate, so a user can pivot from one to the other.
+- Architecture change, mirroring ATLAS-IMP-252's `StorageOverviewProvider` pattern exactly: added
+  `GraphSnapshotProvider` (new `modules/graph/application/ports.py`), changed `GraphImpactService`
+  to hold a `provider` and fetch a fresh `GraphSnapshot` per request (via a newly-constructed
+  `InMemoryGraphImpactAnalyzer`) instead of holding one `InMemoryGraphImpactAnalyzer` frozen at
+  process startup. `InMemoryGraphImpactAnalyzer`'s BFS traversal/access-control logic itself was
+  **not touched** (proven, tested code). Added `SyntheticGraphSnapshotProvider` (thin wrapper
+  around the existing `build_synthetic_graph_snapshot`) and `ConfiguredHitachiGraphSnapshotProvider`
+  (new, mirrors `ConfiguredHitachiStorageProvider`'s connector-selection/credential/transport
+  plumbing exactly). Wired in `api/app.py` behind the same `configured_hitachi_health_enabled`
+  (`environment == "development"`) gate already used for storage and health_checks — one flag now
+  controls all three real paths.
+- **Scoping decision, deliberately not expanded**: `GovernedProtectedCandidateImpactService` (an AI
+  candidate-impact-enrichment consumer under `modules/ai`) also holds a graph analyzer, but built
+  from one frozen-at-startup synthetic snapshot, constructed once, not per-request — this was true
+  before this task and remains true after it; that service was not touched, since making it
+  real-and-per-request too is a separate, already-tested piece of code and out of scope for "make
+  the graph engine real." Flagged as a follow-up rather than silently left unmentioned.
+  `resource_id`/RBAC scope for the graph API (`graph_storage_impact_scope`) was **not changed** —
+  confirmed by checking `storage_overview_scope`, whose `resource_id` string never changed when
+  storage went real in ATLAS-IMP-252 either; these resource-id literals are fixed RBAC scope
+  identifiers, decoupled from which adapter is actually serving data.
+- New test `backend/tests/test_configured_hitachi_graph_snapshot_provider.py`, modeled directly on
+  `test_configured_hitachi_storage_provider.py`'s stub fixtures (same `ScopeRepository`,
+  `CredentialMaterializer`, `TransportFactory`, `SyntheticHitachiTransport` pattern). Covers:
+  unavailable when zero/multiple configurations exist, unavailable when the configured MCP isn't
+  enabled read-only, unavailable when no allowlisted Hitachi storage device exists (all three: no
+  transport calls), real success mapping two live arrays into two real `STORAGE_SYSTEM` entities
+  with zero relationships and evidence cross-referencing intact, credential-unavailable and
+  connector-timeout paths returning an empty-but-valid snapshot without raising. Updated
+  `test_graph_impact_api.py`'s one direct-construction call site
+  (`test_graph_scope_mismatch_is_rejected_before_audit`) to the new
+  `GraphImpactService(provider=SyntheticGraphSnapshotProvider(...), audit_sink=...)` signature; its
+  four other tests exercise the API in `environment="test"`, which never satisfies the
+  `"development"` gate, so they pass unchanged.
+- **Verification gap, stated plainly — larger than ATLAS-IMP-256's**: this session's sandbox has
+  no Python/`uv`, no Node.js/npm, and no Docker at all (confirmed: none on `PATH`, no install under
+  common locations, `backend/.venv` present but empty). This is a full loss of every tool used to
+  verify ATLAS-IMP-252 through 255 earlier in this same project — not a new gap, a total one. `ruff
+  format --check`, `ruff check`, `mypy --strict`, and `pytest` (including the new
+  `test_configured_hitachi_graph_snapshot_provider.py`) could not be run. What was done instead:
+  every new file was manually re-read end to end against the exact template it mirrors
+  (`ConfiguredHitachiStorageProvider`, byte-for-byte comparable dependency shapes and control flow),
+  every domain-dataclass invariant in `graph/domain/models.py` (`GraphEntity.__post_init__`,
+  `GraphSnapshot.__post_init__`'s entity/evidence cross-reference checks) was traced by hand against
+  the values this task's adapter constructs, and every consumer of the changed
+  `GraphImpactService`/`InMemoryGraphImpactAnalyzer(snapshot=...)` construction site was located via
+  grep and updated (including one non-obvious second consumer,
+  `GovernedProtectedCandidateImpactService`, that a narrower grep would have missed). This must
+  still be run for real before being trusted the way ATLAS-IMP-252 through 255's backend work was.
 
 ### ATLAS-IMP-256 Scope and Verification
 

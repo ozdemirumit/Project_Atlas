@@ -9,7 +9,10 @@ from atlas.api.app import create_app
 from atlas.core.audit import AuditRecord
 from atlas.core.classification import DataClassification
 from atlas.core.config import Settings
-from atlas.modules.graph.adapters.synthetic import build_synthetic_graph_snapshot
+from atlas.modules.graph.adapters.synthetic import (
+    SyntheticGraphSnapshotProvider,
+    build_synthetic_graph_snapshot,
+)
 from atlas.modules.graph.application.engine import (
     GraphAccessContext,
     GraphImpactError,
@@ -147,10 +150,8 @@ def test_authorization_filter_runs_before_traversal() -> None:
 async def test_graph_scope_mismatch_is_rejected_before_audit() -> None:
     audit_sink = CollectingAuditSink()
     service = GraphImpactService(
-        analyzer=InMemoryGraphImpactAnalyzer(
-            snapshot=build_synthetic_graph_snapshot(
-                organization_id="organization.development", environment="test"
-            )
+        provider=SyntheticGraphSnapshotProvider(
+            organization_id="organization.development", environment="test"
         ),
         audit_sink=audit_sink,
     )

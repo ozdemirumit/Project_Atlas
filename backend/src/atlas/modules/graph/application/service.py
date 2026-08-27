@@ -12,6 +12,7 @@ from atlas.modules.graph.application.engine import (
     GraphImpactError,
     InMemoryGraphImpactAnalyzer,
 )
+from atlas.modules.graph.application.ports import GraphSnapshotProvider
 from atlas.modules.graph.domain.models import StorageImpactResult
 
 
@@ -34,9 +35,16 @@ class GraphReadContext:
 
 
 class GraphImpactService:
-    def __init__(self, *, analyzer: InMemoryGraphImpactAnalyzer, audit_sink: AuditSink) -> None:
-        self._analyzer = analyzer
+    def __init__(
+        self,
+        *,
+        provider: GraphSnapshotProvider,
+        audit_sink: AuditSink,
+        max_nodes: int = 100,
+    ) -> None:
+        self._provider = provider
         self._audit_sink = audit_sink
+        self._max_nodes = max_nodes
 
     async def analyze_storage_impact(
         self, *, entity_id: str, max_depth: int, context: GraphReadContext
@@ -45,7 +53,9 @@ class GraphImpactService:
             raise GraphImpactError(
                 "graph_scope_mismatch", "The graph target is outside the authorized scope."
             )
-        result = self._analyzer.analyze(
+        snapshot = await self._provider.get_snapshot()
+        analyzer = InMemoryGraphImpactAnalyzer(snapshot=snapshot, max_nodes=self._max_nodes)
+        result = analyzer.analyze(
             start_entity_id=entity_id,
             max_depth=max_depth,
             access=GraphAccessContext(

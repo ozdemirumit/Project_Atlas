@@ -371,3 +371,16 @@ def build_synthetic_graph_snapshot(*, organization_id: str, environment: str) ->
         ),
         data_profile="synthetic_lab",
     )
+
+
+class SyntheticGraphSnapshotProvider:
+    """Serves the fixed lab-topology snapshot. Used when no configured connector is active."""
+
+    def __init__(self, *, organization_id: str, environment: str) -> None:
+        self._organization_id = organization_id
+        self._environment = environment
+
+    async def get_snapshot(self) -> GraphSnapshot:
+        return build_synthetic_graph_snapshot(
+            organization_id=self._organization_id, environment=self._environment
+        )
