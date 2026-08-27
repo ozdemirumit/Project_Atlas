@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-252 |
 | Title | Connector-backed storage overview (inventory and evidence) |
-| Status | Implemented, verification pending |
-| Branch | (working tree) |
-| Pull Request | none yet |
+| Status | Verified, merged to main |
+| Branch | `main` |
+| Pull Request | none (pushed directly to `main`; no PR tooling available in this environment) |
 | Governing Documents | ATLAS-001, ATLAS-002, ATLAS-003, ATLAS-020, ATLAS-031, ATLAS-032, ATLAS-050, ATLAS-053 |
-| Last Updated | 2026-08-26 |
-| Next Action | Run `ruff format --check` / `ruff check` / `mypy` (strict) and the full backend test suite in an environment with the project's Python/uv toolchain, then confirm live behavior (unconfigured and configured) before opening a PR. |
+| Last Updated | 2026-08-27 |
+| Next Action | None for this task. Candidate follow-ups: replace the remaining synthetic RAG embedding/retrieval path, add a second real read-only connector capability/vendor, or continue the graph/RCA synthetic-adapter gaps noted in the implementation assessment. |
 
 ### ATLAS-IMP-252 Scope and Verification
 
@@ -45,17 +45,27 @@
   was updated to the new `provider=`/`organization_id=`/`environment_id=`/`site_id=` constructor
   signature; its other four tests are unchanged and still exercise the synthetic path
   (`environment="test"` never satisfies the `"development"` gate).
-- **Verification status: NOT executed.** This sandbox has no Python/uv toolchain, Docker, or existing
-  virtualenv available, so `ruff`, `mypy`, and `pytest` could not be run here. The implementation was
-  checked manually instead: traced every new/changed dataclass construction against
-  `StorageOverview.__post_init__`'s evidence-reference invariant and each domain model's own
-  `__post_init__` validation, traced the credential-lease scope to confirm all `HitachiOpsCenterClient`
-  calls (including the per-array `read_hardware_health()` loop) happen inside the
-  `async with ... lease:` block (an initial draft incorrectly left the loop outside the lease scope;
-  corrected before finalizing), and cross-checked exception handling against
-  `HitachiOpsCenterClient`'s actual `HitachiConnectorError`/`HitachiTransportError` propagation in
-  `client.py`. **A human or a Python-toolchain-equipped session must run the commands in "Next Action"
-  before this task is considered done or a PR is opened.**
+- **Verification status: executed and passed.** Python 3.12, `uv`, and PostgreSQL 18 were installed
+  into the working environment to run the project's actual toolchain (this sandbox had none of these
+  preinstalled). Results: `ruff format --check` and `ruff check` clean; strict `mypy` clean across 1505
+  source files (one genuine `unreachable` finding was in this task's own new test file — fixed by
+  replacing an async-generator-with-unreachable-yield pattern with a plain `__aenter__`-raising context
+  manager); all 12 new/updated storage tests pass; all 16 `health_checks` tests pass unaffected
+  (confirming the shared `app.py` wiring was only relocated, not changed). A self-review pass caught and
+  fixed one real bug before this: an early draft released the connector credential lease after
+  `read_inventory()` but before the per-array `read_hardware_health()` loop, which would have used a
+  possibly-expired single-use lease — fixed by moving the entire per-request read inside the
+  `async with ... lease:` scope.
+  A full-suite run without PostgreSQL showed 62 failures; stashing this task's changes and rerunning one
+  reproduced the identical failure on unmodified `main`, confirming it is a pre-existing Windows-only
+  filesystem-path-listing incompatibility in unrelated bootstrap/upgrade/support-bundle modules (this
+  project's CI runs on Linux), not a regression from this task. A full-suite run with a single shared
+  local PostgreSQL database under 4-way parallel workers showed 121 failures, all in unrelated
+  concurrency/lineage-sensitive `_postgres` tests; CI isolates these across 5 separate databases in
+  separate sequential steps rather than one shared database under parallel workers, so this reflects a
+  local test-execution methodology gap, not a code defect. **Zero failures occurred in any storage or
+  Hitachi-connector test in either run.** Committed as `d6b34d4` and pushed directly to `origin/main`
+  (no PR opened; this environment has no `gh` CLI or configured PR workflow).
 
 ### ATLAS-IMP-251 Scope and Verification
 
