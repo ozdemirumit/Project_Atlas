@@ -4,14 +4,77 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-262 |
-| Title | Add real Huawei OceanStor Dorado connector (Phase 2 of modular multi-vendor MCPs) |
-| Status | Verified (backend, tool-verified with real toolchain) -- storage/graph/health_checks only; RCA/recommendations deliberately deferred, see below |
+| Task ID | ATLAS-IMP-263 |
+| Title | Add Huawei Dorado RCA and recommendation adapters (closes the ATLAS-IMP-262 gap) |
+| Status | Verified (backend, tool-verified with real toolchain) |
 | Branch | `main` |
 | Pull Request | none (pushed directly to `main`; no PR tooling available in this environment) |
 | Governing Documents | ATLAS-003, ATLAS-020/021/022/047 (connector quarantine/promotion), `docs/adr/ADR-004`+ |
 | Last Updated | 2026-08-28 |
-| Next Action | Close the RCA/recommendations gap this task deliberately deferred (see below), or continue the approved plan: Huawei Pacific, vCenter, Commvault, in that order (`C:\Users\umito\.claude\plans\tingly-marinating-anchor.md`). |
+| Next Action | Continue the approved plan: Huawei Pacific, vCenter, Commvault, in that order (`C:\Users\umito\.claude\plans\tingly-marinating-anchor.md`). |
+
+### ATLAS-IMP-263 Scope and Verification
+
+- **What this closes**: ATLAS-IMP-262 deliberately shipped Huawei Dorado's storage/graph/
+  health_checks adapters only, naming RCA and recommendations as the single largest known gap and
+  explicit next step. This task closes it, making Huawei Dorado a fully first-class vendor across
+  all five consuming modules, matching Hitachi's coverage.
+- **`ConfiguredHuaweiDoradoRcaAssembler`** (`rca/adapters/configured_huawei_dorado.py`) mirrors
+  `ConfiguredHitachiRcaAssembler`'s shape and keeps the same two expert-authored fault-family
+  hypothesis templates unchanged (controller/path degradation; transient or observation-source
+  failure) -- vendor-neutral storage-array reasoning content, not data, so reusing it isn't a
+  shortcut. What's real: the target, controller, severity, and evidence the templates are
+  populated with, sourced from `HuaweiDoradoClient.read_system_identity()` and
+  `read_controller_health()`. Unlike Hitachi, there is no multi-array allowlist to search: target
+  resolution just confirms `request.target_id` names the one system the configured instance
+  manages, then raises `KeyError` (the established "target unavailable" signal) otherwise.
+- **`ConfiguredHuaweiDoradoRecommendationAssembler`** (`recommendations/adapters/
+  configured_huawei_dorado.py`) mirrors `ConfiguredHitachiRecommendationAssembler`'s five option
+  categories almost verbatim -- a real RCA case's evidence units carry generic `source_type` tags
+  ("storage_hardware_health", "storage_inventory"), not vendor-specific ones, so the only real
+  difference is which capability ids the plan steps reference. Added Huawei's aspirational
+  `CONTROLLER_FAILOVER_PLAN_CAPABILITY_ID`/`PATH_REMEDIATION_PLAN_CAPABILITY_ID` constants to
+  `huawei_dorado/manifest.py`, mirroring Hitachi's own not-yet-implemented capability constants
+  from ATLAS-IMP-260.
+- **Two new dispatch mechanisms, because RCA and recommendation selection are not the same
+  problem**: `ChainedRcaAssembler` (`rca/adapters/chained.py`) tries each vendor's assembler in
+  order and moves to the next on `KeyError` -- safe, because every real assembler already raises
+  `KeyError` for a target_id it doesn't recognize, so "try the next one" is the correct fallback
+  signal (mirrors `ChainedStorageOverviewProvider`'s shape from ATLAS-IMP-262). Recommendation
+  selection cannot use the same pattern: every real assembler successfully builds from any real
+  `RcaCase`'s generic evidence regardless of which vendor produced it, so trying each in order and
+  taking the first success would silently attach the wrong vendor's capability ids to plan steps
+  instead of failing loudly. `DispatchingRecommendationAssembler`
+  (`recommendations/adapters/dispatching.py`) instead selects by the source case's own
+  `data_profile` field (e.g. `"configured_huawei_dorado_read_only"`) -- the one field every
+  `Configured<Vendor>*` RCA assembler already stamps with its own real identity, so it is the
+  correct dispatch key, not something invented for this task.
+- **`ALLOWED_DIAGNOSTIC_CAPABILITIES`/`ALLOWED_CAPABILITIES` generalized further**: added Huawei's
+  `CONTROLLER_HEALTH_CAPABILITY_ID`, `PATH_EVENTS_CAPABILITY_ID`,
+  `CONTROLLER_FAILOVER_PLAN_CAPABILITY_ID`, and `PATH_REMEDIATION_PLAN_CAPABILITY_ID` to
+  `rca/application/service.py` and `recommendations/application/service.py`'s allowlists,
+  following the exact named-constant pattern ATLAS-IMP-260 established -- a diagnostic step or
+  plan step referencing an unlisted capability id is rejected at construction, so this was a
+  required change, not an optional generalization.
+- **Verified with the real toolchain**: `ruff format`, `ruff check`, `mypy` strict all clean across
+  both new adapters, both new dispatch mechanisms, the two `application/service.py` allowlist
+  edits, and `api/app.py`'s wiring (RCA now `ChainedRcaAssembler((hitachi, huawei))`, replacing the
+  single Hitachi-only assembler; recommendations now `DispatchingRecommendationAssembler(...)`
+  with a synthetic default that is unreachable in practice, since a synthetic RCA case can never
+  be created in a `configured_connector_paths_enabled` environment). New tests: 8 for the RCA
+  assembler (unresolvable target without a configured instance, disabled MCP, a target_id not
+  matching the configured system, an active-finding case with correct hypothesis/evidence wiring,
+  a no-active-finding case, missing credentials), 2 for the recommendation assembler (real-evidence
+  option population confirming Huawei capability ids appear in plan steps, the no-active-finding
+  rejection), 3 for `ChainedRcaAssembler` (first-match, fall-through-to-KeyError,
+  requires-at-least-one), 2 for `DispatchingRecommendationAssembler` (dispatch-by-data_profile,
+  fallback-to-default) -- 15 new tests total, all passing. Targeted run across every touched area
+  (`-k "hitachi or brocade or huawei or bundled_connector or health_checks or graph or storage or
+  composite or chained or rca or recommendation or dispatching"`): 444 passed, only the same
+  pre-existing, unrelated alembic-head-drift failures remain. Full suite: 3872 passed, 67 failed,
+  68 skipped -- the failure count matches the established ~67 pre-existing baseline exactly,
+  confirmed by name to share zero overlap with huawei/brocade/hitachi/rca/recommendation/chained/
+  dispatching modules.
 
 ### ATLAS-IMP-262 Scope and Verification
 

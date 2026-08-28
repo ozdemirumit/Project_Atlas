@@ -14,6 +14,12 @@ from atlas.modules.connectors.vendors.hitachi_ops_center.manifest import (
 from atlas.modules.connectors.vendors.hitachi_ops_center.manifest import (
     PATH_EVENTS_CAPABILITY_ID as _HITACHI_PATH_EVENTS_CAPABILITY_ID,
 )
+from atlas.modules.connectors.vendors.huawei_dorado.manifest import (
+    CONTROLLER_HEALTH_CAPABILITY_ID as _HUAWEI_CONTROLLER_HEALTH_CAPABILITY_ID,
+)
+from atlas.modules.connectors.vendors.huawei_dorado.manifest import (
+    PATH_EVENTS_CAPABILITY_ID as _HUAWEI_PATH_EVENTS_CAPABILITY_ID,
+)
 from atlas.modules.rca.application.ports import RcaAssembler
 from atlas.modules.rca.domain.models import ConfirmationLevel, RcaCase, RcaCreateRequest
 
@@ -26,6 +32,8 @@ ALLOWED_DIAGNOSTIC_CAPABILITIES = frozenset(
         _HITACHI_PATH_EVENTS_CAPABILITY_ID,
         "atlas.telemetry.service-health.read",
         _HITACHI_HARDWARE_HEALTH_CAPABILITY_ID,
+        _HUAWEI_PATH_EVENTS_CAPABILITY_ID,
+        _HUAWEI_CONTROLLER_HEALTH_CAPABILITY_ID,
     }
 )
 

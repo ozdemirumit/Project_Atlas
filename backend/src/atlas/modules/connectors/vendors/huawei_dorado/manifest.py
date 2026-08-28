@@ -13,6 +13,17 @@ from atlas.modules.connectors.domain.models import (
 SYSTEM_IDENTITY_CAPABILITY_ID = "huawei.dorado.storage.system.read"
 CONTROLLER_HEALTH_CAPABILITY_ID = "huawei.dorado.storage.controller.read"
 CAPACITY_CAPABILITY_ID = "huawei.dorado.storage.pool.read"
+# Aspirational, mirroring hitachi_ops_center/manifest.py's PATH_EVENTS_CAPABILITY_ID: referenced
+# by RCA diagnostic-step descriptions as a capability a human operator could run against this
+# vendor; not yet implemented by HuaweiDoradoClient and therefore not declared in
+# build_candidate_manifest()'s capabilities tuple below.
+PATH_EVENTS_CAPABILITY_ID = "huawei.dorado.storage.path-events.read"
+# Aspirational, mirroring hitachi_ops_center/manifest.py's CONTROLLER_FAILOVER_PLAN_CAPABILITY_ID
+# and PATH_REMEDIATION_PLAN_CAPABILITY_ID: referenced by recommendation plan-step descriptions as
+# capabilities a human operator could run against this vendor; not yet implemented and not
+# declared in build_candidate_manifest()'s capabilities tuple below.
+CONTROLLER_FAILOVER_PLAN_CAPABILITY_ID = "huawei.dorado.storage.controller-failover.plan"
+PATH_REMEDIATION_PLAN_CAPABILITY_ID = "huawei.dorado.storage.path-remediation.plan"
 PACKAGE_ID = "connector.huawei.dorado.device-manager"
 OFFICIAL_REFERENCE = "https://support.huawei.com/enterprise/en/doc/EDOC1100144155"
 

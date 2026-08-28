@@ -20,6 +20,18 @@ from atlas.modules.connectors.vendors.hitachi_ops_center.manifest import (
 from atlas.modules.connectors.vendors.hitachi_ops_center.manifest import (
     PATH_REMEDIATION_PLAN_CAPABILITY_ID as _HITACHI_PATH_REMEDIATION_PLAN_CAPABILITY_ID,
 )
+from atlas.modules.connectors.vendors.huawei_dorado.manifest import (
+    CONTROLLER_FAILOVER_PLAN_CAPABILITY_ID as _HUAWEI_CONTROLLER_FAILOVER_PLAN_CAPABILITY_ID,
+)
+from atlas.modules.connectors.vendors.huawei_dorado.manifest import (
+    CONTROLLER_HEALTH_CAPABILITY_ID as _HUAWEI_CONTROLLER_HEALTH_CAPABILITY_ID,
+)
+from atlas.modules.connectors.vendors.huawei_dorado.manifest import (
+    PATH_EVENTS_CAPABILITY_ID as _HUAWEI_PATH_EVENTS_CAPABILITY_ID,
+)
+from atlas.modules.connectors.vendors.huawei_dorado.manifest import (
+    PATH_REMEDIATION_PLAN_CAPABILITY_ID as _HUAWEI_PATH_REMEDIATION_PLAN_CAPABILITY_ID,
+)
 from atlas.modules.recommendations.application.ports import (
     RcaCaseProvider,
     RecommendationAssembler,
@@ -43,6 +55,10 @@ ALLOWED_CAPABILITIES = frozenset(
         "atlas.graph.storage-impact.read",
         _HITACHI_CONTROLLER_FAILOVER_PLAN_CAPABILITY_ID,
         _HITACHI_PATH_REMEDIATION_PLAN_CAPABILITY_ID,
+        _HUAWEI_PATH_EVENTS_CAPABILITY_ID,
+        _HUAWEI_CONTROLLER_HEALTH_CAPABILITY_ID,
+        _HUAWEI_CONTROLLER_FAILOVER_PLAN_CAPABILITY_ID,
+        _HUAWEI_PATH_REMEDIATION_PLAN_CAPABILITY_ID,
     }
 )
 CAPABILITY_ORDER = {f"C{index}": index for index in range(6)}

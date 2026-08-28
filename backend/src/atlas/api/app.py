@@ -1402,11 +1402,16 @@ from atlas.modules.platform.domain.advisory_posture import (
     assert_advisory_only_component_registry,
     assert_advisory_only_composition,
 )
+from atlas.modules.rca.adapters.chained import ChainedRcaAssembler
 from atlas.modules.rca.adapters.configured_hitachi import ConfiguredHitachiRcaAssembler
+from atlas.modules.rca.adapters.configured_huawei_dorado import ConfiguredHuaweiDoradoRcaAssembler
 from atlas.modules.rca.adapters.synthetic import SyntheticStorageRcaAssembler
 from atlas.modules.rca.application.service import RcaService
 from atlas.modules.recommendations.adapters.configured_hitachi import (
     ConfiguredHitachiRecommendationAssembler,
+)
+from atlas.modules.recommendations.adapters.configured_huawei_dorado import (
+    ConfiguredHuaweiDoradoRecommendationAssembler,
 )
 from atlas.modules.recommendations.adapters.correction_resubmission_memory import (
     InMemoryRecommendationCorrectionPolicySource,
@@ -1422,6 +1427,7 @@ from atlas.modules.recommendations.adapters.correction_resubmission_synthetic im
     SyntheticRecommendationCorrectionAdapter,
     UnavailableRecommendationCorrectionAdapter,
 )
+from atlas.modules.recommendations.adapters.dispatching import DispatchingRecommendationAssembler
 from atlas.modules.recommendations.adapters.final_disposition_memory import (
     InMemoryFinalRecommendationDispositionPolicySource,
     InMemoryFinalRecommendationDispositionRepository,
@@ -7206,15 +7212,29 @@ def create_app(
     )
     resolved_rca_service = rca_service or RcaService(
         assembler=(
-            ConfiguredHitachiRcaAssembler(
-                configuration_repository=bundled_connection_configuration_repository,
-                instance_repository=resolved_connector_instance_creation_service.repository,
-                inventory_repository=resolved_inventory_device_service.repository,
-                credential_materializer=connector_credential_materializer,
-                transport_factory=hitachi_transport_factory,
-                organization_id=resolved_settings.development_organization_id,
-                environment_id=f"environment.{resolved_settings.environment}",
-                runtime_state_repository=bundled_runtime_state_repository,
+            ChainedRcaAssembler(
+                assemblers=(
+                    ConfiguredHitachiRcaAssembler(
+                        configuration_repository=bundled_connection_configuration_repository,
+                        instance_repository=resolved_connector_instance_creation_service.repository,
+                        inventory_repository=resolved_inventory_device_service.repository,
+                        credential_materializer=connector_credential_materializer,
+                        transport_factory=hitachi_transport_factory,
+                        organization_id=resolved_settings.development_organization_id,
+                        environment_id=f"environment.{resolved_settings.environment}",
+                        runtime_state_repository=bundled_runtime_state_repository,
+                    ),
+                    ConfiguredHuaweiDoradoRcaAssembler(
+                        configuration_repository=bundled_connection_configuration_repository,
+                        instance_repository=resolved_connector_instance_creation_service.repository,
+                        inventory_repository=resolved_inventory_device_service.repository,
+                        credential_materializer=connector_credential_materializer,
+                        transport_factory=huawei_transport_factory,
+                        organization_id=resolved_settings.development_organization_id,
+                        environment_id=f"environment.{resolved_settings.environment}",
+                        runtime_state_repository=bundled_runtime_state_repository,
+                    ),
+                )
             )
             if configured_connector_paths_enabled
             else SyntheticStorageRcaAssembler()
@@ -7224,7 +7244,15 @@ def create_app(
     resolved_recommendation_service = recommendation_service or RecommendationService(
         source_provider=resolved_rca_service,
         assembler=(
-            ConfiguredHitachiRecommendationAssembler()
+            DispatchingRecommendationAssembler(
+                assemblers_by_data_profile={
+                    "configured_hitachi_read_only": ConfiguredHitachiRecommendationAssembler(),
+                    "configured_huawei_dorado_read_only": (
+                        ConfiguredHuaweiDoradoRecommendationAssembler()
+                    ),
+                },
+                default=SyntheticStorageRecommendationAssembler(),
+            )
             if configured_connector_paths_enabled
             else SyntheticStorageRecommendationAssembler()
         ),
