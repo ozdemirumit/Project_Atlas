@@ -12,12 +12,24 @@ from atlas.modules.connectors.vendors.huawei_dorado.manifest import (
 from atlas.modules.connectors.vendors.huawei_dorado.manifest import (
     CONTROLLER_HEALTH_CAPABILITY_ID as HUAWEI_CONTROLLER_HEALTH_CAPABILITY_ID,
 )
+from atlas.modules.connectors.vendors.huawei_pacific.manifest import (
+    CLUSTER_NODE_CAPABILITY_ID as HUAWEI_PACIFIC_CLUSTER_NODE_CAPABILITY_ID,
+)
+from atlas.modules.connectors.vendors.huawei_pacific.manifest import (
+    STORAGE_POOL_CAPABILITY_ID as HUAWEI_PACIFIC_STORAGE_POOL_CAPABILITY_ID,
+)
 from atlas.modules.health_checks.adapters.brocade_sannav import FABRIC_HEALTH_DEFINITION_ID
 from atlas.modules.health_checks.adapters.huawei_dorado import (
     CAPACITY_DEFINITION_ID as HUAWEI_CAPACITY_DEFINITION_ID,
 )
 from atlas.modules.health_checks.adapters.huawei_dorado import (
     CONTROLLER_DEFINITION_ID as HUAWEI_CONTROLLER_DEFINITION_ID,
+)
+from atlas.modules.health_checks.adapters.huawei_pacific import (
+    CAPACITY_DEFINITION_ID as HUAWEI_PACIFIC_CAPACITY_DEFINITION_ID,
+)
+from atlas.modules.health_checks.adapters.huawei_pacific import (
+    CLUSTER_NODE_DEFINITION_ID as HUAWEI_PACIFIC_CLUSTER_NODE_DEFINITION_ID,
 )
 from atlas.modules.health_checks.application.ports import HealthCheckExecutionResult
 from atlas.modules.health_checks.domain.models import (
@@ -198,6 +210,65 @@ def build_synthetic_health_check_definitions(
             ),
             evidence_requirements=("Current capacity summary for each storage pool",),
         ),
+        HealthCheckDefinition(
+            definition_id=HUAWEI_PACIFIC_CLUSTER_NODE_DEFINITION_ID,
+            version=1,
+            title="Huawei Pacific cluster node status",
+            owner="Storage Operations",
+            enabled=True,
+            organization_id=organization_id,
+            environment_id=f"environment.{environment}",
+            site_id="site.local",
+            target_id="target.huawei.pacific.lab",
+            connector_id="connector.huawei.pacific.synthetic",
+            connector_version="1.0.0",
+            capability_id=HUAWEI_PACIFIC_CLUSTER_NODE_CAPABILITY_ID,
+            capability_class="C1",
+            schedule=HealthCheckSchedule(interval_minutes=15, anchor_at=anchor),
+            thresholds=(
+                HealthThreshold(
+                    metric="node.running_status",
+                    warning_condition="not evaluated; running_status is online/offline/unknown",
+                    critical_condition="running_status equals offline",
+                ),
+            ),
+            limits=HealthCheckLimits(
+                timeout_seconds=5.0,
+                max_steps=1,
+                max_evidence_records=4,
+            ),
+            evidence_requirements=("Current running status for each cluster node",),
+        ),
+        HealthCheckDefinition(
+            definition_id=HUAWEI_PACIFIC_CAPACITY_DEFINITION_ID,
+            version=1,
+            title="Huawei Pacific capacity utilization",
+            owner="Storage Operations",
+            enabled=True,
+            organization_id=organization_id,
+            environment_id=f"environment.{environment}",
+            site_id="site.local",
+            target_id="target.huawei.pacific.lab",
+            connector_id="connector.huawei.pacific.synthetic",
+            connector_version="1.0.0",
+            capability_id=HUAWEI_PACIFIC_STORAGE_POOL_CAPABILITY_ID,
+            capability_class="C1",
+            schedule=HealthCheckSchedule(interval_minutes=60, anchor_at=anchor),
+            thresholds=(
+                HealthThreshold(
+                    metric="pool.utilization",
+                    warning_condition="utilization is at least 75",
+                    critical_condition="utilization is at least 90",
+                    unit="percent",
+                ),
+            ),
+            limits=HealthCheckLimits(
+                timeout_seconds=5.0,
+                max_steps=1,
+                max_evidence_records=4,
+            ),
+            evidence_requirements=("Current capacity summary for each storage pool",),
+        ),
     )
 
 
@@ -215,6 +286,10 @@ class SyntheticStorageHealthExecutor:
             return _huawei_controller_result(started_at)
         if definition.definition_id == HUAWEI_CAPACITY_DEFINITION_ID:
             return _huawei_capacity_result(started_at)
+        if definition.definition_id == HUAWEI_PACIFIC_CLUSTER_NODE_DEFINITION_ID:
+            return _huawei_pacific_node_result(started_at)
+        if definition.definition_id == HUAWEI_PACIFIC_CAPACITY_DEFINITION_ID:
+            return _huawei_pacific_capacity_result(started_at)
         raise ValueError("unsupported synthetic health-check definition")
 
 
@@ -449,6 +524,74 @@ def _huawei_capacity_result(observed_at: datetime) -> HealthCheckExecutionResult
     )
 
 
+def _huawei_pacific_node_result(observed_at: datetime) -> HealthCheckExecutionResult:
+    node_ref = _reference("huawei-pacific-nodes/lab", "node1=online|node2=online")
+    evidence = (
+        HealthCheckEvidence(
+            reference=node_ref,
+            source="Huawei Pacific synthetic cluster-node fixture",
+            source_version="8.1.0-contract.1",
+            observed_at=observed_at,
+            freshness=FreshnessState.CURRENT,
+            trust_basis="Documentation-derived allowlisted C1 response",
+        ),
+    )
+    observation = HealthObservation(
+        observation_id="observation.huawei-pacific.node.lab",
+        target_id="target.huawei.pacific.lab/node1",
+        component="node:node1",
+        metric="node.running_status",
+        value="normal",
+        unit=None,
+        state=ObservationState.NORMAL,
+        observed_at=observed_at,
+        freshness=FreshnessState.CURRENT,
+        evidence_references=(node_ref,),
+    )
+    return HealthCheckExecutionResult(
+        state=HealthCheckRunState.COMPLETED,
+        completed_at=observed_at,
+        step_count=1,
+        observations=(observation,),
+        findings=(),
+        evidence=evidence,
+    )
+
+
+def _huawei_pacific_capacity_result(observed_at: datetime) -> HealthCheckExecutionResult:
+    capacity_ref = _reference("huawei-pacific-capacity/lab", "pool-1=58")
+    evidence = (
+        HealthCheckEvidence(
+            reference=capacity_ref,
+            source="Huawei Pacific synthetic capacity fixture",
+            source_version="8.1.0-contract.1",
+            observed_at=observed_at,
+            freshness=FreshnessState.CURRENT,
+            trust_basis="Documentation-derived allowlisted C1 response",
+        ),
+    )
+    observation = HealthObservation(
+        observation_id="observation.huawei-pacific.capacity.lab",
+        target_id="target.huawei.pacific.lab/pool-1",
+        component="pool:pool-1",
+        metric="pool.utilization",
+        value="58.0",
+        unit="percent",
+        state=ObservationState.NORMAL,
+        observed_at=observed_at,
+        freshness=FreshnessState.CURRENT,
+        evidence_references=(capacity_ref,),
+    )
+    return HealthCheckExecutionResult(
+        state=HealthCheckRunState.COMPLETED,
+        completed_at=observed_at,
+        step_count=1,
+        observations=(observation,),
+        findings=(),
+        evidence=evidence,
+    )
+
+
 def build_synthetic_latest_runs(
     definitions: tuple[HealthCheckDefinition, ...], *, generated_at: datetime | None = None
 ) -> tuple[HealthCheckRun, ...]:
@@ -458,6 +601,8 @@ def build_synthetic_latest_runs(
         CAPACITY_DEFINITION_ID: _capacity_result(observed_at),
         HUAWEI_CONTROLLER_DEFINITION_ID: _huawei_controller_result(observed_at),
         HUAWEI_CAPACITY_DEFINITION_ID: _huawei_capacity_result(observed_at),
+        HUAWEI_PACIFIC_CLUSTER_NODE_DEFINITION_ID: _huawei_pacific_node_result(observed_at),
+        HUAWEI_PACIFIC_CAPACITY_DEFINITION_ID: _huawei_pacific_capacity_result(observed_at),
         FABRIC_HEALTH_DEFINITION_ID: _fabric_result(observed_at),
     }
     return tuple(

@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:project-atlas:connector:huawei-pacific:configuration:0.1.0",
+  "title": "Huawei OceanStor Pacific cluster-manager connector configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "endpoint_host",
+    "endpoint_port",
+    "certificate_trust_reference_id",
+    "credential_reference_id"
+  ],
+  "properties": {
+    "endpoint_host": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 253,
+      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$"
+    },
+    "endpoint_port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535,
+      "description": "No default is set: unlike Dorado, Pacific's default management port was not independently confirmed during connector construction, so this connector requires it to be configured explicitly rather than guessed."
+    },
+    "certificate_trust_reference_id": {
+      "type": "string",
+      "pattern": "^trust\\.[a-z0-9_.:-]{3,127}$"
+    },
+    "credential_reference_id": {
+      "type": "string",
+      "pattern": "^secret\\.[a-z0-9_.:-]{3,127}$",
+      "description": "References a username:password pair, not a pre-built Authorization header -- Pacific's real cluster-manager REST API is session-based (POST .../api/v2/aa/sessions), the same rationale as the Huawei Dorado candidate. See source-provenance.json."
+    }
+  }
+}

@@ -21,30 +21,28 @@ from atlas.modules.connectors.application.connection_test_ports import (
     ConnectorAuthorizationHeaderLease,
     ConnectorConnectionTestError,
     ConnectorCredentialMaterializer,
-    HuaweiDoradoConnectionTestTransportFactory,
+    HuaweiPacificConnectionTestTransportFactory,
 )
 from atlas.modules.connectors.application.instance_creation_ports import (
     ConnectorInstanceRepository,
 )
 from atlas.modules.connectors.domain.instance_creation import DISABLED_UNCONFIGURED
-from atlas.modules.connectors.vendors.huawei_dorado.manifest import PACKAGE_ID
-from atlas.modules.connectors.vendors.huawei_dorado.ports import HuaweiDoradoTransport
-from atlas.modules.connectors.vendors.huawei_dorado.synthetic import (
-    SyntheticHuaweiDoradoTransport,
-    SyntheticHuaweiResponse,
+from atlas.modules.connectors.vendors.huawei_pacific.manifest import PACKAGE_ID
+from atlas.modules.connectors.vendors.huawei_pacific.ports import HuaweiPacificTransport
+from atlas.modules.connectors.vendors.huawei_pacific.synthetic import (
+    SyntheticHuaweiPacificResponse,
+    SyntheticHuaweiPacificTransport,
 )
 from atlas.modules.inventory.application.ports import InventoryDeviceRepository
 from atlas.modules.inventory.domain.devices import InventoryDeviceLifecycle, InventoryDeviceType
-from atlas.modules.storage.adapters.configured_huawei_dorado import (
-    ConfiguredHuaweiDoradoStorageProvider,
+from atlas.modules.storage.adapters.configured_huawei_pacific import (
+    ConfiguredHuaweiPacificStorageProvider,
 )
 from atlas.modules.storage.domain.models import InvestigationState, StorageHealthState
 
 NOW = datetime(2026, 8, 28, 12, 0, tzinfo=UTC)
-INSTANCE_ID = "connector-instance.huawei-storage"
-SYSTEM_ID = "2102350ABC"
-SYSTEM_PATH = "/system/"
-CONTROLLER_PATH = "/controller"
+INSTANCE_ID = "connector-instance.huawei-pacific-storage"
+CLUSTER_SERVERS_PATH = "/api/v2/cluster/servers"
 
 
 class ScopeRepository[T]:
@@ -79,7 +77,7 @@ class CredentialMaterializer:
 
 
 class TransportFactory:
-    def __init__(self, transport: SyntheticHuaweiDoradoTransport) -> None:
+    def __init__(self, transport: SyntheticHuaweiPacificTransport) -> None:
         self.transport = transport
 
     def create(
@@ -87,16 +85,14 @@ class TransportFactory:
         *,
         hostname: str,
         port: int,
-        system_id: str,
         trust_profile_id: str,
         credential_provider: Callable[[], str],
         timeout_seconds: float,
         maximum_response_bytes: int,
-    ) -> HuaweiDoradoTransport:
+    ) -> HuaweiPacificTransport:
         del (
             hostname,
             port,
-            system_id,
             trust_profile_id,
             credential_provider,
             timeout_seconds,
@@ -111,11 +107,11 @@ def build_provider(
     instances: Iterable[object] = (),
     devices: Iterable[object] = (),
     credentials_available: bool = True,
-    routes: Mapping[str, SyntheticHuaweiResponse] | None = None,
+    routes: Mapping[str, SyntheticHuaweiPacificResponse] | None = None,
     runtime_state_repository: BundledConnectorRuntimeStateRepository | None = None,
-) -> tuple[ConfiguredHuaweiDoradoStorageProvider, SyntheticHuaweiDoradoTransport]:
-    transport = SyntheticHuaweiDoradoTransport(routes or {})
-    provider = ConfiguredHuaweiDoradoStorageProvider(
+) -> tuple[ConfiguredHuaweiPacificStorageProvider, SyntheticHuaweiPacificTransport]:
+    transport = SyntheticHuaweiPacificTransport(routes or {})
+    provider = ConfiguredHuaweiPacificStorageProvider(
         configuration_repository=cast(
             BundledConnectionConfigurationRepository, ScopeRepository(configurations)
         ),
@@ -126,7 +122,7 @@ def build_provider(
             CredentialMaterializer(available=credentials_available),
         ),
         transport_factory=cast(
-            HuaweiDoradoConnectionTestTransportFactory, TransportFactory(transport)
+            HuaweiPacificConnectionTestTransportFactory, TransportFactory(transport)
         ),
         organization_id="organization.atlas.local",
         environment_id="environment.development",
@@ -135,16 +131,15 @@ def build_provider(
     return provider, transport
 
 
-def _configuration(system_id: str | None = SYSTEM_ID) -> SimpleNamespace:
+def _configuration() -> SimpleNamespace:
     return SimpleNamespace(
-        configuration_id="connection_configuration.huawei-storage",
+        configuration_id="connection_configuration.huawei-pacific-storage",
         connector_id=PACKAGE_ID,
         instance_id=INSTANCE_ID,
-        hostname="dorado.example.internal",
+        hostname="pacific.example.internal",
         port=8088,
         trust_profile_id="trust.system-ca",
-        secret_reference_id="secret.huawei.dorado.readonly",
-        system_id=system_id,
+        secret_reference_id="secret.huawei.pacific.readonly",
     )
 
 
@@ -156,11 +151,11 @@ def _instance() -> SimpleNamespace:
     )
 
 
-def _device(system_id: str = SYSTEM_ID) -> SimpleNamespace:
+def _device() -> SimpleNamespace:
     return SimpleNamespace(
         device_type=InventoryDeviceType.STORAGE,
         vendor="Huawei",
-        serial_number=system_id,
+        serial_number="pacific-cluster-01",
         lifecycle=InventoryDeviceLifecycle.ACTIVE,
     )
 
@@ -173,20 +168,7 @@ async def test_overview_reports_unavailable_without_one_configured_instance() ->
 
     assert overview.assets == ()
     assert overview.investigation.state is InvestigationState.INCONCLUSIVE
-    assert "single active configured Huawei Dorado MCP" in overview.investigation.summary
-    assert transport.requests == []
-
-
-@pytest.mark.asyncio
-async def test_overview_reports_unavailable_without_system_id() -> None:
-    provider, transport = build_provider(
-        configurations=(_configuration(system_id=None),),
-        instances=(_instance(),),
-    )
-
-    overview = await provider.get_overview(requested_at=NOW)
-
-    assert overview.assets == ()
+    assert "single active configured Huawei Pacific MCP" in overview.investigation.summary
     assert transport.requests == []
 
 
@@ -206,7 +188,7 @@ async def test_overview_reports_unavailable_when_configured_mcp_disabled() -> No
 
 
 @pytest.mark.asyncio
-async def test_overview_reports_unavailable_without_allowlisted_system() -> None:
+async def test_overview_reports_unavailable_without_allowlisted_cluster() -> None:
     provider, transport = build_provider(
         configurations=(_configuration(),),
         instances=(_instance(),),
@@ -215,32 +197,36 @@ async def test_overview_reports_unavailable_without_allowlisted_system() -> None
     overview = await provider.get_overview(requested_at=NOW)
 
     assert overview.assets == ()
-    assert "not an active, allowlisted storage device" in overview.investigation.summary
+    assert "No active Huawei Pacific storage cluster" in overview.investigation.summary
     assert transport.requests == []
 
 
 @pytest.mark.asyncio
-async def test_overview_maps_real_identity_and_controllers_into_asset_and_findings() -> None:
+async def test_overview_maps_real_nodes_into_one_asset_with_findings() -> None:
     routes = {
-        SYSTEM_PATH: SyntheticHuaweiResponse(
+        CLUSTER_SERVERS_PATH: SyntheticHuaweiPacificResponse(
             payload={
-                "error": {"code": 0},
-                "data": {
-                    "MODEL": "OceanStor Dorado 8000 V6",
-                    "SOFTWAREVERSION": "6.1.0.SPH12",
-                    "HEALTHSTATUS": "1",
-                },
-            }
-        ),
-        CONTROLLER_PATH: SyntheticHuaweiResponse(
-            payload={
-                "error": {"code": 0},
+                "result": {"code": 0},
                 "data": [
-                    {"ID": "0A", "ROLE": "Primary", "HEALTHSTATUS": "1"},
-                    {"ID": "0B", "ROLE": "Secondary", "HEALTHSTATUS": "2"},
+                    {
+                        "id": "node1",
+                        "name": "node-1",
+                        "management_ip": "192.0.2.10",
+                        "model": "Pacific 9550",
+                        "running_status": "online",
+                        "in_cluster": True,
+                    },
+                    {
+                        "id": "node2",
+                        "name": "node-2",
+                        "management_ip": "192.0.2.11",
+                        "model": "Pacific 9550",
+                        "running_status": "offline",
+                        "in_cluster": True,
+                    },
                 ],
             }
-        ),
+        )
     }
     provider, transport = build_provider(
         configurations=(_configuration(),),
@@ -251,20 +237,19 @@ async def test_overview_maps_real_identity_and_controllers_into_asset_and_findin
 
     overview = await provider.get_overview(requested_at=NOW)
 
-    assert overview.data_profile == "configured_huawei_dorado_read_only"
+    assert overview.data_profile == "configured_huawei_pacific_read_only"
     assert len(overview.assets) == 1
-    assert overview.assets[0].health is StorageHealthState.HEALTHY
-    assert overview.assets[0].serial_number == SYSTEM_ID
+    assert overview.assets[0].health is StorageHealthState.CRITICAL
     assert len(overview.findings) == 1
     assert overview.findings[0].severity.value == "critical"
     evidence_ids = {item.reference for item in overview.evidence}
     referenced = {reference for asset in overview.assets for reference in asset.evidence_references}
     assert referenced <= evidence_ids
-    assert transport.requests == [SYSTEM_PATH, CONTROLLER_PATH]
+    assert transport.requests == [CLUSTER_SERVERS_PATH]
 
 
 @pytest.mark.asyncio
-async def test_missing_credential_reference_does_not_contact_huawei() -> None:
+async def test_missing_credential_reference_does_not_contact_huawei_pacific() -> None:
     provider, transport = build_provider(
         configurations=(_configuration(),),
         instances=(_instance(),),
@@ -295,7 +280,7 @@ async def test_overview_never_raises_on_connector_timeout() -> None:
             del secret_reference_id, maximum_lease_seconds
             return RaisingLease()
 
-    provider = ConfiguredHuaweiDoradoStorageProvider(
+    provider = ConfiguredHuaweiPacificStorageProvider(
         configuration_repository=cast(
             BundledConnectionConfigurationRepository, ScopeRepository((_configuration(),))
         ),
@@ -305,8 +290,8 @@ async def test_overview_never_raises_on_connector_timeout() -> None:
             ConnectorCredentialMaterializer, RaisingCredentialMaterializer()
         ),
         transport_factory=cast(
-            HuaweiDoradoConnectionTestTransportFactory,
-            TransportFactory(SyntheticHuaweiDoradoTransport({})),
+            HuaweiPacificConnectionTestTransportFactory,
+            TransportFactory(SyntheticHuaweiPacificTransport({})),
         ),
         organization_id="organization.atlas.local",
         environment_id="environment.development",

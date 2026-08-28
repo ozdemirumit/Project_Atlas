@@ -21,7 +21,7 @@ from atlas.modules.connectors.application.connection_test_ports import (
     ConnectorAuthorizationHeaderLease,
     ConnectorConnectionTestError,
     ConnectorCredentialMaterializer,
-    HuaweiConnectionTestTransportFactory,
+    HuaweiDoradoConnectionTestTransportFactory,
 )
 from atlas.modules.connectors.application.instance_creation_ports import (
     ConnectorInstanceRepository,
@@ -132,7 +132,9 @@ def build_assembler(
             ConnectorCredentialMaterializer,
             CredentialMaterializer(available=credentials_available),
         ),
-        transport_factory=cast(HuaweiConnectionTestTransportFactory, TransportFactory(transport)),
+        transport_factory=cast(
+            HuaweiDoradoConnectionTestTransportFactory, TransportFactory(transport)
+        ),
         organization_id="organization.atlas.local",
         environment_id="environment.development",
         runtime_state_repository=runtime_state_repository,

@@ -25,3 +25,5 @@ Current candidates:
 - [Huawei OceanStor Dorado DeviceManager](connectors/huawei_dorado/README.md) -
   quarantined C1 system-identity, controller-health, and pool-capacity candidate using synthetic
   data only.
+- [Huawei OceanStor Pacific Cluster Manager](connectors/huawei_pacific/README.md) -
+  quarantined C1 cluster-node and storage-pool candidate using synthetic data only.

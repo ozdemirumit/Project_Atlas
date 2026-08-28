@@ -22,7 +22,7 @@ from atlas.modules.connectors.application.connection_test_ports import (
     ConnectorAuthorizationHeaderLease,
     ConnectorConnectionTestError,
     ConnectorCredentialMaterializer,
-    HuaweiConnectionTestTransportFactory,
+    HuaweiDoradoConnectionTestTransportFactory,
 )
 from atlas.modules.connectors.application.instance_creation_ports import (
     ConnectorInstanceRepository,
@@ -113,12 +113,18 @@ class TransportFactory:
 
 
 def definitions() -> tuple[HealthCheckDefinition, HealthCheckDefinition]:
-    _controller, _capacity, _fabric, huawei_controller, huawei_capacity = (
-        build_synthetic_health_check_definitions(
-            organization_id="organization.atlas.local",
-            environment="development",
-            anchor_at=NOW,
-        )
+    (
+        _controller,
+        _capacity,
+        _fabric,
+        huawei_controller,
+        huawei_capacity,
+        _pacific_node,
+        _pacific_capacity,
+    ) = build_synthetic_health_check_definitions(
+        organization_id="organization.atlas.local",
+        environment="development",
+        anchor_at=NOW,
     )
     return (
         replace(
@@ -156,7 +162,9 @@ def build_executor(
             ConnectorCredentialMaterializer,
             CredentialMaterializer(available=credentials_available),
         ),
-        transport_factory=cast(HuaweiConnectionTestTransportFactory, TransportFactory(transport)),
+        transport_factory=cast(
+            HuaweiDoradoConnectionTestTransportFactory, TransportFactory(transport)
+        ),
         fallback_executor=SyntheticStorageHealthExecutor(),
         organization_id="organization.atlas.local",
         environment_id="environment.development",
@@ -322,12 +330,18 @@ async def test_other_definitions_are_delegated_to_the_fallback_executor() -> Non
         instances=(_instance(),),
         devices=(_device(),),
     )
-    hitachi_controller, _capacity, _fabric, _huawei_controller, _huawei_capacity = (
-        build_synthetic_health_check_definitions(
-            organization_id="organization.atlas.local",
-            environment="development",
-            anchor_at=NOW,
-        )
+    (
+        hitachi_controller,
+        _capacity,
+        _fabric,
+        _huawei_controller,
+        _huawei_capacity,
+        _pacific_node,
+        _pacific_capacity,
+    ) = build_synthetic_health_check_definitions(
+        organization_id="organization.atlas.local",
+        environment="development",
+        anchor_at=NOW,
     )
 
     result = await executor.execute(hitachi_controller, started_at=NOW)

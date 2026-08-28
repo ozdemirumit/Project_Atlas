@@ -4,14 +4,86 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-263 |
-| Title | Add Huawei Dorado RCA and recommendation adapters (closes the ATLAS-IMP-262 gap) |
-| Status | Verified (backend, tool-verified with real toolchain) |
+| Task ID | ATLAS-IMP-264 |
+| Title | Add real Huawei OceanStor Pacific connector (Phase 3 of modular multi-vendor MCPs) |
+| Status | Verified (backend, tool-verified with real toolchain) -- storage/graph/health_checks only; RCA/recommendations deliberately deferred, matching the ATLAS-IMP-262/263 pattern |
 | Branch | `main` |
 | Pull Request | none (pushed directly to `main`; no PR tooling available in this environment) |
 | Governing Documents | ATLAS-003, ATLAS-020/021/022/047 (connector quarantine/promotion), `docs/adr/ADR-004`+ |
 | Last Updated | 2026-08-28 |
-| Next Action | Continue the approved plan: Huawei Pacific, vCenter, Commvault, in that order (`C:\Users\umito\.claude\plans\tingly-marinating-anchor.md`). |
+| Next Action | Close the RCA/recommendations gap this task deliberately deferred (mirroring ATLAS-IMP-263), or continue the approved plan: vCenter, Commvault, in that order (`C:\Users\umito\.claude\plans\tingly-marinating-anchor.md`). |
+
+### ATLAS-IMP-264 Scope and Verification
+
+- **What this is**: the fourth real vendor connector and the second storage vendor after Hitachi
+  and Huawei Dorado -- OceanStor Pacific is Huawei's distributed, scale-out storage family
+  (clusters of nodes), a genuinely different shape from Dorado's dual-controller array, proving
+  the pattern generalizes to a cluster topology, not just a second single-system vendor.
+- **Real API research, with a genuine architectural discovery along the way**: Huawei's own
+  TechDocs and administrator-guide pages again returned empty content or HTTP 403 via automated
+  fetch (the same difficulty found building Dorado). Initial research surfaced a real but
+  block-storage-focused REST API family (`/api/v1/`, used by the official, real
+  `openstack/cinder` FusionStorage driver -- confirmed directly from its source, including the
+  exact `/storagePool` and `/volume/create` endpoints and field names) that turned out to be the
+  wrong layer for this project's read-only monitoring purpose: it provisions volumes, it does not
+  expose cluster or node health. The correct, health-oriented API family (`/api/v2/`) was found
+  and confirmed via two real, maintained Icinga/Nagios check-plugins from the same Linuxfabrik
+  project already trusted for Dorado's controller endpoint, plus the shared Python library backing
+  both plugins (fetched directly, not summarized): `GET /api/v2/cluster/servers` for node
+  inventory and running status, `GET /api/v2/data_service/storagepool` for pool capacity and
+  status, and the exact `POST /api/v2/aa/sessions` / `DELETE /api/v2/aa/sessions` login/logout
+  shape. Both real API families are documented in `source-provenance.json`; only the confirmed,
+  health-relevant one was implemented. `node.running_status` was confirmed as a lower-case string
+  (`'online'`/`'offline'`) by reading the library's own status-conversion function directly, the
+  same rigor as Dorado's `HEALTHSTATUS` confirmation.
+- **A real architectural difference from every other connector so far**: OceanStor Pacific is a
+  cluster of nodes, not a single system with one identity. No confirmed cluster-level identifier
+  field exists anywhere in the sources used (only per-node `id` fields), so this connector derives
+  a stable entity identity from the sorted set of node identifiers rather than inventing a
+  cluster-id field -- stated plainly as a known gap in the graph adapter's `_KNOWN_GAPS` and the
+  storage adapter's docstring, not silently assumed. The whole cluster is represented as one
+  `StorageAsset`/graph entity (mirroring Dorado's one-system-one-entity shape), with per-node
+  findings, the same pattern Dorado uses for per-controller findings.
+- **Session lifecycle, simpler than Dorado's in one respect**: Pacific's confirmed auth is
+  `POST /api/v2/aa/sessions` returning an `X-Auth-Token` header value, presented on every
+  subsequent request, `DELETE /api/v2/aa/sessions` to end it -- no cookie is needed, unlike
+  Dorado's `iBaseToken` + session-cookie combination. `HuaweiPacificHttpsTransport` still performs
+  the same complete, bounded login -> read -> logout cycle for every single `get()` call as
+  Dorado's transport, for the same reason: no session ever outlives one bounded operation.
+- **No confirmed default management port**: unlike Dorado's documented 8088, Pacific's default
+  port was not found in any of the real sources used, so `configuration.schema.json` requires
+  `endpoint_port` to be set explicitly rather than guessing a value.
+- **Naming generalized for a two-Huawei-vendor codebase**: renamed `HuaweiConnectionTestTransportFactory`
+  to `HuaweiDoradoConnectionTestTransportFactory` (and the sibling `HuaweiConnectionTestProbe` /
+  `HuaweiTlsTrustSource` to their `...Dorado...` equivalents, and `bundled_catalog.py`'s
+  `HUAWEI_PACKAGE_ID` to `HUAWEI_DORADO_PACKAGE_ID`) across all call sites, since "Huawei" alone is
+  now ambiguous between Dorado and Pacific. Added the Pacific equivalents
+  (`HuaweiPacificConnectionTestTransportFactory`, etc.) following the exact same shape.
+- **Allowlist check is coarser than every other vendor's, and this is stated, not hidden**: every
+  other `Configured<Vendor>*` adapter cross-checks a specific vendor-confirmed device identifier
+  (Dorado's `system_id`, Brocade's fabric WWN) against inventory. Pacific has no such confirmed
+  cluster-level identifier to check against, so its allowlist gate only confirms that *some*
+  active Huawei storage device is registered in inventory, not that it is *this specific* cluster.
+  This is a real, documented limitation of what's confirmed about Pacific's API, not a shortcut.
+- **Deliberately deferred, matching the ATLAS-IMP-262/263 precedent exactly**: RCA and
+  recommendation adapters are not included in this task. Storage, graph, and health_checks are
+  complete, tested, and wired end to end (mirroring exactly what Dorado received in ATLAS-IMP-262
+  before ATLAS-IMP-263 closed the gap). This is the explicit next step for Pacific.
+- **Verified with the real toolchain**: `ruff format`, `ruff check`, `mypy` strict all clean across
+  the new connector package, all three consuming adapters, and `api/app.py`'s wiring (health_checks
+  executor chain now Hitachi -> Brocade -> Huawei Dorado -> Huawei Pacific -> Synthetic; storage
+  and graph gained Pacific alongside Dorado in their existing chain/composite). New tests: 12 for
+  the connector package (mirroring the Dorado/Brocade connector test structure), 6 for the storage
+  adapter, 4 for the graph adapter, 7 for the health-check adapter -- 29 new tests total, all
+  passing. Fixed the same kind of regression found in ATLAS-IMP-262/263:
+  `build_synthetic_health_check_definitions()` now returns a 7-tuple; updated every existing test
+  file's unpacking (Hitachi, Brocade, Huawei Dorado) and `test_health_checks_api.py`'s
+  definitions-count assertion (5 -> 7). Full backend suite: 3901 passed, 67 failed, 68 skipped --
+  the failure count matches the established ~67 pre-existing baseline exactly (bootstrap/upgrade/
+  support-bundle/backup/mcp-builder and alembic-head-drift categories), confirmed by name to share
+  zero overlap with huawei, pacific, brocade, hitachi, graph, storage, health_checks, connector,
+  rca, recommendation, chained, dispatching, or composite. The pass-count increase (+29 over
+  ATLAS-IMP-263's 3872) matches exactly the 29 new tests this task adds.
 
 ### ATLAS-IMP-263 Scope and Verification
 

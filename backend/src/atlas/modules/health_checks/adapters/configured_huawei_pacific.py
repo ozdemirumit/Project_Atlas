@@ -11,7 +11,7 @@ from atlas.modules.connectors.application.bundled_runtime_state_ports import (
 from atlas.modules.connectors.application.connection_test_ports import (
     ConnectorConnectionTestError,
     ConnectorCredentialMaterializer,
-    HuaweiDoradoConnectionTestTransportFactory,
+    HuaweiPacificConnectionTestTransportFactory,
 )
 from atlas.modules.connectors.application.instance_creation_ports import (
     ConnectorInstanceRepository,
@@ -21,13 +21,13 @@ from atlas.modules.connectors.domain.bundled_connection_configuration import (
 )
 from atlas.modules.connectors.domain.bundled_runtime_state import ENABLED_READ_ONLY
 from atlas.modules.connectors.domain.instance_creation import DISABLED_UNCONFIGURED
-from atlas.modules.connectors.vendors.huawei_dorado.client import HuaweiDoradoClient
-from atlas.modules.connectors.vendors.huawei_dorado.manifest import PACKAGE_ID
-from atlas.modules.health_checks.adapters.huawei_dorado import (
+from atlas.modules.connectors.vendors.huawei_pacific.client import HuaweiPacificClient
+from atlas.modules.connectors.vendors.huawei_pacific.manifest import PACKAGE_ID
+from atlas.modules.health_checks.adapters.huawei_pacific import (
     CAPACITY_DEFINITION_ID,
-    CONTROLLER_DEFINITION_ID,
-    HuaweiCapacityHealthExecutor,
-    HuaweiControllerHealthExecutor,
+    CLUSTER_NODE_DEFINITION_ID,
+    HuaweiPacificCapacityHealthExecutor,
+    HuaweiPacificNodeHealthExecutor,
 )
 from atlas.modules.health_checks.application.ports import (
     HealthCheckExecutionResult,
@@ -44,10 +44,10 @@ from atlas.modules.inventory.domain.devices import (
 )
 
 
-class ConfiguredHuaweiDoradoHealthExecutor:
-    """Routes controller and capacity checks to one configured Huawei Dorado MCP and keeps other
-    checks separate by delegating to a fallback executor, the same chain-of-responsibility shape
-    as ConfiguredHitachiHealthExecutor and ConfiguredBrocadeSanNavHealthExecutor."""
+class ConfiguredHuaweiPacificHealthExecutor:
+    """Routes node-status and capacity checks to one configured Huawei Pacific MCP and keeps
+    other checks separate by delegating to a fallback executor, the same chain-of-responsibility
+    shape as every other Configured<Vendor>HealthExecutor in this project."""
 
     def __init__(
         self,
@@ -56,7 +56,7 @@ class ConfiguredHuaweiDoradoHealthExecutor:
         instance_repository: ConnectorInstanceRepository,
         inventory_repository: InventoryDeviceRepository,
         credential_materializer: ConnectorCredentialMaterializer,
-        transport_factory: HuaweiDoradoConnectionTestTransportFactory,
+        transport_factory: HuaweiPacificConnectionTestTransportFactory,
         fallback_executor: HealthCheckExecutor,
         organization_id: str,
         environment_id: str,
@@ -75,15 +75,14 @@ class ConfiguredHuaweiDoradoHealthExecutor:
     async def execute(
         self, definition: HealthCheckDefinition, *, started_at: datetime
     ) -> HealthCheckExecutionResult:
-        if definition.definition_id not in {CONTROLLER_DEFINITION_ID, CAPACITY_DEFINITION_ID}:
+        if definition.definition_id not in {CLUSTER_NODE_DEFINITION_ID, CAPACITY_DEFINITION_ID}:
             return await self._fallback_executor.execute(definition, started_at=started_at)
 
         configuration = await self._single_active_configuration()
-        if configuration is None or configuration.system_id is None:
+        if configuration is None:
             return self._unavailable(
                 started_at,
-                "A single active configured Huawei Dorado MCP with a system identifier is "
-                "required for this health check.",
+                "A single active configured Huawei Pacific MCP is required for this health check.",
             )
         if self._runtime_state_repository is not None:
             runtime_state = await self._runtime_state_repository.get(
@@ -98,14 +97,13 @@ class ConfiguredHuaweiDoradoHealthExecutor:
             ):
                 return self._unavailable(
                     started_at,
-                    "The configured Huawei Dorado MCP must be enabled for read-only health "
+                    "The configured Huawei Pacific MCP must be enabled for read-only cluster "
                     "polling.",
                 )
-        if not await self._system_is_allowlisted(configuration.system_id):
+        if not await self._cluster_is_allowlisted():
             return self._unavailable(
                 started_at,
-                "The configured Huawei Dorado system is not an active, allowlisted storage "
-                "device in inventory.",
+                "No active Huawei Pacific storage cluster is allowlisted in inventory.",
             )
 
         try:
@@ -116,32 +114,27 @@ class ConfiguredHuaweiDoradoHealthExecutor:
                 transport = self._transport_factory.create(
                     hostname=configuration.hostname,
                     port=configuration.port,
-                    system_id=configuration.system_id,
                     trust_profile_id=configuration.trust_profile_id,
                     credential_provider=lease.authorization_header,
                     timeout_seconds=definition.limits.timeout_seconds,
                     maximum_response_bytes=1_048_576,
                 )
-                client = HuaweiDoradoClient(
-                    transport=transport,
-                    system_id=configuration.system_id,
-                    maximum_response_bytes=1_048_576,
-                )
+                client = HuaweiPacificClient(transport=transport, maximum_response_bytes=1_048_576)
                 executor = (
-                    HuaweiControllerHealthExecutor(client=client)
-                    if definition.definition_id == CONTROLLER_DEFINITION_ID
-                    else HuaweiCapacityHealthExecutor(client=client)
+                    HuaweiPacificNodeHealthExecutor(client=client)
+                    if definition.definition_id == CLUSTER_NODE_DEFINITION_ID
+                    else HuaweiPacificCapacityHealthExecutor(client=client)
                 )
                 return await executor.execute(definition, started_at=started_at)
         except ConnectorConnectionTestError:
             return self._unavailable(
                 started_at,
-                "The Huawei Dorado credential reference is unavailable for this health check.",
+                "The Huawei Pacific credential reference is unavailable for this health check.",
             )
         except (TimeoutError, ValueError):
             return self._unavailable(
                 started_at,
-                "The configured Huawei Dorado health read failed safely.",
+                "The configured Huawei Pacific health read failed safely.",
             )
 
     async def _single_active_configuration(
@@ -168,7 +161,7 @@ class ConfiguredHuaweiDoradoHealthExecutor:
         )
         return candidates[0] if len(candidates) == 1 else None
 
-    async def _system_is_allowlisted(self, system_id: str) -> bool:
+    async def _cluster_is_allowlisted(self) -> bool:
         devices = await self._inventory_repository.list_scope(
             organization_id=self._organization_id,
             environment_id=self._environment_id,
@@ -177,9 +170,7 @@ class ConfiguredHuaweiDoradoHealthExecutor:
             limit=500,
         )
         return any(
-            device.device_type is InventoryDeviceType.STORAGE
-            and "huawei" in device.vendor.lower()
-            and device.serial_number == system_id
+            device.device_type is InventoryDeviceType.STORAGE and "huawei" in device.vendor.lower()
             for device in devices
         )
 
@@ -193,5 +184,5 @@ class ConfiguredHuaweiDoradoHealthExecutor:
             findings=(),
             evidence=(),
             partial_reasons=(reason,),
-            unknowns=("Storage health remains unknown.",),
+            unknowns=("Cluster health remains unknown.",),
         )

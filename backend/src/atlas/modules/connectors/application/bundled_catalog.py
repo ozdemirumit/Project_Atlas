@@ -45,10 +45,19 @@ from atlas.modules.connectors.vendors.huawei_dorado.manifest import (
     CONTROLLER_HEALTH_CAPABILITY_ID as HUAWEI_CONTROLLER_HEALTH_CAPABILITY_ID,
 )
 from atlas.modules.connectors.vendors.huawei_dorado.manifest import (
-    PACKAGE_ID as HUAWEI_PACKAGE_ID,
+    PACKAGE_ID as HUAWEI_DORADO_PACKAGE_ID,
 )
 from atlas.modules.connectors.vendors.huawei_dorado.manifest import (
     SYSTEM_IDENTITY_CAPABILITY_ID as HUAWEI_SYSTEM_IDENTITY_CAPABILITY_ID,
+)
+from atlas.modules.connectors.vendors.huawei_pacific.manifest import (
+    CLUSTER_NODE_CAPABILITY_ID as HUAWEI_PACIFIC_CLUSTER_NODE_CAPABILITY_ID,
+)
+from atlas.modules.connectors.vendors.huawei_pacific.manifest import (
+    PACKAGE_ID as HUAWEI_PACIFIC_PACKAGE_ID,
+)
+from atlas.modules.connectors.vendors.huawei_pacific.manifest import (
+    STORAGE_POOL_CAPABILITY_ID as HUAWEI_PACIFIC_STORAGE_POOL_CAPABILITY_ID,
 )
 from atlas.modules.identity.domain.models import AuthenticatedSubject, SubjectKind
 
@@ -431,13 +440,13 @@ def build_hitachi_ops_center_bundled_descriptor() -> BundledConnectorDescriptor:
 
 def build_huawei_dorado_bundled_descriptor() -> BundledConnectorDescriptor:
     package_digest = BundledConnectorCatalogService._digest(
-        [HUAWEI_PACKAGE_ID, "version.0.1.0", "bundled-development-package-evidence"]
+        [HUAWEI_DORADO_PACKAGE_ID, "version.0.1.0", "bundled-development-package-evidence"]
     )
     descriptor = BundledConnectorDescriptor(
         catalog_item_id="catalog.connector.huawei.dorado",
         schema_version=_DESCRIPTOR_SCHEMA,
         version=1,
-        connector_id=HUAWEI_PACKAGE_ID,
+        connector_id=HUAWEI_DORADO_PACKAGE_ID,
         display_name="Huawei OceanStor Dorado DeviceManager",
         vendor_name="Huawei Technologies Co., Ltd.",
         release_version="version.0.1.0",
@@ -452,10 +461,47 @@ def build_huawei_dorado_bundled_descriptor() -> BundledConnectorDescriptor:
         capability_classes=("C1",),
         package_digest=package_digest,
         provenance_digest=BundledConnectorCatalogService._digest(
-            [HUAWEI_PACKAGE_ID, "bundled-development-provenance-evidence"]
+            [HUAWEI_DORADO_PACKAGE_ID, "bundled-development-provenance-evidence"]
         ),
         manifest_digest=BundledConnectorCatalogService._digest(
-            [HUAWEI_PACKAGE_ID, "bundled-development-manifest-evidence"]
+            [HUAWEI_DORADO_PACKAGE_ID, "bundled-development-manifest-evidence"]
+        ),
+        canonical_digest="0" * 64,
+    )
+    return replace(
+        descriptor,
+        canonical_digest=BundledConnectorCatalogService._digest(
+            BundledConnectorCatalogService._descriptor_payload(descriptor)
+        ),
+    )
+
+
+def build_huawei_pacific_bundled_descriptor() -> BundledConnectorDescriptor:
+    package_digest = BundledConnectorCatalogService._digest(
+        [HUAWEI_PACIFIC_PACKAGE_ID, "version.0.1.0", "bundled-development-package-evidence"]
+    )
+    descriptor = BundledConnectorDescriptor(
+        catalog_item_id="catalog.connector.huawei.pacific",
+        schema_version=_DESCRIPTOR_SCHEMA,
+        version=1,
+        connector_id=HUAWEI_PACIFIC_PACKAGE_ID,
+        display_name="Huawei OceanStor Pacific Cluster Manager",
+        vendor_name="Huawei Technologies Co., Ltd.",
+        release_version="version.0.1.0",
+        sdk_profile="atlas.python312.v1",
+        publisher_id="publisher.project-atlas",
+        support_group_id="group.connector-platform-support",
+        capability_ids=(
+            HUAWEI_PACIFIC_CLUSTER_NODE_CAPABILITY_ID,
+            HUAWEI_PACIFIC_STORAGE_POOL_CAPABILITY_ID,
+        ),
+        capability_classes=("C1",),
+        package_digest=package_digest,
+        provenance_digest=BundledConnectorCatalogService._digest(
+            [HUAWEI_PACIFIC_PACKAGE_ID, "bundled-development-provenance-evidence"]
+        ),
+        manifest_digest=BundledConnectorCatalogService._digest(
+            [HUAWEI_PACIFIC_PACKAGE_ID, "bundled-development-manifest-evidence"]
         ),
         canonical_digest="0" * 64,
     )

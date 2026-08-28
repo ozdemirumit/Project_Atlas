@@ -21,29 +21,28 @@ from atlas.modules.connectors.application.connection_test_ports import (
     ConnectorAuthorizationHeaderLease,
     ConnectorConnectionTestError,
     ConnectorCredentialMaterializer,
-    HuaweiDoradoConnectionTestTransportFactory,
+    HuaweiPacificConnectionTestTransportFactory,
 )
 from atlas.modules.connectors.application.instance_creation_ports import (
     ConnectorInstanceRepository,
 )
 from atlas.modules.connectors.domain.instance_creation import DISABLED_UNCONFIGURED
-from atlas.modules.connectors.vendors.huawei_dorado.manifest import PACKAGE_ID
-from atlas.modules.connectors.vendors.huawei_dorado.ports import HuaweiDoradoTransport
-from atlas.modules.connectors.vendors.huawei_dorado.synthetic import (
-    SyntheticHuaweiDoradoTransport,
-    SyntheticHuaweiResponse,
+from atlas.modules.connectors.vendors.huawei_pacific.manifest import PACKAGE_ID
+from atlas.modules.connectors.vendors.huawei_pacific.ports import HuaweiPacificTransport
+from atlas.modules.connectors.vendors.huawei_pacific.synthetic import (
+    SyntheticHuaweiPacificResponse,
+    SyntheticHuaweiPacificTransport,
 )
-from atlas.modules.graph.adapters.configured_huawei_dorado import (
-    ConfiguredHuaweiDoradoGraphSnapshotProvider,
+from atlas.modules.graph.adapters.configured_huawei_pacific import (
+    ConfiguredHuaweiPacificGraphSnapshotProvider,
 )
 from atlas.modules.graph.domain.models import EntityType
 from atlas.modules.inventory.application.ports import InventoryDeviceRepository
 from atlas.modules.inventory.domain.devices import InventoryDeviceLifecycle, InventoryDeviceType
 
 NOW = datetime(2026, 8, 28, 12, 0, tzinfo=UTC)
-INSTANCE_ID = "connector-instance.huawei-graph"
-SYSTEM_ID = "2102350ABC"
-SYSTEM_PATH = "/system/"
+INSTANCE_ID = "connector-instance.huawei-pacific-graph"
+CLUSTER_SERVERS_PATH = "/api/v2/cluster/servers"
 
 
 class ScopeRepository[T]:
@@ -78,7 +77,7 @@ class CredentialMaterializer:
 
 
 class TransportFactory:
-    def __init__(self, transport: SyntheticHuaweiDoradoTransport) -> None:
+    def __init__(self, transport: SyntheticHuaweiPacificTransport) -> None:
         self.transport = transport
 
     def create(
@@ -86,16 +85,14 @@ class TransportFactory:
         *,
         hostname: str,
         port: int,
-        system_id: str,
         trust_profile_id: str,
         credential_provider: Callable[[], str],
         timeout_seconds: float,
         maximum_response_bytes: int,
-    ) -> HuaweiDoradoTransport:
+    ) -> HuaweiPacificTransport:
         del (
             hostname,
             port,
-            system_id,
             trust_profile_id,
             credential_provider,
             timeout_seconds,
@@ -110,11 +107,11 @@ def build_provider(
     instances: Iterable[object] = (),
     devices: Iterable[object] = (),
     credentials_available: bool = True,
-    routes: Mapping[str, SyntheticHuaweiResponse] | None = None,
+    routes: Mapping[str, SyntheticHuaweiPacificResponse] | None = None,
     runtime_state_repository: BundledConnectorRuntimeStateRepository | None = None,
-) -> tuple[ConfiguredHuaweiDoradoGraphSnapshotProvider, SyntheticHuaweiDoradoTransport]:
-    transport = SyntheticHuaweiDoradoTransport(routes or {})
-    provider = ConfiguredHuaweiDoradoGraphSnapshotProvider(
+) -> tuple[ConfiguredHuaweiPacificGraphSnapshotProvider, SyntheticHuaweiPacificTransport]:
+    transport = SyntheticHuaweiPacificTransport(routes or {})
+    provider = ConfiguredHuaweiPacificGraphSnapshotProvider(
         configuration_repository=cast(
             BundledConnectionConfigurationRepository, ScopeRepository(configurations)
         ),
@@ -125,7 +122,7 @@ def build_provider(
             CredentialMaterializer(available=credentials_available),
         ),
         transport_factory=cast(
-            HuaweiDoradoConnectionTestTransportFactory, TransportFactory(transport)
+            HuaweiPacificConnectionTestTransportFactory, TransportFactory(transport)
         ),
         organization_id="organization.atlas.local",
         environment_id="environment.development",
@@ -136,14 +133,13 @@ def build_provider(
 
 def _configuration() -> SimpleNamespace:
     return SimpleNamespace(
-        configuration_id="connection_configuration.huawei-graph",
+        configuration_id="connection_configuration.huawei-pacific-graph",
         connector_id=PACKAGE_ID,
         instance_id=INSTANCE_ID,
-        hostname="dorado.example.internal",
+        hostname="pacific.example.internal",
         port=8088,
         trust_profile_id="trust.system-ca",
-        secret_reference_id="secret.huawei.dorado.readonly",
-        system_id=SYSTEM_ID,
+        secret_reference_id="secret.huawei.pacific.readonly",
     )
 
 
@@ -159,7 +155,7 @@ def _device() -> SimpleNamespace:
     return SimpleNamespace(
         device_type=InventoryDeviceType.STORAGE,
         vendor="Huawei",
-        serial_number=SYSTEM_ID,
+        serial_number="pacific-cluster-01",
         lifecycle=InventoryDeviceLifecycle.ACTIVE,
     )
 
@@ -172,7 +168,7 @@ async def test_snapshot_is_empty_without_one_configured_instance() -> None:
 
     assert snapshot.entities == ()
     assert snapshot.completeness == "unavailable"
-    assert "single active configured Huawei Dorado MCP" in snapshot.known_gaps[0]
+    assert "single active configured Huawei Pacific MCP" in snapshot.known_gaps[0]
     assert transport.requests == []
 
 
@@ -192,18 +188,23 @@ async def test_snapshot_is_empty_when_configured_mcp_disabled() -> None:
 
 
 @pytest.mark.asyncio
-async def test_snapshot_maps_real_identity_into_one_storage_system_entity() -> None:
+async def test_snapshot_maps_real_nodes_into_one_storage_system_entity() -> None:
     routes = {
-        SYSTEM_PATH: SyntheticHuaweiResponse(
+        CLUSTER_SERVERS_PATH: SyntheticHuaweiPacificResponse(
             payload={
-                "error": {"code": 0},
-                "data": {
-                    "MODEL": "OceanStor Dorado 8000 V6",
-                    "SOFTWAREVERSION": "6.1.0.SPH12",
-                    "HEALTHSTATUS": "1",
-                },
+                "result": {"code": 0},
+                "data": [
+                    {
+                        "id": "node1",
+                        "name": "node-1",
+                        "management_ip": "192.0.2.10",
+                        "model": "Pacific 9550",
+                        "running_status": "online",
+                        "in_cluster": True,
+                    }
+                ],
             }
-        ),
+        )
     }
     provider, transport = build_provider(
         configurations=(_configuration(),),
@@ -214,16 +215,16 @@ async def test_snapshot_maps_real_identity_into_one_storage_system_entity() -> N
 
     snapshot = await provider.get_snapshot()
 
-    assert snapshot.data_profile == "configured_huawei_dorado_read_only"
+    assert snapshot.data_profile == "configured_huawei_pacific_read_only"
     assert len(snapshot.entities) == 1
     assert snapshot.entities[0].entity_type is EntityType.STORAGE_SYSTEM
     assert snapshot.entities[0].vendor == "Huawei"
     assert snapshot.relationships == ()
-    assert transport.requests == [SYSTEM_PATH]
+    assert transport.requests == [CLUSTER_SERVERS_PATH]
 
 
 @pytest.mark.asyncio
-async def test_missing_credential_reference_does_not_contact_huawei() -> None:
+async def test_missing_credential_reference_does_not_contact_huawei_pacific() -> None:
     provider, transport = build_provider(
         configurations=(_configuration(),),
         instances=(_instance(),),

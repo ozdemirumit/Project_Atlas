@@ -13,7 +13,7 @@ from atlas.modules.connectors.application.bundled_runtime_state_ports import (
 from atlas.modules.connectors.application.connection_test_ports import (
     ConnectorConnectionTestError,
     ConnectorCredentialMaterializer,
-    HuaweiDoradoConnectionTestTransportFactory,
+    HuaweiPacificConnectionTestTransportFactory,
 )
 from atlas.modules.connectors.application.instance_creation_ports import (
     ConnectorInstanceRepository,
@@ -23,11 +23,11 @@ from atlas.modules.connectors.domain.bundled_connection_configuration import (
 )
 from atlas.modules.connectors.domain.bundled_runtime_state import ENABLED_READ_ONLY
 from atlas.modules.connectors.domain.instance_creation import DISABLED_UNCONFIGURED
-from atlas.modules.connectors.vendors.huawei_dorado.client import (
-    HuaweiConnectorError,
-    HuaweiDoradoClient,
+from atlas.modules.connectors.vendors.huawei_pacific.client import (
+    HuaweiPacificClient,
+    HuaweiPacificConnectorError,
 )
-from atlas.modules.connectors.vendors.huawei_dorado.manifest import PACKAGE_ID
+from atlas.modules.connectors.vendors.huawei_pacific.manifest import PACKAGE_ID
 from atlas.modules.graph.domain.models import (
     EntityType,
     FreshnessState,
@@ -38,7 +38,7 @@ from atlas.modules.graph.domain.models import (
 from atlas.modules.inventory.application.ports import InventoryDeviceRepository
 from atlas.modules.inventory.domain.devices import InventoryDeviceLifecycle, InventoryDeviceType
 
-_DATA_PROFILE = "configured_huawei_dorado_read_only"
+_DATA_PROFILE = "configured_huawei_pacific_read_only"
 _SAFE_CONNECTOR_ERROR_CODES = frozenset(
     {
         "malformed_vendor_response",
@@ -52,29 +52,31 @@ _SAFE_CONNECTOR_ERROR_CODES = frozenset(
 )
 
 _KNOWN_GAPS = (
-    "This graph reflects only the single Huawei Dorado storage system read from the configured "
-    "connector; no volume, datastore, virtual machine, or business-service mapping is available "
-    "because no CMDB or hypervisor connector is configured in this environment.",
-    "Storage multipathing and SAN fabric redundancy are not represented by this connector.",
+    "This graph reflects only the single Huawei Pacific storage cluster read from the configured "
+    "connector, represented as one storage system entity; no volume, datastore, virtual machine, "
+    "or business-service mapping is available because no CMDB or hypervisor connector is "
+    "configured in this environment.",
+    "No confirmed cluster-level identifier field exists in this connector's source (only "
+    "per-node identifiers), so the entity identity is derived from the sorted set of node "
+    "identifiers rather than a vendor-issued cluster id.",
 )
 
 
-def _connector_failure_reason(exc: HuaweiConnectorError) -> str:
+def _connector_failure_reason(exc: HuaweiPacificConnectorError) -> str:
     code = exc.code if exc.code in _SAFE_CONNECTOR_ERROR_CODES else "connector_error"
-    return f"The Huawei Dorado read failed safely ({code})."
+    return f"The Huawei Pacific read failed safely ({code})."
 
 
 def _identity(*parts: str) -> str:
-    # Matches storage/adapters/configured_huawei_dorado._identity exactly, so a storage asset_id
-    # and this graph entity_id agree for the same system_id.
     normalized = "\x1f".join(parts).encode("utf-8")
     return hashlib.sha256(normalized).hexdigest()[:20]
 
 
-class ConfiguredHuaweiDoradoGraphSnapshotProvider:
-    """Serves a graph snapshot of the single storage system read from the configured, enabled
-    Huawei Dorado MCP. Entities-only, mirroring ConfiguredHitachiGraphSnapshotProvider: this
-    connector exposes no volume, datastore, virtual machine, or business-service data."""
+class ConfiguredHuaweiPacificGraphSnapshotProvider:
+    """Serves a graph snapshot of the single storage cluster read from the configured, enabled
+    Huawei Pacific MCP, represented as one storage_system entity. Entities-only, mirroring every
+    other Configured<Vendor>GraphSnapshotProvider in this project: no relationship is fabricated.
+    """
 
     def __init__(
         self,
@@ -83,7 +85,7 @@ class ConfiguredHuaweiDoradoGraphSnapshotProvider:
         instance_repository: ConnectorInstanceRepository,
         inventory_repository: InventoryDeviceRepository,
         credential_materializer: ConnectorCredentialMaterializer,
-        transport_factory: HuaweiDoradoConnectionTestTransportFactory,
+        transport_factory: HuaweiPacificConnectionTestTransportFactory,
         organization_id: str,
         environment_id: str,
         site_id: str = "site.local",
@@ -105,10 +107,10 @@ class ConfiguredHuaweiDoradoGraphSnapshotProvider:
 
     async def get_snapshot(self) -> GraphSnapshot:
         configuration = await self._single_active_configuration()
-        if configuration is None or configuration.system_id is None:
+        if configuration is None:
             return self._unavailable_snapshot(
-                reason="A single active configured Huawei Dorado MCP with a system identifier "
-                "is required to read the storage graph."
+                reason="A single active configured Huawei Pacific MCP is required to read the "
+                "cluster graph."
             )
         if self._runtime_state_repository is not None:
             runtime_state = await self._runtime_state_repository.get(
@@ -122,13 +124,12 @@ class ConfiguredHuaweiDoradoGraphSnapshotProvider:
                 or runtime_state.configuration_id != configuration.configuration_id
             ):
                 return self._unavailable_snapshot(
-                    reason="The configured Huawei Dorado MCP must be enabled for read-only "
-                    "storage polling."
+                    reason="The configured Huawei Pacific MCP must be enabled for read-only "
+                    "cluster polling."
                 )
-        if not await self._system_is_allowlisted(configuration.system_id):
+        if not await self._cluster_is_allowlisted():
             return self._unavailable_snapshot(
-                reason="The configured Huawei Dorado system is not an active, allowlisted "
-                "storage device in inventory."
+                reason="No active Huawei Pacific storage cluster is allowlisted in inventory."
             )
 
         try:
@@ -139,79 +140,79 @@ class ConfiguredHuaweiDoradoGraphSnapshotProvider:
                 transport = self._transport_factory.create(
                     hostname=configuration.hostname,
                     port=configuration.port,
-                    system_id=configuration.system_id,
                     trust_profile_id=configuration.trust_profile_id,
                     credential_provider=lease.authorization_header,
                     timeout_seconds=self._timeout_seconds,
                     maximum_response_bytes=1_048_576,
                 )
-                client = HuaweiDoradoClient(
-                    transport=transport,
-                    system_id=configuration.system_id,
-                    maximum_response_bytes=1_048_576,
-                )
-                identity = await client.read_system_identity()
+                client = HuaweiPacificClient(transport=transport, maximum_response_bytes=1_048_576)
+                inventory = await client.read_cluster_inventory()
         except ConnectorConnectionTestError:
             return self._unavailable_snapshot(
-                reason="The Huawei Dorado credential reference is unavailable for this graph read."
+                reason="The Huawei Pacific credential reference is unavailable for this graph read."
             )
-        except HuaweiConnectorError as exc:
+        except HuaweiPacificConnectorError as exc:
             return self._unavailable_snapshot(reason=_connector_failure_reason(exc))
         except (TimeoutError, ValueError):
             return self._unavailable_snapshot(
-                reason="The configured Huawei Dorado graph read failed safely."
+                reason="The configured Huawei Pacific graph read failed safely."
+            )
+        if not inventory.nodes:
+            return self._unavailable_snapshot(
+                reason="The configured Huawei Pacific cluster returned no nodes."
             )
 
+        cluster_identity = _identity(*sorted(node.node_id for node in inventory.nodes))
         evidence_refs = tuple(
-            f"evidence.graph.inventory.{reference}" for reference in identity.evidence_references
+            f"evidence.graph.inventory.{reference}" for reference in inventory.evidence_references
         )
         evidence = tuple(
             GraphEvidence(
                 reference=reference,
-                source="Huawei Dorado system-identity read",
+                source="Huawei Pacific cluster-node read",
                 source_version=self._connector_version,
-                observed_at=identity.observed_at,
+                observed_at=inventory.observed_at,
                 freshness=FreshnessState.FRESH,
                 trust_basis=(
-                    "Digest-only evidence from an allowlisted C1 DeviceManager response "
+                    "Digest-only evidence from an allowlisted C1 cluster-manager response "
                     f"({source_reference})"
                 ),
                 classification=DataClassification.INTERNAL,
             )
             for reference, source_reference in zip(
-                evidence_refs, identity.evidence_references, strict=True
+                evidence_refs, inventory.evidence_references, strict=True
             )
         )
         entity = GraphEntity(
-            entity_id=f"asset.storage.{_identity(identity.system_id)}",
+            entity_id=f"asset.storage.{cluster_identity}",
             entity_type=EntityType.STORAGE_SYSTEM,
-            display_name=f"{identity.model} ({identity.system_id})",
+            display_name=f"Huawei Pacific cluster ({len(inventory.nodes)} node(s))",
             organization_id=self._organization_id,
             environment_id=self._environment_id,
             site_id=self._site_id,
             domain_id="domain.storage_system",
-            observed_at=identity.observed_at,
-            valid_from=identity.observed_at,
+            observed_at=inventory.observed_at,
+            valid_from=inventory.observed_at,
             valid_to=None,
             freshness=FreshnessState.FRESH,
             confidence_basis=(
-                "Read live from the configured Huawei Dorado system-identity capability."
+                "Read live from the configured Huawei Pacific cluster-node capability."
             ),
             evidence_references=evidence_refs,
             classification=DataClassification.INTERNAL,
             allowed_principals=frozenset({"role.development.operator"}),
             vendor="Huawei",
-            product="Huawei Dorado configured storage system",
-            model=identity.model,
+            product="Huawei Pacific configured storage cluster",
+            model=inventory.nodes[0].model,
         )
 
         return GraphSnapshot(
-            snapshot_id=f"snapshot.graph.{_identity(str(identity.observed_at))}",
+            snapshot_id=f"snapshot.graph.{_identity(str(inventory.observed_at))}",
             schema_version="1.0",
             organization_id=self._organization_id,
             environment_id=self._environment_id,
             site_id=self._site_id,
-            generated_at=identity.observed_at,
+            generated_at=inventory.observed_at,
             freshness=FreshnessState.FRESH,
             completeness="partial",
             entities=(entity,),
@@ -263,7 +264,7 @@ class ConfiguredHuaweiDoradoGraphSnapshotProvider:
         )
         return candidates[0] if len(candidates) == 1 else None
 
-    async def _system_is_allowlisted(self, system_id: str) -> bool:
+    async def _cluster_is_allowlisted(self) -> bool:
         devices = await self._inventory_repository.list_scope(
             organization_id=self._organization_id,
             environment_id=self._environment_id,
@@ -272,8 +273,6 @@ class ConfiguredHuaweiDoradoGraphSnapshotProvider:
             limit=500,
         )
         return any(
-            device.device_type is InventoryDeviceType.STORAGE
-            and "huawei" in device.vendor.lower()
-            and device.serial_number == system_id
+            device.device_type is InventoryDeviceType.STORAGE and "huawei" in device.vendor.lower()
             for device in devices
         )

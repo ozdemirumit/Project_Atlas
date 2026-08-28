@@ -1,0 +1,47 @@
+{
+  "source_set_id": "source-set.huawei.pacific.cluster-manager.8-1-0",
+  "reviewed_at": "2026-08-28T00:00:00Z",
+  "publisher": "Huawei Technologies Co., Ltd.",
+  "document": {
+    "title": "OceanStor Pacific Series 8.1.0 (cluster-manager REST API, unofficial name)",
+    "version": "8.1.0",
+    "url": "https://support.huawei.com/enterprise/en/doc/EDOC1100194144"
+  },
+  "capability_sources": [
+    {
+      "capability_id": "huawei.pacific.storage.cluster.read",
+      "method": "GET",
+      "path": "/api/v2/cluster/servers",
+      "confirmation": "confirmed_via_working_example",
+      "url": "https://github.com/Linuxfabrik/monitoring-plugins/blob/main/check-plugins/huawei-pacific-node/huawei-pacific-node",
+      "note": "Endpoint path and every field name used (id, name, management_ip, model, running_status, in_cluster, base_board, software_version, oam_agent_status, error_code, warranty_status) confirmed against a real, independently-authored, actively maintained Icinga/Nagios check-plugin script, not vendor prose alone -- Huawei's own TechDocs and administrator-guide pages returned empty content or HTTP 403 via automated fetch during connector construction. running_status was further confirmed as a lower-case string ('online'/'offline'), not a numeric code, by reading the shared huawei_pacific.py library's get_node_running_status_state() function directly. This connector only uses the confirmed identity fields and running_status; oam_agent_status, error_code, and warranty_status are real fields the plugin also reads but are not yet implemented here."
+    },
+    {
+      "capability_id": "huawei.pacific.storage.pool.read",
+      "method": "GET",
+      "path": "/api/v2/data_service/storagepool",
+      "confirmation": "confirmed_via_working_example",
+      "url": "https://github.com/Linuxfabrik/monitoring-plugins/blob/main/check-plugins/huawei-pacific-storagepool/huawei-pacific-storagepool",
+      "note": "Endpoint path and field names (storagePoolId, storagePoolName, status, totalCapacity, usedCapacity) confirmed against the same real, maintained check-plugin script. The pool status code mapping (0=normal, 1=faulty, 2=write_protected, 3=stopped, 4=faulty_and_write_protected, 5=migrating, 7=degraded, 8=rebuilding) was confirmed by reading the shared huawei_pacific.py library's get_pool_status() function directly, the same rigor used for Dorado's HEALTHSTATUS mapping. This response's confirmed shape carries no result/error envelope (unlike cluster/servers), so this connector's response-envelope check is applied only when a result field is actually present."
+    }
+  ],
+  "authentication_source": {
+    "method": "POST",
+    "path": "/api/v2/aa/sessions",
+    "confirmation": "confirmed_via_working_example",
+    "url": "https://raw.githubusercontent.com/Linuxfabrik/lib/main/huawei_pacific.py",
+    "note": "Login request body fields (user_name, password, isEncrypt, scope) and the response token field (data.x_auth_token, used as the X-Auth-Token header on every subsequent request) confirmed by reading the shared library's get_creds() function directly. The logout endpoint (DELETE /api/v2/aa/sessions with the X-Auth-Token header, no body) was confirmed the same way, reading the library's _logout() function. This connector deliberately follows the Huawei Dorado candidate's design: a complete, bounded login -> read -> logout cycle inside the transport for every single read, never caching a live session, trading request volume for never holding a session open longer than one bounded operation. Simpler than Dorado in one respect: Pacific's confirmed auth needs only a header token, not a cookie."
+  },
+  "self_test_source": {
+    "method": "GET",
+    "path": "/api/v2/cluster/servers",
+    "note": "No confirmed dedicated version/compatibility endpoint was found; the self-test reuses the cluster-node discovery read itself, the same pattern used for Brocade SANnav and Huawei Dorado."
+  },
+  "unconfirmed_gaps": [
+    "No default management port was confirmed for Pacific (unlike Dorado's documented 8088); the configuration schema requires it to be set explicitly rather than guessing.",
+    "The FusionStorage/DSware block-storage REST API family (used by the official OpenStack Cinder driver at api/v1/, with endpoints like /storagePool and /volume/create) is a genuinely different, separate API surface from the api/v2/ cluster-manager family this connector uses. Both were found to be real during construction, but only api/v2/ -- the one with confirmed health/status fields -- was used here; api/v1/ is documented for completeness but not implemented.",
+    "oam_agent_status, error_code, and warranty_status are real, confirmed node fields not yet surfaced by this connector's health mapping, which currently uses running_status only."
+  ],
+  "data_policy": "synthetic-only",
+  "production_credentials_present": false
+}

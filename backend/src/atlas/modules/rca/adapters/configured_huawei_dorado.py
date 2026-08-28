@@ -13,7 +13,7 @@ from atlas.modules.connectors.application.bundled_runtime_state_ports import (
 from atlas.modules.connectors.application.connection_test_ports import (
     ConnectorConnectionTestError,
     ConnectorCredentialMaterializer,
-    HuaweiConnectionTestTransportFactory,
+    HuaweiDoradoConnectionTestTransportFactory,
 )
 from atlas.modules.connectors.application.instance_creation_ports import (
     ConnectorInstanceRepository,
@@ -112,7 +112,7 @@ class ConfiguredHuaweiDoradoRcaAssembler:
         instance_repository: ConnectorInstanceRepository,
         inventory_repository: InventoryDeviceRepository,
         credential_materializer: ConnectorCredentialMaterializer,
-        transport_factory: HuaweiConnectionTestTransportFactory,
+        transport_factory: HuaweiDoradoConnectionTestTransportFactory,
         organization_id: str,
         environment_id: str,
         site_id: str = "site.local",

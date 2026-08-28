@@ -9,6 +9,7 @@ from atlas.modules.connectors.domain.connection_test import ConnectorConnectionT
 from atlas.modules.connectors.vendors.brocade_sannav.ports import BrocadeSanNavTransport
 from atlas.modules.connectors.vendors.hitachi_ops_center.ports import HitachiOpsCenterTransport
 from atlas.modules.connectors.vendors.huawei_dorado.ports import HuaweiDoradoTransport
+from atlas.modules.connectors.vendors.huawei_pacific.ports import HuaweiPacificTransport
 
 
 class ConnectorConnectionTestError(RuntimeError):
@@ -108,7 +109,7 @@ class BrocadeConnectionTestTransportFactory(Protocol):
     ) -> BrocadeSanNavTransport: ...
 
 
-class HuaweiConnectionTestTransportFactory(Protocol):
+class HuaweiDoradoConnectionTestTransportFactory(Protocol):
     def create(
         self,
         *,
@@ -123,3 +124,19 @@ class HuaweiConnectionTestTransportFactory(Protocol):
         timeout_seconds: float,
         maximum_response_bytes: int,
     ) -> HuaweiDoradoTransport: ...
+
+
+class HuaweiPacificConnectionTestTransportFactory(Protocol):
+    def create(
+        self,
+        *,
+        hostname: str,
+        port: int,
+        trust_profile_id: str,
+        # Returns "username:password", not a pre-built header -- Pacific's real cluster-manager
+        # REST API is session-based (see huawei_pacific/ports.py), same rationale as Dorado. No
+        # system_id is needed: Pacific's confirmed endpoints carry no per-cluster path segment.
+        credential_provider: Callable[[], str],
+        timeout_seconds: float,
+        maximum_response_bytes: int,
+    ) -> HuaweiPacificTransport: ...
