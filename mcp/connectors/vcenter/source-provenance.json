@@ -1,0 +1,54 @@
+{
+  "source_set_id": "source-set.vmware.vcenter.automation-api.8-0",
+  "reviewed_at": "2026-08-28T00:00:00Z",
+  "publisher": "Broadcom Inc. (VMware)",
+  "document": {
+    "title": "VMware vSphere Automation REST API Programming Guide 8.0",
+    "version": "8.0",
+    "url": "https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere-sdks-tools/8-0/vmware-vsphere-automation-rest-programming-guide-8-0.html"
+  },
+  "capability_sources": [
+    {
+      "capability_id": "vmware.vcenter.host.inventory.read",
+      "method": "GET",
+      "path": "/api/vcenter/host",
+      "confirmation": "confirmed_via_working_example",
+      "url": "https://vmware.github.io/vsphere-automation-sdk-python/vsphere/6.5/_modules/com/vmware/vcenter_client.html",
+      "note": "Endpoint path and every field name used (host, name, connection_state, power_state) confirmed directly from VMware's own generated Python client source (com.vmware.vcenter_client.Host.Summary/FilterSpec), not vendor prose alone. ConnectionState (CONNECTED, DISCONNECTED, NOT_RESPONDING) and PowerState (POWERED_ON, POWERED_OFF, STANDBY) enum members were read from the same source file. The response is a JSON array at the top level, confirmed via the official Ansible vmware.vmware_rest collection's documented vcenter_host_info module output shape, which is generated from the same real API."
+    },
+    {
+      "capability_id": "vmware.vcenter.cluster.inventory.read",
+      "method": "GET",
+      "path": "/api/vcenter/cluster",
+      "confirmation": "confirmed_via_working_example",
+      "url": "https://vmware.github.io/vsphere-automation-sdk-python/vsphere/6.5/_modules/com/vmware/vcenter_client.html",
+      "note": "Endpoint path and field names (cluster, name, ha_enabled, drs_enabled) confirmed directly from the same generated Python client source (com.vmware.vcenter_client.Cluster.Summary/FilterSpec)."
+    },
+    {
+      "capability_id": "vmware.vcenter.vm.inventory.read",
+      "method": "GET",
+      "path": "/api/vcenter/vm",
+      "confirmation": "confirmed_via_working_example",
+      "url": "https://docs.ansible.com/ansible/latest/collections/vmware/vmware_rest/vcenter_vm_info_module.html",
+      "note": "VM.Summary's field set (vm, name, power_state, cpu_count, memory_size_MiB) could not be located in VMware's own generated Python client source directly (the vcenter_client.py module excerpt available did not include the VM class body), so it was independently confirmed via the official Ansible vmware.vmware_rest collection's vcenter_vm_info module documentation -- generated from the same real vSphere Automation API OpenAPI definitions -- which documents this exact field set including a literal example response. PowerState enum members (POWERED_OFF, POWERED_ON, SUSPENDED) were separately confirmed from the real com.vmware.vcenter.vm_client.Power.State source."
+    }
+  ],
+  "authentication_source": {
+    "method": "POST",
+    "path": "/api/session",
+    "confirmation": "confirmed_via_working_example",
+    "url": "https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere-sdks-tools/8-0/an-introduction-getting-started-with-vsphere-apis-and-sdks-8-0/getting-started-with-vsphere-apis-and-sdks/rest-access-to-vsphere-apis.html",
+    "note": "Confirmed via Broadcom's own official TechDocs page, which shows a real, working curl example: 'curl -k -i -X POST -H \"Authorization: Basic $auth\" https://$VC/api/session' followed by extracting the session id from the vmware-api-session-id response HEADER (not the response body) via 'awk \"/vmware-api-session-id/ {print $2}\"' against curl's -i header output. This is a real, deliberate difference from every other connector built for this project so far (Hitachi, Brocade, both Huawei products), which all return their session/auth token in a JSON response body. DELETE /api/session with the same header logs out; this connector follows the established login -> read -> logout bounded-cycle pattern used for both Huawei connectors, never caching a live session."
+  },
+  "self_test_source": {
+    "method": "GET",
+    "path": "/api/vcenter/host",
+    "note": "No confirmed dedicated version/compatibility endpoint independent of the inventory reads was found; the self-test reuses the host-inventory read itself, the same pattern used for Brocade SANnav and both Huawei connectors."
+  },
+  "unconfirmed_gaps": [
+    "No confirmed field on any list response (host, cluster, or vm summary) carries a parent-cluster or running-host identifier -- FilterSpec accepts clusters/hosts as query filters, but resolving membership would require per-entity filtered calls this first pass does not make. Host-to-cluster and VM-to-host graph relationships are therefore not represented; this is stated plainly in the graph adapter's known_gaps rather than fabricated.",
+    "Datastore, network, and resource-pool inventory (/api/vcenter/datastore, /api/vcenter/network, /api/vcenter/resource-pool) are real, confirmed vSphere Automation API endpoints that were not implemented in this first pass -- only host, cluster, and VM inventory."
+  ],
+  "data_policy": "synthetic-only",
+  "production_credentials_present": false
+}

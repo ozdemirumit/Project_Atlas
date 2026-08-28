@@ -59,6 +59,18 @@ from atlas.modules.connectors.vendors.huawei_pacific.manifest import (
 from atlas.modules.connectors.vendors.huawei_pacific.manifest import (
     STORAGE_POOL_CAPABILITY_ID as HUAWEI_PACIFIC_STORAGE_POOL_CAPABILITY_ID,
 )
+from atlas.modules.connectors.vendors.vcenter.manifest import (
+    CLUSTER_INVENTORY_CAPABILITY_ID as VCENTER_CLUSTER_INVENTORY_CAPABILITY_ID,
+)
+from atlas.modules.connectors.vendors.vcenter.manifest import (
+    HOST_INVENTORY_CAPABILITY_ID as VCENTER_HOST_INVENTORY_CAPABILITY_ID,
+)
+from atlas.modules.connectors.vendors.vcenter.manifest import (
+    PACKAGE_ID as VCENTER_PACKAGE_ID,
+)
+from atlas.modules.connectors.vendors.vcenter.manifest import (
+    VM_INVENTORY_CAPABILITY_ID as VCENTER_VM_INVENTORY_CAPABILITY_ID,
+)
 from atlas.modules.identity.domain.models import AuthenticatedSubject, SubjectKind
 
 _INSTANCE_KEY = re.compile(r"^[a-z][a-z0-9_.:-]{2,127}$")
@@ -465,6 +477,44 @@ def build_huawei_dorado_bundled_descriptor() -> BundledConnectorDescriptor:
         ),
         manifest_digest=BundledConnectorCatalogService._digest(
             [HUAWEI_DORADO_PACKAGE_ID, "bundled-development-manifest-evidence"]
+        ),
+        canonical_digest="0" * 64,
+    )
+    return replace(
+        descriptor,
+        canonical_digest=BundledConnectorCatalogService._digest(
+            BundledConnectorCatalogService._descriptor_payload(descriptor)
+        ),
+    )
+
+
+def build_vcenter_bundled_descriptor() -> BundledConnectorDescriptor:
+    package_digest = BundledConnectorCatalogService._digest(
+        [VCENTER_PACKAGE_ID, "version.0.1.0", "bundled-development-package-evidence"]
+    )
+    descriptor = BundledConnectorDescriptor(
+        catalog_item_id="catalog.connector.vmware.vcenter",
+        schema_version=_DESCRIPTOR_SCHEMA,
+        version=1,
+        connector_id=VCENTER_PACKAGE_ID,
+        display_name="VMware vCenter Server (vSphere Automation API)",
+        vendor_name="Broadcom Inc. (VMware)",
+        release_version="version.0.1.0",
+        sdk_profile="atlas.python312.v1",
+        publisher_id="publisher.project-atlas",
+        support_group_id="group.connector-platform-support",
+        capability_ids=(
+            VCENTER_HOST_INVENTORY_CAPABILITY_ID,
+            VCENTER_CLUSTER_INVENTORY_CAPABILITY_ID,
+            VCENTER_VM_INVENTORY_CAPABILITY_ID,
+        ),
+        capability_classes=("C1",),
+        package_digest=package_digest,
+        provenance_digest=BundledConnectorCatalogService._digest(
+            [VCENTER_PACKAGE_ID, "bundled-development-provenance-evidence"]
+        ),
+        manifest_digest=BundledConnectorCatalogService._digest(
+            [VCENTER_PACKAGE_ID, "bundled-development-manifest-evidence"]
         ),
         canonical_digest="0" * 64,
     )

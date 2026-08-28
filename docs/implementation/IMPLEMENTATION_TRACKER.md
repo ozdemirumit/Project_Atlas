@@ -4,14 +4,99 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-265 |
-| Title | Close the RCA/recommendations gap for Huawei OceanStor Pacific |
-| Status | Verified (backend, tool-verified with real toolchain) |
+| Task ID | ATLAS-IMP-266 |
+| Title | Add real VMware vCenter connector (Phase 4 of modular multi-vendor MCPs): hypervisor host/cluster/VM inventory into graph and health_checks |
+| Status | Verified (backend, tool-verified with real toolchain) -- graph/health_checks only; this vendor is a hypervisor, not a storage array, so storage/RCA/recommendations are out of scope by design, not deferred |
 | Branch | `main` |
 | Pull Request | none (pushed directly to `main`; no PR tooling available in this environment) |
 | Governing Documents | ATLAS-003, ATLAS-020/021/022/047 (connector quarantine/promotion), `docs/adr/ADR-004`+ |
 | Last Updated | 2026-08-28 |
-| Next Action | Continue the approved plan: vCenter, then Commvault, in that order (`C:\Users\umito\.claude\plans\tingly-marinating-anchor.md`). |
+| Next Action | Continue the approved plan: Commvault (backup), the final vendor named in the original request (`C:\Users\umito\.claude\plans\tingly-marinating-anchor.md`). |
+
+### ATLAS-IMP-266 Scope and Verification
+
+- **What this is**: the fifth real vendor connector, and the first that is not a storage array or
+  SAN fabric -- VMware vCenter Server is a hypervisor management plane. It closes the fourth of
+  the five vendors explicitly named in the original request (Brocade SANnav, Huawei Dorado,
+  Huawei Pacific, vCenter, Commvault), proving the modular connector pattern generalizes beyond
+  storage into a genuinely different infrastructure domain.
+- **Real API research**: Broadcom's own official TechDocs pages were fetchable this time (unlike
+  every prior Huawei research round, which repeatedly hit empty content or HTTP 403). Session
+  auth was confirmed from Broadcom's own "REST Access to vSphere APIs" page, which shows a real,
+  working curl example: `POST /api/session` with an `Authorization: Basic` header returns the
+  session token on the `vmware-api-session-id` *response header* -- not a JSON response body,
+  a genuine, confirmed difference from every prior connector this session (Hitachi, Brocade, both
+  Huawei products), which all return their token in a JSON body. `Host.Summary`/`Host.FilterSpec`
+  and `Cluster.Summary`/`Cluster.FilterSpec` field names, plus the `Host.ConnectionState`
+  (CONNECTED/DISCONNECTED/NOT_RESPONDING) and `Host.PowerState`
+  (POWERED_ON/POWERED_OFF/STANDBY) enums, were confirmed directly from VMware's own generated
+  Python client source on GitHub Pages. The `VM.Summary` class body could not be located in the
+  fetched client-source excerpt (the automated fetch of that large file was repeatedly truncated
+  before reaching it, confirmed by asking explicitly whether a top-level `VM` class appeared and
+  being told no), so the VM field set (`vm`, `name`, `power_state`, `cpu_count`,
+  `memory_size_MiB`) was independently confirmed instead via the official Ansible
+  `vmware.vmware_rest` collection's `vcenter_vm_info` module documentation, which is
+  machine-generated from the same real vSphere Automation API definitions and shows a literal
+  example response.
+- **Session lifecycle, closest to both Huawei connectors' shape**: `POST /api/session` (Basic
+  auth, empty body) to authenticate, the header-returned token presented as `vmware-api-session-id`
+  on every subsequent request, `DELETE /api/session` to end it. `VCenterHttpsTransport` performs
+  the same complete, bounded login -> read -> logout cycle for every single `get()` call as both
+  Huawei transports, for the same reason: no session ever outlives one bounded operation.
+- **A real, confirmed shape difference from every prior connector**: vCenter's three list
+  endpoints (`GET /api/vcenter/host`, `/cluster`, `/vm`) each return a JSON array directly at the
+  top level, not an object wrapping a `data`/`result`/`storagePools` field the way every Huawei
+  and Hitachi response does. `VCenterTransport.get()` therefore returns a `Sequence[object]`, not
+  a `Mapping[str, object]` -- the first vendor port in this codebase shaped that way.
+- **Entities-only graph, honestly, mirroring the Brocade precedent**: `Host.FilterSpec` and
+  `VM.FilterSpec` accept `clusters`/`hosts` as query filters, but no confirmed field on any list
+  *response* item carries a parent-cluster or running-host identifier -- resolving membership
+  would require per-entity filtered calls this first pass does not make. `ConfiguredVCenterGraphSnapshotProvider`
+  therefore emits `HYPERVISOR_HOST`, `HYPERVISOR_CLUSTER`, and `VIRTUAL_MACHINE` entities with no
+  relationships between them, stated plainly in `_KNOWN_GAPS` rather than fabricated -- the same
+  honest pattern `ConfiguredBrocadeSanNavGraphSnapshotProvider` established in ATLAS-IMP-261.
+  `EntityType` gained `HYPERVISOR_HOST` and `HYPERVISOR_CLUSTER` (additive; `VIRTUAL_MACHINE` and
+  `DATASTORE` already existed from Phase 0).
+- **Health check is a new kind of mapping, not a reused one**: `VCenterHostHealthExecutor` maps
+  the *combination* of `connection_state` and `power_state` to a single observation state
+  (`connection_state` is the primary availability signal; `power_state` only refines it once a
+  host is confirmed reachable -- a host vCenter cannot reach is always CRITICAL regardless of its
+  last-known power state), unlike every prior executor's single-field mapping.
+- **Out of scope by design, not deferred**: storage, RCA, and recommendation adapters are not
+  built for vCenter and are not planned as a follow-on the way Dorado's and Pacific's were --
+  vCenter is a hypervisor, not a storage array, so there is no storage overview or storage-fault
+  RCA concept for it to populate. This is a real difference from the Dorado/Pacific precedent, not
+  an oversight, and the tracker's Status field says so explicitly.
+- **A real, honest self-test limitation surfaced during implementation**: because
+  `VCenterClient._bounded()` already rejects any non-array response before `self_test()` ever
+  inspects the payload, `self_test()`'s own `isinstance(payload, list)`-equivalent compatibility
+  check is structurally unreachable in the failure direction -- a successful read is always
+  reported healthy. This is stated in the connector test file's own comment rather than papered
+  over with a fabricated incompatible-shape test case.
+- **A real bug found and fixed during this task**: `VCenterClient._bounded()` and `self_test()`
+  both initially required `isinstance(payload, list)` exactly, which rejected the synthetic test
+  transport's fixture payload (stored as an immutable `tuple`, matching this project's established
+  immutability convention for synthetic fixtures, e.g. Huawei Pacific's `MappingProxyType`-backed
+  payload). Fixed by widening both checks to `isinstance(payload, Sequence) and not
+  isinstance(payload, str | bytes)` -- the real HTTPS transport still always decodes JSON arrays
+  to an actual `list`, so this widening changes no real-transport behavior.
+- **Verified with the real toolchain**: `ruff format --check` and `ruff check` clean across the
+  full repository (1780 files); `mypy` strict clean across every touched file. New tests: 11 for
+  the connector package (mirroring the Pacific/Dorado connector test structure, adapted for the
+  array-response shape), 6 for the graph adapter, 7 for the health-check adapter -- 24 new tests
+  total, all passing. Fixed the same kind of regression found in every prior health-check-adding
+  task: `build_synthetic_health_check_definitions()` now returns an 8-tuple; updated every
+  existing test file's unpacking (Hitachi, Brocade, Huawei Dorado, Huawei Pacific) and
+  `test_health_checks_api.py`'s definitions-count assertion (7 -> 8). Targeted run across every
+  touched area (69 tests: vcenter/graph/health_checks-specific plus every prior vendor's
+  health-executor regression suite) passed clean, followed by a broader multi-area sweep
+  (671 passed, 10 failed, all baseline) across every rca/recommendation/hitachi/brocade/huawei/
+  bundled_connector/health_checks/graph/storage/composite/chained/dispatching/app-tagged test.
+  Full backend suite: 3934 passed, 67 failed, 68 skipped -- the failure count matches the
+  established ~67 pre-existing baseline exactly (bootstrap/upgrade/support-bundle/backup/
+  mcp-builder and alembic-head-drift categories), confirmed by name to share zero overlap with
+  vcenter, graph, health_checks, connector, hitachi, brocade, or huawei. The pass-count increase
+  (+24 over ATLAS-IMP-265's 3910) matches exactly the 24 new tests this task adds.
 
 ### ATLAS-IMP-265 Scope and Verification
 

@@ -13,6 +13,8 @@ class EntityType(StrEnum):
     VOLUME = "volume"
     DATASTORE = "datastore"
     VIRTUAL_MACHINE = "virtual_machine"
+    HYPERVISOR_HOST = "hypervisor_host"
+    HYPERVISOR_CLUSTER = "hypervisor_cluster"
     TECHNICAL_SERVICE = "technical_service"
     BUSINESS_SERVICE = "business_service"
 

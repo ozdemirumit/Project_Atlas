@@ -27,3 +27,5 @@ Current candidates:
   data only.
 - [Huawei OceanStor Pacific Cluster Manager](connectors/huawei_pacific/README.md) -
   quarantined C1 cluster-node and storage-pool candidate using synthetic data only.
+- [VMware vCenter Server (vSphere Automation API)](connectors/vcenter/README.md) -
+  quarantined C1 host, cluster, and VM inventory candidate using synthetic data only.

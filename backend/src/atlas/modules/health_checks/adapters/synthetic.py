@@ -18,6 +18,9 @@ from atlas.modules.connectors.vendors.huawei_pacific.manifest import (
 from atlas.modules.connectors.vendors.huawei_pacific.manifest import (
     STORAGE_POOL_CAPABILITY_ID as HUAWEI_PACIFIC_STORAGE_POOL_CAPABILITY_ID,
 )
+from atlas.modules.connectors.vendors.vcenter.manifest import (
+    HOST_INVENTORY_CAPABILITY_ID as VCENTER_HOST_INVENTORY_CAPABILITY_ID,
+)
 from atlas.modules.health_checks.adapters.brocade_sannav import FABRIC_HEALTH_DEFINITION_ID
 from atlas.modules.health_checks.adapters.huawei_dorado import (
     CAPACITY_DEFINITION_ID as HUAWEI_CAPACITY_DEFINITION_ID,
@@ -30,6 +33,9 @@ from atlas.modules.health_checks.adapters.huawei_pacific import (
 )
 from atlas.modules.health_checks.adapters.huawei_pacific import (
     CLUSTER_NODE_DEFINITION_ID as HUAWEI_PACIFIC_CLUSTER_NODE_DEFINITION_ID,
+)
+from atlas.modules.health_checks.adapters.vcenter import (
+    HOST_HEALTH_DEFINITION_ID as VCENTER_HOST_HEALTH_DEFINITION_ID,
 )
 from atlas.modules.health_checks.application.ports import HealthCheckExecutionResult
 from atlas.modules.health_checks.domain.models import (
@@ -269,6 +275,35 @@ def build_synthetic_health_check_definitions(
             ),
             evidence_requirements=("Current capacity summary for each storage pool",),
         ),
+        HealthCheckDefinition(
+            definition_id=VCENTER_HOST_HEALTH_DEFINITION_ID,
+            version=1,
+            title="vCenter host connection and power status",
+            owner="Virtualization Platform Engineering",
+            enabled=True,
+            organization_id=organization_id,
+            environment_id=f"environment.{environment}",
+            site_id="site.local",
+            target_id="target.vcenter.lab",
+            connector_id="connector.vmware.vcenter.synthetic",
+            connector_version="1.0.0",
+            capability_id=VCENTER_HOST_INVENTORY_CAPABILITY_ID,
+            capability_class="C1",
+            schedule=HealthCheckSchedule(interval_minutes=15, anchor_at=anchor),
+            thresholds=(
+                HealthThreshold(
+                    metric="host.connection_and_power_state",
+                    warning_condition="connection_state is UNKNOWN or power_state is STANDBY",
+                    critical_condition="connection_state is DISCONNECTED or NOT_RESPONDING",
+                ),
+            ),
+            limits=HealthCheckLimits(
+                timeout_seconds=5.0,
+                max_steps=1,
+                max_evidence_records=4,
+            ),
+            evidence_requirements=("Current connection and power state for each ESXi host",),
+        ),
     )
 
 
@@ -290,6 +325,8 @@ class SyntheticStorageHealthExecutor:
             return _huawei_pacific_node_result(started_at)
         if definition.definition_id == HUAWEI_PACIFIC_CAPACITY_DEFINITION_ID:
             return _huawei_pacific_capacity_result(started_at)
+        if definition.definition_id == VCENTER_HOST_HEALTH_DEFINITION_ID:
+            return _vcenter_host_result(started_at)
         raise ValueError("unsupported synthetic health-check definition")
 
 
@@ -592,6 +629,40 @@ def _huawei_pacific_capacity_result(observed_at: datetime) -> HealthCheckExecuti
     )
 
 
+def _vcenter_host_result(observed_at: datetime) -> HealthCheckExecutionResult:
+    host_ref = _reference("vcenter-hosts/lab", "host-21=CONNECTED/POWERED_ON")
+    evidence = (
+        HealthCheckEvidence(
+            reference=host_ref,
+            source="vCenter synthetic host-inventory fixture",
+            source_version="8.0.x-contract.1",
+            observed_at=observed_at,
+            freshness=FreshnessState.CURRENT,
+            trust_basis="Documentation-derived allowlisted C1 response",
+        ),
+    )
+    observation = HealthObservation(
+        observation_id="observation.vcenter.host.lab",
+        target_id="target.vcenter.lab/host-21",
+        component="host:host-21",
+        metric="host.connection_and_power_state",
+        value="CONNECTED/POWERED_ON",
+        unit="state",
+        state=ObservationState.NORMAL,
+        observed_at=observed_at,
+        freshness=FreshnessState.CURRENT,
+        evidence_references=(host_ref,),
+    )
+    return HealthCheckExecutionResult(
+        state=HealthCheckRunState.COMPLETED,
+        completed_at=observed_at,
+        step_count=1,
+        observations=(observation,),
+        findings=(),
+        evidence=evidence,
+    )
+
+
 def build_synthetic_latest_runs(
     definitions: tuple[HealthCheckDefinition, ...], *, generated_at: datetime | None = None
 ) -> tuple[HealthCheckRun, ...]:
@@ -603,6 +674,7 @@ def build_synthetic_latest_runs(
         HUAWEI_CAPACITY_DEFINITION_ID: _huawei_capacity_result(observed_at),
         HUAWEI_PACIFIC_CLUSTER_NODE_DEFINITION_ID: _huawei_pacific_node_result(observed_at),
         HUAWEI_PACIFIC_CAPACITY_DEFINITION_ID: _huawei_pacific_capacity_result(observed_at),
+        VCENTER_HOST_HEALTH_DEFINITION_ID: _vcenter_host_result(observed_at),
         FABRIC_HEALTH_DEFINITION_ID: _fabric_result(observed_at),
     }
     return tuple(

@@ -10,6 +10,7 @@ from atlas.modules.connectors.vendors.brocade_sannav.ports import BrocadeSanNavT
 from atlas.modules.connectors.vendors.hitachi_ops_center.ports import HitachiOpsCenterTransport
 from atlas.modules.connectors.vendors.huawei_dorado.ports import HuaweiDoradoTransport
 from atlas.modules.connectors.vendors.huawei_pacific.ports import HuaweiPacificTransport
+from atlas.modules.connectors.vendors.vcenter.ports import VCenterTransport
 
 
 class ConnectorConnectionTestError(RuntimeError):
@@ -140,3 +141,20 @@ class HuaweiPacificConnectionTestTransportFactory(Protocol):
         timeout_seconds: float,
         maximum_response_bytes: int,
     ) -> HuaweiPacificTransport: ...
+
+
+class VCenterConnectionTestTransportFactory(Protocol):
+    def create(
+        self,
+        *,
+        hostname: str,
+        port: int,
+        trust_profile_id: str,
+        # Returns "username:password", not a pre-built header -- vCenter's real Automation API is
+        # session-based (see vcenter/ports.py): the transport itself performs Basic-auth login and
+        # extracts the session token from the vmware-api-session-id response header. No system_id
+        # is needed: one configured instance manages exactly one vCenter Server.
+        credential_provider: Callable[[], str],
+        timeout_seconds: float,
+        maximum_response_bytes: int,
+    ) -> VCenterTransport: ...

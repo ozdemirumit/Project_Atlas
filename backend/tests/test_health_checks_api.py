@@ -141,7 +141,7 @@ def test_health_check_overview_is_versioned_scheduled_and_evidence_linked() -> N
     assert response.status_code == 200
     assert payload["meta"]["correlation_id"] == "cor_health_overview"
     assert data["data_profile"] == "synthetic_lab"
-    assert len(data["definitions"]) == 7
+    assert len(data["definitions"]) == 8
     assert {item["version"] for item in data["definitions"]} == {1}
     assert {item["capability_class"] for item in data["definitions"]} == {"C1"}
     assert {item["interval_minutes"] for item in data["schedules"]} == {15, 60}

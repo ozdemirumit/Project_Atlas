@@ -648,6 +648,7 @@ from atlas.modules.connectors.application.bundled_catalog import (
     build_hitachi_ops_center_bundled_descriptor,
     build_huawei_dorado_bundled_descriptor,
     build_huawei_pacific_bundled_descriptor,
+    build_vcenter_bundled_descriptor,
 )
 from atlas.modules.connectors.application.bundled_connection_configuration import (
     BundledConnectionConfigurationService,
@@ -810,6 +811,10 @@ from atlas.modules.connectors.vendors.huawei_pacific.connection_test_https impor
     HuaweiPacificConnectionTestHttpsFactory,
     HuaweiPacificConnectionTestProbe,
 )
+from atlas.modules.connectors.vendors.vcenter.connection_test_https import (
+    VCenterConnectionTestHttpsFactory,
+    VCenterConnectionTestProbe,
+)
 from atlas.modules.conversations.adapters.grounded import GroundedConversationGenerator
 from atlas.modules.conversations.adapters.memory import InMemoryConversationRepository
 from atlas.modules.conversations.adapters.postgres import PostgreSQLConversationRepository
@@ -835,6 +840,7 @@ from atlas.modules.graph.adapters.configured_huawei_dorado import (
 from atlas.modules.graph.adapters.configured_huawei_pacific import (
     ConfiguredHuaweiPacificGraphSnapshotProvider,
 )
+from atlas.modules.graph.adapters.configured_vcenter import ConfiguredVCenterGraphSnapshotProvider
 from atlas.modules.graph.adapters.synthetic import (
     SyntheticGraphSnapshotProvider,
     build_synthetic_graph_snapshot,
@@ -853,6 +859,9 @@ from atlas.modules.health_checks.adapters.configured_huawei_dorado import (
 )
 from atlas.modules.health_checks.adapters.configured_huawei_pacific import (
     ConfiguredHuaweiPacificHealthExecutor,
+)
+from atlas.modules.health_checks.adapters.configured_vcenter import (
+    ConfiguredVCenterHealthExecutor,
 )
 from atlas.modules.health_checks.adapters.hitachi import (
     CAPACITY_DEFINITION_ID,
@@ -874,6 +883,9 @@ from atlas.modules.health_checks.adapters.synthetic import (
     SyntheticStorageHealthExecutor,
     build_synthetic_health_check_definitions,
     build_synthetic_latest_runs,
+)
+from atlas.modules.health_checks.adapters.vcenter import (
+    HOST_HEALTH_DEFINITION_ID as VCENTER_HOST_HEALTH_DEFINITION_ID,
 )
 from atlas.modules.health_checks.application.service import HealthCheckService
 from atlas.modules.identity.adapters.api_credentials import InMemoryApiCredentialRepository
@@ -4970,6 +4982,7 @@ def create_app(
                 build_brocade_sannav_bundled_descriptor(),
                 build_huawei_dorado_bundled_descriptor(),
                 build_huawei_pacific_bundled_descriptor(),
+                build_vcenter_bundled_descriptor(),
             )
         ),
         repository=resolved_connector_instance_creation_service.repository,
@@ -5005,12 +5018,16 @@ def create_app(
             # Pacific's real cluster-manager REST API is also session-based (see
             # huawei_pacific/ports.py), the same "username:password" convention.
             "secret.huawei.pacific.readonly": "ATLAS_HUAWEI_PACIFIC_AUTHORIZATION",
+            # vCenter's real Automation API is also session-based (see vcenter/ports.py), the
+            # same "username:password" convention.
+            "secret.vmware.vcenter.readonly": "ATLAS_VCENTER_AUTHORIZATION",
         },
     )
     hitachi_transport_factory = HitachiOpsCenterConnectionTestHttpsFactory()
     brocade_transport_factory = BrocadeSanNavConnectionTestHttpsFactory()
     huawei_dorado_transport_factory = HuaweiDoradoConnectionTestHttpsFactory()
     huawei_pacific_transport_factory = HuaweiPacificConnectionTestHttpsFactory()
+    vcenter_transport_factory = VCenterConnectionTestHttpsFactory()
     connector_connection_test_result_repository = (
         PostgreSQLConnectorConnectionTestResultRepository.from_url(resolved_settings.database_url)
         if resolved_settings.database_url
@@ -5033,6 +5050,9 @@ def create_app(
             ),
             HuaweiPacificConnectionTestProbe.connector_id: HuaweiPacificConnectionTestProbe(
                 transport_factory=huawei_pacific_transport_factory
+            ),
+            VCenterConnectionTestProbe.connector_id: VCenterConnectionTestProbe(
+                transport_factory=vcenter_transport_factory
             ),
         },
         audit_sink=resolved_audit_sink,
@@ -7052,6 +7072,11 @@ def create_app(
             "connector_version": "0.1.0",
             "target_id": "target.huawei.pacific.configured",
         },
+        VCENTER_HOST_HEALTH_DEFINITION_ID: {
+            "connector_id": "connector.vmware.vcenter.automation-api",
+            "connector_version": "0.1.0",
+            "target_id": "target.vcenter.configured",
+        },
     }
     health_check_definitions = (
         tuple(
@@ -7102,7 +7127,21 @@ def create_app(
                             inventory_repository=resolved_inventory_device_service.repository,
                             credential_materializer=connector_credential_materializer,
                             transport_factory=huawei_pacific_transport_factory,
-                            fallback_executor=SyntheticStorageHealthExecutor(),
+                            fallback_executor=ConfiguredVCenterHealthExecutor(
+                                configuration_repository=(
+                                    bundled_connection_configuration_repository
+                                ),
+                                instance_repository=(
+                                    resolved_connector_instance_creation_service.repository
+                                ),
+                                inventory_repository=(resolved_inventory_device_service.repository),
+                                credential_materializer=connector_credential_materializer,
+                                transport_factory=vcenter_transport_factory,
+                                fallback_executor=SyntheticStorageHealthExecutor(),
+                                organization_id=resolved_settings.development_organization_id,
+                                environment_id=f"environment.{resolved_settings.environment}",
+                                runtime_state_repository=bundled_runtime_state_repository,
+                            ),
                             organization_id=resolved_settings.development_organization_id,
                             environment_id=f"environment.{resolved_settings.environment}",
                             runtime_state_repository=bundled_runtime_state_repository,
@@ -7216,6 +7255,16 @@ def create_app(
                         inventory_repository=resolved_inventory_device_service.repository,
                         credential_materializer=connector_credential_materializer,
                         transport_factory=huawei_pacific_transport_factory,
+                        organization_id=resolved_settings.development_organization_id,
+                        environment_id=f"environment.{resolved_settings.environment}",
+                        runtime_state_repository=bundled_runtime_state_repository,
+                    ),
+                    ConfiguredVCenterGraphSnapshotProvider(
+                        configuration_repository=bundled_connection_configuration_repository,
+                        instance_repository=resolved_connector_instance_creation_service.repository,
+                        inventory_repository=resolved_inventory_device_service.repository,
+                        credential_materializer=connector_credential_materializer,
+                        transport_factory=vcenter_transport_factory,
                         organization_id=resolved_settings.development_organization_id,
                         environment_id=f"environment.{resolved_settings.environment}",
                         runtime_state_repository=bundled_runtime_state_repository,

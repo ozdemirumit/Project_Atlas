@@ -109,12 +109,19 @@ class TransportFactory:
 
 
 def definitions() -> tuple[HealthCheckDefinition, HealthCheckDefinition]:
-    _controller, _capacity, _fabric, _huawei_controller, _huawei_capacity, node, capacity = (
-        build_synthetic_health_check_definitions(
-            organization_id="organization.atlas.local",
-            environment="development",
-            anchor_at=NOW,
-        )
+    (
+        _controller,
+        _capacity,
+        _fabric,
+        _huawei_controller,
+        _huawei_capacity,
+        node,
+        capacity,
+        _vcenter_host,
+    ) = build_synthetic_health_check_definitions(
+        organization_id="organization.atlas.local",
+        environment="development",
+        anchor_at=NOW,
     )
     return (
         replace(
@@ -332,7 +339,7 @@ async def test_other_definitions_are_delegated_to_the_fallback_executor() -> Non
         instances=(_instance(),),
         devices=(_device(),),
     )
-    hitachi_controller, _capacity, _fabric, _hc, _hcap, _node, _pacific_capacity = (
+    hitachi_controller, _capacity, _fabric, _hc, _hcap, _node, _pacific_capacity, _vcenter_host = (
         build_synthetic_health_check_definitions(
             organization_id="organization.atlas.local",
             environment="development",

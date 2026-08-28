@@ -118,6 +118,7 @@ def definitions() -> tuple[HealthCheckDefinition, ...]:
         _huawei_capacity,
         _pacific_node,
         _pacific_capacity,
+        _vcenter_host,
     ) = build_synthetic_health_check_definitions(
         organization_id="organization.atlas.local",
         environment="development",

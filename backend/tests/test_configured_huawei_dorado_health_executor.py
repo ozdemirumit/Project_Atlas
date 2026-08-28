@@ -121,6 +121,7 @@ def definitions() -> tuple[HealthCheckDefinition, HealthCheckDefinition]:
         huawei_capacity,
         _pacific_node,
         _pacific_capacity,
+        _vcenter_host,
     ) = build_synthetic_health_check_definitions(
         organization_id="organization.atlas.local",
         environment="development",
@@ -338,6 +339,7 @@ async def test_other_definitions_are_delegated_to_the_fallback_executor() -> Non
         _huawei_capacity,
         _pacific_node,
         _pacific_capacity,
+        _vcenter_host,
     ) = build_synthetic_health_check_definitions(
         organization_id="organization.atlas.local",
         environment="development",

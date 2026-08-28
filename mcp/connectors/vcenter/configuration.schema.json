@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:project-atlas:connector:vcenter:configuration:0.1.0",
+  "title": "VMware vCenter Server (vSphere Automation API) connector configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "endpoint_host",
+    "endpoint_port",
+    "certificate_trust_reference_id",
+    "credential_reference_id"
+  ],
+  "properties": {
+    "endpoint_host": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 253,
+      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$"
+    },
+    "endpoint_port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535,
+      "default": 443,
+      "description": "443 is vCenter's confirmed default HTTPS management port for the vSphere Automation API."
+    },
+    "certificate_trust_reference_id": {
+      "type": "string",
+      "pattern": "^trust\\.[a-z0-9_.:-]{3,127}$"
+    },
+    "credential_reference_id": {
+      "type": "string",
+      "pattern": "^secret\\.[a-z0-9_.:-]{3,127}$",
+      "description": "References a username:password pair, not a pre-built Authorization header -- vCenter's real Automation API is session-based (POST /api/session, HTTP Basic auth). See source-provenance.json."
+    }
+  }
+}
