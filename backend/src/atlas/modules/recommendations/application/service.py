@@ -32,6 +32,18 @@ from atlas.modules.connectors.vendors.huawei_dorado.manifest import (
 from atlas.modules.connectors.vendors.huawei_dorado.manifest import (
     PATH_REMEDIATION_PLAN_CAPABILITY_ID as _HUAWEI_PATH_REMEDIATION_PLAN_CAPABILITY_ID,
 )
+from atlas.modules.connectors.vendors.huawei_pacific.manifest import (
+    CLUSTER_FAILOVER_PLAN_CAPABILITY_ID as _HUAWEI_PACIFIC_CLUSTER_FAILOVER_PLAN_CAPABILITY_ID,
+)
+from atlas.modules.connectors.vendors.huawei_pacific.manifest import (
+    CLUSTER_NODE_CAPABILITY_ID as _HUAWEI_PACIFIC_CLUSTER_NODE_CAPABILITY_ID,
+)
+from atlas.modules.connectors.vendors.huawei_pacific.manifest import (
+    NODE_EVENTS_CAPABILITY_ID as _HUAWEI_PACIFIC_NODE_EVENTS_CAPABILITY_ID,
+)
+from atlas.modules.connectors.vendors.huawei_pacific.manifest import (
+    NODE_REMEDIATION_PLAN_CAPABILITY_ID as _HUAWEI_PACIFIC_NODE_REMEDIATION_PLAN_CAPABILITY_ID,
+)
 from atlas.modules.recommendations.application.ports import (
     RcaCaseProvider,
     RecommendationAssembler,
@@ -59,6 +71,10 @@ ALLOWED_CAPABILITIES = frozenset(
         _HUAWEI_CONTROLLER_HEALTH_CAPABILITY_ID,
         _HUAWEI_CONTROLLER_FAILOVER_PLAN_CAPABILITY_ID,
         _HUAWEI_PATH_REMEDIATION_PLAN_CAPABILITY_ID,
+        _HUAWEI_PACIFIC_NODE_EVENTS_CAPABILITY_ID,
+        _HUAWEI_PACIFIC_CLUSTER_NODE_CAPABILITY_ID,
+        _HUAWEI_PACIFIC_CLUSTER_FAILOVER_PLAN_CAPABILITY_ID,
+        _HUAWEI_PACIFIC_NODE_REMEDIATION_PLAN_CAPABILITY_ID,
     }
 )
 CAPABILITY_ORDER = {f"C{index}": index for index in range(6)}

@@ -12,6 +12,14 @@ from atlas.modules.connectors.domain.models import (
 
 CLUSTER_NODE_CAPABILITY_ID = "huawei.pacific.storage.cluster.read"
 STORAGE_POOL_CAPABILITY_ID = "huawei.pacific.storage.pool.read"
+# Aspirational, mirroring huawei_dorado/manifest.py's PATH_EVENTS_CAPABILITY_ID and
+# CONTROLLER_FAILOVER_PLAN_CAPABILITY_ID/PATH_REMEDIATION_PLAN_CAPABILITY_ID: referenced by RCA
+# diagnostic-step and recommendation plan-step descriptions as capabilities a human operator
+# could run against this vendor; not yet implemented by HuaweiPacificClient and therefore not
+# declared in build_candidate_manifest()'s capabilities tuple below.
+NODE_EVENTS_CAPABILITY_ID = "huawei.pacific.storage.node-events.read"
+CLUSTER_FAILOVER_PLAN_CAPABILITY_ID = "huawei.pacific.storage.cluster-failover.plan"
+NODE_REMEDIATION_PLAN_CAPABILITY_ID = "huawei.pacific.storage.node-remediation.plan"
 PACKAGE_ID = "connector.huawei.pacific.cluster-manager"
 OFFICIAL_REFERENCE = "https://support.huawei.com/enterprise/en/doc/EDOC1100194144"
 

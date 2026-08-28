@@ -1422,6 +1422,9 @@ from atlas.modules.platform.domain.advisory_posture import (
 from atlas.modules.rca.adapters.chained import ChainedRcaAssembler
 from atlas.modules.rca.adapters.configured_hitachi import ConfiguredHitachiRcaAssembler
 from atlas.modules.rca.adapters.configured_huawei_dorado import ConfiguredHuaweiDoradoRcaAssembler
+from atlas.modules.rca.adapters.configured_huawei_pacific import (
+    ConfiguredHuaweiPacificRcaAssembler,
+)
 from atlas.modules.rca.adapters.synthetic import SyntheticStorageRcaAssembler
 from atlas.modules.rca.application.service import RcaService
 from atlas.modules.recommendations.adapters.configured_hitachi import (
@@ -1429,6 +1432,9 @@ from atlas.modules.recommendations.adapters.configured_hitachi import (
 )
 from atlas.modules.recommendations.adapters.configured_huawei_dorado import (
     ConfiguredHuaweiDoradoRecommendationAssembler,
+)
+from atlas.modules.recommendations.adapters.configured_huawei_pacific import (
+    ConfiguredHuaweiPacificRecommendationAssembler,
 )
 from atlas.modules.recommendations.adapters.correction_resubmission_memory import (
     InMemoryRecommendationCorrectionPolicySource,
@@ -7304,6 +7310,16 @@ def create_app(
                         environment_id=f"environment.{resolved_settings.environment}",
                         runtime_state_repository=bundled_runtime_state_repository,
                     ),
+                    ConfiguredHuaweiPacificRcaAssembler(
+                        configuration_repository=bundled_connection_configuration_repository,
+                        instance_repository=resolved_connector_instance_creation_service.repository,
+                        inventory_repository=resolved_inventory_device_service.repository,
+                        credential_materializer=connector_credential_materializer,
+                        transport_factory=huawei_pacific_transport_factory,
+                        organization_id=resolved_settings.development_organization_id,
+                        environment_id=f"environment.{resolved_settings.environment}",
+                        runtime_state_repository=bundled_runtime_state_repository,
+                    ),
                 )
             )
             if configured_connector_paths_enabled
@@ -7319,6 +7335,9 @@ def create_app(
                     "configured_hitachi_read_only": ConfiguredHitachiRecommendationAssembler(),
                     "configured_huawei_dorado_read_only": (
                         ConfiguredHuaweiDoradoRecommendationAssembler()
+                    ),
+                    "configured_huawei_pacific_read_only": (
+                        ConfiguredHuaweiPacificRecommendationAssembler()
                     ),
                 },
                 default=SyntheticStorageRecommendationAssembler(),

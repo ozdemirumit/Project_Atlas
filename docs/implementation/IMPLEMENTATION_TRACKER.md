@@ -4,14 +4,73 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-264 |
-| Title | Add real Huawei OceanStor Pacific connector (Phase 3 of modular multi-vendor MCPs) |
-| Status | Verified (backend, tool-verified with real toolchain) -- storage/graph/health_checks only; RCA/recommendations deliberately deferred, matching the ATLAS-IMP-262/263 pattern |
+| Task ID | ATLAS-IMP-265 |
+| Title | Close the RCA/recommendations gap for Huawei OceanStor Pacific |
+| Status | Verified (backend, tool-verified with real toolchain) |
 | Branch | `main` |
 | Pull Request | none (pushed directly to `main`; no PR tooling available in this environment) |
 | Governing Documents | ATLAS-003, ATLAS-020/021/022/047 (connector quarantine/promotion), `docs/adr/ADR-004`+ |
 | Last Updated | 2026-08-28 |
-| Next Action | Close the RCA/recommendations gap this task deliberately deferred (mirroring ATLAS-IMP-263), or continue the approved plan: vCenter, Commvault, in that order (`C:\Users\umito\.claude\plans\tingly-marinating-anchor.md`). |
+| Next Action | Continue the approved plan: vCenter, then Commvault, in that order (`C:\Users\umito\.claude\plans\tingly-marinating-anchor.md`). |
+
+### ATLAS-IMP-265 Scope and Verification
+
+- **What this closes**: ATLAS-IMP-264 deliberately shipped Huawei Pacific's storage/graph/
+  health_checks adapters only, naming RCA and recommendations as the explicit next step, matching
+  the ATLAS-IMP-262-then-263 precedent for Dorado. This task closes it, making Pacific a fully
+  first-class vendor across all five consuming modules.
+- **A real structural difference from every other RCA assembler so far**: every other
+  `Configured<Vendor>*RcaAssembler` (Hitachi, Dorado) validates the request's `target_id` against
+  a known identity *before* making any real read (Hitachi via allowlist search, Dorado via the
+  configured `system_id`). Pacific has neither: no confirmed cluster-level identifier exists at
+  all (the same gap already documented for the storage/graph adapters in ATLAS-IMP-264), so
+  `ConfiguredHuaweiPacificRcaAssembler` reads the real cluster-node inventory *first*, derives the
+  cluster identity from the sorted set of node ids exactly as the storage adapter does, and only
+  then validates the request against that freshly computed identity -- raising `KeyError` (the
+  established "target unavailable" signal `ChainedRcaAssembler` already understands) on a
+  mismatch. This is a real, load-bearing behavioral difference, not a stylistic one, and is
+  documented in the assembler's own docstring.
+- **Both RCA evidence units come from one real read, not two**: Dorado's RCA evidence pairs a
+  system-identity read with a separate controller-health read. Pacific has no separate
+  identity-confirmation endpoint, so both the `"storage_hardware_health"` evidence (node running
+  status) and the `"storage_inventory"` evidence (node/cluster composition) are derived from the
+  single real `GET /api/v2/cluster/servers` read already used by the storage adapter -- stated
+  plainly in the assembler's docstring rather than fabricating a second call.
+  `ConfiguredHuaweiPacificRecommendationAssembler` is otherwise a near-verbatim structural mirror
+  of Dorado's recommendation assembler (same five option categories: investigate, escalate,
+  defer, restoration planning, remediation planning), since RCA evidence carries generic
+  `source_type` tags with no vendor identity -- only the capability-id literals and node/cluster
+  wording differ.
+- **New aspirational capability-id constants** (mirroring the exact pattern already established
+  for Hitachi's and Dorado's `PATH_EVENTS_CAPABILITY_ID` / `CONTROLLER_FAILOVER_PLAN_CAPABILITY_ID`
+  / `PATH_REMEDIATION_PLAN_CAPABILITY_ID`): `NODE_EVENTS_CAPABILITY_ID`,
+  `CLUSTER_FAILOVER_PLAN_CAPABILITY_ID`, `NODE_REMEDIATION_PLAN_CAPABILITY_ID` added to
+  `huawei_pacific/manifest.py`, referenced by RCA diagnostic steps and recommendation plan steps
+  as capabilities a human operator could run, not yet implemented by `HuaweiPacificClient` and
+  therefore not declared in the package's real capability manifest.
+- **Wiring**: `api/app.py`'s `ChainedRcaAssembler` now tries Hitachi, then Huawei Dorado, then
+  Huawei Pacific (falls through to the next on `KeyError`, exactly as Dorado's addition worked in
+  ATLAS-IMP-263); `DispatchingRecommendationAssembler` gained
+  `"configured_huawei_pacific_read_only"` as a third dispatch key alongside Hitachi's and Dorado's.
+  `rca/application/service.py`'s `ALLOWED_DIAGNOSTIC_CAPABILITIES` and
+  `recommendations/application/service.py`'s `ALLOWED_CAPABILITIES` both gained Pacific's real and
+  aspirational capability-id constants, following the same named-constant-per-vendor pattern used
+  for every prior vendor.
+- **Verified with the real toolchain**: `ruff format --check` and `ruff check` clean across the
+  full repository (1766 files); `mypy` strict clean across every touched file. New tests: 7 for
+  `ConfiguredHuaweiPacificRcaAssembler` (no configured instance, disabled MCP, no allowlisted
+  cluster, target mismatch after a real read, active-finding case, no-active-finding case, missing
+  credential), 2 for `ConfiguredHuaweiPacificRecommendationAssembler` (options populated from real
+  evidence only, raises without an active finding) -- 9 new tests total, all passing, plus the
+  existing 4 Dorado RCA/recommendation and 5 chained/dispatching tests re-run alongside them to
+  confirm no cross-vendor regression (22 passed), and a targeted multi-area run across every
+  touched module (rca/recommendation/hitachi/brocade/huawei/bundled_connector/health_checks/
+  graph/storage/composite/chained/dispatching/app: 647 passed, 10 failed, all baseline). Full
+  backend suite: 3910 passed, 67 failed, 68 skipped -- the failure count matches the established
+  ~67 pre-existing baseline exactly, confirmed by name to share zero overlap with huawei, pacific,
+  brocade, hitachi, graph, storage, health_checks, connector, rca, recommendation, chained, or
+  dispatching. The pass-count increase (+9 over ATLAS-IMP-264's 3901) matches exactly the 9 new
+  tests this task adds.
 
 ### ATLAS-IMP-264 Scope and Verification
 
