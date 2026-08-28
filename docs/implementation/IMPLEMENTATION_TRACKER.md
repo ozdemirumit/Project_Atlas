@@ -4,14 +4,103 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-260 |
-| Title | Generalize Hitachi-specific connector coupling (Phase 0 of modular multi-vendor MCPs) |
+| Task ID | ATLAS-IMP-261 |
+| Title | Add real Brocade SANnav connector (Phase 1 of modular multi-vendor MCPs) |
 | Status | Verified (backend, tool-verified with real toolchain) |
 | Branch | `main` |
 | Pull Request | none (pushed directly to `main`; no PR tooling available in this environment) |
-| Governing Documents | ATLAS-003, `docs/adr/ADR-004`+ (connector governance pipeline) |
+| Governing Documents | ATLAS-003, ATLAS-020/021/022/047 (connector quarantine/promotion), `docs/adr/ADR-004`+ |
 | Last Updated | 2026-08-28 |
-| Next Action | Phase 1 of the same plan: build Brocade SANnav as the first new vendor connector, proving the generalization actually works end to end (not just for Hitachi alone). Then Huawei Dorado, Huawei Pacific, vCenter, Commvault, in that order, per the approved plan (`C:\Users\umito\.claude\plans\tingly-marinating-anchor.md`). |
+| Next Action | Phase 2 of the same plan: Huawei Dorado connector (storage array, slots into the existing storage/graph/health_checks/rca/recommendations `Configured*` pattern with no new domain concepts). Then Huawei Pacific, vCenter, Commvault, in that order, per the approved plan (`C:\Users\umito\.claude\plans\tingly-marinating-anchor.md`). |
+
+### ATLAS-IMP-261 Scope and Verification
+
+- **What this closes**: the second of five vendors the user asked for
+  (`mcp/connectors/brocade_sannav/`), and the first proof that ATLAS-IMP-260's generalization
+  actually works for a second vendor, not just in theory for Hitachi alone.
+- **Real API research, not guessed**: fetched Broadcom's public SANnav Management Portal REST API
+  documentation. Individual deep-linked TechDocs pages 404'd (likely site restructuring) and the
+  PDF reference manual only returned a cover page, so confirmed the fabric/switch discovery
+  endpoints and their exact response field names (`Fabrics`, `principalSwitchWwn`, `name`,
+  `Switches`, `ipAddress`) against a real, independently-authored working script
+  (`chipcopper/SANnav-fabric-inventory` on GitHub) instead of relying on unreachable vendor prose.
+  Confirmed the `POST /external-api/v2/fault/events/` endpoint and its full request body shape
+  from Broadcom's own Python-examples page, but the per-event response field names could **not**
+  be independently confirmed. Rather than guessing field names, `read_fabric_fault_summary()`
+  only counts events (checked defensively across plausible envelope shapes:
+  `events`/`Events`/`data`/`Data`/`totalCount`) and the health-check executor built on top of it
+  reports only NORMAL or WARNING, never CRITICAL, from that count — documented as a deliberate,
+  stated gap in `client.py`, `domain.py`, the README's "Known gap" section, and
+  `source-provenance.json`'s per-capability `confirmation` field, not silently assumed correct.
+- **Session-less auth mode chosen deliberately**: SANnav supports both a stateful login/sessionId
+  flow and a documented session-less mode (`Authorization: Basic <base64(user:pass)>` on every
+  request). Chose session-less specifically because it fits the existing per-request
+  `authorization_header_provider` credential-materializer abstraction already used for Hitachi,
+  with zero framework changes — `ports.py` documents this rationale.
+- **Connector package** (`modules/connectors/vendors/brocade_sannav/`: `manifest.py`, `domain.py`,
+  `ports.py`, `https.py`, `client.py`, `synthetic.py`) mirrors the Hitachi Ops Center package's
+  shape exactly, with two real differences: the transport needs both `get()` and `post()` (fault
+  events is a POST with a body), and `https.py`'s path validator needed a bounded single
+  `key=value` query-string allowance for the fabric-members read
+  (`?principalSwitchWWN=<wwn>`) — a bug in the naive copy of Hitachi's path-equality check
+  (`parsed.path != path` incorrectly rejected any URL with a query string, since
+  `urllib.parse.urlsplit` separates `.path` from `.query`) was caught and fixed during
+  construction, before any test ran, by reconstructing path+query for the comparison and adding a
+  stricter secondary regex on the query's content.
+- **Consuming-module adapters, following the Phase 0 pattern exactly**: added `EntityType.SAN_SWITCH`
+  (`modules/graph/domain/models.py`) and `ConfiguredBrocadeSanNavGraphSnapshotProvider`
+  (`modules/graph/adapters/configured_brocade_sannav.py`, entities-only, no relationships
+  fabricated); `ConfiguredBrocadeSanNavHealthExecutor` plus `BrocadeFabricHealthExecutor`
+  (`modules/health_checks/adapters/{configured_brocade_sannav,brocade_sannav}.py`, one new
+  `health-check.san.fabric-status` definition); both self-check whether a Brocade connector is
+  really configured and enabled, degrading to an honest "unavailable" result otherwise, exactly
+  like every `Configured<Vendor>*` adapter so far.
+- **Two small new generalization pieces, not anticipated in the Phase 0 plan, needed once a real
+  second vendor showed up**: (1) `HealthCheckExecutor` chaining already existed
+  (`fallback_executor`) so `ConfiguredHitachiHealthExecutor` now delegates to
+  `ConfiguredBrocadeSanNavHealthExecutor`, which delegates to `SyntheticStorageHealthExecutor` —
+  no new abstraction needed there. (2) `GraphSnapshotProvider` had no such chaining concept (one
+  provider, one `get_snapshot()`), so added `CompositeGraphSnapshotProvider`
+  (`modules/graph/adapters/composite.py`) that calls every configured vendor's provider and merges
+  their entities/evidence/known_gaps into one snapshot — each sub-provider still independently
+  degrades to empty if its own vendor isn't the one actually configured, so the composite never
+  needs to know which vendors, if any, are real in a given environment. `api/app.py`'s graph
+  wiring now uses `CompositeGraphSnapshotProvider(providers=(hitachi, brocade))` instead of an
+  either/or boolean.
+- **Bundled-catalog descriptor added** (`build_brocade_sannav_bundled_descriptor()` in
+  `bundled_catalog.py`, wired into `api/app.py` beside Hitachi's) so this isn't just
+  well-tested-in-isolation code: an operator can actually register a Brocade connector instance
+  through the same bundled-catalog flow Hitachi uses, and the graph/health-check adapters will
+  then find it. Without this, the new adapters would always see zero configured instances in
+  practice.
+- **Credential materializer generalized**: renamed `hitachi_credential_materializer` to
+  `connector_credential_materializer` (6 call sites) and added
+  `"secret.brocade.readonly": "ATLAS_BROCADE_AUTHORIZATION"` to its existing environment-variable
+  reference map — the same materializer instance now serves both vendors, since each request
+  supplies its own `secret_reference_id` from the connector's own configuration.
+- **`_KNOWN_GAPS` updated, not left stale**: per the approved plan's explicit instruction not to
+  leave a now-false gap statement in place, reworded the Hitachi graph adapter's "SAN fabric
+  redundancy is not represented" line to state plainly that a configured Brocade connector may now
+  contribute separate SAN switch entities to the same graph, while still being honest that no
+  relationship between those switches and Hitachi's storage systems is asserted (no shared
+  identifier between the two connectors is confirmed).
+- **Verified with the real toolchain**: `ruff format`, `ruff check`, `mypy` strict all clean across
+  the new connector package, both new adapters, the composite provider, and `api/app.py`. New
+  tests: 13 for the connector package (`test_brocade_sannav_connector.py`, mirroring
+  `test_hitachi_ops_center_connector.py`'s structure — manifest/registration, inventory, fault
+  summary with all four envelope shapes, an unrecognized-shape zero-count fallback, target
+  validation, transport-fault mapping, malformed/oversized-response rejection, self-test
+  compatibility, synthetic-transport access flags, and candidate-asset strictness), 8 for the graph
+  adapter, 7 for the health-check adapter — all pass. Fixed two real regressions this change caused
+  in existing tests: `build_synthetic_health_check_definitions()` now returns a 3-tuple, not a
+  2-tuple (`test_configured_hitachi_health_executor.py`'s `definitions()` helper, and
+  `test_health_checks_api.py`'s definitions-count assertion, both updated). Targeted run across
+  every touched area (`-k "hitachi or brocade or bundled_connector or health_checks or graph"`):
+  146 passed, only the same pre-existing, unrelated alembic-head-drift failures remain (confirmed
+  via `git log` to predate this session, from the ATLAS-IMP-255 migration). Full suite:
+  3818 passed, 67 failed, 68 skipped -- the failure count matches the established ~67 pre-existing
+  baseline exactly (bootstrap/upgrade/backup/mcp-builder/alembic-head-drift, confirmed by name to
+  share zero overlap with brocade/hitachi/graph/health_checks/connector modules).
 
 ### ATLAS-IMP-260 Scope and Verification
 

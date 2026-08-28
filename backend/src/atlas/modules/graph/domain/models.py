@@ -9,6 +9,7 @@ from atlas.core.classification import DataClassification
 
 class EntityType(StrEnum):
     STORAGE_SYSTEM = "storage_system"
+    SAN_SWITCH = "san_switch"
     VOLUME = "volume"
     DATASTORE = "datastore"
     VIRTUAL_MACHINE = "virtual_machine"

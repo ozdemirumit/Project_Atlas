@@ -110,7 +110,7 @@ class TransportFactory:
 
 
 def definitions() -> tuple[HealthCheckDefinition, ...]:
-    controller, capacity = build_synthetic_health_check_definitions(
+    controller, capacity, _fabric = build_synthetic_health_check_definitions(
         organization_id="organization.atlas.local",
         environment="development",
         anchor_at=NOW,

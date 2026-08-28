@@ -20,3 +20,5 @@ Current candidates:
 
 - [Hitachi Ops Center API Configuration Manager](connectors/hitachi_ops_center/README.md) -
   quarantined C1 inventory and hardware-health candidate using synthetic data only.
+- [Brocade SANnav Management Portal](connectors/brocade_sannav/README.md) -
+  quarantined C1 fabric-inventory and fault-summary candidate using synthetic data only.

@@ -1,0 +1,50 @@
+{
+  "source_set_id": "source-set.brocade.sannav.management-portal.3-0-x",
+  "reviewed_at": "2026-08-28T00:00:00Z",
+  "publisher": "Broadcom Inc. (Brocade)",
+  "document": {
+    "title": "Brocade SANnav Management Portal REST API Reference and Overview",
+    "version": "3.0.0x",
+    "url": "https://techdocs.broadcom.com/us/en/fibre-channel-networking/sannav/management-portal-rest-api/3-0-0x/SANnav-Overview.html"
+  },
+  "capability_sources": [
+    {
+      "capability_id": "brocade.sannav.fabric.inventory.read",
+      "method": "GET",
+      "path": "/external-api/v1/discovery/fabrics/",
+      "confirmation": "confirmed_via_working_example",
+      "url": "https://github.com/chipcopper/SANnav-fabric-inventory/blob/master/sannav_fabric_inventory.py",
+      "note": "Endpoint, response envelope key (\"Fabrics\"), and field names (name, principalSwitchWwn) confirmed against a real, independently-authored working script, not only vendor prose documentation."
+    },
+    {
+      "capability_id": "brocade.sannav.fabric.inventory.read",
+      "method": "GET",
+      "path": "/external-api/v1/discovery/fabric-members/",
+      "confirmation": "confirmed_via_working_example",
+      "url": "https://github.com/chipcopper/SANnav-fabric-inventory/blob/master/sannav_fabric_inventory.py",
+      "note": "Requires a principalSwitchWWN query parameter. Response envelope key (\"Switches\") and ipAddress field confirmed against the same working script."
+    },
+    {
+      "capability_id": "brocade.sannav.fabric.health.read",
+      "method": "POST",
+      "path": "/external-api/v2/fault/events/",
+      "confirmation": "endpoint_and_request_confirmed_response_schema_not_confirmed",
+      "url": "https://techdocs.broadcom.com/us/en/fibre-channel-networking/sannav/management-portal-rest-api/3-0-0x/Python-Examples-REST-API/Retrieving-a-List-of-Events-REST-API.html",
+      "note": "Endpoint path and full request body shape (startTime, endTime, pageSize, startIndex, filters.filter[].includedEvents[]) confirmed from Broadcom's own Python example. The per-event response field names (severity, affected switch, message) could not be independently confirmed during connector construction -- the client counts events defensively across plausible envelope shapes rather than parsing unverified per-event fields. Live verification against a real SANnav instance, or the vendor's authoritative schema reference (the full REST API Reference Manual PDF), is a documented follow-up before this capability is promoted."
+    }
+  ],
+  "authentication_source": {
+    "method": "POST",
+    "path": "/external-api/v1/login/",
+    "confirmation": "confirmed_via_working_example",
+    "url": "https://github.com/chipcopper/SANnav-fabric-inventory/blob/master/sannav_fabric_inventory.py",
+    "note": "This connector deliberately uses SANnav's documented session-less mode (Base64 Basic-auth header on every request) instead of the stateful login/sessionId flow, so it fits the existing per-request authorization-header credential materializer pattern already used for every other connector in this codebase without a framework change."
+  },
+  "self_test_source": {
+    "method": "GET",
+    "path": "/external-api/v1/discovery/fabrics/",
+    "note": "SANnav has no confirmed dedicated version/compatibility endpoint equivalent to Hitachi's /configuration/version; the self-test reuses the fabric-discovery read itself and checks for a well-formed response shape."
+  },
+  "data_policy": "synthetic-only",
+  "production_credentials_present": false
+}

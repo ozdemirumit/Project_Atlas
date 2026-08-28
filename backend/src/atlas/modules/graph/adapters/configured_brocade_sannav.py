@@ -12,9 +12,9 @@ from atlas.modules.connectors.application.bundled_runtime_state_ports import (
     BundledConnectorRuntimeStateRepository,
 )
 from atlas.modules.connectors.application.connection_test_ports import (
+    BrocadeConnectionTestTransportFactory,
     ConnectorConnectionTestError,
     ConnectorCredentialMaterializer,
-    HitachiConnectionTestTransportFactory,
 )
 from atlas.modules.connectors.application.instance_creation_ports import (
     ConnectorInstanceRepository,
@@ -24,11 +24,11 @@ from atlas.modules.connectors.domain.bundled_connection_configuration import (
 )
 from atlas.modules.connectors.domain.bundled_runtime_state import ENABLED_READ_ONLY
 from atlas.modules.connectors.domain.instance_creation import DISABLED_UNCONFIGURED
-from atlas.modules.connectors.vendors.hitachi_ops_center.client import (
-    HitachiConnectorError,
-    HitachiOpsCenterClient,
+from atlas.modules.connectors.vendors.brocade_sannav.client import (
+    BrocadeConnectorError,
+    BrocadeSanNavClient,
 )
-from atlas.modules.connectors.vendors.hitachi_ops_center.manifest import PACKAGE_ID
+from atlas.modules.connectors.vendors.brocade_sannav.manifest import PACKAGE_ID
 from atlas.modules.graph.domain.models import (
     EntityType,
     FreshnessState,
@@ -39,17 +39,16 @@ from atlas.modules.graph.domain.models import (
 from atlas.modules.inventory.application.ports import InventoryDeviceRepository
 from atlas.modules.inventory.domain.devices import InventoryDeviceLifecycle, InventoryDeviceType
 
-_STORAGE_DEVICE_ID = re.compile(r"^[A-Za-z0-9]{6,32}$")
-_MAX_ALLOWED_STORAGE_TARGETS = 25
-_DATA_PROFILE = "configured_hitachi_read_only"
+_FABRIC_WWN = re.compile(r"^[0-9A-Fa-f:]{8,64}$")
+_MAX_ALLOWED_FABRIC_TARGETS = 25
+_DATA_PROFILE = "configured_brocade_sannav_read_only"
 _SAFE_CONNECTOR_ERROR_CODES = frozenset(
     {
-        "invalid_storage_device_id",
+        "invalid_fabric_identifier",
         "malformed_vendor_response",
         "target_not_bound",
         "target_timeout",
         "target_unavailable",
-        "unsupported_vendor_version",
         "vendor_permission_denied",
         "vendor_rate_limited",
         "vendor_response_limit_exceeded",
@@ -57,33 +56,29 @@ _SAFE_CONNECTOR_ERROR_CODES = frozenset(
 )
 
 _KNOWN_GAPS = (
-    "This graph reflects only the storage systems read from the configured Hitachi Ops Center "
-    "connector; no volume, datastore, virtual machine, or business-service mapping is available "
-    "because no CMDB or hypervisor connector is configured in this environment.",
-    "This connector does not represent storage multipathing or SAN fabric redundancy itself; a "
-    "configured Brocade SANnav connector may contribute separate SAN switch entities to this "
-    "graph, but no relationship between those switches and these storage systems is asserted, "
-    "because no shared identifier between the two connectors is confirmed.",
+    "This graph reflects only the SAN fabric switches read from the configured Brocade SANnav "
+    "connector; no per-port, zoning, or firmware detail is available, and no relationship to "
+    "storage systems or hosts is asserted because no shared identifier between this connector "
+    "and the storage/hypervisor connectors is confirmed.",
+    "Multipathing redundancy across fabrics is not represented; only switch presence within an "
+    "allowlisted fabric is reported.",
 )
 
 
-def _connector_failure_reason(exc: HitachiConnectorError) -> str:
+def _connector_failure_reason(exc: BrocadeConnectorError) -> str:
     code = exc.code if exc.code in _SAFE_CONNECTOR_ERROR_CODES else "connector_error"
-    return f"The Hitachi read failed safely ({code})."
+    return f"The Brocade SANnav read failed safely ({code})."
 
 
 def _identity(*parts: str) -> str:
-    # Matches atlas.modules.storage.adapters.configured_hitachi._identity exactly, so a storage
-    # asset_id and this graph entity_id agree for the same storage_device_id.
     normalized = "\x1f".join(parts).encode("utf-8")
     return hashlib.sha256(normalized).hexdigest()[:20]
 
 
-class ConfiguredHitachiGraphSnapshotProvider:
-    """Serves a graph snapshot of the storage systems read from the single configured, enabled
-    Hitachi MCP. Deliberately entities-only: this connector exposes no volume, datastore, virtual
-    machine, or business-service data, so no relationship is fabricated above the storage-system
-    layer. See ATLAS-IMP-257.
+class ConfiguredBrocadeSanNavGraphSnapshotProvider:
+    """Serves a graph snapshot of the SAN switches read from the single configured, enabled
+    Brocade SANnav MCP. Deliberately entities-only: this connector exposes no zoning, port, or
+    upstream/downstream relationship data, so no relationship is fabricated. See ATLAS-IMP-261.
     """
 
     def __init__(
@@ -93,13 +88,13 @@ class ConfiguredHitachiGraphSnapshotProvider:
         instance_repository: ConnectorInstanceRepository,
         inventory_repository: InventoryDeviceRepository,
         credential_materializer: ConnectorCredentialMaterializer,
-        transport_factory: HitachiConnectionTestTransportFactory,
+        transport_factory: BrocadeConnectionTestTransportFactory,
         organization_id: str,
         environment_id: str,
         site_id: str = "site.local",
         connector_version: str = "0.1.0",
         runtime_state_repository: BundledConnectorRuntimeStateRepository | None = None,
-        max_targets: int = _MAX_ALLOWED_STORAGE_TARGETS,
+        max_targets: int = _MAX_ALLOWED_FABRIC_TARGETS,
         timeout_seconds: float = 20.0,
     ) -> None:
         self._configuration_repository = configuration_repository
@@ -119,8 +114,8 @@ class ConfiguredHitachiGraphSnapshotProvider:
         configuration = await self._single_active_configuration()
         if configuration is None:
             return self._unavailable_snapshot(
-                reason="A single active configured Hitachi MCP is required to read the storage "
-                "graph."
+                reason="A single active configured Brocade SANnav MCP is required to read the "
+                "fabric graph."
             )
         if self._runtime_state_repository is not None:
             runtime_state = await self._runtime_state_repository.get(
@@ -134,13 +129,13 @@ class ConfiguredHitachiGraphSnapshotProvider:
                 or runtime_state.configuration_id != configuration.configuration_id
             ):
                 return self._unavailable_snapshot(
-                    reason="The configured Hitachi MCP must be enabled for read-only storage "
-                    "polling."
+                    reason="The configured Brocade SANnav MCP must be enabled for read-only "
+                    "fabric polling."
                 )
-        storage_ids = await self._allowed_storage_ids()
-        if not storage_ids:
+        fabric_wwns = await self._allowed_fabric_wwns()
+        if not fabric_wwns:
             return self._unavailable_snapshot(
-                reason="No active Hitachi storage serial number is allowlisted in inventory."
+                reason="No active Brocade fabric principal switch WWN is allowlisted in inventory."
             )
 
         try:
@@ -156,23 +151,23 @@ class ConfiguredHitachiGraphSnapshotProvider:
                     timeout_seconds=self._timeout_seconds,
                     maximum_response_bytes=1_048_576,
                 )
-                client = HitachiOpsCenterClient(
+                client = BrocadeSanNavClient(
                     transport=transport,
-                    allowed_storage_device_ids=storage_ids,
-                    maximum_arrays=500,
-                    maximum_components=5_000,
+                    allowed_fabric_wwns=fabric_wwns,
+                    maximum_fabrics=500,
+                    maximum_switches_per_fabric=500,
                     maximum_response_bytes=1_048_576,
                 )
                 inventory = await client.read_inventory()
         except ConnectorConnectionTestError:
             return self._unavailable_snapshot(
-                reason="The Hitachi credential reference is unavailable for this graph read."
+                reason="The Brocade SANnav credential reference is unavailable for this graph read."
             )
-        except HitachiConnectorError as exc:
+        except BrocadeConnectorError as exc:
             return self._unavailable_snapshot(reason=_connector_failure_reason(exc))
         except (TimeoutError, ValueError):
             return self._unavailable_snapshot(
-                reason="The configured Hitachi graph read failed safely."
+                reason="The configured Brocade SANnav graph read failed safely."
             )
 
         entities: list[GraphEntity] = []
@@ -186,7 +181,7 @@ class ConfiguredHitachiGraphSnapshotProvider:
             evidence.append(
                 GraphEvidence(
                     reference=reference,
-                    source="Hitachi Ops Center inventory read",
+                    source="Brocade SANnav fabric-inventory read",
                     source_version=self._connector_version,
                     observed_at=inventory.observed_at,
                     freshness=FreshnessState.FRESH,
@@ -197,29 +192,32 @@ class ConfiguredHitachiGraphSnapshotProvider:
                     classification=DataClassification.INTERNAL,
                 )
             )
-        for array in inventory.arrays[: self._max_targets]:
+        for switch in inventory.switches[: self._max_targets]:
             entities.append(
                 GraphEntity(
-                    entity_id=f"asset.storage.{_identity(array.storage_device_id)}",
-                    entity_type=EntityType.STORAGE_SYSTEM,
-                    display_name=f"{array.model} ({array.serial_number})",
+                    entity_id=(
+                        "asset.san_switch."
+                        f"{_identity(switch.fabric_principal_switch_wwn, switch.ip_address)}"
+                    ),
+                    entity_type=EntityType.SAN_SWITCH,
+                    display_name=f"SAN switch ({switch.ip_address})",
                     organization_id=self._organization_id,
                     environment_id=self._environment_id,
                     site_id=self._site_id,
-                    domain_id="domain.storage_system",
+                    domain_id="domain.san_switch",
                     observed_at=inventory.observed_at,
                     valid_from=inventory.observed_at,
                     valid_to=None,
                     freshness=FreshnessState.FRESH,
                     confidence_basis=(
-                        "Read live from the configured Hitachi Ops Center inventory capability."
+                        "Read live from the configured Brocade SANnav fabric-inventory capability."
                     ),
                     evidence_references=evidence_refs,
                     classification=DataClassification.INTERNAL,
                     allowed_principals=frozenset({"role.development.operator"}),
-                    vendor="Hitachi Vantara",
-                    product="Hitachi Ops Center configured storage system",
-                    model=array.model,
+                    vendor="Broadcom (Brocade)",
+                    product="Brocade SANnav-discovered fabric switch",
+                    model=None,
                 )
             )
 
@@ -281,7 +279,7 @@ class ConfiguredHitachiGraphSnapshotProvider:
         )
         return candidates[0] if len(candidates) == 1 else None
 
-    async def _allowed_storage_ids(self) -> frozenset[str]:
+    async def _allowed_fabric_wwns(self) -> frozenset[str]:
         devices = await self._inventory_repository.list_scope(
             organization_id=self._organization_id,
             environment_id=self._environment_id,
@@ -292,9 +290,9 @@ class ConfiguredHitachiGraphSnapshotProvider:
         identifiers = (
             device.serial_number
             for device in devices
-            if device.device_type is InventoryDeviceType.STORAGE
-            and "hitachi" in device.vendor.lower()
+            if device.device_type is InventoryDeviceType.SAN_SWITCH
+            and "brocade" in device.vendor.lower()
             and device.serial_number is not None
-            and _STORAGE_DEVICE_ID.fullmatch(device.serial_number)
+            and _FABRIC_WWN.fullmatch(device.serial_number)
         )
         return frozenset(tuple(identifiers)[: self._max_targets])

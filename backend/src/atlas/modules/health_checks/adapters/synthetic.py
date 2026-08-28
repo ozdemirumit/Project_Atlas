@@ -3,6 +3,10 @@ from __future__ import annotations
 import hashlib
 from datetime import UTC, datetime
 
+from atlas.modules.connectors.vendors.brocade_sannav.manifest import (
+    FABRIC_HEALTH_CAPABILITY_ID,
+)
+from atlas.modules.health_checks.adapters.brocade_sannav import FABRIC_HEALTH_DEFINITION_ID
 from atlas.modules.health_checks.application.ports import HealthCheckExecutionResult
 from atlas.modules.health_checks.domain.models import (
     FreshnessState,
@@ -90,6 +94,39 @@ def build_synthetic_health_check_definitions(
             evidence_requirements=("Current capacity summary for each allowlisted array",),
             **common,  # type: ignore[arg-type]
         ),
+        HealthCheckDefinition(
+            definition_id=FABRIC_HEALTH_DEFINITION_ID,
+            version=1,
+            title="SAN fabric fault status",
+            owner="Storage Operations",
+            enabled=True,
+            organization_id=organization_id,
+            environment_id=f"environment.{environment}",
+            site_id="site.local",
+            target_id="target.brocade.sannav.lab",
+            connector_id="connector.brocade.sannav.synthetic",
+            connector_version="1.0.0",
+            capability_id=FABRIC_HEALTH_CAPABILITY_ID,
+            capability_class="C1",
+            schedule=HealthCheckSchedule(interval_minutes=15, anchor_at=anchor),
+            thresholds=(
+                HealthThreshold(
+                    metric="fabric.fault_event_count",
+                    warning_condition="fault event count is at least 1",
+                    critical_condition="not evaluated by this bounded, count-only executor",
+                ),
+            ),
+            limits=HealthCheckLimits(
+                timeout_seconds=5.0,
+                max_steps=3,
+                max_evidence_records=8,
+            ),
+            evidence_requirements=(
+                "Current fault-event count for each allowlisted fabric",
+                "Per-event severity and affected-component detail (not yet confirmed for this "
+                "connector)",
+            ),
+        ),
     )
 
 
@@ -101,6 +138,8 @@ class SyntheticStorageHealthExecutor:
             return _controller_result(started_at)
         if definition.definition_id == CAPACITY_DEFINITION_ID:
             return _capacity_result(started_at)
+        if definition.definition_id == FABRIC_HEALTH_DEFINITION_ID:
+            return _fabric_result(started_at)
         raise ValueError("unsupported synthetic health-check definition")
 
 
@@ -233,6 +272,40 @@ def _capacity_result(observed_at: datetime) -> HealthCheckExecutionResult:
     )
 
 
+def _fabric_result(observed_at: datetime) -> HealthCheckExecutionResult:
+    fault_ref = _reference("fault-events/fabric-a", "eventCount=0")
+    evidence = (
+        HealthCheckEvidence(
+            reference=fault_ref,
+            source="Brocade SANnav synthetic fault-events fixture",
+            source_version="3.0.0x-contract.1",
+            observed_at=observed_at,
+            freshness=FreshnessState.CURRENT,
+            trust_basis="Documentation-derived allowlisted C1 response",
+        ),
+    )
+    observation = HealthObservation(
+        observation_id="observation.fabric.lab-a",
+        target_id="target.brocade.sannav.lab/10:00:00:05:1e:35:1a:00",
+        component="fabric:10:00:00:05:1e:35:1a:00",
+        metric="fabric.fault_event_count",
+        value="0",
+        unit="events",
+        state=ObservationState.NORMAL,
+        observed_at=observed_at,
+        freshness=FreshnessState.CURRENT,
+        evidence_references=(fault_ref,),
+    )
+    return HealthCheckExecutionResult(
+        state=HealthCheckRunState.COMPLETED,
+        completed_at=observed_at,
+        step_count=2,
+        observations=(observation,),
+        findings=(),
+        evidence=evidence,
+    )
+
+
 def build_synthetic_latest_runs(
     definitions: tuple[HealthCheckDefinition, ...], *, generated_at: datetime | None = None
 ) -> tuple[HealthCheckRun, ...]:
@@ -240,6 +313,7 @@ def build_synthetic_latest_runs(
     results = {
         CONTROLLER_DEFINITION_ID: _controller_result(observed_at),
         CAPACITY_DEFINITION_ID: _capacity_result(observed_at),
+        FABRIC_HEALTH_DEFINITION_ID: _fabric_result(observed_at),
     }
     return tuple(
         HealthCheckRun(

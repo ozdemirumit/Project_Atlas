@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from atlas.modules.connectors.domain.connection_test import ConnectorConnectionTestResult
+from atlas.modules.connectors.vendors.brocade_sannav.ports import BrocadeSanNavTransport
 from atlas.modules.connectors.vendors.hitachi_ops_center.ports import HitachiOpsCenterTransport
 
 
@@ -88,3 +89,16 @@ class HitachiConnectionTestTransportFactory(Protocol):
         timeout_seconds: float,
         maximum_response_bytes: int,
     ) -> HitachiOpsCenterTransport: ...
+
+
+class BrocadeConnectionTestTransportFactory(Protocol):
+    def create(
+        self,
+        *,
+        hostname: str,
+        port: int,
+        trust_profile_id: str,
+        authorization_header_provider: Callable[[], str],
+        timeout_seconds: float,
+        maximum_response_bytes: int,
+    ) -> BrocadeSanNavTransport: ...

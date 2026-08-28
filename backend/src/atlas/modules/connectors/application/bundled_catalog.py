@@ -26,6 +26,13 @@ from atlas.modules.connectors.domain.instance_creation import (
     DISABLED_UNCONFIGURED,
     ConnectorInstanceRecord,
 )
+from atlas.modules.connectors.vendors.brocade_sannav.manifest import (
+    FABRIC_HEALTH_CAPABILITY_ID,
+    FABRIC_INVENTORY_CAPABILITY_ID,
+)
+from atlas.modules.connectors.vendors.brocade_sannav.manifest import (
+    PACKAGE_ID as BROCADE_PACKAGE_ID,
+)
 from atlas.modules.connectors.vendors.hitachi_ops_center.manifest import (
     HEALTH_CAPABILITY_ID,
     INVENTORY_CAPABILITY_ID,
@@ -399,6 +406,40 @@ def build_hitachi_ops_center_bundled_descriptor() -> BundledConnectorDescriptor:
         ),
         manifest_digest=BundledConnectorCatalogService._digest(
             [PACKAGE_ID, "bundled-development-manifest-evidence"]
+        ),
+        canonical_digest="0" * 64,
+    )
+    return replace(
+        descriptor,
+        canonical_digest=BundledConnectorCatalogService._digest(
+            BundledConnectorCatalogService._descriptor_payload(descriptor)
+        ),
+    )
+
+
+def build_brocade_sannav_bundled_descriptor() -> BundledConnectorDescriptor:
+    package_digest = BundledConnectorCatalogService._digest(
+        [BROCADE_PACKAGE_ID, "version.0.1.0", "bundled-development-package-evidence"]
+    )
+    descriptor = BundledConnectorDescriptor(
+        catalog_item_id="catalog.connector.brocade.sannav",
+        schema_version=_DESCRIPTOR_SCHEMA,
+        version=1,
+        connector_id=BROCADE_PACKAGE_ID,
+        display_name="Brocade SANnav Management Portal",
+        vendor_name="Broadcom (Brocade)",
+        release_version="version.0.1.0",
+        sdk_profile="atlas.python312.v1",
+        publisher_id="publisher.project-atlas",
+        support_group_id="group.connector-platform-support",
+        capability_ids=(FABRIC_INVENTORY_CAPABILITY_ID, FABRIC_HEALTH_CAPABILITY_ID),
+        capability_classes=("C1",),
+        package_digest=package_digest,
+        provenance_digest=BundledConnectorCatalogService._digest(
+            [BROCADE_PACKAGE_ID, "bundled-development-provenance-evidence"]
+        ),
+        manifest_digest=BundledConnectorCatalogService._digest(
+            [BROCADE_PACKAGE_ID, "bundled-development-manifest-evidence"]
         ),
         canonical_digest="0" * 64,
     )

@@ -644,6 +644,7 @@ from atlas.modules.connectors.application.bounded_invocation import (
 )
 from atlas.modules.connectors.application.bundled_catalog import (
     BundledConnectorCatalogService,
+    build_brocade_sannav_bundled_descriptor,
     build_hitachi_ops_center_bundled_descriptor,
 )
 from atlas.modules.connectors.application.bundled_connection_configuration import (
@@ -791,6 +792,10 @@ from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
     ConnectorUpgradeSigningProviderOnboardingPolicySnapshot,
     ConnectorUpgradeSigningProviderOnboardingPolicyTrustKey,
 )
+from atlas.modules.connectors.vendors.brocade_sannav.connection_test_https import (
+    BrocadeConnectionTestProbe,
+    BrocadeSanNavConnectionTestHttpsFactory,
+)
 from atlas.modules.connectors.vendors.hitachi_ops_center.connection_test_https import (
     HitachiConnectionTestProbe,
     HitachiOpsCenterConnectionTestHttpsFactory,
@@ -809,6 +814,10 @@ from atlas.modules.conversations.domain.models import (
     AuthorizedConversationTarget,
     ConversationScope,
 )
+from atlas.modules.graph.adapters.composite import CompositeGraphSnapshotProvider
+from atlas.modules.graph.adapters.configured_brocade_sannav import (
+    ConfiguredBrocadeSanNavGraphSnapshotProvider,
+)
 from atlas.modules.graph.adapters.configured_hitachi import ConfiguredHitachiGraphSnapshotProvider
 from atlas.modules.graph.adapters.synthetic import (
     SyntheticGraphSnapshotProvider,
@@ -816,6 +825,10 @@ from atlas.modules.graph.adapters.synthetic import (
 )
 from atlas.modules.graph.application.engine import InMemoryGraphImpactAnalyzer
 from atlas.modules.graph.application.service import GraphImpactService
+from atlas.modules.health_checks.adapters.brocade_sannav import FABRIC_HEALTH_DEFINITION_ID
+from atlas.modules.health_checks.adapters.configured_brocade_sannav import (
+    ConfiguredBrocadeSanNavHealthExecutor,
+)
 from atlas.modules.health_checks.adapters.configured_hitachi import (
     ConfiguredHitachiHealthExecutor,
 )
@@ -4896,7 +4909,14 @@ def create_app(
             environment_id=f"environment.{resolved_settings.environment}",
         )
     resolved_bundled_connector_catalog_service = BundledConnectorCatalogService(
-        descriptors=(() if is_production else (build_hitachi_ops_center_bundled_descriptor(),)),
+        descriptors=(
+            ()
+            if is_production
+            else (
+                build_hitachi_ops_center_bundled_descriptor(),
+                build_brocade_sannav_bundled_descriptor(),
+            )
+        ),
         repository=resolved_connector_instance_creation_service.repository,
         audit_sink=resolved_audit_sink,
         environment_id=resolved_connector_instance_creation_service.environment_id,
@@ -4919,11 +4939,15 @@ def create_app(
         deployment_environment=resolved_settings.environment,
         runtime_state_repository=bundled_runtime_state_repository,
     )
-    hitachi_credential_materializer = DevelopmentEnvironmentCredentialMaterializer(
+    connector_credential_materializer = DevelopmentEnvironmentCredentialMaterializer(
         deployment_environment=resolved_settings.environment,
-        reference_environment_variables={"secret.hitachi.readonly": "ATLAS_HITACHI_AUTHORIZATION"},
+        reference_environment_variables={
+            "secret.hitachi.readonly": "ATLAS_HITACHI_AUTHORIZATION",
+            "secret.brocade.readonly": "ATLAS_BROCADE_AUTHORIZATION",
+        },
     )
     hitachi_transport_factory = HitachiOpsCenterConnectionTestHttpsFactory()
+    brocade_transport_factory = BrocadeSanNavConnectionTestHttpsFactory()
     connector_connection_test_result_repository = (
         PostgreSQLConnectorConnectionTestResultRepository.from_url(resolved_settings.database_url)
         if resolved_settings.database_url
@@ -4933,10 +4957,13 @@ def create_app(
         configuration_repository=bundled_connection_configuration_repository,
         result_repository=connector_connection_test_result_repository,
         instance_repository=resolved_connector_instance_creation_service.repository,
-        credential_materializer=hitachi_credential_materializer,
+        credential_materializer=connector_credential_materializer,
         probes={
             HitachiConnectionTestProbe.connector_id: HitachiConnectionTestProbe(
                 transport_factory=hitachi_transport_factory
+            ),
+            BrocadeConnectionTestProbe.connector_id: BrocadeConnectionTestProbe(
+                transport_factory=brocade_transport_factory
             ),
         },
         audit_sink=resolved_audit_sink,
@@ -6920,15 +6947,30 @@ def create_app(
     # to an honest "unavailable" result if not. This flag does not encode which vendor -- it
     # generalizes as-is to multiple vendors sharing the same environment gate.
     configured_connector_paths_enabled = resolved_settings.environment == "development"
+    configured_definition_overrides = {
+        CONTROLLER_DEFINITION_ID: {
+            "connector_id": "connector.hitachi.opscenter.configuration-manager",
+            "connector_version": "0.1.0",
+            "target_id": "target.hitachi.opscenter.configured",
+        },
+        CAPACITY_DEFINITION_ID: {
+            "connector_id": "connector.hitachi.opscenter.configuration-manager",
+            "connector_version": "0.1.0",
+            "target_id": "target.hitachi.opscenter.configured",
+        },
+        FABRIC_HEALTH_DEFINITION_ID: {
+            "connector_id": "connector.brocade.sannav.management-portal",
+            "connector_version": "0.1.0",
+            "target_id": "target.brocade.sannav.configured",
+        },
+    }
     health_check_definitions = (
         tuple(
             replace(
                 definition,
-                connector_id="connector.hitachi.opscenter.configuration-manager",
-                connector_version="0.1.0",
-                target_id="target.hitachi.opscenter.configured",
+                **configured_definition_overrides[definition.definition_id],  # type: ignore[arg-type]
             )
-            if definition.definition_id in {CONTROLLER_DEFINITION_ID, CAPACITY_DEFINITION_ID}
+            if definition.definition_id in configured_definition_overrides
             else definition
             for definition in base_health_check_definitions
         )
@@ -6942,16 +6984,26 @@ def create_app(
             run
             for run in synthetic_latest_runs
             if not configured_connector_paths_enabled
-            or run.definition_id not in {CONTROLLER_DEFINITION_ID, CAPACITY_DEFINITION_ID}
+            or run.definition_id not in configured_definition_overrides
         ),
         executor=(
             ConfiguredHitachiHealthExecutor(
                 configuration_repository=bundled_connection_configuration_repository,
                 instance_repository=resolved_connector_instance_creation_service.repository,
                 inventory_repository=resolved_inventory_device_service.repository,
-                credential_materializer=hitachi_credential_materializer,
+                credential_materializer=connector_credential_materializer,
                 transport_factory=hitachi_transport_factory,
-                fallback_executor=SyntheticStorageHealthExecutor(),
+                fallback_executor=ConfiguredBrocadeSanNavHealthExecutor(
+                    configuration_repository=bundled_connection_configuration_repository,
+                    instance_repository=resolved_connector_instance_creation_service.repository,
+                    inventory_repository=resolved_inventory_device_service.repository,
+                    credential_materializer=connector_credential_materializer,
+                    transport_factory=brocade_transport_factory,
+                    fallback_executor=SyntheticStorageHealthExecutor(),
+                    organization_id=resolved_settings.development_organization_id,
+                    environment_id=f"environment.{resolved_settings.environment}",
+                    runtime_state_repository=bundled_runtime_state_repository,
+                ),
                 organization_id=resolved_settings.development_organization_id,
                 environment_id=f"environment.{resolved_settings.environment}",
                 runtime_state_repository=bundled_runtime_state_repository,
@@ -6961,7 +7013,7 @@ def create_app(
         ),
         audit_sink=resolved_audit_sink,
         data_profile=(
-            "configured_hitachi_read_only"
+            "configured_connector_read_only"
             if configured_connector_paths_enabled
             else "synthetic_lab"
         ),
@@ -6972,7 +7024,7 @@ def create_app(
                 configuration_repository=bundled_connection_configuration_repository,
                 instance_repository=resolved_connector_instance_creation_service.repository,
                 inventory_repository=resolved_inventory_device_service.repository,
-                credential_materializer=hitachi_credential_materializer,
+                credential_materializer=connector_credential_materializer,
                 transport_factory=hitachi_transport_factory,
                 organization_id=resolved_settings.development_organization_id,
                 environment_id=f"environment.{resolved_settings.environment}",
@@ -6991,15 +7043,31 @@ def create_app(
     )
     resolved_graph_impact_service = graph_impact_service or GraphImpactService(
         provider=(
-            ConfiguredHitachiGraphSnapshotProvider(
-                configuration_repository=bundled_connection_configuration_repository,
-                instance_repository=resolved_connector_instance_creation_service.repository,
-                inventory_repository=resolved_inventory_device_service.repository,
-                credential_materializer=hitachi_credential_materializer,
-                transport_factory=hitachi_transport_factory,
+            CompositeGraphSnapshotProvider(
+                providers=(
+                    ConfiguredHitachiGraphSnapshotProvider(
+                        configuration_repository=bundled_connection_configuration_repository,
+                        instance_repository=resolved_connector_instance_creation_service.repository,
+                        inventory_repository=resolved_inventory_device_service.repository,
+                        credential_materializer=connector_credential_materializer,
+                        transport_factory=hitachi_transport_factory,
+                        organization_id=resolved_settings.development_organization_id,
+                        environment_id=f"environment.{resolved_settings.environment}",
+                        runtime_state_repository=bundled_runtime_state_repository,
+                    ),
+                    ConfiguredBrocadeSanNavGraphSnapshotProvider(
+                        configuration_repository=bundled_connection_configuration_repository,
+                        instance_repository=resolved_connector_instance_creation_service.repository,
+                        inventory_repository=resolved_inventory_device_service.repository,
+                        credential_materializer=connector_credential_materializer,
+                        transport_factory=brocade_transport_factory,
+                        organization_id=resolved_settings.development_organization_id,
+                        environment_id=f"environment.{resolved_settings.environment}",
+                        runtime_state_repository=bundled_runtime_state_repository,
+                    ),
+                ),
                 organization_id=resolved_settings.development_organization_id,
                 environment_id=f"environment.{resolved_settings.environment}",
-                runtime_state_repository=bundled_runtime_state_repository,
             )
             if configured_connector_paths_enabled
             else SyntheticGraphSnapshotProvider(
@@ -7069,7 +7137,7 @@ def create_app(
                 configuration_repository=bundled_connection_configuration_repository,
                 instance_repository=resolved_connector_instance_creation_service.repository,
                 inventory_repository=resolved_inventory_device_service.repository,
-                credential_materializer=hitachi_credential_materializer,
+                credential_materializer=connector_credential_materializer,
                 transport_factory=hitachi_transport_factory,
                 organization_id=resolved_settings.development_organization_id,
                 environment_id=f"environment.{resolved_settings.environment}",
