@@ -7,6 +7,7 @@ from typing import Protocol
 
 from atlas.modules.connectors.domain.connection_test import ConnectorConnectionTestResult
 from atlas.modules.connectors.vendors.brocade_sannav.ports import BrocadeSanNavTransport
+from atlas.modules.connectors.vendors.commvault.ports import CommvaultTransport
 from atlas.modules.connectors.vendors.hitachi_ops_center.ports import HitachiOpsCenterTransport
 from atlas.modules.connectors.vendors.huawei_dorado.ports import HuaweiDoradoTransport
 from atlas.modules.connectors.vendors.huawei_pacific.ports import HuaweiPacificTransport
@@ -158,3 +159,21 @@ class VCenterConnectionTestTransportFactory(Protocol):
         timeout_seconds: float,
         maximum_response_bytes: int,
     ) -> VCenterTransport: ...
+
+
+class CommvaultConnectionTestTransportFactory(Protocol):
+    def create(
+        self,
+        *,
+        hostname: str,
+        port: int,
+        trust_profile_id: str,
+        # Returns "username:password", not a pre-built header -- Commvault's real REST API is
+        # session-based (see commvault/ports.py): the transport itself performs Login and
+        # extracts the session token from the login response body's `token` field, then presents
+        # it as the `Authtoken` header on every subsequent request. No system_id is needed: one
+        # configured instance manages exactly one CommServe.
+        credential_provider: Callable[[], str],
+        timeout_seconds: float,
+        maximum_response_bytes: int,
+    ) -> CommvaultTransport: ...

@@ -123,6 +123,7 @@ def definition() -> HealthCheckDefinition:
         pacific_node,
         pacific_capacity,
         vcenter_host,
+        commvault_job,
     ) = build_synthetic_health_check_definitions(
         organization_id="organization.atlas.local",
         environment="development",
@@ -136,6 +137,7 @@ def definition() -> HealthCheckDefinition:
         pacific_node,
         pacific_capacity,
         vcenter_host,
+        commvault_job,
     )
     return replace(
         fabric,
@@ -330,6 +332,7 @@ async def test_other_definitions_are_delegated_to_the_fallback_executor() -> Non
         _pacific_node,
         _pacific_capacity,
         _vcenter_host,
+        _commvault_job,
     ) = build_synthetic_health_check_definitions(
         organization_id="organization.atlas.local",
         environment="development",

@@ -1,0 +1,39 @@
+{
+  "source_set_id": "source-set.commvault.commserve.rest-api.11-3x",
+  "reviewed_at": "2026-08-28T00:00:00Z",
+  "publisher": "Commvault Systems, Inc.",
+  "document": {
+    "title": "Commvault REST API Reference (Job Operations, Authentication Operations)",
+    "version": "11.3x / latest",
+    "url": "https://api.commvault.com/docs/latest/api/cv/JobOperations/get-list-of-jobs/"
+  },
+  "capability_sources": [
+    {
+      "capability_id": "commvault.commserve.job.status.read",
+      "method": "GET",
+      "path": "/webservice/Job",
+      "confirmation": "confirmed_via_working_example",
+      "url": "https://api.commvault.com/docs/latest/api/cv/JobOperations/get-list-of-jobs/",
+      "note": "Endpoint path, query parameters (jobFilter, jobCategory, completedJobLookupTime), and the complete response field set were confirmed directly from the official api.commvault.com machine-generated reference page, which shows a literal, complete example JSON response: {\"totalRecordsWithoutPaging\": N, \"jobs\": [{\"jobSummary\": {\"jobId\", \"status\", \"jobType\", \"percentComplete\", \"jobStartTime\", \"subclientName\", \"destClientName\", \"subclient\": {\"clientName\", ...}, ...}}]}. Only the status vocabulary directly evidenced across this page and Commvault's own REST API / cvpysdk documentation (Completed, Running, Waiting, Suspended, Killed) is modeled; Commvault's own documentation states the complete status vocabulary is longer, so an unrecognized value maps to an honest UNKNOWN rather than being guessed."
+    }
+  ],
+  "authentication_source": {
+    "method": "POST",
+    "path": "/webservice/Login",
+    "confirmation": "confirmed_via_working_example",
+    "url": "https://documentation.commvault.com/v11/software/rest_api_authentication_post_login.html",
+    "note": "Confirmed directly from Commvault's own official documentation page, which shows the exact endpoint (`POST $[webservice]/Login`), request body fields (username, password [Base64 UTF-8 encoded], domain, commserver, timeout), and the response token field (`\"token\": \"QSDK ...\"`). A second independent official source (api.commvault.com's AuthenticationOperations/login page) corroborated the `Authtoken` header requirement for subsequent requests -- a genuine, confirmed difference from every other connector built for this project, which all use either a vendor-specific token header (X-Auth-Token, vmware-api-session-id) or Authorization: Bearer/Basic, never a header literally named Authtoken. Token validity: 30 minutes of inactivity by default. Logout (`POST webservice/Logout` with the same Authtoken header, no body) was confirmed the same way. This connector follows the established login -> read -> logout bounded-cycle pattern used for both Huawei connectors and vCenter, never caching a live session."
+  },
+  "self_test_source": {
+    "method": "GET",
+    "path": "/webservice/Job",
+    "note": "No confirmed dedicated version/compatibility endpoint independent of the job-status read was found; the self-test reuses a narrow, one-hour-lookback job-status read itself, the same pattern used for every prior connector's probe."
+  },
+  "unconfirmed_gaps": [
+    "The complete Commvault job-status vocabulary is longer than what could be independently confirmed via real, working examples during connector construction; only Completed/Running/Waiting/Suspended/Killed are modeled, and any other value (e.g. a partial-success or specific failure-reason status) maps to UNKNOWN rather than being guessed at a severity.",
+    "Client inventory (GET webservice/Client) is a real, confirmed endpoint that was not implemented in this first pass -- only the job-status health signal was built. There is also no confirmed field connecting a Commvault-protected client to entities from any other connector in this project, so no graph relationship (e.g. BACKED_BY) is asserted.",
+    "Backup policy, storage policy, and recovery-point/point-in-time catalog concepts are real Commvault domain concepts with their own REST API surface that were not implemented here; this connector is scoped to job-status health only."
+  ],
+  "data_policy": "synthetic-only",
+  "production_credentials_present": false
+}

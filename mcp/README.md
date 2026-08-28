@@ -29,3 +29,5 @@ Current candidates:
   quarantined C1 cluster-node and storage-pool candidate using synthetic data only.
 - [VMware vCenter Server (vSphere Automation API)](connectors/vcenter/README.md) -
   quarantined C1 host, cluster, and VM inventory candidate using synthetic data only.
+- [Commvault CommServe (REST API)](connectors/commvault/README.md) -
+  quarantined C1 backup job-status candidate using synthetic data only.

@@ -6,6 +6,9 @@ from datetime import UTC, datetime
 from atlas.modules.connectors.vendors.brocade_sannav.manifest import (
     FABRIC_HEALTH_CAPABILITY_ID,
 )
+from atlas.modules.connectors.vendors.commvault.manifest import (
+    JOB_STATUS_CAPABILITY_ID as COMMVAULT_JOB_STATUS_CAPABILITY_ID,
+)
 from atlas.modules.connectors.vendors.huawei_dorado.manifest import (
     CAPACITY_CAPABILITY_ID as HUAWEI_CAPACITY_CAPABILITY_ID,
 )
@@ -22,6 +25,9 @@ from atlas.modules.connectors.vendors.vcenter.manifest import (
     HOST_INVENTORY_CAPABILITY_ID as VCENTER_HOST_INVENTORY_CAPABILITY_ID,
 )
 from atlas.modules.health_checks.adapters.brocade_sannav import FABRIC_HEALTH_DEFINITION_ID
+from atlas.modules.health_checks.adapters.commvault import (
+    JOB_STATUS_DEFINITION_ID as COMMVAULT_JOB_STATUS_DEFINITION_ID,
+)
 from atlas.modules.health_checks.adapters.huawei_dorado import (
     CAPACITY_DEFINITION_ID as HUAWEI_CAPACITY_DEFINITION_ID,
 )
@@ -304,6 +310,35 @@ def build_synthetic_health_check_definitions(
             ),
             evidence_requirements=("Current connection and power state for each ESXi host",),
         ),
+        HealthCheckDefinition(
+            definition_id=COMMVAULT_JOB_STATUS_DEFINITION_ID,
+            version=1,
+            title="Commvault recent backup job status",
+            owner="Backup Platform Engineering",
+            enabled=True,
+            organization_id=organization_id,
+            environment_id=f"environment.{environment}",
+            site_id="site.local",
+            target_id="target.commvault.lab",
+            connector_id="connector.commvault.synthetic",
+            connector_version="1.0.0",
+            capability_id=COMMVAULT_JOB_STATUS_CAPABILITY_ID,
+            capability_class="C1",
+            schedule=HealthCheckSchedule(interval_minutes=15, anchor_at=anchor),
+            thresholds=(
+                HealthThreshold(
+                    metric="job.status",
+                    warning_condition="status is Suspended or an unrecognized value",
+                    critical_condition="status is Killed",
+                ),
+            ),
+            limits=HealthCheckLimits(
+                timeout_seconds=5.0,
+                max_steps=1,
+                max_evidence_records=4,
+            ),
+            evidence_requirements=("Current status for each recent backup job",),
+        ),
     )
 
 
@@ -327,6 +362,8 @@ class SyntheticStorageHealthExecutor:
             return _huawei_pacific_capacity_result(started_at)
         if definition.definition_id == VCENTER_HOST_HEALTH_DEFINITION_ID:
             return _vcenter_host_result(started_at)
+        if definition.definition_id == COMMVAULT_JOB_STATUS_DEFINITION_ID:
+            return _commvault_job_result(started_at)
         raise ValueError("unsupported synthetic health-check definition")
 
 
@@ -663,6 +700,40 @@ def _vcenter_host_result(observed_at: datetime) -> HealthCheckExecutionResult:
     )
 
 
+def _commvault_job_result(observed_at: datetime) -> HealthCheckExecutionResult:
+    job_ref = _reference("commvault-jobs/lab", "job-102=Completed")
+    evidence = (
+        HealthCheckEvidence(
+            reference=job_ref,
+            source="Commvault synthetic job-status fixture",
+            source_version="11.3x-contract.1",
+            observed_at=observed_at,
+            freshness=FreshnessState.CURRENT,
+            trust_basis="Documentation-derived allowlisted C1 response",
+        ),
+    )
+    observation = HealthObservation(
+        observation_id="observation.commvault.job.lab",
+        target_id="target.commvault.lab/102",
+        component="client:firewalltestcs/subclient:IndexBackup",
+        metric="job.status",
+        value="Completed",
+        unit=None,
+        state=ObservationState.NORMAL,
+        observed_at=observed_at,
+        freshness=FreshnessState.CURRENT,
+        evidence_references=(job_ref,),
+    )
+    return HealthCheckExecutionResult(
+        state=HealthCheckRunState.COMPLETED,
+        completed_at=observed_at,
+        step_count=1,
+        observations=(observation,),
+        findings=(),
+        evidence=evidence,
+    )
+
+
 def build_synthetic_latest_runs(
     definitions: tuple[HealthCheckDefinition, ...], *, generated_at: datetime | None = None
 ) -> tuple[HealthCheckRun, ...]:
@@ -675,6 +746,7 @@ def build_synthetic_latest_runs(
         HUAWEI_PACIFIC_CLUSTER_NODE_DEFINITION_ID: _huawei_pacific_node_result(observed_at),
         HUAWEI_PACIFIC_CAPACITY_DEFINITION_ID: _huawei_pacific_capacity_result(observed_at),
         VCENTER_HOST_HEALTH_DEFINITION_ID: _vcenter_host_result(observed_at),
+        COMMVAULT_JOB_STATUS_DEFINITION_ID: _commvault_job_result(observed_at),
         FABRIC_HEALTH_DEFINITION_ID: _fabric_result(observed_at),
     }
     return tuple(

@@ -19,24 +19,24 @@ from atlas.modules.connectors.application.bundled_runtime_state_ports import (
     BundledConnectorRuntimeStateRepository,
 )
 from atlas.modules.connectors.application.connection_test_ports import (
+    CommvaultConnectionTestTransportFactory,
     ConnectorAuthorizationHeaderLease,
     ConnectorConnectionTestError,
     ConnectorCredentialMaterializer,
-    HuaweiDoradoConnectionTestTransportFactory,
 )
 from atlas.modules.connectors.application.instance_creation_ports import (
     ConnectorInstanceRepository,
 )
 from atlas.modules.connectors.domain.instance_creation import DISABLED_UNCONFIGURED
-from atlas.modules.connectors.vendors.huawei_dorado.manifest import PACKAGE_ID
-from atlas.modules.connectors.vendors.huawei_dorado.ports import HuaweiDoradoTransport
-from atlas.modules.connectors.vendors.huawei_dorado.synthetic import (
-    SyntheticHuaweiDoradoTransport,
-    SyntheticHuaweiFault,
-    SyntheticHuaweiResponse,
+from atlas.modules.connectors.vendors.commvault.manifest import PACKAGE_ID
+from atlas.modules.connectors.vendors.commvault.ports import CommvaultTransport
+from atlas.modules.connectors.vendors.commvault.synthetic import (
+    SyntheticCommvaultFault,
+    SyntheticCommvaultResponse,
+    SyntheticCommvaultTransport,
 )
-from atlas.modules.health_checks.adapters.configured_huawei_dorado import (
-    ConfiguredHuaweiDoradoHealthExecutor,
+from atlas.modules.health_checks.adapters.configured_commvault import (
+    ConfiguredCommvaultHealthExecutor,
 )
 from atlas.modules.health_checks.adapters.synthetic import (
     SyntheticStorageHealthExecutor,
@@ -47,11 +47,21 @@ from atlas.modules.inventory.application.ports import InventoryDeviceRepository
 from atlas.modules.inventory.domain.devices import InventoryDeviceLifecycle, InventoryDeviceType
 
 NOW = datetime(2026, 8, 28, 12, 0, tzinfo=UTC)
-INSTANCE_ID = "connector-instance.huawei-health"
-SYSTEM_ID = "2102350ABC"
-SYSTEM_PATH = "/system/"
-CONTROLLER_PATH = "/controller"
-STORAGE_POOL_PATH = "/storagepool"
+INSTANCE_ID = "connector-instance.commvault-health"
+JOB_PATH = "/webservice/Job?jobFilter=backup&jobCategory=All&completedJobLookupTime=86400"
+
+
+def _job_summary(job_id: int, *, status: str) -> dict[str, object]:
+    return {
+        "jobSummary": {
+            "jobId": job_id,
+            "status": status,
+            "jobType": "Backup",
+            "percentComplete": 100 if status == "Completed" else 40,
+            "subclientName": "IndexBackup",
+            "destClientName": "firewalltestcs",
+        }
+    }
 
 
 class ScopeRepository[T]:
@@ -86,7 +96,7 @@ class CredentialMaterializer:
 
 
 class TransportFactory:
-    def __init__(self, transport: SyntheticHuaweiDoradoTransport) -> None:
+    def __init__(self, transport: SyntheticCommvaultTransport) -> None:
         self.transport = transport
 
     def create(
@@ -94,16 +104,14 @@ class TransportFactory:
         *,
         hostname: str,
         port: int,
-        system_id: str,
         trust_profile_id: str,
         credential_provider: Callable[[], str],
         timeout_seconds: float,
         maximum_response_bytes: int,
-    ) -> HuaweiDoradoTransport:
+    ) -> CommvaultTransport:
         del (
             hostname,
             port,
-            system_id,
             trust_profile_id,
             credential_provider,
             timeout_seconds,
@@ -112,35 +120,27 @@ class TransportFactory:
         return self.transport
 
 
-def definitions() -> tuple[HealthCheckDefinition, HealthCheckDefinition]:
+def job_status_definition() -> HealthCheckDefinition:
     (
         _controller,
         _capacity,
         _fabric,
-        huawei_controller,
-        huawei_capacity,
+        _huawei_controller,
+        _huawei_capacity,
         _pacific_node,
         _pacific_capacity,
         _vcenter_host,
-        _commvault_job,
+        commvault_job,
     ) = build_synthetic_health_check_definitions(
         organization_id="organization.atlas.local",
         environment="development",
         anchor_at=NOW,
     )
-    return (
-        replace(
-            huawei_controller,
-            connector_id=PACKAGE_ID,
-            connector_version="0.1.0",
-            target_id="target.huawei.dorado.configured",
-        ),
-        replace(
-            huawei_capacity,
-            connector_id=PACKAGE_ID,
-            connector_version="0.1.0",
-            target_id="target.huawei.dorado.configured",
-        ),
+    return replace(
+        commvault_job,
+        connector_id=PACKAGE_ID,
+        connector_version="0.1.0",
+        target_id="target.commvault.configured",
     )
 
 
@@ -150,11 +150,11 @@ def build_executor(
     instances: Iterable[object] = (),
     devices: Iterable[object] = (),
     credentials_available: bool = True,
-    routes: Mapping[str, SyntheticHuaweiResponse] | None = None,
+    routes: Mapping[str, SyntheticCommvaultResponse] | None = None,
     runtime_state_repository: BundledConnectorRuntimeStateRepository | None = None,
-) -> tuple[ConfiguredHuaweiDoradoHealthExecutor, SyntheticHuaweiDoradoTransport]:
-    transport = SyntheticHuaweiDoradoTransport(routes or {})
-    executor = ConfiguredHuaweiDoradoHealthExecutor(
+) -> tuple[ConfiguredCommvaultHealthExecutor, SyntheticCommvaultTransport]:
+    transport = SyntheticCommvaultTransport(dict(routes or {}))
+    executor = ConfiguredCommvaultHealthExecutor(
         configuration_repository=cast(
             BundledConnectionConfigurationRepository, ScopeRepository(configurations)
         ),
@@ -165,7 +165,7 @@ def build_executor(
             CredentialMaterializer(available=credentials_available),
         ),
         transport_factory=cast(
-            HuaweiDoradoConnectionTestTransportFactory, TransportFactory(transport)
+            CommvaultConnectionTestTransportFactory, TransportFactory(transport)
         ),
         fallback_executor=SyntheticStorageHealthExecutor(),
         organization_id="organization.atlas.local",
@@ -177,14 +177,13 @@ def build_executor(
 
 def _configuration() -> SimpleNamespace:
     return SimpleNamespace(
-        configuration_id="connection_configuration.huawei-health",
+        configuration_id="connection_configuration.commvault-health",
         connector_id=PACKAGE_ID,
         instance_id=INSTANCE_ID,
-        hostname="dorado.example.internal",
-        port=8088,
+        hostname="commvault.example.internal",
+        port=443,
         trust_profile_id="trust.system-ca",
-        secret_reference_id="secret.huawei.dorado.readonly",
-        system_id=SYSTEM_ID,
+        secret_reference_id="secret.commvault.readonly",
     )
 
 
@@ -198,35 +197,33 @@ def _instance() -> SimpleNamespace:
 
 def _device() -> SimpleNamespace:
     return SimpleNamespace(
-        device_type=InventoryDeviceType.STORAGE,
-        vendor="Huawei",
-        serial_number=SYSTEM_ID,
+        device_type=InventoryDeviceType.BACKUP,
+        vendor="Commvault",
+        serial_number="commvault-cs-01",
         lifecycle=InventoryDeviceLifecycle.ACTIVE,
     )
 
 
 @pytest.mark.asyncio
-async def test_controller_check_fails_safely_without_one_configured_instance() -> None:
+async def test_job_check_fails_safely_without_one_configured_instance() -> None:
     executor, transport = build_executor()
-    controller, _capacity = definitions()
 
-    result = await executor.execute(controller, started_at=NOW)
+    result = await executor.execute(job_status_definition(), started_at=NOW)
 
     assert result.state is HealthCheckRunState.FAILED
     assert transport.requests == []
-    assert "single active configured Huawei Dorado MCP" in result.partial_reasons[0]
+    assert "single active configured Commvault MCP" in result.partial_reasons[0]
 
 
 @pytest.mark.asyncio
-async def test_controller_check_does_not_contact_disabled_configured_mcp() -> None:
+async def test_job_check_does_not_contact_disabled_configured_mcp() -> None:
     executor, transport = build_executor(
         configurations=(_configuration(),),
         instances=(_instance(),),
         runtime_state_repository=InMemoryBundledConnectorRuntimeStateRepository(),
     )
-    controller, _capacity = definitions()
 
-    result = await executor.execute(controller, started_at=NOW)
+    result = await executor.execute(job_status_definition(), started_at=NOW)
 
     assert result.state is HealthCheckRunState.FAILED
     assert "must be enabled" in result.partial_reasons[0]
@@ -234,13 +231,10 @@ async def test_controller_check_does_not_contact_disabled_configured_mcp() -> No
 
 
 @pytest.mark.asyncio
-async def test_controller_check_uses_configured_read_only_huawei_transport() -> None:
+async def test_job_check_reports_normal_for_completed_job() -> None:
     routes = {
-        CONTROLLER_PATH: SyntheticHuaweiResponse(
-            payload={
-                "error": {"code": 0},
-                "data": [{"ID": "0A", "ROLE": "Primary", "HEALTHSTATUS": "1"}],
-            }
+        JOB_PATH: SyntheticCommvaultResponse(
+            payload={"jobs": [_job_summary(102, status="Completed")]}
         )
     }
     executor, transport = build_executor(
@@ -249,31 +243,19 @@ async def test_controller_check_uses_configured_read_only_huawei_transport() -> 
         devices=(_device(),),
         routes=routes,
     )
-    controller, _capacity = definitions()
 
-    result = await executor.execute(controller, started_at=NOW)
+    result = await executor.execute(job_status_definition(), started_at=NOW)
 
     assert result.state is HealthCheckRunState.COMPLETED
-    assert transport.requests == [CONTROLLER_PATH]
-    assert result.observations[0].value == "normal"
+    assert transport.requests == [JOB_PATH]
+    assert result.observations[0].value == "Completed"
+    assert result.findings == ()
 
 
 @pytest.mark.asyncio
-async def test_capacity_check_computes_utilization_from_raw_capacity() -> None:
+async def test_job_check_reports_critical_for_killed_job() -> None:
     routes = {
-        STORAGE_POOL_PATH: SyntheticHuaweiResponse(
-            payload={
-                "error": {"code": 0},
-                "data": [
-                    {
-                        "NAME": "StoragePool001",
-                        "USERTOTALCAPACITY": "1000",
-                        "USERFREECAPACITY": "220",
-                        "HEALTHSTATUS": "1",
-                    }
-                ],
-            }
-        )
+        JOB_PATH: SyntheticCommvaultResponse(payload={"jobs": [_job_summary(103, status="Killed")]})
     }
     executor, transport = build_executor(
         configurations=(_configuration(),),
@@ -281,26 +263,26 @@ async def test_capacity_check_computes_utilization_from_raw_capacity() -> None:
         devices=(_device(),),
         routes=routes,
     )
-    _controller, capacity = definitions()
 
-    result = await executor.execute(capacity, started_at=NOW)
+    result = await executor.execute(job_status_definition(), started_at=NOW)
 
+    # A finding alone does not make the run PARTIAL -- only an incomplete collection does,
+    # matching every prior configured health executor's precedent exactly.
     assert result.state is HealthCheckRunState.COMPLETED
-    assert result.observations[0].value == "78.0"
-    assert transport.requests == [STORAGE_POOL_PATH]
+    assert len(result.findings) == 1
+    assert transport.requests == [JOB_PATH]
 
 
 @pytest.mark.asyncio
-async def test_missing_credential_reference_does_not_contact_huawei() -> None:
+async def test_missing_credential_reference_does_not_contact_commvault() -> None:
     executor, transport = build_executor(
         configurations=(_configuration(),),
         instances=(_instance(),),
         devices=(_device(),),
         credentials_available=False,
     )
-    controller, _capacity = definitions()
 
-    result = await executor.execute(controller, started_at=NOW)
+    result = await executor.execute(job_status_definition(), started_at=NOW)
 
     assert result.state is HealthCheckRunState.FAILED
     assert "credential reference is unavailable" in result.partial_reasons[0]
@@ -309,20 +291,19 @@ async def test_missing_credential_reference_does_not_contact_huawei() -> None:
 
 @pytest.mark.asyncio
 async def test_transport_fault_is_reported_safely() -> None:
-    routes = {CONTROLLER_PATH: SyntheticHuaweiResponse(fault=SyntheticHuaweiFault.UNAVAILABLE)}
+    routes = {JOB_PATH: SyntheticCommvaultResponse(fault=SyntheticCommvaultFault.UNAVAILABLE)}
     executor, transport = build_executor(
         configurations=(_configuration(),),
         instances=(_instance(),),
         devices=(_device(),),
         routes=routes,
     )
-    controller, _capacity = definitions()
 
-    result = await executor.execute(controller, started_at=NOW)
+    result = await executor.execute(job_status_definition(), started_at=NOW)
 
     assert result.state is HealthCheckRunState.FAILED
     assert "failed safely" in result.partial_reasons[0]
-    assert transport.requests == [CONTROLLER_PATH]
+    assert transport.requests == [JOB_PATH]
 
 
 @pytest.mark.asyncio
@@ -332,17 +313,7 @@ async def test_other_definitions_are_delegated_to_the_fallback_executor() -> Non
         instances=(_instance(),),
         devices=(_device(),),
     )
-    (
-        hitachi_controller,
-        _capacity,
-        _fabric,
-        _huawei_controller,
-        _huawei_capacity,
-        _pacific_node,
-        _pacific_capacity,
-        _vcenter_host,
-        _commvault_job,
-    ) = build_synthetic_health_check_definitions(
+    hitachi_controller, *_rest = build_synthetic_health_check_definitions(
         organization_id="organization.atlas.local",
         environment="development",
         anchor_at=NOW,

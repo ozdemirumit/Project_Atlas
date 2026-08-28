@@ -115,6 +115,7 @@ def host_definition() -> HealthCheckDefinition:
         _pacific_node,
         _pacific_capacity,
         host,
+        _commvault_job,
     ) = build_synthetic_health_check_definitions(
         organization_id="organization.atlas.local",
         environment="development",

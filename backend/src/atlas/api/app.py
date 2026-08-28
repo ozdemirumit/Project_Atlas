@@ -645,6 +645,7 @@ from atlas.modules.connectors.application.bounded_invocation import (
 from atlas.modules.connectors.application.bundled_catalog import (
     BundledConnectorCatalogService,
     build_brocade_sannav_bundled_descriptor,
+    build_commvault_bundled_descriptor,
     build_hitachi_ops_center_bundled_descriptor,
     build_huawei_dorado_bundled_descriptor,
     build_huawei_pacific_bundled_descriptor,
@@ -799,6 +800,10 @@ from atlas.modules.connectors.vendors.brocade_sannav.connection_test_https impor
     BrocadeConnectionTestProbe,
     BrocadeSanNavConnectionTestHttpsFactory,
 )
+from atlas.modules.connectors.vendors.commvault.connection_test_https import (
+    CommvaultConnectionTestHttpsFactory,
+    CommvaultConnectionTestProbe,
+)
 from atlas.modules.connectors.vendors.hitachi_ops_center.connection_test_https import (
     HitachiConnectionTestProbe,
     HitachiOpsCenterConnectionTestHttpsFactory,
@@ -848,8 +853,14 @@ from atlas.modules.graph.adapters.synthetic import (
 from atlas.modules.graph.application.engine import InMemoryGraphImpactAnalyzer
 from atlas.modules.graph.application.service import GraphImpactService
 from atlas.modules.health_checks.adapters.brocade_sannav import FABRIC_HEALTH_DEFINITION_ID
+from atlas.modules.health_checks.adapters.commvault import (
+    JOB_STATUS_DEFINITION_ID as COMMVAULT_JOB_STATUS_DEFINITION_ID,
+)
 from atlas.modules.health_checks.adapters.configured_brocade_sannav import (
     ConfiguredBrocadeSanNavHealthExecutor,
+)
+from atlas.modules.health_checks.adapters.configured_commvault import (
+    ConfiguredCommvaultHealthExecutor,
 )
 from atlas.modules.health_checks.adapters.configured_hitachi import (
     ConfiguredHitachiHealthExecutor,
@@ -4983,6 +4994,7 @@ def create_app(
                 build_huawei_dorado_bundled_descriptor(),
                 build_huawei_pacific_bundled_descriptor(),
                 build_vcenter_bundled_descriptor(),
+                build_commvault_bundled_descriptor(),
             )
         ),
         repository=resolved_connector_instance_creation_service.repository,
@@ -5021,6 +5033,9 @@ def create_app(
             # vCenter's real Automation API is also session-based (see vcenter/ports.py), the
             # same "username:password" convention.
             "secret.vmware.vcenter.readonly": "ATLAS_VCENTER_AUTHORIZATION",
+            # Commvault's real REST API is also session-based (see commvault/ports.py), the same
+            # "username:password" convention.
+            "secret.commvault.readonly": "ATLAS_COMMVAULT_AUTHORIZATION",
         },
     )
     hitachi_transport_factory = HitachiOpsCenterConnectionTestHttpsFactory()
@@ -5028,6 +5043,7 @@ def create_app(
     huawei_dorado_transport_factory = HuaweiDoradoConnectionTestHttpsFactory()
     huawei_pacific_transport_factory = HuaweiPacificConnectionTestHttpsFactory()
     vcenter_transport_factory = VCenterConnectionTestHttpsFactory()
+    commvault_transport_factory = CommvaultConnectionTestHttpsFactory()
     connector_connection_test_result_repository = (
         PostgreSQLConnectorConnectionTestResultRepository.from_url(resolved_settings.database_url)
         if resolved_settings.database_url
@@ -5053,6 +5069,9 @@ def create_app(
             ),
             VCenterConnectionTestProbe.connector_id: VCenterConnectionTestProbe(
                 transport_factory=vcenter_transport_factory
+            ),
+            CommvaultConnectionTestProbe.connector_id: CommvaultConnectionTestProbe(
+                transport_factory=commvault_transport_factory
             ),
         },
         audit_sink=resolved_audit_sink,
@@ -7077,6 +7096,11 @@ def create_app(
             "connector_version": "0.1.0",
             "target_id": "target.vcenter.configured",
         },
+        COMMVAULT_JOB_STATUS_DEFINITION_ID: {
+            "connector_id": "connector.commvault.commserve",
+            "connector_version": "0.1.0",
+            "target_id": "target.commvault.configured",
+        },
     }
     health_check_definitions = (
         tuple(
@@ -7137,7 +7161,23 @@ def create_app(
                                 inventory_repository=(resolved_inventory_device_service.repository),
                                 credential_materializer=connector_credential_materializer,
                                 transport_factory=vcenter_transport_factory,
-                                fallback_executor=SyntheticStorageHealthExecutor(),
+                                fallback_executor=ConfiguredCommvaultHealthExecutor(
+                                    configuration_repository=(
+                                        bundled_connection_configuration_repository
+                                    ),
+                                    instance_repository=(
+                                        resolved_connector_instance_creation_service.repository
+                                    ),
+                                    inventory_repository=(
+                                        resolved_inventory_device_service.repository
+                                    ),
+                                    credential_materializer=connector_credential_materializer,
+                                    transport_factory=commvault_transport_factory,
+                                    fallback_executor=SyntheticStorageHealthExecutor(),
+                                    organization_id=(resolved_settings.development_organization_id),
+                                    environment_id=f"environment.{resolved_settings.environment}",
+                                    runtime_state_repository=bundled_runtime_state_repository,
+                                ),
                                 organization_id=resolved_settings.development_organization_id,
                                 environment_id=f"environment.{resolved_settings.environment}",
                                 runtime_state_repository=bundled_runtime_state_repository,

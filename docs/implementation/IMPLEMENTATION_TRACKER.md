@@ -4,14 +4,88 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-266 |
-| Title | Add real VMware vCenter connector (Phase 4 of modular multi-vendor MCPs): hypervisor host/cluster/VM inventory into graph and health_checks |
-| Status | Verified (backend, tool-verified with real toolchain) -- graph/health_checks only; this vendor is a hypervisor, not a storage array, so storage/RCA/recommendations are out of scope by design, not deferred |
+| Task ID | ATLAS-IMP-267 |
+| Title | Add real Commvault CommServe connector (Phase 5, final vendor of modular multi-vendor MCPs): backup job-status health check |
+| Status | Verified (backend, tool-verified with real toolchain) -- health_checks only, by design; graph/storage/RCA/recommendations are out of scope, not deferred (see Scope note below) |
 | Branch | `main` |
 | Pull Request | none (pushed directly to `main`; no PR tooling available in this environment) |
 | Governing Documents | ATLAS-003, ATLAS-020/021/022/047 (connector quarantine/promotion), `docs/adr/ADR-004`+ |
 | Last Updated | 2026-08-28 |
-| Next Action | Continue the approved plan: Commvault (backup), the final vendor named in the original request (`C:\Users\umito\.claude\plans\tingly-marinating-anchor.md`). |
+| Next Action | All five vendors named in the original request (Brocade SANnav, Huawei Dorado, Huawei Pacific, vCenter, Commvault) are now real, connector-backed, and wired. No further vendor work is scoped by the approved plan (`C:\Users\umito\.claude\plans\tingly-marinating-anchor.md`); remaining candidates for follow-on work (client inventory, backup/storage policy, recovery-point catalog, cross-vendor graph relationships) are named explicitly in this task's own known-gaps text and in prior tasks', not committed to. |
+
+### ATLAS-IMP-267 Scope and Verification
+
+- **What this is**: the sixth and final real vendor connector -- Commvault CommServe is a backup
+  platform, closing the fifth and last vendor explicitly named in the original request (Brocade
+  SANnav, Huawei Dorado, Huawei Pacific, vCenter, Commvault). All five are now real,
+  connector-backed, and wired into at least one consuming module.
+- **Deliberately scoped narrower than the storage/hypervisor vendors, and why**: the plan
+  document itself flagged Commvault as needing "a new module... for job/policy/recovery-point
+  domain concepts that don't exist anywhere in this codebase today -- the largest of the five."
+  Rather than design and build a new `backup_operations` domain module speculatively in the same
+  session, this task takes the same incremental-slice approach already proven for every other
+  vendor (Brocade shipped health_checks+graph first, RCA later; Dorado/Pacific shipped
+  storage+graph+health_checks first, RCA/recommendations later): it ships the single most
+  valuable, lowest-risk, most clearly-scoped piece -- a real backup job-status health signal --
+  using the existing, already-vendor-agnostic `HealthCheckDefinition`/`HealthObservation`/
+  `HealthCheckFinding` domain model, which needed no changes at all (the same fact already
+  established for Brocade in ATLAS-IMP-261). No new module, no graph entities, no storage
+  overview, no RCA/recommendations -- named explicitly as out of scope, not silently dropped.
+- **Real API research**: confirmed via Commvault's own official documentation across two
+  independent pages, including a literal, complete example JSON response on the official
+  api.commvault.com machine-generated reference (`GET /webservice/Job` returning
+  `{"totalRecordsWithoutPaging": N, "jobs": [{"jobSummary": {"jobId", "status", "jobType",
+  "percentComplete", "subclientName", "destClientName", "subclient": {"clientName", ...}}}]}`).
+  Login (`POST webservice/Login`, body `{username, password (Base64), domain, commserver,
+  timeout}`, response field `"token"`) and the subsequent-request header were each confirmed from
+  Commvault's own documentation.commvault.com page and independently corroborated by a second,
+  separate official page (api.commvault.com's AuthenticationOperations/Login reference).
+- **A real, confirmed difference from every other connector built this session**: the session
+  token is presented on every subsequent request via a header literally named `Authtoken` -- not
+  `X-Auth-Token` (both Huawei connectors), not `vmware-api-session-id` (vCenter), not
+  `Authorization: Bearer`/`Basic` (Hitachi, Brocade). `CommvaultHttpsTransport` still performs the
+  same complete, bounded login -> read -> logout cycle for every single `get()` call as every
+  other session-based connector this session, for the same reason: no session ever outlives one
+  bounded operation.
+- **Honest enum-vocabulary limitation, stated plainly rather than guessed**: Commvault's own
+  documentation states its complete job-status vocabulary is longer than what could be
+  independently confirmed via real, working examples during connector construction. Only the
+  values directly evidenced across real sources (`Completed`, `Running`, `Waiting`, `Suspended`,
+  `Killed`) are modeled in `CommvaultJobStatus`; any other value (e.g. a specific
+  partial-success or failure-reason status Commvault is known to have) maps to `UNKNOWN` rather
+  than being assigned a guessed severity -- the same rigor already established for Huawei
+  Pacific's `running_status` and Dorado's `HEALTHSTATUS`.
+- **New health-check mapping**: `CommvaultJobHealthExecutor` maps job status to observation state
+  (`Completed`/`Running`/`Waiting` -> NORMAL, `Suspended` -> WARNING, `Killed` -> CRITICAL,
+  unrecognized -> UNKNOWN), a new per-vendor mapping table, following the same "a finding alone
+  does not force PARTIAL, only an incomplete collection does" rule established by every prior
+  configured health executor (Dorado, Pacific, vCenter).
+- **Wiring**: `api/app.py`'s health_checks executor fallback chain now runs Hitachi -> Brocade ->
+  Huawei Dorado -> Huawei Pacific -> vCenter -> Commvault -> Synthetic, the longest chain built
+  this session. `InventoryDeviceType.BACKUP` already existed in `modules/inventory` (added in an
+  earlier phase, confirmed unused until now), so the allowlist check needed no inventory-domain
+  change -- only a vendor-substring check (`"commvault" in device.vendor.lower()`), the same
+  pattern used for every other vendor's allowlist.
+- **Verified with the real toolchain**: `ruff format --check` and `ruff check` clean across the
+  full repository (1792 files); `mypy` strict clean across every touched file. New tests: 11
+  collected from the connector package (manifest quarantine, real job-field parsing,
+  unrecognized-status -> UNKNOWN mapping, a 4-case parametrized transport-fault mapping,
+  malformed/oversized rejection, self-test compatibility, synthetic-transport flags,
+  candidate-asset strictness), 7 for the health-check adapter (no configured instance, disabled
+  MCP, normal/critical status mapping, missing credential, transport fault, fallback delegation)
+  -- 18 new tests total, all passing. Fixed the same kind of regression found in every prior
+  health-check-adding task: `build_synthetic_health_check_definitions()` now returns a 9-tuple;
+  updated every existing test file's unpacking (Hitachi, Brocade, Huawei Dorado, Huawei Pacific,
+  vCenter) and `test_health_checks_api.py`'s definitions-count assertion (8 -> 9). Targeted run
+  across every touched area (70 tests: commvault/vcenter/health_checks-specific plus every prior
+  vendor's health-executor regression suite) passed clean, followed by a broader multi-area sweep
+  (689 passed, 10 failed, all baseline) across every rca/recommendation/hitachi/brocade/huawei/
+  vcenter/commvault/bundled_connector/health_checks/graph/storage/composite/chained/dispatching/
+  app-tagged test. Full backend suite: 3952 passed, 67 failed, 68 skipped -- the failure count
+  matches the established ~67 pre-existing baseline exactly (bootstrap/upgrade/support-bundle/
+  backup/mcp-builder and alembic-head-drift categories), confirmed by name to share zero overlap
+  with commvault, vcenter, graph, health_checks, or connector. The pass-count increase (+18 over
+  ATLAS-IMP-266's 3934) matches exactly the 18 new tests this task adds.
 
 ### ATLAS-IMP-266 Scope and Verification
 
