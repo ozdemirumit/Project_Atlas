@@ -12,6 +12,21 @@ from atlas.modules.connectors.domain.models import (
 
 INVENTORY_CAPABILITY_ID = "hitachi.opscenter.storage.inventory.read"
 HEALTH_CAPABILITY_ID = "hitachi.opscenter.storage.health.read"
+# Backed by HitachiOpsCenterClient.read_hardware_health() and referenced across RCA, health-check,
+# and recommendation application services as the allowed "read hardware health" capability for
+# this vendor. Named ".hardware.read", distinct from HEALTH_CAPABILITY_ID above (".health.read",
+# used only by the bundled-catalog descriptor) -- a pre-existing naming inconsistency, not
+# introduced or resolved here; both are exposed as constants so consumers stop retyping either
+# literal string.
+HARDWARE_HEALTH_CAPABILITY_ID = "hitachi.opscenter.storage.hardware.read"
+# Referenced by RCA/health-check diagnostic-step descriptions as capabilities a human operator
+# could run against this vendor; not yet implemented by HitachiOpsCenterClient and therefore not
+# declared in build_candidate_manifest()'s capabilities tuple below. Kept here as named constants
+# so consuming modules import a stable identifier instead of retyping the literal string.
+CAPACITY_CAPABILITY_ID = "hitachi.opscenter.storage.capacity.read"
+PATH_EVENTS_CAPABILITY_ID = "hitachi.opscenter.storage.path-events.read"
+CONTROLLER_FAILOVER_PLAN_CAPABILITY_ID = "hitachi.opscenter.storage.controller-failover.plan"
+PATH_REMEDIATION_PLAN_CAPABILITY_ID = "hitachi.opscenter.storage.path-remediation.plan"
 PACKAGE_ID = "connector.hitachi.opscenter.configuration-manager"
 OFFICIAL_REFERENCE = "https://docs.hitachivantara.com/r/en-us/mk-99cfm000/latest"
 

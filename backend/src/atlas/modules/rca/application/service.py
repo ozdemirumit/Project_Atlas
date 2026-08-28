@@ -8,15 +8,24 @@ from uuid import uuid4
 from atlas import __version__
 from atlas.core.audit import AuditRecord, AuditSink
 from atlas.core.classification import DataClassification
+from atlas.modules.connectors.vendors.hitachi_ops_center.manifest import (
+    HARDWARE_HEALTH_CAPABILITY_ID as _HITACHI_HARDWARE_HEALTH_CAPABILITY_ID,
+)
+from atlas.modules.connectors.vendors.hitachi_ops_center.manifest import (
+    PATH_EVENTS_CAPABILITY_ID as _HITACHI_PATH_EVENTS_CAPABILITY_ID,
+)
 from atlas.modules.rca.application.ports import RcaAssembler
 from atlas.modules.rca.domain.models import ConfirmationLevel, RcaCase, RcaCreateRequest
 
 RCA_RESOURCE_ID = "resource.rca.storage.synthetic"
+# Each vendor contributes its own named capability-id constants (see health_checks/application/
+# service.py for the same pattern); "atlas.telemetry.service-health.read" is an Atlas-internal
+# capability, not vendor-provided, so it stays a literal here.
 ALLOWED_DIAGNOSTIC_CAPABILITIES = frozenset(
     {
-        "hitachi.opscenter.storage.path-events.read",
+        _HITACHI_PATH_EVENTS_CAPABILITY_ID,
         "atlas.telemetry.service-health.read",
-        "hitachi.opscenter.storage.hardware.read",
+        _HITACHI_HARDWARE_HEALTH_CAPABILITY_ID,
     }
 )
 

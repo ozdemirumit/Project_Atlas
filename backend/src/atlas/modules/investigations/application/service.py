@@ -8,13 +8,19 @@ from uuid import uuid4
 from atlas import __version__
 from atlas.core.audit import AuditRecord, AuditSink
 from atlas.core.classification import DataClassification
+from atlas.modules.connectors.vendors.hitachi_ops_center.manifest import (
+    PATH_EVENTS_CAPABILITY_ID as _HITACHI_PATH_EVENTS_CAPABILITY_ID,
+)
 from atlas.modules.investigations.application.ports import InvestigationAssembler
 from atlas.modules.investigations.domain.models import InvestigationRequest, ReasoningArtifact
 
 INVESTIGATION_RESOURCE_ID = "resource.investigation.storage.synthetic"
+# Each vendor contributes its own named capability-id constants (see health_checks/application/
+# service.py for the same pattern); "atlas.telemetry.service-health.read" is an Atlas-internal
+# capability, not vendor-provided, so it stays a literal here.
 ALLOWED_CHECK_CAPABILITIES = frozenset(
     {
-        "hitachi.opscenter.storage.path-events.read",
+        _HITACHI_PATH_EVENTS_CAPABILITY_ID,
         "atlas.telemetry.service-health.read",
     }
 )

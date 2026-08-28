@@ -7,6 +7,12 @@ from uuid import uuid4
 
 from atlas import __version__
 from atlas.core.audit import AuditRecord, AuditSink
+from atlas.modules.connectors.vendors.hitachi_ops_center.manifest import (
+    CAPACITY_CAPABILITY_ID as _HITACHI_CAPACITY_CAPABILITY_ID,
+)
+from atlas.modules.connectors.vendors.hitachi_ops_center.manifest import (
+    HARDWARE_HEALTH_CAPABILITY_ID as _HITACHI_HARDWARE_HEALTH_CAPABILITY_ID,
+)
 from atlas.modules.health_checks.application.ports import (
     HealthCheckExecutionResult,
     HealthCheckExecutor,
@@ -21,10 +27,14 @@ from atlas.modules.health_checks.domain.models import (
 )
 
 HEALTH_CHECK_RESOURCE_ID = "resource.health-check.storage.synthetic"
+# One entry per (vendor, capability) this service accepts a health-check definition/run against.
+# Each vendor contributes its own named capability-id constants from its manifest module rather
+# than a retyped literal string here, so a mismatch between what a vendor's manifest declares and
+# what this allowlist expects becomes an import error, not a silent typo.
 ALLOWED_CAPABILITIES = frozenset(
     {
-        "hitachi.opscenter.storage.hardware.read",
-        "hitachi.opscenter.storage.capacity.read",
+        _HITACHI_HARDWARE_HEALTH_CAPABILITY_ID,
+        _HITACHI_CAPACITY_CAPABILITY_ID,
     }
 )
 SAFETY_NOTICE = (

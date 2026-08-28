@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import asyncio
-import re
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from time import monotonic
@@ -13,23 +11,25 @@ from atlas.modules.connectors.application.bundled_connection_configuration_ports
     BundledConnectionConfigurationRepository,
 )
 from atlas.modules.connectors.application.connection_test_ports import (
+    ConnectionTestProbe,
     ConnectorConnectionTestError,
     ConnectorConnectionTestResultRepository,
     ConnectorCredentialMaterializer,
-    HitachiConnectionTestTransportFactory,
 )
 from atlas.modules.connectors.application.instance_creation_ports import ConnectorInstanceRepository
 from atlas.modules.connectors.domain.connection_test import ConnectorConnectionTestResult
 from atlas.modules.connectors.domain.instance_creation import DISABLED_UNCONFIGURED
-from atlas.modules.connectors.vendors.hitachi_ops_center.manifest import PACKAGE_ID
-from atlas.modules.connectors.vendors.hitachi_ops_center.ports import HitachiTransportError
 from atlas.modules.identity.domain.models import AuthenticatedSubject, SubjectKind
 
 CONNECTION_TEST_PERMISSION = "connectors.target-sessions.read"
-_VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 
 
 class ConnectorConnectionTestService:
+    """Vendor-agnostic connection-test orchestration: resolves the configured connector's
+    identity, leases a short-lived credential, and delegates the actual "is this a compatible,
+    reachable target" check to that connector's own `ConnectionTestProbe` -- this class never
+    knows any vendor's transport type, endpoint shape, or response format."""
+
     def __init__(
         self,
         *,
@@ -37,7 +37,7 @@ class ConnectorConnectionTestService:
         result_repository: ConnectorConnectionTestResultRepository,
         instance_repository: ConnectorInstanceRepository,
         credential_materializer: ConnectorCredentialMaterializer,
-        transport_factory: HitachiConnectionTestTransportFactory,
+        probes: Mapping[str, ConnectionTestProbe],
         audit_sink: AuditSink,
         environment_id: str,
         deployment_environment: str,
@@ -51,7 +51,7 @@ class ConnectorConnectionTestService:
         self._result_repository = result_repository
         self._instance_repository = instance_repository
         self._credential_materializer = credential_materializer
-        self._transport_factory = transport_factory
+        self._probes = probes
         self._audit_sink = audit_sink
         self._environment_id = environment_id
         self._development_enabled = deployment_environment == "development"
@@ -79,15 +79,22 @@ class ConnectorConnectionTestService:
         )
         if configuration is None:
             raise ConnectorConnectionTestError("connection_test_configuration_not_found")
+        probe = self._probes.get(configuration.connector_id)
         if (
-            configuration.connector_id != PACKAGE_ID
+            probe is None
             or configuration.protocol != "https"
             or configuration.secret_material_stored
             or configuration.infrastructure_mutation_performed
         ):
             raise ConnectorConnectionTestError("connection_test_configuration_invalid")
 
-        await self._audit(actor, correlation_id, "connector_connection_test_requested", instance_id)
+        await self._audit(
+            actor,
+            correlation_id,
+            "connector_connection_test_requested",
+            instance_id,
+            succeeded=False,
+        )
         started = monotonic()
         outcome = "failed"
         result_code = "connection_test_failed_safely"
@@ -99,7 +106,7 @@ class ConnectorConnectionTestService:
                 secret_reference_id=configuration.secret_reference_id,
                 maximum_lease_seconds=min(30, int(self._timeout_seconds) + 1),
             ) as lease:
-                transport = self._transport_factory.create(
+                probed = await probe.probe(
                     hostname=configuration.hostname,
                     port=configuration.port,
                     trust_profile_id=configuration.trust_profile_id,
@@ -107,18 +114,11 @@ class ConnectorConnectionTestService:
                     timeout_seconds=self._timeout_seconds,
                     maximum_response_bytes=self._maximum_response_bytes,
                 )
-                request_performed = True
-                target_contacted = True
-                async with asyncio.timeout(self._timeout_seconds + 1):
-                    payload = await transport.get("/configuration/version")
-                result_code = self._version_result(payload)
-                outcome = "passed" if result_code == "hitachi_api_compatible" else "failed"
-        except HitachiTransportError as error:
-            result_code = error.code
-            retryable = error.retryable
-        except TimeoutError:
-            result_code = "target_timeout"
-            retryable = True
+                outcome = probed.outcome
+                result_code = probed.result_code
+                retryable = probed.retryable
+                request_performed = probed.request_performed
+                target_contacted = probed.target_contacted
         except ConnectorConnectionTestError as error:
             result_code = self._minimized_failure_code(str(error))
         except Exception:
@@ -141,7 +141,13 @@ class ConnectorConnectionTestService:
             environment_id=self._environment_id,
             result=result,
         )
-        await self._audit(actor, correlation_id, result.result_code, instance_id)
+        await self._audit(
+            actor,
+            correlation_id,
+            result.result_code,
+            instance_id,
+            succeeded=result.outcome == "passed",
+        )
         return result
 
     async def latest(
@@ -165,6 +171,7 @@ class ConnectorConnectionTestService:
             correlation_id,
             "connection_test_latest_read",
             instance_id,
+            succeeded=False,
         )
         return result
 
@@ -185,17 +192,11 @@ class ConnectorConnectionTestService:
         if len(matches) != 1:
             raise ConnectorConnectionTestError("connection_test_instance_not_found")
         record = matches[0]
-        if record.connector_id != PACKAGE_ID or record.instance_state != DISABLED_UNCONFIGURED:
+        if (
+            record.connector_id not in self._probes
+            or record.instance_state != DISABLED_UNCONFIGURED
+        ):
             raise ConnectorConnectionTestError("connection_test_instance_invalid")
-
-    @staticmethod
-    def _version_result(payload: Mapping[str, object]) -> str:
-        if payload.get("productName") != "Configuration Manager REST API":
-            return "product_mismatch"
-        version = payload.get("apiVersion")
-        if not isinstance(version, str) or _VERSION.fullmatch(version) is None:
-            return "unsupported_vendor_version"
-        return "hitachi_api_compatible"
 
     @staticmethod
     def _minimized_failure_code(code: str) -> str:
@@ -212,6 +213,8 @@ class ConnectorConnectionTestService:
         correlation_id: str,
         result_code: str,
         instance_id: str,
+        *,
+        succeeded: bool,
     ) -> None:
         await self._audit_sink.record(
             AuditRecord(
@@ -230,7 +233,7 @@ class ConnectorConnectionTestService:
                 resource_type="resource.connector.connection-test",
                 scope_reference=instance_id,
                 decision_id=None,
-                outcome="succeeded" if result_code == "hitachi_api_compatible" else "recorded",
+                outcome="succeeded" if succeeded else "recorded",
                 result_code=result_code,
                 target_metadata=(("infrastructure_mutation_performed", "false"),),
             )

@@ -8,6 +8,18 @@ from uuid import uuid4
 from atlas import __version__
 from atlas.core.audit import AuditRecord, AuditSink
 from atlas.core.classification import DataClassification
+from atlas.modules.connectors.vendors.hitachi_ops_center.manifest import (
+    CONTROLLER_FAILOVER_PLAN_CAPABILITY_ID as _HITACHI_CONTROLLER_FAILOVER_PLAN_CAPABILITY_ID,
+)
+from atlas.modules.connectors.vendors.hitachi_ops_center.manifest import (
+    HARDWARE_HEALTH_CAPABILITY_ID as _HITACHI_HARDWARE_HEALTH_CAPABILITY_ID,
+)
+from atlas.modules.connectors.vendors.hitachi_ops_center.manifest import (
+    PATH_EVENTS_CAPABILITY_ID as _HITACHI_PATH_EVENTS_CAPABILITY_ID,
+)
+from atlas.modules.connectors.vendors.hitachi_ops_center.manifest import (
+    PATH_REMEDIATION_PLAN_CAPABILITY_ID as _HITACHI_PATH_REMEDIATION_PLAN_CAPABILITY_ID,
+)
 from atlas.modules.recommendations.application.ports import (
     RcaCaseProvider,
     RecommendationAssembler,
@@ -19,15 +31,18 @@ from atlas.modules.recommendations.domain.models import (
 )
 
 RECOMMENDATION_RESOURCE_ID = "resource.recommendation.storage.synthetic"
+# Each vendor contributes its own named capability-id constants (see health_checks/application/
+# service.py for the same pattern); "atlas.*" entries are Atlas-internal capabilities, not
+# vendor-provided, so they stay literals here.
 ALLOWED_CAPABILITIES = frozenset(
     {
-        "hitachi.opscenter.storage.path-events.read",
-        "hitachi.opscenter.storage.hardware.read",
+        _HITACHI_PATH_EVENTS_CAPABILITY_ID,
+        _HITACHI_HARDWARE_HEALTH_CAPABILITY_ID,
         "atlas.telemetry.service-health.read",
         "atlas.vendor.support.package.prepare",
         "atlas.graph.storage-impact.read",
-        "hitachi.opscenter.storage.controller-failover.plan",
-        "hitachi.opscenter.storage.path-remediation.plan",
+        _HITACHI_CONTROLLER_FAILOVER_PLAN_CAPABILITY_ID,
+        _HITACHI_PATH_REMEDIATION_PLAN_CAPABILITY_ID,
     }
 )
 CAPABILITY_ORDER = {f"C{index}": index for index in range(6)}

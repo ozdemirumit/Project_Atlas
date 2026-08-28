@@ -37,6 +37,9 @@ from atlas.modules.connectors.application.bundled_runtime_state import (
     BundledConnectorRuntimeStateService,
 )
 from atlas.modules.connectors.application.connection_test import ConnectorConnectionTestService
+from atlas.modules.connectors.vendors.hitachi_ops_center.connection_test_https import (
+    HitachiConnectionTestProbe,
+)
 from atlas.modules.connectors.vendors.hitachi_ops_center.ports import HitachiTransportError
 
 RAW_AUTHORIZATION = "Basic dXNlcjpwYXNz"
@@ -116,7 +119,11 @@ def build_services(monkeypatch: pytest.MonkeyPatch, *, failure=None):  # type: i
         result_repository=result_repository,
         instance_repository=instance_repository,
         credential_materializer=materializer,
-        transport_factory=transport_factory,
+        probes={
+            HitachiConnectionTestProbe.connector_id: HitachiConnectionTestProbe(
+                transport_factory=transport_factory
+            ),
+        },
         audit_sink=audit,
         environment_id="environment.test",
         deployment_environment="development",

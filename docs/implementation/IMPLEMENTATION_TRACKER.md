@@ -4,14 +4,78 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-259 |
-| Title | Fix recommendation assembler for real RCA cases (regression from ATLAS-IMP-258) |
+| Task ID | ATLAS-IMP-260 |
+| Title | Generalize Hitachi-specific connector coupling (Phase 0 of modular multi-vendor MCPs) |
 | Status | Verified (backend, tool-verified with real toolchain) |
 | Branch | `main` |
 | Pull Request | none (pushed directly to `main`; no PR tooling available in this environment) |
-| Governing Documents | ATLAS-003, ATLAS-026 (Graph Engine), `docs/042_Root_Cause_Analysis.md` |
-| Last Updated | 2026-08-27 |
-| Next Action | pgvector live verification on Linux — the last item of the user's ordered list. This sandbox has no WSL and no Docker (confirmed: `wsl.exe --status` reports WSL absent); installing either is a system-level change left for the user. Separately worth a look, found but not pursued in this task: `modules/investigations` (real, reachable, but requires stitching three evidence types RCA deliberately routed around) and the grounded-answer retrieval path (`modules/knowledge/adapters/synthetic.py`'s `build_synthetic_knowledge_chunks`, wired to `GroundedAnswerService` instead of the real fastembed/pgvector retriever already built for ATLAS-IMP-255 — a small, low-risk loose end). |
+| Governing Documents | ATLAS-003, `docs/adr/ADR-004`+ (connector governance pipeline) |
+| Last Updated | 2026-08-28 |
+| Next Action | Phase 1 of the same plan: build Brocade SANnav as the first new vendor connector, proving the generalization actually works end to end (not just for Hitachi alone). Then Huawei Dorado, Huawei Pacific, vCenter, Commvault, in that order, per the approved plan (`C:\Users\umito\.claude\plans\tingly-marinating-anchor.md`). |
+
+### ATLAS-IMP-260 Scope and Verification
+
+- **Why now**: the user asked for the MCP/connector architecture to be genuinely modular, buildable
+  from real vendor documentation, and named five target vendors (Brocade SANnav, Huawei Dorado,
+  Huawei Pacific, vCenter, Commvault). Three investigations (see the approved plan file for full
+  detail) established that Hitachi-specific literals and types leak into five vendor-agnostic
+  application-service files and the generic connector-framework connection-test service, which
+  would force every future vendor to duplicate the same hardcoding rather than plug into a shared
+  pattern. This task closes that gap before any second vendor is built.
+- **Capability-id de-duplication, lighter than originally planned**: the plan called for a new
+  `CapabilityKind` enum field on `CapabilityManifest`. While implementing, found a simpler,
+  equally-correct fix: each vendor's `manifest.py` already exports a couple of named capability-id
+  constants (`INVENTORY_CAPABILITY_ID`, `HEALTH_CAPABILITY_ID`); the five hardcoded `ALLOWED_*`
+  frozensets in `modules/health_checks/application/service.py`,
+  `modules/rca/application/service.py`, `modules/recommendations/application/service.py`,
+  `modules/investigations/application/service.py`, and
+  `modules/ai/application/protected_recommendation_candidate_generation.py` were retyping Hitachi's
+  capability-id strings as opaque literals instead of importing those constants. Added the missing
+  named constants to `hitachi_ops_center/manifest.py`
+  (`HARDWARE_HEALTH_CAPABILITY_ID`, `CAPACITY_CAPABILITY_ID`, `PATH_EVENTS_CAPABILITY_ID`,
+  `CONTROLLER_FAILOVER_PLAN_CAPABILITY_ID`, `PATH_REMEDIATION_PLAN_CAPABILITY_ID`) and switched all
+  five services to import them. A vendor mismatch is now an import error, not a silent typo; a
+  second vendor adds one import + one frozenset entry per relevant service, not a retyped string.
+  Skipped the enum: with only Hitachi (and Brocade next) known, a semantic-kind taxonomy would have
+  been guessed at without a second/third vendor's real needs in hand yet — deferred until that's
+  no longer speculative. Found and documented, not touched: `HEALTH_CAPABILITY_ID`
+  (`"...health.read"`, used only by `bundled_catalog.py`) and the widely-used
+  `"...hardware.read"` capability id are two different pre-existing strings for what's probably
+  the same concept — a naming inconsistency that predates this task and wasn't introduced or
+  resolved here.
+- **Connection-test service degeneralized into a pluggable probe.** Found this deeper than
+  planned: `ConnectorConnectionTestService` wasn't just typed to a Hitachi transport factory, its
+  actual body hardcoded Hitachi's specific "is this really Configuration Manager REST API"
+  check (`GET /configuration/version`, `productName`/`apiVersion` field validation,
+  `"hitachi_api_compatible"` as the literal success sentinel used for both the connectivity
+  outcome and the audit "succeeded" determination) and rejected any `connector_id` that wasn't
+  Hitachi's `PACKAGE_ID` before ever reaching a transport. Extracted a new `ConnectionTestProbe`
+  Protocol (`connection_test_ports.py`) — one vendor's whole "create a transport, run my specific
+  check, interpret my specific response" logic, returning a `ConnectionProbeOutcome` and never
+  raising. Moved Hitachi's version-check logic into a new `HitachiConnectionTestProbe`
+  (`vendors/hitachi_ops_center/connection_test_https.py`, beside the existing HTTPS transport
+  factory it wraps). `ConnectorConnectionTestService` now takes `probes: Mapping[str,
+  ConnectionTestProbe]` keyed by `connector_id` and no longer imports anything from any vendor
+  package — a second vendor's "Test Connection" button support is now "write a probe, add one
+  dict entry," not a rewrite of the shared service.
+- **`configured_hitachi_health_enabled` renamed, not rewritten.** On inspection, its actual
+  function was already vendor-agnostic-compatible: it gates whether each module attempts its real
+  adapter *at all* in this environment, and every `Configured<Vendor>*` adapter already
+  independently checks whether *its own* vendor is really configured (via the connector
+  repositories each adapter's `_single_active_configuration()` already queries), self-degrading to
+  an honest "unavailable" result if not. Only the name was misleading — it looked like it meant
+  "is Hitachi configured" but actually means "should real-adapter paths be attempted here."
+  Renamed to `configured_connector_paths_enabled` across all 9 use sites in `api/app.py`, with a
+  comment explaining why no functional rewrite was needed. This was a lower-risk finding than
+  expected going in.
+- **Verified with the real toolchain**: `ruff format`, `ruff check`, `mypy` strict all clean.
+  Targeted tests across every touched module (connection tests, RCA, recommendations, health
+  checks, investigations, protected-candidate-impact, connector registry/simulator, all five
+  `configured_hitachi_*` adapter test files): 112/112 passed — confirming zero behavior change for
+  the existing, tested Hitachi path, which was the actual regression risk of this refactor (not
+  new functionality, a like-for-like generalization). Full suite run initiated; result recorded in
+  a follow-up note once complete, expected to match the established ~67 pre-existing unrelated
+  failures.
 
 ### ATLAS-IMP-259 Scope and Verification
 

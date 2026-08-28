@@ -792,6 +792,7 @@ from atlas.modules.connectors.domain.upgrade_evidence_authenticity import (
     ConnectorUpgradeSigningProviderOnboardingPolicyTrustKey,
 )
 from atlas.modules.connectors.vendors.hitachi_ops_center.connection_test_https import (
+    HitachiConnectionTestProbe,
     HitachiOpsCenterConnectionTestHttpsFactory,
 )
 from atlas.modules.conversations.adapters.grounded import GroundedConversationGenerator
@@ -4933,7 +4934,11 @@ def create_app(
         result_repository=connector_connection_test_result_repository,
         instance_repository=resolved_connector_instance_creation_service.repository,
         credential_materializer=hitachi_credential_materializer,
-        transport_factory=hitachi_transport_factory,
+        probes={
+            HitachiConnectionTestProbe.connector_id: HitachiConnectionTestProbe(
+                transport_factory=hitachi_transport_factory
+            ),
+        },
         audit_sink=resolved_audit_sink,
         environment_id=resolved_connector_instance_creation_service.environment_id,
         deployment_environment=resolved_settings.environment,
@@ -6909,7 +6914,12 @@ def create_app(
         organization_id=resolved_settings.development_organization_id,
         environment=resolved_settings.environment,
     )
-    configured_hitachi_health_enabled = resolved_settings.environment == "development"
+    # Gates whether each module below attempts its real, connector-backed adapter at all in this
+    # environment; every Configured<Vendor>* adapter still independently checks whether its own
+    # vendor is actually configured and enabled (via the connector repositories), self-degrading
+    # to an honest "unavailable" result if not. This flag does not encode which vendor -- it
+    # generalizes as-is to multiple vendors sharing the same environment gate.
+    configured_connector_paths_enabled = resolved_settings.environment == "development"
     health_check_definitions = (
         tuple(
             replace(
@@ -6922,7 +6932,7 @@ def create_app(
             else definition
             for definition in base_health_check_definitions
         )
-        if configured_hitachi_health_enabled
+        if configured_connector_paths_enabled
         else base_health_check_definitions
     )
     synthetic_latest_runs = build_synthetic_latest_runs(health_check_definitions)
@@ -6931,7 +6941,7 @@ def create_app(
         latest_runs=tuple(
             run
             for run in synthetic_latest_runs
-            if not configured_hitachi_health_enabled
+            if not configured_connector_paths_enabled
             or run.definition_id not in {CONTROLLER_DEFINITION_ID, CAPACITY_DEFINITION_ID}
         ),
         executor=(
@@ -6946,12 +6956,14 @@ def create_app(
                 environment_id=f"environment.{resolved_settings.environment}",
                 runtime_state_repository=bundled_runtime_state_repository,
             )
-            if configured_hitachi_health_enabled
+            if configured_connector_paths_enabled
             else SyntheticStorageHealthExecutor()
         ),
         audit_sink=resolved_audit_sink,
         data_profile=(
-            "configured_hitachi_read_only" if configured_hitachi_health_enabled else "synthetic_lab"
+            "configured_hitachi_read_only"
+            if configured_connector_paths_enabled
+            else "synthetic_lab"
         ),
     )
     resolved_storage_operations_service = storage_operations_service or StorageOperationsService(
@@ -6966,7 +6978,7 @@ def create_app(
                 environment_id=f"environment.{resolved_settings.environment}",
                 runtime_state_repository=bundled_runtime_state_repository,
             )
-            if configured_hitachi_health_enabled
+            if configured_connector_paths_enabled
             else SyntheticStorageOverviewProvider(
                 organization_id=resolved_settings.development_organization_id,
                 environment=resolved_settings.environment,
@@ -6989,7 +7001,7 @@ def create_app(
                 environment_id=f"environment.{resolved_settings.environment}",
                 runtime_state_repository=bundled_runtime_state_repository,
             )
-            if configured_hitachi_health_enabled
+            if configured_connector_paths_enabled
             else SyntheticGraphSnapshotProvider(
                 organization_id=resolved_settings.development_organization_id,
                 environment=resolved_settings.environment,
@@ -7063,7 +7075,7 @@ def create_app(
                 environment_id=f"environment.{resolved_settings.environment}",
                 runtime_state_repository=bundled_runtime_state_repository,
             )
-            if configured_hitachi_health_enabled
+            if configured_connector_paths_enabled
             else SyntheticStorageRcaAssembler()
         ),
         audit_sink=resolved_audit_sink,
@@ -7072,7 +7084,7 @@ def create_app(
         source_provider=resolved_rca_service,
         assembler=(
             ConfiguredHitachiRecommendationAssembler()
-            if configured_hitachi_health_enabled
+            if configured_connector_paths_enabled
             else SyntheticStorageRecommendationAssembler()
         ),
         audit_sink=resolved_audit_sink,

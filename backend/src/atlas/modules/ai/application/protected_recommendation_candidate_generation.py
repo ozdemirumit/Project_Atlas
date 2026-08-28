@@ -39,6 +39,9 @@ from atlas.modules.authorization.application.bootstrap import (
     AI_PROTECTED_RECOMMENDATION_CANDIDATE_CREATE,
     AI_PROTECTED_RECOMMENDATION_CANDIDATE_READ,
 )
+from atlas.modules.connectors.vendors.hitachi_ops_center.manifest import (
+    HARDWARE_HEALTH_CAPABILITY_ID as _HITACHI_HARDWARE_HEALTH_CAPABILITY_ID,
+)
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
@@ -900,7 +903,7 @@ def build_development_protected_recommendation_candidate_policy(
             "recommendation-category.defer-no-action",
         ),
         allowed_capability_ids=(
-            "hitachi.opscenter.storage.hardware.read",
+            _HITACHI_HARDWARE_HEALTH_CAPABILITY_ID,
             "atlas.vendor.support.package.prepare",
         ),
         maximum_capability_class="C1",
