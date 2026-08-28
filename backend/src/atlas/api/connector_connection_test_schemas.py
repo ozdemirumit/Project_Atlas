@@ -15,6 +15,7 @@ from atlas.modules.connectors.domain.bundled_runtime_state import (
 from atlas.modules.connectors.domain.connection_test import ConnectorConnectionTestResult
 
 STABLE_ID = r"^[a-z][a-z0-9_.:-]{2,127}$"
+SYSTEM_ID = r"^[A-Za-z0-9]{1,32}$"
 
 
 class BundledConnectionConfigurationInput(BaseModel):
@@ -25,6 +26,9 @@ class BundledConnectionConfigurationInput(BaseModel):
     trust_profile_id: str = Field(pattern=STABLE_ID)
     secret_reference_id: str = Field(pattern=STABLE_ID)
     secret: SecretStr | None = Field(default=None, exclude=True, repr=False)
+    # Optional per-vendor scoping identifier (e.g. Huawei OceanStor's system_id). Unused by
+    # vendors whose real API is not scoped to one exact target per configured instance.
+    system_id: str | None = Field(default=None, pattern=SYSTEM_ID)
 
 
 class BundledConnectionConfigurationData(BaseModel):
@@ -42,6 +46,7 @@ class BundledConnectionConfigurationData(BaseModel):
     development_only: Literal[True]
     secret_material_stored: Literal[False]
     infrastructure_mutation_performed: Literal[False]
+    system_id: str | None
 
     @classmethod
     def from_domain(

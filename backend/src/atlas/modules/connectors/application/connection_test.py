@@ -113,6 +113,7 @@ class ConnectorConnectionTestService:
                     authorization_header_provider=lease.authorization_header,
                     timeout_seconds=self._timeout_seconds,
                     maximum_response_bytes=self._maximum_response_bytes,
+                    system_id=configuration.system_id,
                 )
                 outcome = probed.outcome
                 result_code = probed.result_code

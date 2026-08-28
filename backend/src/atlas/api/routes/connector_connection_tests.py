@@ -95,6 +95,7 @@ async def configure_bundled_connection(
             trust_profile_id=payload.trust_profile_id,
             secret_reference_id=payload.secret_reference_id,
             correlation_id=str(request.state.correlation_id),
+            system_id=payload.system_id,
         )
     except BundledConnectionConfigurationError as error:
         _raise(error)

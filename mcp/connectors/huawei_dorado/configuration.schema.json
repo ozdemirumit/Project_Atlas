@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:project-atlas:connector:huawei-dorado:configuration:0.1.0",
+  "title": "Huawei OceanStor Dorado DeviceManager connector configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "endpoint_host",
+    "endpoint_port",
+    "certificate_trust_reference_id",
+    "credential_reference_id",
+    "system_id"
+  ],
+  "properties": {
+    "endpoint_host": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 253,
+      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$"
+    },
+    "endpoint_port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535,
+      "default": 8088
+    },
+    "certificate_trust_reference_id": {
+      "type": "string",
+      "pattern": "^trust\\.[a-z0-9_.:-]{3,127}$"
+    },
+    "credential_reference_id": {
+      "type": "string",
+      "pattern": "^secret\\.[a-z0-9_.:-]{3,127}$",
+      "description": "References a username:password pair, not a pre-built Authorization header -- OceanStor's real REST API requires a stateful login (POST .../sessions) to obtain a session token, unlike Hitachi and Brocade's per-request static header schemes. See source-provenance.json's authentication_source."
+    },
+    "system_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9]{1,32}$",
+      "description": "The OceanStor system identifier embedded in every DeviceManager REST URL. One configured connector instance manages exactly one Dorado system, unlike Hitachi's single Configuration Manager fronting many arrays."
+    }
+  }
+}

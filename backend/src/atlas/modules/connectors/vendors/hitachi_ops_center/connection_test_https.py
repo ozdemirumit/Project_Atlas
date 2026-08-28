@@ -78,7 +78,9 @@ class HitachiConnectionTestProbe:
         authorization_header_provider: Callable[[], str],
         timeout_seconds: float,
         maximum_response_bytes: int,
+        system_id: str | None = None,
     ) -> ConnectionProbeOutcome:
+        del system_id  # Hitachi's Configuration Manager is not scoped to one target per instance.
         transport = self._transport_factory.create(
             hostname=hostname,
             port=port,

@@ -8,6 +8,7 @@ from typing import Protocol
 from atlas.modules.connectors.domain.connection_test import ConnectorConnectionTestResult
 from atlas.modules.connectors.vendors.brocade_sannav.ports import BrocadeSanNavTransport
 from atlas.modules.connectors.vendors.hitachi_ops_center.ports import HitachiOpsCenterTransport
+from atlas.modules.connectors.vendors.huawei_dorado.ports import HuaweiDoradoTransport
 
 
 class ConnectorConnectionTestError(RuntimeError):
@@ -44,6 +45,9 @@ class ConnectionTestProbe(Protocol):
         authorization_header_provider: Callable[[], str],
         timeout_seconds: float,
         maximum_response_bytes: int,
+        # Only meaningful for a vendor whose real API is scoped to one exact target per
+        # configured instance (e.g. Huawei OceanStor's system_id); every other probe ignores it.
+        system_id: str | None = None,
     ) -> ConnectionProbeOutcome: ...
 
 
@@ -102,3 +106,20 @@ class BrocadeConnectionTestTransportFactory(Protocol):
         timeout_seconds: float,
         maximum_response_bytes: int,
     ) -> BrocadeSanNavTransport: ...
+
+
+class HuaweiConnectionTestTransportFactory(Protocol):
+    def create(
+        self,
+        *,
+        hostname: str,
+        port: int,
+        system_id: str,
+        trust_profile_id: str,
+        # Returns "username:password", not a pre-built header -- OceanStor's real REST API is
+        # session-based (see huawei_dorado/ports.py). The same lease/materializer plumbing used
+        # for every other vendor is reused; only the returned string's meaning differs.
+        credential_provider: Callable[[], str],
+        timeout_seconds: float,
+        maximum_response_bytes: int,
+    ) -> HuaweiDoradoTransport: ...

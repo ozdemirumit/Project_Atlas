@@ -26,7 +26,7 @@ class StorageAssetData(BaseModel):
     storage_device_id: str
     vendor: str
     model: str
-    serial_number: int
+    serial_number: int | str
     health: str
     observed_at: datetime
     evidence_references: list[str]

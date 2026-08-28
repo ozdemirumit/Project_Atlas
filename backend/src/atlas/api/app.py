@@ -646,6 +646,7 @@ from atlas.modules.connectors.application.bundled_catalog import (
     BundledConnectorCatalogService,
     build_brocade_sannav_bundled_descriptor,
     build_hitachi_ops_center_bundled_descriptor,
+    build_huawei_dorado_bundled_descriptor,
 )
 from atlas.modules.connectors.application.bundled_connection_configuration import (
     BundledConnectionConfigurationService,
@@ -800,6 +801,10 @@ from atlas.modules.connectors.vendors.hitachi_ops_center.connection_test_https i
     HitachiConnectionTestProbe,
     HitachiOpsCenterConnectionTestHttpsFactory,
 )
+from atlas.modules.connectors.vendors.huawei_dorado.connection_test_https import (
+    HuaweiConnectionTestProbe,
+    HuaweiDoradoConnectionTestHttpsFactory,
+)
 from atlas.modules.conversations.adapters.grounded import GroundedConversationGenerator
 from atlas.modules.conversations.adapters.memory import InMemoryConversationRepository
 from atlas.modules.conversations.adapters.postgres import PostgreSQLConversationRepository
@@ -819,6 +824,9 @@ from atlas.modules.graph.adapters.configured_brocade_sannav import (
     ConfiguredBrocadeSanNavGraphSnapshotProvider,
 )
 from atlas.modules.graph.adapters.configured_hitachi import ConfiguredHitachiGraphSnapshotProvider
+from atlas.modules.graph.adapters.configured_huawei_dorado import (
+    ConfiguredHuaweiDoradoGraphSnapshotProvider,
+)
 from atlas.modules.graph.adapters.synthetic import (
     SyntheticGraphSnapshotProvider,
     build_synthetic_graph_snapshot,
@@ -832,9 +840,18 @@ from atlas.modules.health_checks.adapters.configured_brocade_sannav import (
 from atlas.modules.health_checks.adapters.configured_hitachi import (
     ConfiguredHitachiHealthExecutor,
 )
+from atlas.modules.health_checks.adapters.configured_huawei_dorado import (
+    ConfiguredHuaweiDoradoHealthExecutor,
+)
 from atlas.modules.health_checks.adapters.hitachi import (
     CAPACITY_DEFINITION_ID,
     CONTROLLER_DEFINITION_ID,
+)
+from atlas.modules.health_checks.adapters.huawei_dorado import (
+    CAPACITY_DEFINITION_ID as HUAWEI_CAPACITY_DEFINITION_ID,
+)
+from atlas.modules.health_checks.adapters.huawei_dorado import (
+    CONTROLLER_DEFINITION_ID as HUAWEI_CONTROLLER_DEFINITION_ID,
 )
 from atlas.modules.health_checks.adapters.synthetic import (
     SyntheticStorageHealthExecutor,
@@ -1625,7 +1642,11 @@ from atlas.modules.security_export.adapters.synthetic import (
     build_synthetic_syslog_destinations,
 )
 from atlas.modules.security_export.application.service import SecurityExportService
+from atlas.modules.storage.adapters.chained import ChainedStorageOverviewProvider
 from atlas.modules.storage.adapters.configured_hitachi import ConfiguredHitachiStorageProvider
+from atlas.modules.storage.adapters.configured_huawei_dorado import (
+    ConfiguredHuaweiDoradoStorageProvider,
+)
 from atlas.modules.storage.adapters.synthetic import SyntheticStorageOverviewProvider
 from atlas.modules.storage.application.service import StorageOperationsService
 from atlas.modules.support.adapters.filesystem import FilesystemSupportBundlePublisher
@@ -4915,6 +4936,7 @@ def create_app(
             else (
                 build_hitachi_ops_center_bundled_descriptor(),
                 build_brocade_sannav_bundled_descriptor(),
+                build_huawei_dorado_bundled_descriptor(),
             )
         ),
         repository=resolved_connector_instance_creation_service.repository,
@@ -4944,10 +4966,14 @@ def create_app(
         reference_environment_variables={
             "secret.hitachi.readonly": "ATLAS_HITACHI_AUTHORIZATION",
             "secret.brocade.readonly": "ATLAS_BROCADE_AUTHORIZATION",
+            # OceanStor's real REST API is session-based (see huawei_dorado/ports.py): this
+            # reference resolves to a "username:password" pair, not a pre-built header.
+            "secret.huawei.dorado.readonly": "ATLAS_HUAWEI_DORADO_AUTHORIZATION",
         },
     )
     hitachi_transport_factory = HitachiOpsCenterConnectionTestHttpsFactory()
     brocade_transport_factory = BrocadeSanNavConnectionTestHttpsFactory()
+    huawei_transport_factory = HuaweiDoradoConnectionTestHttpsFactory()
     connector_connection_test_result_repository = (
         PostgreSQLConnectorConnectionTestResultRepository.from_url(resolved_settings.database_url)
         if resolved_settings.database_url
@@ -4964,6 +4990,9 @@ def create_app(
             ),
             BrocadeConnectionTestProbe.connector_id: BrocadeConnectionTestProbe(
                 transport_factory=brocade_transport_factory
+            ),
+            HuaweiConnectionTestProbe.connector_id: HuaweiConnectionTestProbe(
+                transport_factory=huawei_transport_factory
             ),
         },
         audit_sink=resolved_audit_sink,
@@ -6963,6 +6992,16 @@ def create_app(
             "connector_version": "0.1.0",
             "target_id": "target.brocade.sannav.configured",
         },
+        HUAWEI_CONTROLLER_DEFINITION_ID: {
+            "connector_id": "connector.huawei.dorado.device-manager",
+            "connector_version": "0.1.0",
+            "target_id": "target.huawei.dorado.configured",
+        },
+        HUAWEI_CAPACITY_DEFINITION_ID: {
+            "connector_id": "connector.huawei.dorado.device-manager",
+            "connector_version": "0.1.0",
+            "target_id": "target.huawei.dorado.configured",
+        },
     }
     health_check_definitions = (
         tuple(
@@ -6999,7 +7038,17 @@ def create_app(
                     inventory_repository=resolved_inventory_device_service.repository,
                     credential_materializer=connector_credential_materializer,
                     transport_factory=brocade_transport_factory,
-                    fallback_executor=SyntheticStorageHealthExecutor(),
+                    fallback_executor=ConfiguredHuaweiDoradoHealthExecutor(
+                        configuration_repository=bundled_connection_configuration_repository,
+                        instance_repository=resolved_connector_instance_creation_service.repository,
+                        inventory_repository=resolved_inventory_device_service.repository,
+                        credential_materializer=connector_credential_materializer,
+                        transport_factory=huawei_transport_factory,
+                        fallback_executor=SyntheticStorageHealthExecutor(),
+                        organization_id=resolved_settings.development_organization_id,
+                        environment_id=f"environment.{resolved_settings.environment}",
+                        runtime_state_repository=bundled_runtime_state_repository,
+                    ),
                     organization_id=resolved_settings.development_organization_id,
                     environment_id=f"environment.{resolved_settings.environment}",
                     runtime_state_repository=bundled_runtime_state_repository,
@@ -7020,15 +7069,29 @@ def create_app(
     )
     resolved_storage_operations_service = storage_operations_service or StorageOperationsService(
         provider=(
-            ConfiguredHitachiStorageProvider(
-                configuration_repository=bundled_connection_configuration_repository,
-                instance_repository=resolved_connector_instance_creation_service.repository,
-                inventory_repository=resolved_inventory_device_service.repository,
-                credential_materializer=connector_credential_materializer,
-                transport_factory=hitachi_transport_factory,
-                organization_id=resolved_settings.development_organization_id,
-                environment_id=f"environment.{resolved_settings.environment}",
-                runtime_state_repository=bundled_runtime_state_repository,
+            ChainedStorageOverviewProvider(
+                providers=(
+                    ConfiguredHitachiStorageProvider(
+                        configuration_repository=bundled_connection_configuration_repository,
+                        instance_repository=resolved_connector_instance_creation_service.repository,
+                        inventory_repository=resolved_inventory_device_service.repository,
+                        credential_materializer=connector_credential_materializer,
+                        transport_factory=hitachi_transport_factory,
+                        organization_id=resolved_settings.development_organization_id,
+                        environment_id=f"environment.{resolved_settings.environment}",
+                        runtime_state_repository=bundled_runtime_state_repository,
+                    ),
+                    ConfiguredHuaweiDoradoStorageProvider(
+                        configuration_repository=bundled_connection_configuration_repository,
+                        instance_repository=resolved_connector_instance_creation_service.repository,
+                        inventory_repository=resolved_inventory_device_service.repository,
+                        credential_materializer=connector_credential_materializer,
+                        transport_factory=huawei_transport_factory,
+                        organization_id=resolved_settings.development_organization_id,
+                        environment_id=f"environment.{resolved_settings.environment}",
+                        runtime_state_repository=bundled_runtime_state_repository,
+                    ),
+                )
             )
             if configured_connector_paths_enabled
             else SyntheticStorageOverviewProvider(
@@ -7061,6 +7124,16 @@ def create_app(
                         inventory_repository=resolved_inventory_device_service.repository,
                         credential_materializer=connector_credential_materializer,
                         transport_factory=brocade_transport_factory,
+                        organization_id=resolved_settings.development_organization_id,
+                        environment_id=f"environment.{resolved_settings.environment}",
+                        runtime_state_repository=bundled_runtime_state_repository,
+                    ),
+                    ConfiguredHuaweiDoradoGraphSnapshotProvider(
+                        configuration_repository=bundled_connection_configuration_repository,
+                        instance_repository=resolved_connector_instance_creation_service.repository,
+                        inventory_repository=resolved_inventory_device_service.repository,
+                        credential_materializer=connector_credential_materializer,
+                        transport_factory=huawei_transport_factory,
                         organization_id=resolved_settings.development_organization_id,
                         environment_id=f"environment.{resolved_settings.environment}",
                         runtime_state_repository=bundled_runtime_state_repository,

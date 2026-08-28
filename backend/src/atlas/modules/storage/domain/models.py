@@ -53,7 +53,10 @@ class StorageAsset:
     storage_device_id: str
     vendor: str
     model: str
-    serial_number: int
+    # Hitachi's serial numbers are numeric; Huawei's system identifiers are alphanumeric
+    # (e.g. "2102350ABC") -- widened to accept either rather than coercing one vendor's real
+    # identity format into the other's shape.
+    serial_number: int | str
     health: StorageHealthState
     observed_at: datetime
     evidence_references: tuple[str, ...]

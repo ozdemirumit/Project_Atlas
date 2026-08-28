@@ -11,6 +11,7 @@ _DNS_NAME = re.compile(
     r"^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*"
     r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$"
 )
+_SYSTEM_ID = re.compile(r"^[A-Za-z0-9]{1,32}$")
 
 
 def validate_connection_hostname(hostname: str) -> str:
@@ -50,6 +51,11 @@ class BundledConnectionConfiguration:
     development_only: bool = True
     secret_material_stored: bool = False
     infrastructure_mutation_performed: bool = False
+    # Optional per-vendor scoping identifier, e.g. Huawei OceanStor's system_id: a value baked
+    # into every request URL for a connector whose real API is scoped to one exact target per
+    # configured instance, unlike Hitachi's single management endpoint fronting many arrays.
+    # Left unset (None) by every vendor that doesn't need it.
+    system_id: str | None = None
 
     def __post_init__(self) -> None:
         for value in (
@@ -71,5 +77,6 @@ class BundledConnectionConfiguration:
             or not self.development_only
             or self.secret_material_stored
             or self.infrastructure_mutation_performed
+            or (self.system_id is not None and not _SYSTEM_ID.fullmatch(self.system_id))
         ):
             raise ValueError("Bundled connection configuration is invalid")

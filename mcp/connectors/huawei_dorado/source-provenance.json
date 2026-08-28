@@ -1,0 +1,50 @@
+{
+  "source_set_id": "source-set.huawei.dorado.device-manager.6-1-0",
+  "reviewed_at": "2026-08-28T00:00:00Z",
+  "publisher": "Huawei Technologies Co., Ltd.",
+  "document": {
+    "title": "OceanStor Dorado 6.1.0 REST Interface Reference",
+    "version": "6.1.0",
+    "url": "https://support.huawei.com/enterprise/en/doc/EDOC1100144155"
+  },
+  "capability_sources": [
+    {
+      "capability_id": "huawei.dorado.storage.system.read",
+      "method": "GET",
+      "path": "/system/",
+      "confirmation": "confirmed_via_working_example",
+      "url": "https://github.com/tcomerma/check_oceanstor/blob/master/OceanStor.py",
+      "note": "Base URL structure (https://{host}:8088/deviceManager/rest/{system_id}/), the {\"error\":..., \"data\":...} response envelope, and the /system/ endpoint were confirmed against a real, independently-authored working script. The exact identity field names (MODEL, SOFTWAREVERSION, HEALTHSTATUS) were cross-confirmed against a second independent source (a maintained Icinga/Nagios monitoring-plugin check description), not vendor prose alone -- Huawei's own TechDocs pages returned empty content via automated fetch during connector construction."
+    },
+    {
+      "capability_id": "huawei.dorado.storage.controller.read",
+      "method": "GET",
+      "path": "/controller",
+      "confirmation": "confirmed_via_independent_secondary_source",
+      "url": "https://docs.linuxfabrik.ch/monitoring-plugins/huawei-dorado-controller.html",
+      "note": "Endpoint path and field names (ID, ROLE, HEALTHSTATUS, RUNNINGSTATUS) confirmed via a maintained, real Icinga/Nagios monitoring-plugin's documented implementation, not fetched from Huawei's own TechDocs (which returned empty content during connector construction). HEALTHSTATUS/RUNNINGSTATUS numeric code meanings (0=unknown, 1=normal, 2=faulty for HEALTHSTATUS) are documented there and reused as-is; this connector only relies on the HEALTHSTATUS mapping, not the fuller RUNNINGSTATUS enumeration, since the narrower mapping was easier to state with confidence."
+    },
+    {
+      "capability_id": "huawei.dorado.storage.pool.read",
+      "method": "GET",
+      "path": "/storagepool",
+      "confirmation": "confirmed_via_working_example",
+      "url": "https://github.com/tcomerma/check_oceanstor/blob/master/OceanStor.py",
+      "note": "Endpoint and field names (NAME, USERTOTALCAPACITY, USERFREECAPACITY, HEALTHSTATUS, RUNNINGSTATUS) confirmed against the same real working script. No separate pool identifier field was confirmed in either source used, so NAME is reused as this connector's pool identity rather than trusting an unconfirmed ID field. No configured warning/depletion threshold field was found on this object either (unlike Hitachi's /pools), so this connector computes utilization from raw capacity and applies its own fixed threshold policy rather than reading one from the array -- stated in domain.py's HuaweiPoolCapacity.used_capacity_percent docstring."
+    }
+  ],
+  "authentication_source": {
+    "method": "POST",
+    "path": "/deviceManager/rest/{system_id}/sessions",
+    "confirmation": "confirmed_via_working_example_and_independent_secondary_source",
+    "url": "https://github.com/tcomerma/check_oceanstor/blob/master/OceanStor.py",
+    "note": "OceanStor's real REST API is session-based (unlike Hitachi's static per-request header or Brocade's session-less Basic auth): POST username/password/scope to receive an iBaseToken and a session cookie, present both on every subsequent request, DELETE to log out. This connector performs a complete bounded login -> read -> logout cycle inside the transport for every single read (see https.py and ports.py), rather than caching a live session, trading request volume for never holding a session open longer than one bounded operation."
+  },
+  "self_test_source": {
+    "method": "GET",
+    "path": "/system/",
+    "note": "No separate confirmed version/compatibility endpoint was found; the self-test reuses the system-identity read itself and checks for a well-formed response shape, the same pattern used for Brocade SANnav."
+  },
+  "data_policy": "synthetic-only",
+  "production_credentials_present": false
+}

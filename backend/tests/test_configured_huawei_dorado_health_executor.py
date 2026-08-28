@@ -19,24 +19,24 @@ from atlas.modules.connectors.application.bundled_runtime_state_ports import (
     BundledConnectorRuntimeStateRepository,
 )
 from atlas.modules.connectors.application.connection_test_ports import (
-    BrocadeConnectionTestTransportFactory,
     ConnectorAuthorizationHeaderLease,
     ConnectorConnectionTestError,
     ConnectorCredentialMaterializer,
+    HuaweiConnectionTestTransportFactory,
 )
 from atlas.modules.connectors.application.instance_creation_ports import (
     ConnectorInstanceRepository,
 )
 from atlas.modules.connectors.domain.instance_creation import DISABLED_UNCONFIGURED
-from atlas.modules.connectors.vendors.brocade_sannav.manifest import PACKAGE_ID
-from atlas.modules.connectors.vendors.brocade_sannav.ports import BrocadeSanNavTransport
-from atlas.modules.connectors.vendors.brocade_sannav.synthetic import (
-    SyntheticBrocadeFault,
-    SyntheticBrocadeResponse,
-    SyntheticBrocadeSanNavTransport,
+from atlas.modules.connectors.vendors.huawei_dorado.manifest import PACKAGE_ID
+from atlas.modules.connectors.vendors.huawei_dorado.ports import HuaweiDoradoTransport
+from atlas.modules.connectors.vendors.huawei_dorado.synthetic import (
+    SyntheticHuaweiDoradoTransport,
+    SyntheticHuaweiFault,
+    SyntheticHuaweiResponse,
 )
-from atlas.modules.health_checks.adapters.configured_brocade_sannav import (
-    ConfiguredBrocadeSanNavHealthExecutor,
+from atlas.modules.health_checks.adapters.configured_huawei_dorado import (
+    ConfiguredHuaweiDoradoHealthExecutor,
 )
 from atlas.modules.health_checks.adapters.synthetic import (
     SyntheticStorageHealthExecutor,
@@ -44,17 +44,14 @@ from atlas.modules.health_checks.adapters.synthetic import (
 )
 from atlas.modules.health_checks.domain.models import HealthCheckDefinition, HealthCheckRunState
 from atlas.modules.inventory.application.ports import InventoryDeviceRepository
-from atlas.modules.inventory.domain.devices import (
-    InventoryDeviceLifecycle,
-    InventoryDeviceType,
-)
+from atlas.modules.inventory.domain.devices import InventoryDeviceLifecycle, InventoryDeviceType
 
 NOW = datetime(2026, 8, 28, 12, 0, tzinfo=UTC)
-INSTANCE_ID = "connector-instance.brocade-health"
-FABRIC_WWN = "10:00:00:05:1e:35:1a:00"
-FABRICS_PATH = "/external-api/v1/discovery/fabrics/"
-FABRIC_MEMBERS_PATH = f"/external-api/v1/discovery/fabric-members/?principalSwitchWWN={FABRIC_WWN}"
-FAULT_EVENTS_PATH = "/external-api/v2/fault/events/"
+INSTANCE_ID = "connector-instance.huawei-health"
+SYSTEM_ID = "2102350ABC"
+SYSTEM_PATH = "/system/"
+CONTROLLER_PATH = "/controller"
+STORAGE_POOL_PATH = "/storagepool"
 
 
 class ScopeRepository[T]:
@@ -68,7 +65,7 @@ class ScopeRepository[T]:
 class AuthorizationHeaderLease:
     @staticmethod
     def authorization_header() -> str:
-        return "Basic hidden"
+        return "operator:hidden"
 
 
 class CredentialMaterializer:
@@ -89,7 +86,7 @@ class CredentialMaterializer:
 
 
 class TransportFactory:
-    def __init__(self, transport: SyntheticBrocadeSanNavTransport) -> None:
+    def __init__(self, transport: SyntheticHuaweiDoradoTransport) -> None:
         self.transport = transport
 
     def create(
@@ -97,36 +94,45 @@ class TransportFactory:
         *,
         hostname: str,
         port: int,
+        system_id: str,
         trust_profile_id: str,
-        authorization_header_provider: Callable[[], str],
+        credential_provider: Callable[[], str],
         timeout_seconds: float,
         maximum_response_bytes: int,
-    ) -> BrocadeSanNavTransport:
+    ) -> HuaweiDoradoTransport:
         del (
             hostname,
             port,
+            system_id,
             trust_profile_id,
-            authorization_header_provider,
+            credential_provider,
             timeout_seconds,
             maximum_response_bytes,
         )
         return self.transport
 
 
-def definition() -> HealthCheckDefinition:
-    controller, capacity, fabric, huawei_controller, huawei_capacity = (
+def definitions() -> tuple[HealthCheckDefinition, HealthCheckDefinition]:
+    _controller, _capacity, _fabric, huawei_controller, huawei_capacity = (
         build_synthetic_health_check_definitions(
             organization_id="organization.atlas.local",
             environment="development",
             anchor_at=NOW,
         )
     )
-    del controller, capacity, huawei_controller, huawei_capacity
-    return replace(
-        fabric,
-        connector_id=PACKAGE_ID,
-        connector_version="0.1.0",
-        target_id="target.brocade.sannav.configured",
+    return (
+        replace(
+            huawei_controller,
+            connector_id=PACKAGE_ID,
+            connector_version="0.1.0",
+            target_id="target.huawei.dorado.configured",
+        ),
+        replace(
+            huawei_capacity,
+            connector_id=PACKAGE_ID,
+            connector_version="0.1.0",
+            target_id="target.huawei.dorado.configured",
+        ),
     )
 
 
@@ -136,11 +142,11 @@ def build_executor(
     instances: Iterable[object] = (),
     devices: Iterable[object] = (),
     credentials_available: bool = True,
-    routes: Mapping[str, SyntheticBrocadeResponse] | None = None,
+    routes: Mapping[str, SyntheticHuaweiResponse] | None = None,
     runtime_state_repository: BundledConnectorRuntimeStateRepository | None = None,
-) -> tuple[ConfiguredBrocadeSanNavHealthExecutor, SyntheticBrocadeSanNavTransport]:
-    transport = SyntheticBrocadeSanNavTransport(routes or {})
-    executor = ConfiguredBrocadeSanNavHealthExecutor(
+) -> tuple[ConfiguredHuaweiDoradoHealthExecutor, SyntheticHuaweiDoradoTransport]:
+    transport = SyntheticHuaweiDoradoTransport(routes or {})
+    executor = ConfiguredHuaweiDoradoHealthExecutor(
         configuration_repository=cast(
             BundledConnectionConfigurationRepository, ScopeRepository(configurations)
         ),
@@ -150,7 +156,7 @@ def build_executor(
             ConnectorCredentialMaterializer,
             CredentialMaterializer(available=credentials_available),
         ),
-        transport_factory=cast(BrocadeConnectionTestTransportFactory, TransportFactory(transport)),
+        transport_factory=cast(HuaweiConnectionTestTransportFactory, TransportFactory(transport)),
         fallback_executor=SyntheticStorageHealthExecutor(),
         organization_id="organization.atlas.local",
         environment_id="environment.development",
@@ -161,13 +167,14 @@ def build_executor(
 
 def _configuration() -> SimpleNamespace:
     return SimpleNamespace(
-        configuration_id="connection_configuration.brocade-health",
+        configuration_id="connection_configuration.huawei-health",
         connector_id=PACKAGE_ID,
         instance_id=INSTANCE_ID,
-        hostname="sannav.example.internal",
-        port=443,
+        hostname="dorado.example.internal",
+        port=8088,
         trust_profile_id="trust.system-ca",
-        secret_reference_id="secret.brocade.readonly",
+        secret_reference_id="secret.huawei.dorado.readonly",
+        system_id=SYSTEM_ID,
     )
 
 
@@ -179,36 +186,37 @@ def _instance() -> SimpleNamespace:
     )
 
 
-def _device(wwn: str = FABRIC_WWN) -> SimpleNamespace:
+def _device() -> SimpleNamespace:
     return SimpleNamespace(
-        device_type=InventoryDeviceType.SAN_SWITCH,
-        vendor="Broadcom (Brocade)",
-        serial_number=wwn,
+        device_type=InventoryDeviceType.STORAGE,
+        vendor="Huawei",
+        serial_number=SYSTEM_ID,
         lifecycle=InventoryDeviceLifecycle.ACTIVE,
     )
 
 
 @pytest.mark.asyncio
-async def test_fabric_check_fails_safely_without_one_configured_instance() -> None:
+async def test_controller_check_fails_safely_without_one_configured_instance() -> None:
     executor, transport = build_executor()
+    controller, _capacity = definitions()
 
-    result = await executor.execute(definition(), started_at=NOW)
+    result = await executor.execute(controller, started_at=NOW)
 
     assert result.state is HealthCheckRunState.FAILED
-    assert result.step_count == 0
     assert transport.requests == []
-    assert "single active configured Brocade SANnav MCP" in result.partial_reasons[0]
+    assert "single active configured Huawei Dorado MCP" in result.partial_reasons[0]
 
 
 @pytest.mark.asyncio
-async def test_fabric_check_does_not_contact_disabled_configured_mcp() -> None:
+async def test_controller_check_does_not_contact_disabled_configured_mcp() -> None:
     executor, transport = build_executor(
         configurations=(_configuration(),),
         instances=(_instance(),),
         runtime_state_repository=InMemoryBundledConnectorRuntimeStateRepository(),
     )
+    controller, _capacity = definitions()
 
-    result = await executor.execute(definition(), started_at=NOW)
+    result = await executor.execute(controller, started_at=NOW)
 
     assert result.state is HealthCheckRunState.FAILED
     assert "must be enabled" in result.partial_reasons[0]
@@ -216,13 +224,14 @@ async def test_fabric_check_does_not_contact_disabled_configured_mcp() -> None:
 
 
 @pytest.mark.asyncio
-async def test_fabric_check_uses_configured_read_only_brocade_transport_with_no_faults() -> None:
+async def test_controller_check_uses_configured_read_only_huawei_transport() -> None:
     routes = {
-        FABRICS_PATH: SyntheticBrocadeResponse(
-            payload={"Fabrics": [{"principalSwitchWwn": FABRIC_WWN, "name": "Fabric-A"}]}
-        ),
-        FABRIC_MEMBERS_PATH: SyntheticBrocadeResponse(payload={"Switches": []}),
-        FAULT_EVENTS_PATH: SyntheticBrocadeResponse(payload={"events": []}),
+        CONTROLLER_PATH: SyntheticHuaweiResponse(
+            payload={
+                "error": {"code": 0},
+                "data": [{"ID": "0A", "ROLE": "Primary", "HEALTHSTATUS": "1"}],
+            }
+        )
     }
     executor, transport = build_executor(
         configurations=(_configuration(),),
@@ -230,23 +239,31 @@ async def test_fabric_check_uses_configured_read_only_brocade_transport_with_no_
         devices=(_device(),),
         routes=routes,
     )
+    controller, _capacity = definitions()
 
-    result = await executor.execute(definition(), started_at=NOW)
+    result = await executor.execute(controller, started_at=NOW)
 
     assert result.state is HealthCheckRunState.COMPLETED
-    assert transport.requests == [FABRICS_PATH, FABRIC_MEMBERS_PATH, FAULT_EVENTS_PATH]
-    assert result.observations[0].value == "0"
-    assert result.findings == ()
+    assert transport.requests == [CONTROLLER_PATH]
+    assert result.observations[0].value == "normal"
 
 
 @pytest.mark.asyncio
-async def test_fabric_check_reports_warning_never_critical_for_nonzero_faults() -> None:
+async def test_capacity_check_computes_utilization_from_raw_capacity() -> None:
     routes = {
-        FABRICS_PATH: SyntheticBrocadeResponse(
-            payload={"Fabrics": [{"principalSwitchWwn": FABRIC_WWN, "name": "Fabric-A"}]}
-        ),
-        FABRIC_MEMBERS_PATH: SyntheticBrocadeResponse(payload={"Switches": []}),
-        FAULT_EVENTS_PATH: SyntheticBrocadeResponse(payload={"events": [{}, {}]}),
+        STORAGE_POOL_PATH: SyntheticHuaweiResponse(
+            payload={
+                "error": {"code": 0},
+                "data": [
+                    {
+                        "NAME": "StoragePool001",
+                        "USERTOTALCAPACITY": "1000",
+                        "USERFREECAPACITY": "220",
+                        "HEALTHSTATUS": "1",
+                    }
+                ],
+            }
+        )
     }
     executor, transport = build_executor(
         configurations=(_configuration(),),
@@ -254,26 +271,26 @@ async def test_fabric_check_reports_warning_never_critical_for_nonzero_faults() 
         devices=(_device(),),
         routes=routes,
     )
+    _controller, capacity = definitions()
 
-    result = await executor.execute(definition(), started_at=NOW)
+    result = await executor.execute(capacity, started_at=NOW)
 
-    assert result.state is HealthCheckRunState.PARTIAL
-    assert result.observations[0].value == "2"
-    assert len(result.findings) == 1
-    assert result.findings[0].severity.value == "warning"
-    assert transport.requests == [FABRICS_PATH, FABRIC_MEMBERS_PATH, FAULT_EVENTS_PATH]
+    assert result.state is HealthCheckRunState.COMPLETED
+    assert result.observations[0].value == "78.0"
+    assert transport.requests == [STORAGE_POOL_PATH]
 
 
 @pytest.mark.asyncio
-async def test_missing_credential_reference_does_not_contact_brocade() -> None:
+async def test_missing_credential_reference_does_not_contact_huawei() -> None:
     executor, transport = build_executor(
         configurations=(_configuration(),),
         instances=(_instance(),),
         devices=(_device(),),
         credentials_available=False,
     )
+    controller, _capacity = definitions()
 
-    result = await executor.execute(definition(), started_at=NOW)
+    result = await executor.execute(controller, started_at=NOW)
 
     assert result.state is HealthCheckRunState.FAILED
     assert "credential reference is unavailable" in result.partial_reasons[0]
@@ -282,21 +299,20 @@ async def test_missing_credential_reference_does_not_contact_brocade() -> None:
 
 @pytest.mark.asyncio
 async def test_transport_fault_is_reported_safely() -> None:
-    routes = {
-        FABRICS_PATH: SyntheticBrocadeResponse(fault=SyntheticBrocadeFault.UNAVAILABLE),
-    }
+    routes = {CONTROLLER_PATH: SyntheticHuaweiResponse(fault=SyntheticHuaweiFault.UNAVAILABLE)}
     executor, transport = build_executor(
         configurations=(_configuration(),),
         instances=(_instance(),),
         devices=(_device(),),
         routes=routes,
     )
+    controller, _capacity = definitions()
 
-    result = await executor.execute(definition(), started_at=NOW)
+    result = await executor.execute(controller, started_at=NOW)
 
     assert result.state is HealthCheckRunState.FAILED
     assert "failed safely" in result.partial_reasons[0]
-    assert transport.requests == [FABRICS_PATH]
+    assert transport.requests == [CONTROLLER_PATH]
 
 
 @pytest.mark.asyncio
@@ -306,7 +322,7 @@ async def test_other_definitions_are_delegated_to_the_fallback_executor() -> Non
         instances=(_instance(),),
         devices=(_device(),),
     )
-    controller, _capacity, _fabric, _huawei_controller, _huawei_capacity = (
+    hitachi_controller, _capacity, _fabric, _huawei_controller, _huawei_capacity = (
         build_synthetic_health_check_definitions(
             organization_id="organization.atlas.local",
             environment="development",
@@ -314,7 +330,7 @@ async def test_other_definitions_are_delegated_to_the_fallback_executor() -> Non
         )
     )
 
-    result = await executor.execute(controller, started_at=NOW)
+    result = await executor.execute(hitachi_controller, started_at=NOW)
 
     assert result.state in {HealthCheckRunState.COMPLETED, HealthCheckRunState.PARTIAL}
     assert transport.requests == []

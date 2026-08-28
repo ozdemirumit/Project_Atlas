@@ -4,14 +4,107 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-261 |
-| Title | Add real Brocade SANnav connector (Phase 1 of modular multi-vendor MCPs) |
-| Status | Verified (backend, tool-verified with real toolchain) |
+| Task ID | ATLAS-IMP-262 |
+| Title | Add real Huawei OceanStor Dorado connector (Phase 2 of modular multi-vendor MCPs) |
+| Status | Verified (backend, tool-verified with real toolchain) -- storage/graph/health_checks only; RCA/recommendations deliberately deferred, see below |
 | Branch | `main` |
 | Pull Request | none (pushed directly to `main`; no PR tooling available in this environment) |
 | Governing Documents | ATLAS-003, ATLAS-020/021/022/047 (connector quarantine/promotion), `docs/adr/ADR-004`+ |
 | Last Updated | 2026-08-28 |
-| Next Action | Phase 2 of the same plan: Huawei Dorado connector (storage array, slots into the existing storage/graph/health_checks/rca/recommendations `Configured*` pattern with no new domain concepts). Then Huawei Pacific, vCenter, Commvault, in that order, per the approved plan (`C:\Users\umito\.claude\plans\tingly-marinating-anchor.md`). |
+| Next Action | Close the RCA/recommendations gap this task deliberately deferred (see below), or continue the approved plan: Huawei Pacific, vCenter, Commvault, in that order (`C:\Users\umito\.claude\plans\tingly-marinating-anchor.md`). |
+
+### ATLAS-IMP-262 Scope and Verification
+
+- **What this closes**: the third of five vendors the user asked for, and the first storage-array
+  vendor built after Hitachi -- proving the pattern generalizes to a genuinely different real API
+  shape (session-based auth, one system per configured instance), not just a second read-only
+  header-auth vendor like Brocade.
+- **Real API research, not guessed**: Huawei's own TechDocs pages returned empty content via
+  automated fetch (the same difficulty found building Brocade), so the base URL, session
+  login/logout shape, response envelope (`{"error": {...}, "data": ...}`), and the `/system/` and
+  `/storagepool` endpoints and field names were confirmed against a real, independently-authored
+  working script (`tcomerma/check_oceanstor` on GitHub). The `/controller` endpoint and its field
+  names, plus the HEALTHSTATUS numeric code meanings this connector relies on, were confirmed
+  against a second independent source (a maintained Icinga/Nagios OceanStor monitoring-plugin's
+  published implementation) rather than being guessed from the first source's naming conventions.
+  Two gaps found and stated plainly rather than papered over: no confirmed pool-identifier field
+  exists on the storagepool object (NAME is reused as identity instead), and no confirmed
+  capacity-threshold field exists on it either (utilization is computed from raw capacity and a
+  connector-defined fixed 75/90 percent policy is applied, not a vendor-reported threshold) -- see
+  `domain.py`'s `HuaweiPoolCapacity.used_capacity_percent` docstring and `source-provenance.json`.
+- **A real architectural difference, not forced into the existing shape**: OceanStor's REST API is
+  session-based (`POST .../sessions` for a token + cookie, present both on every request, `DELETE
+  .../sessions` to log out) -- unlike Hitachi's static per-request header or Brocade's session-less
+  Basic auth. Rather than caching a live session, `HuaweiDoradoHttpsTransport` performs a complete,
+  bounded login -> read -> logout cycle inside the transport for every single `get()` call, so no
+  session ever outlives one bounded operation and the client above the transport stays exactly as
+  simple as Hitachi's and Brocade's. Documented as a deliberate safety-over-efficiency tradeoff in
+  `ports.py`. Also unlike the other two vendors, one configured connector instance manages exactly
+  one Dorado system (the `system_id` is baked into every URL, including login), so there is no
+  multi-target allowlist to filter -- the configuration's own `system_id` is the target, still
+  cross-checked against an active, allowlisted inventory device as a second gate, matching every
+  other adapter's two-factor "configured AND allowlisted" pattern.
+- **Two real, pre-existing generalization gaps found and fixed, not specific to Huawei**:
+  1. `BundledConnectionConfigurationService.configure()` and its `_require_bundled_instance()`
+     helper hardcoded Hitachi's `PACKAGE_ID` -- any other vendor's catalog-registered instance
+     (including Brocade's, shipped in ATLAS-IMP-261) would be rejected with
+     `bundled_instance_invalid` when an operator tried to actually configure it, even though
+     `create_instance()` itself worked fine for any vendor. This meant the "modular multi-vendor"
+     bundled-catalog flow only actually worked end to end for Hitachi. Fixed by deriving
+     `connector_id` from the matched instance record itself; regression-tested in the new
+     `test_bundled_connection_configuration_vendor_agnostic.py` (proves a real Brocade instance can
+     now be configured, not just registered).
+  2. `ConnectionTestProbe.probe()` (the generic "Test Connection" framework interface) had no way
+     to pass a per-instance scoping value like `system_id` to a probe that needs one. Added an
+     optional `system_id: str | None = None` parameter to the Protocol and to
+     `ConnectorConnectionTestService.test()`'s call site; Hitachi's and Brocade's probes accept and
+     ignore it (documented as N/A for those vendors) so this costs them nothing.
+  3. `StorageAsset.serial_number` was typed `int`, modeled after Hitachi's numeric serials; Huawei's
+     system identifiers are alphanumeric (e.g. `"2102350ABC"`). Widened to `int | str` (and the
+     matching `api/storage_schemas.py` Pydantic field) rather than coercing one vendor's real
+     identity format into the other's shape.
+- **New `system_id` field on `BundledConnectionConfiguration`**: optional, `None` for every vendor
+  that doesn't need it, validated when present. Confirmed zero-migration: the Postgres repository
+  stores this record as a schemaless JSON payload column and reconstructs it via
+  `BundledConnectionConfiguration(**payload)`, so old stored rows without the key just fall back to
+  the field's `None` default. Threaded through the `PUT .../connection-configuration` API schema
+  (`BundledConnectionConfigurationInput`/`Data`) so an operator can actually set it.
+- **Two new generalization mechanisms, following Phase 0/1's established shape**: `ChainedStorageOverviewProvider`
+  (`modules/storage/adapters/chained.py`) tries each configured vendor's storage provider in order
+  and returns the first with real assets -- deliberately NOT a merge like the graph's
+  `CompositeGraphSnapshotProvider`, because a `StorageOverview` carries one narrative investigation
+  and report, and combining two vendors' narratives into one coherent story is editorial work this
+  project has not designed. `CompositeGraphSnapshotProvider` gained Huawei's provider alongside
+  Hitachi's and Brocade's (now genuinely three-vendor, closing a test-coverage gap from
+  ATLAS-IMP-261 too: added `test_composite_graph_snapshot_provider.py`, which didn't exist before).
+- **Deliberately deferred, not silently skipped: RCA and recommendations adapters.** Hitachi's real
+  RCA assembler (834 lines) and recommendation assembler (640 lines) are dense, narrative-heavy
+  fault-family/hypothesis content, not mechanical plumbing -- replicating them faithfully for a
+  second storage vendor is real domain-authoring work, not a copy-paste-and-rename task, and rushing
+  it risked shipping degraded reasoning quality under this task's time budget. Storage, graph, and
+  health_checks (the three more mechanical, structurally-driven modules -- the same three Brocade
+  received in ATLAS-IMP-261) are complete, tested, and wired end to end. Huawei-backed RCA/
+  recommendation cases are simply not available yet; nothing fabricates or degrades silently in the
+  meantime. This is the single largest known gap this task leaves, and is the explicit next step.
+- **Verified with the real toolchain**: `ruff format`, `ruff check`, `mypy` strict all clean across
+  the new connector package, all three consuming adapters, the two new generalization mechanisms,
+  the `bundled_connection_configuration`/`connection_test` fixes, and `api/app.py`. New tests: 13
+  for the connector package (mirroring the Hitachi/Brocade connector test structure -- manifest,
+  system identity, controller health, pool capacity with utilization computed from raw capacity,
+  a vendor-logical-error-despite-HTTP-200 case, transport-fault mapping, malformed/oversized
+  rejection, self-test compatibility, synthetic-transport access flags, candidate-asset
+  strictness), 6 for the storage adapter, 4 for the graph adapter, 7 for the health-check adapter,
+  3 for the bundled-connection-configuration vendor-agnostic fix, 3 for the composite graph
+  provider, 4 for the chained storage provider -- 40 new tests total, all passing. Fixed the same
+  kind of regression found in ATLAS-IMP-261: `build_synthetic_health_check_definitions()` now
+  returns a 5-tuple; updated the Hitachi and Brocade test files' unpacking and
+  `test_health_checks_api.py`'s definitions-count assertion (2 -> 3 -> 5 across both phases).
+  Targeted run across every touched area (`-k "hitachi or brocade or huawei or bundled_connector or
+  health_checks or graph or storage or composite or chained"`): 201 passed, only the same
+  pre-existing, unrelated alembic-head-drift failures remain. Full suite: 3859 passed, 67 failed,
+  68 skipped -- the failure count matches the established ~67 pre-existing baseline exactly
+  (bootstrap/upgrade/backup/mcp-builder/alembic-head-drift), confirmed by name to share zero
+  overlap with huawei/brocade/hitachi/graph/storage/health_checks/connector modules.
 
 ### ATLAS-IMP-261 Scope and Verification
 

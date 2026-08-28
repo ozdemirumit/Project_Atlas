@@ -19,7 +19,6 @@ from atlas.modules.connectors.domain.bundled_connection_configuration import (
     validate_connection_hostname,
 )
 from atlas.modules.connectors.domain.instance_creation import DISABLED_UNCONFIGURED
-from atlas.modules.connectors.vendors.hitachi_ops_center.manifest import PACKAGE_ID
 from atlas.modules.identity.domain.models import AuthenticatedSubject, SubjectKind
 
 
@@ -57,32 +56,39 @@ class BundledConnectionConfigurationService:
         trust_profile_id: str,
         secret_reference_id: str,
         correlation_id: str,
+        system_id: str | None = None,
     ) -> BundledConnectionConfiguration:
         self._require_development_human(actor)
         if not secret_reference_id.startswith("secret."):
             raise BundledConnectionConfigurationError(
                 "bundled_connection_configuration_secret_reference_invalid"
             )
-        await self._require_bundled_instance(actor=actor, instance_id=instance_id)
+        connector_id = await self._require_bundled_instance(actor=actor, instance_id=instance_id)
         try:
             normalized_hostname = validate_connection_hostname(hostname)
         except ValueError as error:
             raise BundledConnectionConfigurationError(
                 "bundled_connection_configuration_invalid"
             ) from error
-        record = BundledConnectionConfiguration(
-            configuration_id=f"connection_configuration.{uuid4().hex}",
-            organization_id=actor.organization_id,
-            environment_id=self._environment_id,
-            connector_id=PACKAGE_ID,
-            instance_id=instance_id,
-            hostname=normalized_hostname,
-            port=port,
-            trust_profile_id=trust_profile_id,
-            secret_reference_id=secret_reference_id,
-            configured_by=actor.subject_id,
-            configured_at=self._clock(),
-        )
+        try:
+            record = BundledConnectionConfiguration(
+                configuration_id=f"connection_configuration.{uuid4().hex}",
+                organization_id=actor.organization_id,
+                environment_id=self._environment_id,
+                connector_id=connector_id,
+                instance_id=instance_id,
+                hostname=normalized_hostname,
+                port=port,
+                trust_profile_id=trust_profile_id,
+                secret_reference_id=secret_reference_id,
+                configured_by=actor.subject_id,
+                configured_at=self._clock(),
+                system_id=system_id,
+            )
+        except ValueError as error:
+            raise BundledConnectionConfigurationError(
+                "bundled_connection_configuration_invalid"
+            ) from error
         await self._repository.put(record)
         if self._runtime_state_repository is not None:
             await self._runtime_state_repository.clear(
@@ -124,7 +130,7 @@ class BundledConnectionConfigurationService:
 
     async def _require_bundled_instance(
         self, *, actor: AuthenticatedSubject, instance_id: str
-    ) -> None:
+    ) -> str:
         records = await self._instance_repository.list_scope(
             organization_id=actor.organization_id,
             environment_id=self._environment_id,
@@ -133,8 +139,9 @@ class BundledConnectionConfigurationService:
         if len(matches) != 1:
             raise BundledConnectionConfigurationError("bundled_instance_not_found")
         record = matches[0]
-        if record.connector_id != PACKAGE_ID or record.instance_state != DISABLED_UNCONFIGURED:
+        if record.instance_state != DISABLED_UNCONFIGURED:
             raise BundledConnectionConfigurationError("bundled_instance_invalid")
+        return record.connector_id
 
     async def _audit(
         self, actor: AuthenticatedSubject, correlation_id: str, result_code: str, instance_id: str

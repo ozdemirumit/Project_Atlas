@@ -22,3 +22,6 @@ Current candidates:
   quarantined C1 inventory and hardware-health candidate using synthetic data only.
 - [Brocade SANnav Management Portal](connectors/brocade_sannav/README.md) -
   quarantined C1 fabric-inventory and fault-summary candidate using synthetic data only.
+- [Huawei OceanStor Dorado DeviceManager](connectors/huawei_dorado/README.md) -
+  quarantined C1 system-identity, controller-health, and pool-capacity candidate using synthetic
+  data only.
