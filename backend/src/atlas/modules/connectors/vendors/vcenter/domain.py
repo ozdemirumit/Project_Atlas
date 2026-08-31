@@ -142,3 +142,23 @@ class VCenterVmInventoryResult:
             raise ValueError("observed_at must be timezone-aware")
         if not self.evidence_references:
             raise ValueError("virtual machine inventory results require evidence")
+
+
+@dataclass(frozen=True, slots=True)
+class VCenterClusterMembershipResult:
+    """One cluster's real host membership, read via vCenter's confirmed
+    Host.FilterSpec.clusters filter -- not asserted from the plain host/cluster list reads, which
+    carry no parent-cluster field on either side (see graph adapter known_gaps)."""
+
+    cluster_id: str
+    host_ids: tuple[str, ...]
+    observed_at: datetime
+    evidence_references: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not self.cluster_id.strip():
+            raise ValueError("cluster membership requires a cluster identifier")
+        if self.observed_at.tzinfo is None:
+            raise ValueError("observed_at must be timezone-aware")
+        if not self.evidence_references:
+            raise ValueError("cluster membership results require evidence")

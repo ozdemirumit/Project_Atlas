@@ -23,7 +23,7 @@ _HOSTNAME = re.compile(
     r"^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*"
     r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$"
 )
-_PATH = re.compile(r"^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*$")
+_PATH = re.compile(r"^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*(?:\?[A-Za-z0-9._~!$&'()*+,;=:@%/-]*)?$")
 _INVALID_PERCENT_ESCAPE = re.compile(r"%(?![0-9A-Fa-f]{2})")
 _MAXIMUM_TIMEOUT_SECONDS = 300.0
 _MAXIMUM_CONFIGURED_RESPONSE_BYTES = 16_777_216
@@ -296,14 +296,14 @@ class VCenterHttpsTransport:
                 retryable=False,
             )
         parsed = urllib.parse.urlsplit(path)
+        reconstructed = parsed.path + (f"?{parsed.query}" if parsed.query else "")
         decoded_path = urllib.parse.unquote(parsed.path)
         segments = decoded_path.split("/")
         if (
             path.startswith("//")
-            or parsed.path != path
+            or reconstructed != path
             or parsed.scheme
             or parsed.netloc
-            or parsed.query
             or parsed.fragment
             or _INVALID_PERCENT_ESCAPE.search(path)
             or decoded_path.startswith("//")
@@ -312,6 +312,10 @@ class VCenterHttpsTransport:
             or "#" in decoded_path
             or any(segment in {".", ".."} for segment in segments)
             or any(ord(character) < 32 or ord(character) == 127 for character in decoded_path)
+            or (
+                parsed.query
+                and not re.fullmatch(r"[A-Za-z0-9._~%-]+=[A-Za-z0-9._~:%-]+", parsed.query)
+            )
         ):
             raise VCenterTransportError(
                 "malformed_vendor_response",

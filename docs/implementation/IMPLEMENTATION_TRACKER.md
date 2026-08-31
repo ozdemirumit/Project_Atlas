@@ -4,14 +4,71 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-267 |
-| Title | Add real Commvault CommServe connector (Phase 5, final vendor of modular multi-vendor MCPs): backup job-status health check |
-| Status | Verified (backend, tool-verified with real toolchain) -- health_checks only, by design; graph/storage/RCA/recommendations are out of scope, not deferred (see Scope note below) |
+| Task ID | ATLAS-IMP-268 |
+| Title | Close the vCenter host-to-cluster graph relationship gap named in ATLAS-IMP-266 |
+| Status | Verified (backend, tool-verified with real toolchain) |
 | Branch | `main` |
 | Pull Request | none (pushed directly to `main`; no PR tooling available in this environment) |
 | Governing Documents | ATLAS-003, ATLAS-020/021/022/047 (connector quarantine/promotion), `docs/adr/ADR-004`+ |
 | Last Updated | 2026-08-28 |
-| Next Action | All five vendors named in the original request (Brocade SANnav, Huawei Dorado, Huawei Pacific, vCenter, Commvault) are now real, connector-backed, and wired. No further vendor work is scoped by the approved plan (`C:\Users\umito\.claude\plans\tingly-marinating-anchor.md`); remaining candidates for follow-on work (client inventory, backup/storage policy, recovery-point catalog, cross-vendor graph relationships) are named explicitly in this task's own known-gaps text and in prior tasks', not committed to. |
+| Next Action | All five vendors named in the original request are real, connector-backed, and wired; this closes one of the honest gaps ATLAS-IMP-266 named. VM-to-host placement remains genuinely unconfirmed (no vSphere Automation API source found carries that field at all) and is not pursued further. Other named candidates (Commvault client inventory/policy/recovery-point catalog, cross-vendor graph relationships) remain not committed to. |
+
+### ATLAS-IMP-268 Scope and Verification
+
+- **What this closes**: ATLAS-IMP-266 shipped vCenter's graph adapter entities-only, naming two
+  relationship gaps explicitly: host-to-cluster membership and VM-to-host placement, both left
+  unmodeled because the plain `GET /api/vcenter/host`/`/cluster`/`/vm` list responses carry no
+  parent-cluster or running-host field on either side. This task investigates both gaps properly
+  (not from memory -- fresh research) and closes the one that turned out to be genuinely
+  resolvable with confirmed real API mechanisms.
+- **Host-to-cluster membership: resolvable, and now real**. `Host.FilterSpec` (confirmed in
+  ATLAS-IMP-266 from VMware's own generated Python client source) has a `clusters` field --
+  re-confirmed this task, quoting the source docstring directly: `"Clusters that must contain the
+  hosts for the hosts to match the filter... identifiers for the resource type:
+  ClusterComputeResource."` This means `GET /api/vcenter/host?filter.clusters=<cluster_id>` is a
+  real, confirmed, bounded way to resolve exactly which hosts belong to a given cluster.
+  `VCenterClient.read_cluster_membership()` calls it once per cluster (bounded to the first 25
+  clusters; additional clusters are named as a completeness gap, not silently dropped), and
+  `ConfiguredVCenterGraphSnapshotProvider` emits a real `HYPERVISOR_HOST --DEPENDS_ON-->
+  HYPERVISOR_CLUSTER` relationship per confirmed membership -- the first connector-backed graph
+  relationship built in this entire multi-vendor connector series (every prior real graph adapter
+  -- Hitachi, Brocade, Dorado, Pacific, and vCenter's own first pass -- shipped entities-only).
+- **VM-to-host placement: investigated properly, confirmed still genuinely unresolvable, not
+  guessed**. The VM detail response's complete field list was re-confirmed this task directly
+  from the official Ansible `vmware.vmware_rest` collection's machine-generated
+  `vcenter_vm_info` module documentation (generated from the same real vSphere Automation API
+  definitions used throughout this connector): `boot, boot_devices, cdroms, cpu, disks, floppies,
+  guest_OS, hardware, identity, instant_clone_frozen, memory, name, nics, nvme_adapters,
+  parallel_ports, power_state, sata_adapters, scsi_adapters, serial_ports` -- no host, cluster, or
+  placement field appears anywhere in that list. A separate real, official Postman collection for
+  this API (`vsphere-automation-sdk-rest`, archived but authoritative) was also checked and
+  contains no example response demonstrating a VM-to-host field either. This gap is confirmed
+  genuine, not merely unconfirmed by omission, and is left exactly as stated rather than
+  fabricated with a guessed field name.
+- **Fail-safe, not fail-closed, for the new membership reads**: a membership-read failure for one
+  cluster (transport fault, malformed response) is caught per-cluster and recorded as a known
+  gap, not allowed to discard the already-successful host/cluster/VM entity reads by failing the
+  whole snapshot -- the same graceful-degradation philosophy Brocade's per-fabric fault reads
+  established. A membership result naming a host id absent from the same snapshot's host
+  inventory (a live-read race, in principle) is also caught and omitted rather than asserted
+  against a nonexistent entity, which `GraphSnapshot`'s own validation would otherwise reject.
+- **A real transport capability gap found and fixed along the way**: `VCenterHttpsTransport`'s
+  path validator rejected any query string at all (the three original list reads never needed
+  one). Widened to accept one bounded `key=value` query parameter, mirroring the exact pattern
+  `BrocadeSanNavHttpsTransport` already established for its fault/events endpoint.
+- **Verified with the real toolchain**: `ruff format --check` and `ruff check` clean across the
+  full repository (1792 files); `mypy` strict clean across every touched file. New tests: 2 for
+  the connector package (real membership-field parsing via the confirmed filter, unsafe-identifier
+  rejection), 2 net-new for the graph adapter (graceful degradation when the membership route is
+  unavailable, safe omission of a membership host absent from inventory -- the third relevant
+  test replaced the prior entities-only assertion in place rather than adding a new one) -- 4 new
+  tests total, all passing alongside the 24 pre-existing vCenter tests (28 total, all green).
+  Targeted multi-area sweep (`-k "vcenter or graph or connector or commvault or hitachi or
+  brocade or huawei"`): 352 passed, 5 failed, all baseline alembic-head-drift, zero overlap.
+  Full backend suite: 3956 passed, 67 failed, 68 skipped -- the failure count matches the
+  established ~67 pre-existing baseline exactly, confirmed by name to share zero overlap with
+  vcenter, graph, connector, or any vendor module. The pass-count increase (+4 over
+  ATLAS-IMP-267's 3952) matches exactly the 4 new tests this task adds.
 
 ### ATLAS-IMP-267 Scope and Verification
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 
@@ -10,6 +11,7 @@ from atlas.modules.connectors.domain.models import ConnectorHealth, ConnectorIns
 from atlas.modules.connectors.vendors.vcenter.domain import (
     VCenterCluster,
     VCenterClusterInventoryResult,
+    VCenterClusterMembershipResult,
     VCenterHost,
     VCenterHostInventoryResult,
     VCenterVirtualMachine,
@@ -24,6 +26,9 @@ from atlas.modules.connectors.vendors.vcenter.ports import VCenterTransport, VCe
 _HOST_PATH = "/api/vcenter/host"
 _CLUSTER_PATH = "/api/vcenter/cluster"
 _VM_PATH = "/api/vcenter/vm"
+# vCenter's real object identifiers (e.g. "domain-c8", "host-21") are alphanumeric with hyphens
+# and underscores; validated here before being embedded in a query string.
+_SAFE_IDENTIFIER = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
 class VCenterConnectorError(Exception):
@@ -123,6 +128,29 @@ class VCenterClient:
         virtual_machines = tuple(self._parse_vm(item) for item in payload)
         return VCenterVmInventoryResult(
             virtual_machines=virtual_machines,
+            observed_at=observed_at,
+            evidence_references=evidence,
+        )
+
+    async def read_cluster_membership(self, cluster_id: str) -> VCenterClusterMembershipResult:
+        """Reads the hosts that are real members of one exact cluster, using vCenter's confirmed
+        Host.FilterSpec `clusters` query filter -- the plain host/cluster list reads carry no
+        parent-cluster field on either side to resolve this from."""
+        if not _SAFE_IDENTIFIER.fullmatch(cluster_id):
+            raise VCenterConnectorError(
+                "malformed_vendor_response", "The cluster identifier is not safe to query."
+            )
+        payload = await self._get(f"{_HOST_PATH}?filter.clusters={cluster_id}")
+        if len(payload) > self._maximum_hosts:
+            raise VCenterConnectorError(
+                "vendor_response_limit_exceeded", "The host response exceeds its limit."
+            )
+        observed_at = self._clock()
+        evidence = (self._evidence(f"vcenter/host?filter.clusters={cluster_id}", payload),)
+        host_ids = tuple(self._parse_host(item).host_id for item in payload)
+        return VCenterClusterMembershipResult(
+            cluster_id=cluster_id,
+            host_ids=host_ids,
             observed_at=observed_at,
             evidence_references=evidence,
         )

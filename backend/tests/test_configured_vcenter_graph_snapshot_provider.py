@@ -34,7 +34,7 @@ from atlas.modules.connectors.vendors.vcenter.synthetic import (
     SyntheticVCenterTransport,
 )
 from atlas.modules.graph.adapters.configured_vcenter import ConfiguredVCenterGraphSnapshotProvider
-from atlas.modules.graph.domain.models import EntityType
+from atlas.modules.graph.domain.models import EntityType, RelationshipType
 from atlas.modules.inventory.application.ports import InventoryDeviceRepository
 from atlas.modules.inventory.domain.devices import InventoryDeviceLifecycle, InventoryDeviceType
 
@@ -43,6 +43,7 @@ INSTANCE_ID = "connector-instance.vcenter-graph"
 HOST_PATH = "/api/vcenter/host"
 CLUSTER_PATH = "/api/vcenter/cluster"
 VM_PATH = "/api/vcenter/vm"
+MEMBERSHIP_PATH = "/api/vcenter/host?filter.clusters=domain-c8"
 
 
 class ScopeRepository[T]:
@@ -191,6 +192,16 @@ def _routes() -> dict[str, SyntheticVCenterResponse]:
                 }
             ]
         ),
+        MEMBERSHIP_PATH: SyntheticVCenterResponse(
+            payload=[
+                {
+                    "host": "host-21",
+                    "name": "esxi-01.lab.example",
+                    "connection_state": "CONNECTED",
+                    "power_state": "POWERED_ON",
+                }
+            ]
+        ),
     }
 
 
@@ -236,7 +247,7 @@ async def test_snapshot_is_empty_without_allowlisted_vcenter() -> None:
 
 
 @pytest.mark.asyncio
-async def test_snapshot_maps_hosts_clusters_and_vms_as_entities_only() -> None:
+async def test_snapshot_maps_hosts_clusters_and_vms_with_real_membership() -> None:
     provider, transport = build_provider(
         configurations=(_configuration(),),
         instances=(_instance(),),
@@ -254,8 +265,61 @@ async def test_snapshot_maps_hosts_clusters_and_vms_as_entities_only() -> None:
         EntityType.VIRTUAL_MACHINE,
     }
     assert len(snapshot.entities) == 3
+    assert len(snapshot.relationships) == 1
+    relationship = snapshot.relationships[0]
+    assert relationship.relationship_type is RelationshipType.DEPENDS_ON
+    host_entity = next(e for e in snapshot.entities if e.entity_type is EntityType.HYPERVISOR_HOST)
+    cluster_entity = next(
+        e for e in snapshot.entities if e.entity_type is EntityType.HYPERVISOR_CLUSTER
+    )
+    assert relationship.source_entity_id == host_entity.entity_id
+    assert relationship.target_entity_id == cluster_entity.entity_id
+    assert transport.requests == [HOST_PATH, CLUSTER_PATH, VM_PATH, MEMBERSHIP_PATH]
+
+
+@pytest.mark.asyncio
+async def test_snapshot_degrades_membership_gracefully_when_route_is_missing() -> None:
+    routes = dict(_routes())
+    del routes[MEMBERSHIP_PATH]
+    provider, transport = build_provider(
+        configurations=(_configuration(),),
+        instances=(_instance(),),
+        devices=(_device(),),
+        routes=routes,
+    )
+
+    snapshot = await provider.get_snapshot()
+
+    assert len(snapshot.entities) == 3
     assert snapshot.relationships == ()
-    assert transport.requests == [HOST_PATH, CLUSTER_PATH, VM_PATH]
+    assert any("membership could not be read" in gap for gap in snapshot.known_gaps)
+    assert transport.requests == [HOST_PATH, CLUSTER_PATH, VM_PATH, MEMBERSHIP_PATH]
+
+
+@pytest.mark.asyncio
+async def test_snapshot_omits_membership_for_a_host_not_in_inventory() -> None:
+    routes = dict(_routes())
+    routes[MEMBERSHIP_PATH] = SyntheticVCenterResponse(
+        payload=[
+            {
+                "host": "host-99",
+                "name": "esxi-99.lab.example",
+                "connection_state": "CONNECTED",
+                "power_state": "POWERED_ON",
+            }
+        ]
+    )
+    provider, _transport = build_provider(
+        configurations=(_configuration(),),
+        instances=(_instance(),),
+        devices=(_device(),),
+        routes=routes,
+    )
+
+    snapshot = await provider.get_snapshot()
+
+    assert snapshot.relationships == ()
+    assert any("not present in the same snapshot" in gap for gap in snapshot.known_gaps)
 
 
 @pytest.mark.asyncio

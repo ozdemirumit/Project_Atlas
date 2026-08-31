@@ -193,6 +193,42 @@ async def test_cluster_inventory_reads_real_fields() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cluster_membership_reads_host_ids_via_the_confirmed_filter() -> None:
+    membership_path = "/api/vcenter/host?filter.clusters=domain-c8"
+    connector, transport = client(
+        {
+            membership_path: SyntheticVCenterResponse(
+                payload=[
+                    {
+                        "host": "host-21",
+                        "name": "esxi-01.lab.example",
+                        "connection_state": "CONNECTED",
+                        "power_state": "POWERED_ON",
+                    }
+                ]
+            )
+        }
+    )
+
+    result = await connector.read_cluster_membership("domain-c8")
+
+    assert result.cluster_id == "domain-c8"
+    assert result.host_ids == ("host-21",)
+    assert transport.requests == [membership_path]
+
+
+@pytest.mark.asyncio
+async def test_cluster_membership_rejects_an_unsafe_cluster_identifier() -> None:
+    connector, transport = client({})
+
+    with pytest.raises(VCenterConnectorError) as error:
+        await connector.read_cluster_membership("domain-c8/../etc")
+
+    assert error.value.code == "malformed_vendor_response"
+    assert transport.requests == []
+
+
+@pytest.mark.asyncio
 async def test_vm_inventory_reads_real_fields() -> None:
     connector, transport = client(
         {

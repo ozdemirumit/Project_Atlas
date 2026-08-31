@@ -26,16 +26,20 @@ from atlas.modules.connectors.domain.instance_creation import DISABLED_UNCONFIGU
 from atlas.modules.connectors.vendors.vcenter.client import VCenterClient, VCenterConnectorError
 from atlas.modules.connectors.vendors.vcenter.domain import (
     VCenterClusterInventoryResult,
+    VCenterClusterMembershipResult,
     VCenterHostInventoryResult,
     VCenterVmInventoryResult,
 )
 from atlas.modules.connectors.vendors.vcenter.manifest import PACKAGE_ID
 from atlas.modules.graph.domain.models import (
+    AssertionMethod,
     EntityType,
     FreshnessState,
     GraphEntity,
     GraphEvidence,
+    GraphRelationship,
     GraphSnapshot,
+    RelationshipType,
 )
 from atlas.modules.inventory.application.ports import InventoryDeviceRepository
 from atlas.modules.inventory.domain.devices import InventoryDeviceLifecycle, InventoryDeviceType
@@ -51,13 +55,14 @@ _SAFE_CONNECTOR_ERROR_CODES = frozenset(
         "vendor_response_limit_exceeded",
     }
 )
+_MAX_CLUSTERS_FOR_MEMBERSHIP = 25
 _KNOWN_GAPS = (
-    "This graph reflects only the hosts, clusters, and virtual machines read from the configured "
-    "vCenter connector; no host-to-cluster membership or VM-to-host placement relationship is "
-    "asserted, because vCenter's confirmed list responses (GET /api/vcenter/host, "
-    "/api/vcenter/cluster, /api/vcenter/vm) carry no parent-cluster or running-host field on "
-    "each summary item -- only per-item filter parameters, which this first pass does not yet "
-    "call per-entity to resolve.",
+    "No VM-to-host placement relationship is asserted: vCenter's confirmed VM detail response "
+    "(per the official Ansible vmware.vmware_rest collection's machine-generated documentation, "
+    "generated from the same real API definitions) carries no host, cluster, or placement field "
+    "at all -- only identity, power_state, cpu, memory, hardware, boot, disks, nics, cdroms, and "
+    "guest_OS. No other confirmed vSphere Automation API source for this field was found during "
+    "construction.",
     "No datastore, network, or resource-pool entity or relationship is represented; only host, "
     "cluster, and virtual machine inventory is read.",
     "No relationship to storage systems or SAN fabrics is asserted because no shared identifier "
@@ -77,9 +82,12 @@ def _identity(*parts: str) -> str:
 
 class ConfiguredVCenterGraphSnapshotProvider:
     """Serves a graph snapshot of the hosts, clusters, and virtual machines read from the single
-    configured, enabled vCenter MCP. Deliberately entities-only, mirroring
-    ConfiguredBrocadeSanNavGraphSnapshotProvider's precedent: this first pass exposes no confirmed
-    cross-entity relationship field, so none is fabricated. See ATLAS-IMP-266.
+    configured, enabled vCenter MCP, including real host-to-cluster membership. Unlike the plain
+    host/cluster list reads (which carry no parent-cluster field on either side), membership is
+    resolved via vCenter's confirmed `Host.FilterSpec.clusters` query filter -- one additional
+    bounded read per cluster (`GET /api/vcenter/host?filter.clusters=<id>`). VM-to-host placement
+    is not represented: no confirmed vSphere Automation API source carries that field at all (see
+    known_gaps). See ATLAS-IMP-266/268.
     """
 
     def __init__(
@@ -153,6 +161,23 @@ class ConfiguredVCenterGraphSnapshotProvider:
                 hosts = await client.read_host_inventory()
                 clusters = await client.read_cluster_inventory()
                 vms = await client.read_vm_inventory()
+                membership_budget = min(len(clusters.clusters), _MAX_CLUSTERS_FOR_MEMBERSHIP)
+                memberships: list[VCenterClusterMembershipResult] = []
+                membership_gaps: list[str] = []
+                for cluster in clusters.clusters[:membership_budget]:
+                    try:
+                        memberships.append(await client.read_cluster_membership(cluster.cluster_id))
+                    except VCenterConnectorError as exc:
+                        membership_gaps.append(
+                            "Host-to-cluster membership could not be read for at least one "
+                            f"cluster: {_connector_failure_reason(exc)}"
+                        )
+                if len(clusters.clusters) > membership_budget:
+                    membership_gaps.append(
+                        "Host-to-cluster membership was resolved for only the first "
+                        f"{membership_budget} cluster(s); additional clusters were omitted by "
+                        "the membership-read budget."
+                    )
         except ConnectorConnectionTestError:
             return self._unavailable_snapshot(
                 reason="The vCenter credential reference is unavailable for this graph read."
@@ -165,13 +190,20 @@ class ConfiguredVCenterGraphSnapshotProvider:
             )
 
         observed_at = hosts.observed_at
+        membership_results = tuple(memberships)
         evidence = self._build_evidence(hosts, clusters, vms)
+        evidence.extend(self._membership_evidence(membership_results))
         evidence_refs = tuple(item.reference for item in evidence)
 
         entities: list[GraphEntity] = []
         entities.extend(self._host_entities(hosts, evidence_refs))
         entities.extend(self._cluster_entities(clusters, evidence_refs))
         entities.extend(self._vm_entities(vms, evidence_refs))
+        known_host_ids = {host.host_id for host in hosts.hosts}
+
+        relationships, relationship_gaps = self._membership_relationships(
+            membership_results, known_host_ids=known_host_ids
+        )
 
         return GraphSnapshot(
             snapshot_id=f"snapshot.graph.{_identity(str(observed_at))}",
@@ -183,10 +215,10 @@ class ConfiguredVCenterGraphSnapshotProvider:
             freshness=FreshnessState.FRESH,
             completeness="partial",
             entities=tuple(entities),
-            relationships=(),
+            relationships=tuple(relationships),
             observations=(),
             evidence=tuple(evidence),
-            known_gaps=_KNOWN_GAPS,
+            known_gaps=(*membership_gaps, *relationship_gaps, *_KNOWN_GAPS),
             data_profile=_DATA_PROFILE,
         )
 
@@ -218,6 +250,81 @@ class ConfiguredVCenterGraphSnapshotProvider:
                     )
                 )
         return evidence
+
+    def _membership_evidence(
+        self, memberships: tuple[VCenterClusterMembershipResult, ...]
+    ) -> list[GraphEvidence]:
+        evidence: list[GraphEvidence] = []
+        for membership in memberships:
+            for source_reference in membership.evidence_references:
+                evidence.append(
+                    GraphEvidence(
+                        reference=(
+                            "evidence.graph.membership."
+                            f"{_identity(membership.cluster_id, source_reference)}"
+                        ),
+                        source="vCenter host-cluster membership read",
+                        source_version=self._connector_version,
+                        observed_at=membership.observed_at,
+                        freshness=FreshnessState.FRESH,
+                        trust_basis=(
+                            "Digest-only evidence from an allowlisted C1 vSphere Automation API "
+                            f"response ({source_reference})"
+                        ),
+                        classification=DataClassification.INTERNAL,
+                    )
+                )
+        return evidence
+
+    def _membership_relationships(
+        self,
+        memberships: tuple[VCenterClusterMembershipResult, ...],
+        *,
+        known_host_ids: set[str],
+    ) -> tuple[list[GraphRelationship], list[str]]:
+        relationships: list[GraphRelationship] = []
+        gaps: list[str] = []
+        stale_membership_seen = False
+        for membership in memberships:
+            cluster_entity_id = f"asset.hypervisor_cluster.{_identity(membership.cluster_id)}"
+            evidence_refs = tuple(
+                f"evidence.graph.membership.{_identity(membership.cluster_id, source_reference)}"
+                for source_reference in membership.evidence_references
+            )
+            for host_id in membership.host_ids:
+                if host_id not in known_host_ids:
+                    stale_membership_seen = True
+                    continue
+                host_entity_id = f"asset.hypervisor_host.{_identity(host_id)}"
+                relationships.append(
+                    GraphRelationship(
+                        relationship_id=(
+                            f"relationship.vcenter.{_identity(host_id, membership.cluster_id)}"
+                        ),
+                        relationship_type=RelationshipType.DEPENDS_ON,
+                        source_entity_id=host_entity_id,
+                        target_entity_id=cluster_entity_id,
+                        assertion_method=AssertionMethod.OBSERVED,
+                        observed_at=membership.observed_at,
+                        valid_from=membership.observed_at,
+                        valid_to=None,
+                        freshness=FreshnessState.FRESH,
+                        confidence_basis=(
+                            "Read live from the configured vCenter host-cluster membership "
+                            "capability (Host.FilterSpec.clusters filter)."
+                        ),
+                        evidence_references=evidence_refs,
+                        classification=DataClassification.INTERNAL,
+                        allowed_principals=frozenset({"role.development.operator"}),
+                    )
+                )
+        if stale_membership_seen:
+            gaps.append(
+                "At least one cluster-membership read named a host id not present in the same "
+                "snapshot's host-inventory read; that membership was omitted rather than "
+                "asserted against a nonexistent entity."
+            )
+        return relationships, gaps
 
     def _host_entities(
         self, hosts: VCenterHostInventoryResult, evidence_refs: tuple[str, ...]
