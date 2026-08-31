@@ -9,12 +9,16 @@ from datetime import UTC, datetime
 from atlas.modules.connectors.application.ports import ConnectorSelfTestResult
 from atlas.modules.connectors.domain.models import ConnectorHealth, ConnectorInstance
 from atlas.modules.connectors.vendors.commvault.domain import (
+    CommvaultBrowseResult,
     CommvaultClientListResult,
     CommvaultClientRecord,
     CommvaultJob,
     CommvaultJobListResult,
+    CommvaultRecoveryPoint,
     CommvaultStoragePolicy,
     CommvaultStoragePolicyListResult,
+    CommvaultSubclient,
+    CommvaultSubclientListResult,
     job_status_from_value,
 )
 from atlas.modules.connectors.vendors.commvault.manifest import PACKAGE_ID
@@ -29,6 +33,8 @@ _JOB_PATH_TEMPLATE = (
 _CLIENT_PATH = "/webservice/Client"
 _STORAGE_POLICY_PATH = "/webservice/V2/StoragePolicy"
 _STORAGE_POLICY_DETAIL_PATH_TEMPLATE = "/webservice/V2/StoragePolicy/{policy_id}?propertyLevel=10"
+_SUBCLIENT_PATH_TEMPLATE = "/webservice/Subclient?clientId={client_id}"
+_SUBCLIENT_BROWSE_PATH_TEMPLATE = "/webservice/Subclient/{subclient_id}/Browse?path=%5C"
 _SAFE_NUMERIC_ID = re.compile(r"^[0-9]{1,10}$")
 
 
@@ -55,12 +61,16 @@ class CommvaultClient:
         maximum_jobs: int = 1024,
         maximum_clients: int = 4096,
         maximum_policies: int = 1024,
+        maximum_subclients: int = 1024,
+        maximum_recovery_points: int = 1024,
         maximum_response_bytes: int = 1_048_576,
     ) -> None:
         if (
             maximum_jobs < 1
             or maximum_clients < 1
             or maximum_policies < 1
+            or maximum_subclients < 1
+            or maximum_recovery_points < 1
             or maximum_response_bytes < 1
             or completed_job_lookup_seconds < 1
         ):
@@ -71,6 +81,8 @@ class CommvaultClient:
         self._maximum_jobs = maximum_jobs
         self._maximum_clients = maximum_clients
         self._maximum_policies = maximum_policies
+        self._maximum_subclients = maximum_subclients
+        self._maximum_recovery_points = maximum_recovery_points
         self._maximum_response_bytes = maximum_response_bytes
         self._job_path = _JOB_PATH_TEMPLATE.format(lookup_seconds=completed_job_lookup_seconds)
 
@@ -317,6 +329,166 @@ class CommvaultClient:
                 "The storage policy details response is missing numberOfCopies.",
             )
         return number_of_copies
+
+    async def read_subclients(self, client_id: str) -> CommvaultSubclientListResult:
+        """Reads one client's subclients via `GET webservice/Subclient?clientId={id}` -- the
+        confirmed prerequisite for browsing that client's backed-up data (subclients are the
+        confirmed real target of the Browse operation, not clients directly)."""
+
+        if not _SAFE_NUMERIC_ID.match(client_id):
+            raise CommvaultConnectorError(
+                "invalid_target_identifier", "The client id is not safe to interpolate."
+            )
+        path = _SUBCLIENT_PATH_TEMPLATE.format(client_id=client_id)
+        payload = await self._get(path)
+        raw_subclients = payload.get("subClientProperties")
+        if not isinstance(raw_subclients, list):
+            raise CommvaultConnectorError(
+                "malformed_vendor_response", "The subclient list response is malformed."
+            )
+        if len(raw_subclients) > self._maximum_subclients:
+            raise CommvaultConnectorError(
+                "vendor_response_limit_exceeded", "The subclient list response exceeds its limit."
+            )
+        observed_at = self._clock()
+        evidence = (self._evidence(f"Subclient?clientId={client_id}", payload),)
+        subclients = tuple(self._parse_subclient(item) for item in raw_subclients)
+        return CommvaultSubclientListResult(
+            subclients=subclients, observed_at=observed_at, evidence_references=evidence
+        )
+
+    @staticmethod
+    def _parse_subclient(value: object) -> CommvaultSubclient:
+        if not isinstance(value, Mapping):
+            raise CommvaultConnectorError(
+                "malformed_vendor_response", "A subclient item is malformed."
+            )
+        entity = value.get("subClientEntity")
+        if not isinstance(entity, Mapping):
+            raise CommvaultConnectorError(
+                "malformed_vendor_response", "A subclient item is missing its identity."
+            )
+        subclient_id = entity.get("subclientId")
+        subclient_name = entity.get("subclientName")
+        client_id = entity.get("clientId")
+        app_name = entity.get("appName")
+        if (
+            not isinstance(subclient_id, int)
+            or isinstance(subclient_id, bool)
+            or not isinstance(subclient_name, str)
+            or not isinstance(client_id, int)
+            or isinstance(client_id, bool)
+            or not isinstance(app_name, str)
+        ):
+            raise CommvaultConnectorError(
+                "malformed_vendor_response", "A subclient item has invalid fields."
+            )
+        try:
+            return CommvaultSubclient(
+                subclient_id=str(subclient_id),
+                subclient_name=subclient_name,
+                client_id=str(client_id),
+                app_name=app_name,
+            )
+        except ValueError as exc:
+            raise CommvaultConnectorError(
+                "malformed_vendor_response", "A subclient item failed validation."
+            ) from exc
+
+    async def read_subclient_browse(self, subclient_id: str) -> CommvaultBrowseResult:
+        """Reads one subclient's root-level backed-up items via
+        `GET webservice/Subclient/{id}/Browse?path=%5C` (`%5C` is the confirmed root path). The
+        real response is deeply nested and the official reference's own literal example shows two
+        genuine collapsing ambiguities: `browseResponses` may hold one entry with a `dataResultSet`
+        of actual items alongside a second, sibling entry carrying only an `aggrResultSet` count
+        (no items) -- and `dataResultSet` itself may be a single object or a list depending on
+        item count. Both are handled defensively rather than assumed."""
+
+        if not _SAFE_NUMERIC_ID.match(subclient_id):
+            raise CommvaultConnectorError(
+                "invalid_target_identifier", "The subclient id is not safe to interpolate."
+            )
+        path = _SUBCLIENT_BROWSE_PATH_TEMPLATE.format(subclient_id=subclient_id)
+        payload = await self._get(path)
+        responses = payload.get("browseResponses")
+        if isinstance(responses, Mapping):
+            responses = [responses]
+        if not isinstance(responses, list):
+            raise CommvaultConnectorError(
+                "malformed_vendor_response", "The browse response is malformed."
+            )
+        raw_items: list[object] = []
+        for response in responses:
+            if not isinstance(response, Mapping):
+                continue
+            result = response.get("browseResult")
+            if not isinstance(result, Mapping):
+                continue
+            data_result_set = result.get("dataResultSet")
+            if isinstance(data_result_set, Mapping):
+                raw_items.append(data_result_set)
+            elif isinstance(data_result_set, list):
+                raw_items.extend(data_result_set)
+        if len(raw_items) > self._maximum_recovery_points:
+            raise CommvaultConnectorError(
+                "vendor_response_limit_exceeded", "The browse response exceeds its limit."
+            )
+        observed_at = self._clock()
+        evidence = (self._evidence(f"Subclient/{subclient_id}/Browse", payload),)
+        items = tuple(self._parse_recovery_point(item) for item in raw_items)
+        return CommvaultBrowseResult(
+            subclient_id=subclient_id,
+            items=items,
+            observed_at=observed_at,
+            evidence_references=evidence,
+        )
+
+    @staticmethod
+    def _parse_recovery_point(value: object) -> CommvaultRecoveryPoint:
+        if not isinstance(value, Mapping):
+            raise CommvaultConnectorError(
+                "malformed_vendor_response", "A recovery point item is malformed."
+            )
+        name = value.get("name")
+        path = value.get("path")
+        if not isinstance(name, str) or not isinstance(path, str):
+            raise CommvaultConnectorError(
+                "malformed_vendor_response", "A recovery point item has invalid fields."
+            )
+        size = value.get("size")
+        if not isinstance(size, int) or isinstance(size, bool):
+            size = None
+        modification_time = value.get("modificationTime")
+        if not isinstance(modification_time, int) or isinstance(modification_time, bool):
+            modification_time = None
+        advanced_data = value.get("advancedData")
+        backup_job_id: int | None = None
+        backup_time: int | None = None
+        archive_file_id: int | None = None
+        if isinstance(advanced_data, Mapping):
+            raw_backup_job_id = advanced_data.get("backupJobId")
+            if isinstance(raw_backup_job_id, int) and not isinstance(raw_backup_job_id, bool):
+                backup_job_id = raw_backup_job_id
+            raw_backup_time = advanced_data.get("backupTime")
+            if isinstance(raw_backup_time, int) and not isinstance(raw_backup_time, bool):
+                backup_time = raw_backup_time
+            raw_archive_file_id = advanced_data.get("archiveFileId")
+            if isinstance(raw_archive_file_id, int) and not isinstance(raw_archive_file_id, bool):
+                archive_file_id = raw_archive_file_id
+        try:
+            return CommvaultRecoveryPoint(
+                name=name,
+                path=path,
+                size=size,
+                modification_time=modification_time,
+                backup_job_id=backup_job_id,
+                backup_time=backup_time,
+                archive_file_id=archive_file_id,
+            )
+        except ValueError as exc:
+            raise CommvaultConnectorError(
+                "malformed_vendor_response", "A recovery point item failed validation."
+            ) from exc
 
     async def _get(self, path: str) -> Mapping[str, object]:
         try:

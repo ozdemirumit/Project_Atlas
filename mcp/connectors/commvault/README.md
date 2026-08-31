@@ -2,8 +2,9 @@
 
 ## Status
 
-`Quarantined` generated candidate for ATLAS-IMP-267/269. It cannot create an enabled connector
-instance until the exact package digest receives domain, security, lab, and environment approval.
+`Quarantined` generated candidate for ATLAS-IMP-267/269/271. It cannot create an enabled
+connector instance until the exact package digest receives domain, security, lab, and
+environment approval.
 
 ## Supported Candidate Capabilities
 
@@ -11,7 +12,8 @@ instance until the exact package digest receives domain, security, lab, and envi
 | --- | --- | --- |
 | `commvault.commserve.job.status.read` | C1 read-only | `GET /webservice/Job` |
 | `commvault.commserve.client.inventory.read` | C1 read-only | `GET /webservice/Client` |
-| `commvault.commserve.storagepolicy.inventory.read` | C1 read-only | `GET /webservice/V2/StoragePolicy` |
+| `commvault.commserve.storagepolicy.inventory.read` | C1 read-only | `GET /webservice/V2/StoragePolicy`, `GET /webservice/V2/StoragePolicy/{id}?propertyLevel=10` |
+| `commvault.commserve.recoverypoint.browse.read` | C1 read-only | `GET /webservice/Subclient?clientId={id}`, `GET /webservice/Subclient/{id}/Browse?path=%5C` |
 
 The self-test reuses a narrow, one-hour-lookback job-status read (no confirmed dedicated
 version/compatibility endpoint exists). One configured connector instance manages exactly one
@@ -66,8 +68,9 @@ Commvault's own official documentation, including a literal example JSON respons
   supplied directly by the customer; used to re-verify this connector's documented parameter
   tables in full (not just individual reference pages), confirming the complete job-status
   vocabulary, the `IsDeletedClient`/`osInfo.Type` field-scoping nuance, the `numberOfCopies`
-  field-scoping nuance and its real Details-endpoint source, and the Subclient/Browse read path.
-  See `supplementary_document` in `source-provenance.json`.
+  field-scoping nuance and its real Details-endpoint source, and the Subclient/Browse read path
+  (with a literal, complete example response for both `GET Subclient` and
+  `GET Subclient/{id}/Browse`). See `supplementary_document` in `source-provenance.json`.
 
 **Known gaps, stated plainly**: this connector models the complete, real 19-value job-status
 vocabulary (confirmed directly against the official REST API reference's own "Valid values are"
@@ -80,12 +83,12 @@ example list response whose `clientProps` element carries only `enableAccessCont
 `numberOfCopies` is not part of the StoragePolicy list endpoint's documented response -- it is
 read via a separate, bounded per-policy `GET StoragePolicy/{id}?propertyLevel=10` Details call
 (first 25 policies), mirroring the vCenter host-to-cluster membership precedent from
-ATLAS-IMP-268. Recovery-point/point-in-time browse catalog is **not implemented, but is now
-confirmed buildable** (correcting an earlier, mistaken "genuinely unresolvable" claim): the
-official reference documents a real GET-based path, `GET Subclient?clientId={id}` followed by
-`GET Subclient/{id}/Browse?path=%5C`, with a literal, complete example response -- left as a
-scoped follow-on rather than built here because its response nests three levels deep with real
-array-vs-single-object ambiguity at each level, warranting its own dedicated task. No cross-vendor
+ATLAS-IMP-268. The recovery-point catalog (`GET Subclient` + `GET Subclient/{id}/Browse`) is a
+**small, bounded sample, not exhaustive**: the first 3 clients' first 3 subclients' first 5
+root-level browse items each, chosen to avoid the client x subclient x item fan-out a full crawl
+would require; its two real, documented response-shape ambiguities (a sibling `browseResponses`
+entry carrying only an aggregate count, and `dataResultSet` collapsing from a list to a single
+object for exactly one item) are both handled defensively rather than assumed. No cross-vendor
 graph relationship (e.g. `BACKED_BY`) is asserted: no confirmed field connects a Commvault client
 or policy to entities from any other connector in this project. See `source-provenance.json`'s
 `unconfirmed_gaps` for the complete list.
@@ -94,8 +97,8 @@ or policy to entities from any other connector in this project. See `source-prov
 
 1. Review the exact source version and capability mapping with a backup domain owner.
 2. Validate the package digest, dependency inventory, network destination, and certificate policy.
-3. Confirm the gaps stated above -- especially the not-yet-implemented Subclient/Browse
-   recovery-point path -- against a real, non-production CommServe before promotion.
+3. Confirm the gaps stated above -- especially the recovery-point sample's bounded scope --
+   against a real, non-production CommServe before promotion.
 4. Run contract tests against an approved non-production CommServe using a least-privileged,
    read-only account.
 5. Compare sanitized lab responses with the synthetic fixtures and document schema differences.

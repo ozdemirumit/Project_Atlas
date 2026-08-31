@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime
+from datetime import UTC, datetime
 
 from atlas.modules.backup_operations.domain.models import (
     BackupFinding,
     BackupInvestigation,
     BackupOverview,
     BackupProtectedClient,
+    BackupRecoveryPoint,
     BackupReport,
     BackupStoragePolicy,
     EvidenceRecord,
@@ -48,6 +49,9 @@ from atlas.modules.inventory.domain.devices import InventoryDeviceLifecycle, Inv
 
 _DATA_PROFILE = "configured_commvault_read_only"
 _MAX_POLICIES_FOR_COPY_COUNT = 25
+_MAX_CLIENTS_FOR_RECOVERY_POINTS = 3
+_MAX_SUBCLIENTS_PER_CLIENT = 3
+_MAX_RECOVERY_POINTS_PER_SUBCLIENT = 5
 _SAFETY_NOTICE = (
     "Decision support only. No infrastructure change or service-impacting action is authorized."
 )
@@ -73,15 +77,21 @@ def _identity(*parts: str) -> str:
     return hashlib.sha256(normalized).hexdigest()[:20]
 
 
+def _optional_utc_timestamp(value: int | None) -> datetime | None:
+    if value is None:
+        return None
+    try:
+        return datetime.fromtimestamp(value, tz=UTC)
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
 class ConfiguredCommvaultBackupOverviewProvider:
     """Serves the backup overview from the single configured, enabled Commvault MCP, reading real
-    client and storage-policy inventory, the latter enriched per-policy with a real confirmed
-    copy count (see `_read_copy_counts`). No recovery-point/browse catalog is represented yet:
-    a real, confirmed GET-based read path exists (`GET Subclient` + `GET Subclient/{id}/Browse`,
-    see ATLAS-IMP-270's correction to ATLAS-IMP-269's earlier, mistaken "unresolvable" claim) but
-    is not implemented here -- its three-level-deep response nesting has genuine array-vs-object
-    collapsing ambiguity at each level, warranting its own dedicated task rather than folding into
-    a correction pass. See ATLAS-IMP-269 and ATLAS-IMP-270.
+    client and storage-policy inventory (the latter enriched per-policy with a real confirmed
+    copy count, see `_read_copy_counts`), plus a small, bounded recovery-point sample (see
+    `_read_recovery_points`) -- not an exhaustive catalog, sourced from the first few clients'
+    first few subclients' root-level browse. See ATLAS-IMP-269 and ATLAS-IMP-270.
     """
 
     def __init__(
@@ -159,6 +169,11 @@ class ConfiguredCommvaultBackupOverviewProvider:
                 clients = await client.read_client_inventory()
                 policies = await client.read_storage_policies()
                 copy_counts, copy_count_gaps = await self._read_copy_counts(client, policies)
+                (
+                    recovery_points,
+                    recovery_point_evidence,
+                    recovery_point_gaps,
+                ) = await self._read_recovery_points(client, clients)
         except ConnectorConnectionTestError:
             return self._unavailable_overview(
                 requested_at,
@@ -176,6 +191,9 @@ class ConfiguredCommvaultBackupOverviewProvider:
             policies=policies,
             copy_counts=copy_counts,
             copy_count_gaps=copy_count_gaps,
+            recovery_points=recovery_points,
+            recovery_point_evidence=recovery_point_evidence,
+            recovery_point_gaps=recovery_point_gaps,
             requested_at=requested_at,
         )
 
@@ -207,6 +225,79 @@ class ConfiguredCommvaultBackupOverviewProvider:
             )
         return copy_counts, tuple(dict.fromkeys(gaps))
 
+    async def _read_recovery_points(
+        self, client: CommvaultClient, clients: CommvaultClientListResult
+    ) -> tuple[tuple[BackupRecoveryPoint, ...], tuple[EvidenceRecord, ...], tuple[str, ...]]:
+        """Builds a small, bounded recovery-point sample: for the first few clients, discover
+        their first few subclients, and browse each subclient's root-level backed-up items. This
+        is deliberately not exhaustive (client x subclient x item fan-out) -- one client's or
+        subclient's read failure does not block the others or the overview."""
+
+        recovery_points: list[BackupRecoveryPoint] = []
+        evidence: list[EvidenceRecord] = []
+        gaps: list[str] = []
+        client_budget = min(len(clients.clients), _MAX_CLIENTS_FOR_RECOVERY_POINTS)
+        for backup_client in clients.clients[:client_budget]:
+            try:
+                subclients = await client.read_subclients(backup_client.client_id)
+            except CommvaultConnectorError as exc:
+                gaps.append(
+                    "Subclient discovery could not be read for at least one client: "
+                    f"{_connector_failure_reason(exc)}"
+                )
+                continue
+            subclient_budget = min(len(subclients.subclients), _MAX_SUBCLIENTS_PER_CLIENT)
+            for subclient in subclients.subclients[:subclient_budget]:
+                try:
+                    browse = await client.read_subclient_browse(subclient.subclient_id)
+                except CommvaultConnectorError as exc:
+                    gaps.append(
+                        "Recovery-point browse could not be read for at least one subclient: "
+                        f"{_connector_failure_reason(exc)}"
+                    )
+                    continue
+                if not browse.items:
+                    continue
+                browse_evidence = EvidenceRecord(
+                    reference=(
+                        f"evidence.backup.recoverypoint.{_identity(browse.evidence_references[0])}"
+                    ),
+                    source="Commvault subclient-browse read",
+                    source_version=self._connector_version,
+                    observed_at=browse.observed_at,
+                    freshness=FreshnessState.CURRENT,
+                    trust_basis=(
+                        "Digest-only evidence from an allowlisted C1 REST API response "
+                        f"({browse.evidence_references[0]})"
+                    ),
+                )
+                evidence.append(browse_evidence)
+                item_budget = min(len(browse.items), _MAX_RECOVERY_POINTS_PER_SUBCLIENT)
+                for item in browse.items[:item_budget]:
+                    recovery_points.append(
+                        BackupRecoveryPoint(
+                            client_id=backup_client.client_id,
+                            client_name=backup_client.client_name,
+                            subclient_id=subclient.subclient_id,
+                            subclient_name=subclient.subclient_name,
+                            name=item.name,
+                            path=item.path,
+                            size=item.size,
+                            modification_time=_optional_utc_timestamp(item.modification_time),
+                            backup_job_id=item.backup_job_id,
+                            backup_time=_optional_utc_timestamp(item.backup_time),
+                            observed_at=browse.observed_at,
+                            evidence_references=(browse_evidence.reference,),
+                        )
+                    )
+        if len(clients.clients) > client_budget:
+            gaps.append(
+                "Recovery-point sampling was limited to the first "
+                f"{_MAX_CLIENTS_FOR_RECOVERY_POINTS} client(s); this is a sample, not an "
+                "exhaustive catalog."
+            )
+        return tuple(recovery_points), tuple(evidence), tuple(dict.fromkeys(gaps))
+
     def _build_overview(
         self,
         *,
@@ -214,6 +305,9 @@ class ConfiguredCommvaultBackupOverviewProvider:
         policies: CommvaultStoragePolicyListResult,
         copy_counts: dict[str, int],
         copy_count_gaps: tuple[str, ...],
+        recovery_points: tuple[BackupRecoveryPoint, ...],
+        recovery_point_evidence: tuple[EvidenceRecord, ...],
+        recovery_point_gaps: tuple[str, ...],
         requested_at: datetime,
     ) -> BackupOverview:
         client_evidence = EvidenceRecord(
@@ -238,7 +332,7 @@ class ConfiguredCommvaultBackupOverviewProvider:
                 f"({policies.evidence_references[0]})"
             ),
         )
-        evidence = (client_evidence, policy_evidence)
+        evidence = (client_evidence, policy_evidence, *recovery_point_evidence)
 
         backup_clients = tuple(
             BackupProtectedClient(
@@ -300,25 +394,28 @@ class ConfiguredCommvaultBackupOverviewProvider:
             )
 
         unknowns = (
-            "No recovery-point/browse catalog is represented: a real GET-based read path is "
-            "confirmed (GET Subclient + GET Subclient/{id}/Browse) but not yet implemented here.",
+            "The recovery-point sample is drawn from a bounded number of clients and "
+            "subclients only, and is not an exhaustive backup catalog.",
             "No job-outcome correlation is made here; job status is a separate, already-real "
             "health_checks signal (see health_checks/adapters/commvault.py).",
             "Deletion status and OS type are not confirmed present on this list endpoint's "
             "response for every client; a client with an unknown deletion status is not "
             "flagged as a finding (only a confirmed 'deleted' value is).",
             *copy_count_gaps,
+            *recovery_point_gaps,
         )
         if findings:
             summary = (
                 f"{len(findings)} protection-coverage finding(s) were observed across "
                 f"{len(backup_clients)} client(s) and {len(backup_policies)} storage "
-                "policy(ies) in this scope."
+                f"policy(ies) in this scope, with {len(recovery_points)} sampled recovery "
+                "point(s)."
             )
         else:
             summary = (
                 f"No protection-coverage findings were observed across {len(backup_clients)} "
-                f"client(s) and {len(backup_policies)} storage policy(ies) in this scope."
+                f"client(s) and {len(backup_policies)} storage policy(ies) in this scope, with "
+                f"{len(recovery_points)} sampled recovery point(s)."
             )
         investigation_evidence = tuple(item.reference for item in evidence)
         investigation = BackupInvestigation(
@@ -339,6 +436,8 @@ class ConfiguredCommvaultBackupOverviewProvider:
         confirmed_facts = (
             f"{len(backup_clients)} registered client(s) were read via the configured connector.",
             f"{len(backup_policies)} storage polic(y/ies) were read via the configured connector.",
+            f"{len(recovery_points)} sampled recovery point(s) were read via the configured "
+            "connector.",
             f"{len(findings)} finding(s) were observed."
             if findings
             else "No deleted clients or zero-copy policies were observed.",
@@ -365,6 +464,7 @@ class ConfiguredCommvaultBackupOverviewProvider:
             generated_at=requested_at,
             clients=backup_clients,
             policies=backup_policies,
+            recovery_points=recovery_points,
             findings=tuple(findings),
             evidence=evidence,
             investigation=investigation,
@@ -433,6 +533,7 @@ class ConfiguredCommvaultBackupOverviewProvider:
             generated_at=requested_at,
             clients=(),
             policies=(),
+            recovery_points=(),
             findings=(),
             evidence=evidence,
             investigation=investigation,

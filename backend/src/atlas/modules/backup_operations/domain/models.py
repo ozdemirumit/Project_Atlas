@@ -95,6 +95,41 @@ class BackupStoragePolicy:
 
 
 @dataclass(frozen=True, slots=True)
+class BackupRecoveryPoint:
+    """One backed-up item, read from a bounded, per-subclient root-level browse
+    (`GET webservice/Subclient/{id}/Browse`). This is a small sample for a bounded number of
+    clients and subclients, not an exhaustive recovery-point catalog -- see
+    `ConfiguredCommvaultBackupOverviewProvider._read_recovery_points`. `modification_time` and
+    `backup_time` are optional: not every browsed item carries them (e.g. the confirmed
+    virtual-machine browse example omits some advancedData fields other items carry)."""
+
+    client_id: str
+    client_name: str
+    subclient_id: str
+    subclient_name: str
+    name: str
+    path: str
+    size: int | None
+    modification_time: datetime | None
+    backup_job_id: int | None
+    backup_time: datetime | None
+    observed_at: datetime
+    evidence_references: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if self.observed_at.tzinfo is None:
+            raise ValueError("observed_at must be timezone-aware")
+        if self.modification_time is not None and self.modification_time.tzinfo is None:
+            raise ValueError("modification_time must be timezone-aware")
+        if self.backup_time is not None and self.backup_time.tzinfo is None:
+            raise ValueError("backup_time must be timezone-aware")
+        if not self.name.strip() or not self.path.strip():
+            raise ValueError("recovery points require a name and path")
+        if not self.evidence_references:
+            raise ValueError("recovery points require evidence")
+
+
+@dataclass(frozen=True, slots=True)
 class BackupFinding:
     finding_id: str
     subject_id: str
@@ -172,6 +207,7 @@ class BackupOverview:
     generated_at: datetime
     clients: tuple[BackupProtectedClient, ...]
     policies: tuple[BackupStoragePolicy, ...]
+    recovery_points: tuple[BackupRecoveryPoint, ...]
     findings: tuple[BackupFinding, ...]
     evidence: tuple[EvidenceRecord, ...]
     investigation: BackupInvestigation
@@ -186,6 +222,7 @@ class BackupOverview:
             for references in (
                 *(client.evidence_references for client in self.clients),
                 *(policy.evidence_references for policy in self.policies),
+                *(point.evidence_references for point in self.recovery_points),
                 *(finding.evidence_references for finding in self.findings),
                 self.investigation.evidence_references,
                 self.report.evidence_references,

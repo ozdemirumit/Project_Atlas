@@ -42,6 +42,23 @@ class BackupStoragePolicyData(BaseModel):
     evidence_references: list[str]
 
 
+class BackupRecoveryPointData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    client_id: str
+    client_name: str
+    subclient_id: str
+    subclient_name: str
+    name: str
+    path: str
+    size: int | None
+    modification_time: datetime | None
+    backup_job_id: int | None
+    backup_time: datetime | None
+    observed_at: datetime
+    evidence_references: list[str]
+
+
 class BackupFindingData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -107,6 +124,7 @@ class BackupOverviewData(BaseModel):
     generated_at: datetime
     clients: list[BackupProtectedClientData]
     policies: list[BackupStoragePolicyData]
+    recovery_points: list[BackupRecoveryPointData]
     findings: list[BackupFindingData]
     evidence: list[EvidenceData]
     investigation: InvestigationData

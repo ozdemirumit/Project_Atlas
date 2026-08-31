@@ -10,7 +10,7 @@
   "supplementary_document": {
     "title": "Commvault REST API Reference (official PDF, complete)",
     "revision": "Updated Sunday, January 18, 2026",
-    "note": "Supplied directly by the customer as a local file, not a public URL. Used on 2026-08-31 to re-verify ATLAS-IMP-267/269 against the complete documented parameter tables (rather than only the individual api.commvault.com reference pages cited below), which surfaced and corrected three real discrepancies: an incomplete job-status vocabulary, an over-scoped required IsDeletedClient/osInfo.Type on the Client list read, and an over-scoped required numberOfCopies on the StoragePolicy list read. See ATLAS-IMP-270."
+    "note": "Supplied directly by the customer as a local file, not a public URL. Used on 2026-08-31 to re-verify ATLAS-IMP-267/269 against the complete documented parameter tables (rather than only the individual api.commvault.com reference pages cited below), which surfaced and corrected three real discrepancies (ATLAS-IMP-270: an incomplete job-status vocabulary, an over-scoped required IsDeletedClient/osInfo.Type on the Client list read, and an over-scoped required numberOfCopies on the StoragePolicy list read) and confirmed a real GET-based recovery-point read path (ATLAS-IMP-271: GET Subclient + GET Subclient/{id}/Browse), closing a gap ATLAS-IMP-269 had mistakenly called unresolvable."
   },
   "capability_sources": [
     {
@@ -44,6 +44,22 @@
       "confirmation": "confirmed_via_working_example",
       "url": null,
       "note": "The \"GET Storage Policy Details\" operation and its propertyLevel parameter (1 = ID and name only, 10 = complete information) are confirmed in the official PDF reference (see supplementary_document); its literal propertyLevel=10 example response (<policies ... numberOfStreams=\"50\" ... numberOfCopies=\"5\" ...>) is where numberOfCopies is actually confirmed present. Read as a bounded, per-policy enrichment call (first 25 policies) after the list read, mirroring the vCenter host-to-cluster membership precedent from ATLAS-IMP-268; a policy whose Details read fails is left with number_of_copies=None rather than failing the whole overview."
+    },
+    {
+      "capability_id": "commvault.commserve.recoverypoint.browse.read",
+      "method": "GET",
+      "path": "/webservice/Subclient?clientId={clientId}",
+      "confirmation": "confirmed_via_working_example",
+      "url": null,
+      "note": "\"GET Subclient\" is confirmed in the official PDF reference (see supplementary_document), including a literal example XML response for clientId=2/clientName=client001 showing two subclients, each a subClientEntity.{subclientId, subclientName, applicationId, appName, backupsetId, backupsetName, clientId, clientName, instanceId, instanceName}. This connector reads subclientId, subclientName, clientId, and appName -- the confirmed prerequisite identifiers for the per-subclient Browse read below (Commvault's Browse operation targets a subclient, not a client directly)."
+    },
+    {
+      "capability_id": "commvault.commserve.recoverypoint.browse.read",
+      "method": "GET",
+      "path": "/webservice/Subclient/{subclientId}/Browse?path=%5C",
+      "confirmation": "confirmed_via_working_example",
+      "url": null,
+      "note": "\"GET Subclient Browse\" (root-level browse, path=%5C) is confirmed in the official PDF reference (see supplementary_document) with a literal, complete example response: databrowse_BrowseResponseList -> browseResponses[] (respType, workerId) -> browseResult (queryId) -> dataResultSet (name, path, displayPath, modificationTime, displayName, size) -> advancedData (archiveGroupId, referenceTime, archiveFileId, backupJobId, backupTime, ...). Two real, documented collapsing ambiguities are handled defensively rather than assumed: (1) browseResponses commonly holds a second, sibling entry carrying only an aggrResultSet count (no items) alongside the entry with real dataResultSet items -- both entries are examined, and only dataResultSet items are kept; (2) dataResultSet may be a single object or a list depending on item count. Read as a bounded sample only (first 3 clients x first 3 subclients x first 5 items each, ATLAS-IMP-271), not an exhaustive recovery-point catalog."
     }
   ],
   "authentication_source": {
@@ -60,7 +76,7 @@
   },
   "unconfirmed_gaps": [
     "No confirmed field connects a Commvault-protected client or storage policy to entities from any other connector in this project, so no cross-vendor graph relationship (e.g. BACKED_BY) is asserted.",
-    "Recovery-point/point-in-time browse catalog is NOT implemented, but is now confirmed buildable (corrected from an earlier, mistaken 'genuinely unresolvable' claim): the official PDF reference documents a real GET-based read path -- GET Subclient?clientId={id} (list a client's subclients) followed by GET Subclient/{id}/Browse?path=%5C (root-level browse) -- with a literal, complete example JSON-equivalent XML response (databrowse_BrowseResponseList -> browseResponses[] -> browseResult -> dataResultSet[] -> {name, path, size, modificationTime, advancedData: {archiveFileId, backupJobId, backupTime}}). This was not built in ATLAS-IMP-270 because the response shape nests three levels deep with genuine array-vs-single-object collapsing ambiguity at each level (the same ambiguity already handled defensively for the StoragePolicy Details endpoint, but compounded here), which warrants its own dedicated, fully-verified task rather than folding into a correction pass.",
+    "The recovery-point catalog (ATLAS-IMP-271) is a small, bounded sample -- the first 3 clients' first 3 subclients' first 5 root-level browse items each -- not an exhaustive catalog of all backed-up data. Widening this would require deliberate, explicit budget increases, not a redesign.",
     "A real but different question -- mapping which storage policy is assigned to a specific subclient -- has no confirmed bulk REST endpoint (per a real community thread); only the storage-policy list itself (this connector's scope) and Commvault's own admin console/per-subclient properties API cover that."
   ],
   "data_policy": "synthetic-only",

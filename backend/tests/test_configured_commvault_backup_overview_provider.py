@@ -50,6 +50,55 @@ def _detail_path(policy_id: str) -> str:
     return f"/webservice/V2/StoragePolicy/{policy_id}?propertyLevel=10"
 
 
+def _subclient_path(client_id: str) -> str:
+    return f"/webservice/Subclient?clientId={client_id}"
+
+
+def _browse_path(subclient_id: str) -> str:
+    return f"/webservice/Subclient/{subclient_id}/Browse?path=%5C"
+
+
+def _subclient_response(client_id: int, subclient_id: int) -> SyntheticCommvaultResponse:
+    return SyntheticCommvaultResponse(
+        payload={
+            "subClientProperties": [
+                {
+                    "subClientEntity": {
+                        "subclientId": subclient_id,
+                        "subclientName": "default",
+                        "clientId": client_id,
+                        "appName": "File System",
+                    }
+                }
+            ]
+        }
+    )
+
+
+def _browse_response(*, name: str = "sample.xml") -> SyntheticCommvaultResponse:
+    return SyntheticCommvaultResponse(
+        payload={
+            "browseResponses": [
+                {
+                    "browseResult": {
+                        "queryId": 0,
+                        "dataResultSet": [
+                            {
+                                "name": name,
+                                "path": f"\\test_data\\{name}",
+                                "size": 2048,
+                                "modificationTime": 1409307311,
+                                "advancedData": {"backupJobId": 45, "backupTime": 1409341069},
+                            }
+                        ],
+                    }
+                },
+                {"browseResult": {"queryId": 1, "aggrResultSet": {"result": 1}}},
+            ]
+        }
+    )
+
+
 class ScopeRepository[T]:
     def __init__(self, records: Iterable[T]) -> None:
         self.records = tuple(records)
@@ -216,6 +265,10 @@ def _routes() -> dict[str, SyntheticCommvaultResponse]:
         _detail_path("2"): SyntheticCommvaultResponse(
             payload={"policies": {"numberOfStreams": 1, "numberOfCopies": 0}}
         ),
+        _subclient_path("1"): _subclient_response(1, 10),
+        _subclient_path("2"): _subclient_response(2, 20),
+        _browse_path("10"): _browse_response(name="app-server-01-file.xml"),
+        _browse_path("20"): _browse_response(name="app-server-02-file.xml"),
     }
 
 
@@ -289,10 +342,28 @@ async def test_overview_maps_real_clients_and_policies_with_findings() -> None:
         STORAGE_POLICY_PATH,
         _detail_path("1"),
         _detail_path("2"),
+        _subclient_path("1"),
+        _browse_path("10"),
+        _subclient_path("2"),
+        _browse_path("20"),
     ]
     policy_by_id = {policy.policy_id: policy for policy in overview.policies}
     assert policy_by_id["1"].number_of_copies == 2
     assert policy_by_id["2"].number_of_copies == 0
+    assert len(overview.recovery_points) == 2
+    recovery_point_names = {point.name for point in overview.recovery_points}
+    assert recovery_point_names == {"app-server-01-file.xml", "app-server-02-file.xml"}
+    point = next(p for p in overview.recovery_points if p.name == "app-server-01-file.xml")
+    assert point.client_id == "1"
+    assert point.subclient_id == "10"
+    assert point.size == 2048
+    assert point.backup_job_id == 45
+    assert point.modification_time is not None
+    assert point.backup_time is not None
+    recovery_point_evidence = {
+        reference for rp in overview.recovery_points for reference in rp.evidence_references
+    }
+    assert recovery_point_evidence <= evidence_ids
 
 
 @pytest.mark.asyncio
@@ -365,7 +436,16 @@ async def test_overview_degrades_copy_count_gracefully_when_detail_route_is_miss
     assert any(
         "Copy-count detail could not be read" in item for item in overview.investigation.unknowns
     )
-    assert transport.requests == [CLIENT_PATH, STORAGE_POLICY_PATH, _detail_path("1")]
+    assert any(
+        "Subclient discovery could not be read" in item for item in overview.investigation.unknowns
+    )
+    assert overview.recovery_points == ()
+    assert transport.requests == [
+        CLIENT_PATH,
+        STORAGE_POLICY_PATH,
+        _detail_path("1"),
+        _subclient_path("1"),
+    ]
 
 
 @pytest.mark.asyncio

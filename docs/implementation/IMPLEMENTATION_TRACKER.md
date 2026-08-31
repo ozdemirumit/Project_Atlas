@@ -4,14 +4,64 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-270 |
-| Title | Correct three Commvault field-scoping bugs and the job-status vocabulary against the official REST API reference PDF; correct ATLAS-IMP-269's mistaken "unresolvable" Browse claim |
+| Task ID | ATLAS-IMP-271 |
+| Title | Build the Commvault recovery-point catalog: bounded `GET Subclient` + `GET Subclient/{id}/Browse` sampling, closing the gap ATLAS-IMP-269 mistakenly called unresolvable |
 | Status | Verified (backend, tool-verified with real toolchain) |
 | Branch | `main` |
 | Pull Request | none (pushed directly to `main`; no PR tooling available in this environment) |
 | Governing Documents | ATLAS-003, ATLAS-020/021/022/047 (connector quarantine/promotion), `docs/adr/ADR-004`+ |
 | Last Updated | 2026-08-31 |
-| Next Action | Recovery-point/browse catalog (`GET Subclient` + `GET Subclient/{id}/Browse`) is now confirmed buildable with a real, literal example response, but is deliberately deferred to its own task given its three-level-deep response nesting. VM-to-host placement (vCenter) and cross-vendor graph relationships remain the only other named, not-committed-to gaps across the whole connector series. |
+| Next Action | All three genuinely-scoped Commvault backup capabilities from the original gap list (client inventory, storage-policy inventory, recovery-point catalog) are now built and real. VM-to-host placement (vCenter) and cross-vendor graph relationships remain the only other named, not-committed-to gaps across the whole connector series. |
+
+### ATLAS-IMP-271 Scope and Verification
+
+- **What this is**: implements the recovery-point/browse capability that ATLAS-IMP-270 confirmed
+  buildable but deliberately deferred, given its three-level-deep, ambiguous response nesting.
+  Closes the original gap from ATLAS-IMP-269's request ("client inventory / backup-policy /
+  recovery-point catalog") for real, completing the Commvault backup module.
+- **New connector-layer reads** (`connectors/vendors/commvault/`): `CommvaultClient.read_subclients(client_id)`
+  (`GET Subclient?clientId={id}`, confirmed real example response for two subclients under one
+  client) and `read_subclient_browse(subclient_id)` (`GET Subclient/{id}/Browse?path=%5C`,
+  confirmed real example response for a root-level browse). New domain types: `CommvaultSubclient`,
+  `CommvaultSubclientListResult`, `CommvaultRecoveryPoint`, `CommvaultBrowseResult`.
+- **Two real response-shape ambiguities handled defensively, not assumed**: (1) the confirmed
+  example response shows `browseResponses` holding one entry with real `dataResultSet` items
+  alongside a second, sibling entry carrying only an `aggrResultSet` count -- both entries are
+  examined, and only items are kept; (2) `dataResultSet` itself may be a single object or a list
+  depending on item count (the same category of ambiguity already handled for the StoragePolicy
+  Details response in ATLAS-IMP-270, here compounded across nesting levels). Both are covered by
+  dedicated tests (`test_subclient_browse_tolerates_a_single_item_collapsed_to_an_object`).
+  `name`/`path` are required per item (raises `malformed_vendor_response` if absent, matching
+  every other parser's fail-loud-on-identity convention); `size`, `modificationTime`, and the
+  `advancedData`-nested `backupJobId`/`backupTime`/`archiveFileId` are read defensively as
+  optional, since they are not confirmed universal across every browse example shown (e.g. the
+  virtual-machine browse example omits some).
+- **Bounded, non-exhaustive sampling by design** (`backup_operations/adapters/configured_commvault.py`'s
+  new `_read_recovery_points`): first 3 clients x first 3 subclients x first 5 browse items each --
+  a deliberate cap against the real client x subclient x item fan-out risk, mirroring the vCenter
+  host-to-cluster membership precedent (ATLAS-IMP-268) and the StoragePolicy Details enrichment
+  precedent (ATLAS-IMP-270) exactly: one client's or subclient's read failure does not block the
+  others or the overview, and is recorded as an honest `unknowns` entry, not a silent drop. New
+  `BackupRecoveryPoint` domain model and `recovery_points` field on `BackupOverview`, exposed on
+  `GET /api/v1/backup/overview` via a new `BackupRecoveryPointData` schema -- no new endpoint or
+  authorization wiring needed, since this extends the existing ATLAS-IMP-269 vertical slice.
+- **New capability declared for governance**: `commvault.commserve.recoverypoint.browse.read`
+  (C1 read-only) added to the candidate manifest, covering both the Subclient-discovery and
+  Browse reads together (one purpose, like StoragePolicy's list+Details reads share one
+  capability id). `mcp/connectors/commvault/source-provenance.json` and `README.md` updated with
+  both new confirmed sources, and the gap entry corrected from "not implemented" to an honest
+  statement of the sample's bounded scope.
+- **Verified with the real toolchain**: `ruff format --check`, `ruff check`, and `mypy` strict
+  clean across the full repository. Targeted suite (the four Commvault/backup-operations test
+  files): 42 passed, up from 36 before this task (6 new connector-layer tests: subclient reads,
+  the unsafe-identifier rejection, the real-fields browse read, the collapsed-single-item
+  tolerance test, the empty-result case, and the browse unsafe-identifier rejection); the
+  existing happy-path and graceful-degradation overview tests were extended in place to cover
+  the new recovery-point sampling rather than duplicated. Broader `-k "commvault or backup"`
+  sweep: 42 passed, 4 failed (the same pre-existing `test_logical_backup_restore.py` baseline
+  failures, unrelated -- matched only by the "backup" keyword). Full backend suite: 67 failed
+  (exact match to the established baseline by name), 3980 passed (+6 over ATLAS-IMP-270's 3974,
+  exactly matching the 6 new tests), 68 skipped.
 
 ### ATLAS-IMP-270 Scope and Verification
 

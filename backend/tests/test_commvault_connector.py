@@ -44,6 +44,8 @@ JOB_PATH = "/webservice/Job?jobFilter=backup&jobCategory=All&completedJobLookupT
 CLIENT_PATH = "/webservice/Client"
 STORAGE_POLICY_PATH = "/webservice/V2/StoragePolicy"
 STORAGE_POLICY_DETAIL_PATH = "/webservice/V2/StoragePolicy/2?propertyLevel=10"
+SUBCLIENT_PATH = "/webservice/Subclient?clientId=2"
+SUBCLIENT_BROWSE_PATH = "/webservice/Subclient/2/Browse?path=%5C"
 
 
 def _job_summary(
@@ -314,6 +316,183 @@ async def test_storage_policy_copy_count_rejects_an_unsafe_policy_identifier() -
 
     with pytest.raises(CommvaultConnectorError) as error:
         await connector.read_storage_policy_copy_count("2?propertyLevel=1")
+
+    assert error.value.code == "invalid_target_identifier"
+    assert transport.requests == []
+
+
+@pytest.mark.asyncio
+async def test_subclients_read_real_fields() -> None:
+    connector, transport = client(
+        {
+            SUBCLIENT_PATH: SyntheticCommvaultResponse(
+                payload={
+                    "subClientProperties": [
+                        {
+                            "subClientEntity": {
+                                "subclientId": 2,
+                                "subclientName": "default",
+                                "clientId": 2,
+                                "clientName": "client001",
+                                "appName": "File System",
+                                "backupsetId": 1,
+                                "backupsetName": "defaultBackupSet",
+                            }
+                        },
+                        {
+                            "subClientEntity": {
+                                "subclientId": 3,
+                                "subclientName": "System State",
+                                "clientId": 2,
+                                "clientName": "client001",
+                                "appName": "File System",
+                            }
+                        },
+                    ]
+                }
+            )
+        }
+    )
+
+    result = await connector.read_subclients("2")
+
+    assert [item.subclient_id for item in result.subclients] == ["2", "3"]
+    assert result.subclients[0].subclient_name == "default"
+    assert result.subclients[0].app_name == "File System"
+    assert result.evidence_references[0].startswith("commvault://Subclient?clientId=2#sha256:")
+    assert transport.requests == [SUBCLIENT_PATH]
+
+
+@pytest.mark.asyncio
+async def test_subclients_rejects_an_unsafe_client_identifier() -> None:
+    connector, transport = client({})
+
+    with pytest.raises(CommvaultConnectorError) as error:
+        await connector.read_subclients("2?clientId=1")
+
+    assert error.value.code == "invalid_target_identifier"
+    assert transport.requests == []
+
+
+def _browse_response(*, with_items: bool) -> dict[str, object]:
+    data_result_set: list[dict[str, object]] | dict[str, object]
+    if with_items:
+        data_result_set = [
+            {
+                "name": "|2|#12!C:",
+                "path": "\\C:",
+                "displayPath": "\\C:",
+                "modificationTime": 1409307311,
+                "displayName": "C:",
+                "size": 107004030976,
+                "advancedData": {
+                    "archiveGroupId": 3,
+                    "referenceTime": 1409341069,
+                    "archiveFileId": 11,
+                    "backupJobId": 45,
+                    "backupTime": 1409341069,
+                },
+            }
+        ]
+    else:
+        data_result_set = []
+    return {
+        "browseResponses": [
+            {
+                "respType": 0,
+                "workerId": 19,
+                "browseResult": {"queryId": 0, "dataResultSet": data_result_set},
+                "session": {"sessionId": "1409670021-19"},
+            },
+            {
+                "respType": 0,
+                "workerId": 19,
+                "browseResult": {"queryId": 1, "aggrResultSet": {"result": 1 if with_items else 0}},
+                "session": {"sessionId": "1409670021-19"},
+            },
+        ]
+    }
+
+
+@pytest.mark.asyncio
+async def test_subclient_browse_reads_real_fields_and_skips_the_aggregate_only_response() -> None:
+    connector, transport = client(
+        {
+            SUBCLIENT_BROWSE_PATH: SyntheticCommvaultResponse(
+                payload=_browse_response(with_items=True)
+            )
+        }
+    )
+
+    result = await connector.read_subclient_browse("2")
+
+    assert result.subclient_id == "2"
+    assert len(result.items) == 1
+    item = result.items[0]
+    assert item.name == "|2|#12!C:"
+    assert item.path == "\\C:"
+    assert item.size == 107004030976
+    assert item.modification_time == 1409307311
+    assert item.backup_job_id == 45
+    assert item.backup_time == 1409341069
+    assert item.archive_file_id == 11
+    assert transport.requests == [SUBCLIENT_BROWSE_PATH]
+
+
+@pytest.mark.asyncio
+async def test_subclient_browse_tolerates_a_single_item_collapsed_to_an_object() -> None:
+    """A real, documented ambiguity: `browseResponses` and `dataResultSet` may each collapse from
+    a list to a single object when there is exactly one entry -- both must be tolerated."""
+
+    connector, transport = client(
+        {
+            SUBCLIENT_BROWSE_PATH: SyntheticCommvaultResponse(
+                payload={
+                    "browseResponses": {
+                        "respType": 0,
+                        "workerId": 19,
+                        "browseResult": {
+                            "queryId": 0,
+                            "dataResultSet": {
+                                "name": "sample.xml",
+                                "path": "\\test_data\\sample.xml",
+                            },
+                        },
+                    }
+                }
+            )
+        }
+    )
+
+    result = await connector.read_subclient_browse("2")
+
+    assert len(result.items) == 1
+    assert result.items[0].name == "sample.xml"
+    assert result.items[0].size is None
+    assert transport.requests == [SUBCLIENT_BROWSE_PATH]
+
+
+@pytest.mark.asyncio
+async def test_subclient_browse_with_no_items_returns_an_empty_result() -> None:
+    connector, _transport = client(
+        {
+            SUBCLIENT_BROWSE_PATH: SyntheticCommvaultResponse(
+                payload=_browse_response(with_items=False)
+            )
+        }
+    )
+
+    result = await connector.read_subclient_browse("2")
+
+    assert result.items == ()
+
+
+@pytest.mark.asyncio
+async def test_subclient_browse_rejects_an_unsafe_subclient_identifier() -> None:
+    connector, transport = client({})
+
+    with pytest.raises(CommvaultConnectorError) as error:
+        await connector.read_subclient_browse("2/Browse")
 
     assert error.value.code == "invalid_target_identifier"
     assert transport.requests == []

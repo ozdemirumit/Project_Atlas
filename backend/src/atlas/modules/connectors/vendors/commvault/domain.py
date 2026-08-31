@@ -143,3 +143,68 @@ class CommvaultStoragePolicyListResult:
             raise ValueError("observed_at must be timezone-aware")
         if not self.evidence_references:
             raise ValueError("storage policy list results require evidence")
+
+
+@dataclass(frozen=True, slots=True)
+class CommvaultSubclient:
+    """One subclient of one client, read from the real `GET webservice/Subclient?clientId=`
+    list -- the confirmed prerequisite for browsing that subclient's backed-up data."""
+
+    subclient_id: str
+    subclient_name: str
+    client_id: str
+    app_name: str
+
+    def __post_init__(self) -> None:
+        if not self.subclient_id.strip() or not self.subclient_name.strip():
+            raise ValueError("subclient requires an identifier and name")
+
+
+@dataclass(frozen=True, slots=True)
+class CommvaultSubclientListResult:
+    subclients: tuple[CommvaultSubclient, ...]
+    observed_at: datetime
+    evidence_references: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if self.observed_at.tzinfo is None:
+            raise ValueError("observed_at must be timezone-aware")
+        if not self.evidence_references:
+            raise ValueError("subclient list results require evidence")
+
+
+@dataclass(frozen=True, slots=True)
+class CommvaultRecoveryPoint:
+    """One backed-up item, read from the real `GET webservice/Subclient/{id}/Browse` root-level
+    browse. `name` and `path` are confirmed present on every `dataResultSet` item; `size`,
+    `modification_time`, and the `advancedData`-nested `backup_job_id`/`backup_time`/
+    `archive_file_id` are read defensively as optional since they are not confirmed required on
+    every item shape (e.g. the virtual-machine browse example omits some of them)."""
+
+    name: str
+    path: str
+    size: int | None
+    modification_time: int | None
+    backup_job_id: int | None
+    backup_time: int | None
+    archive_file_id: int | None
+
+    def __post_init__(self) -> None:
+        if not self.name.strip() or not self.path.strip():
+            raise ValueError("recovery point requires a name and path")
+
+
+@dataclass(frozen=True, slots=True)
+class CommvaultBrowseResult:
+    subclient_id: str
+    items: tuple[CommvaultRecoveryPoint, ...]
+    observed_at: datetime
+    evidence_references: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if self.observed_at.tzinfo is None:
+            raise ValueError("observed_at must be timezone-aware")
+        if not self.subclient_id.strip():
+            raise ValueError("browse results require a subclient identifier")
+        if not self.evidence_references:
+            raise ValueError("browse results require evidence")

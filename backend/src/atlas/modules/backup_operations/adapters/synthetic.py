@@ -8,6 +8,7 @@ from atlas.modules.backup_operations.domain.models import (
     BackupInvestigation,
     BackupOverview,
     BackupProtectedClient,
+    BackupRecoveryPoint,
     BackupReport,
     BackupStoragePolicy,
     EvidenceRecord,
@@ -29,6 +30,7 @@ def build_synthetic_backup_overview(
     observed_at = generated_at or datetime.now(UTC)
     client_ref = _reference("client", "client-101=active|client-102=deleted")
     policy_ref = _reference("storagepolicy", "policy-1=copies:2|policy-2=copies:0")
+    recovery_point_ref = _reference("recoverypoint", "subclient-1=sample.xml")
     evidence = (
         EvidenceRecord(
             reference=client_ref,
@@ -45,6 +47,30 @@ def build_synthetic_backup_overview(
             observed_at=observed_at,
             freshness=FreshnessState.CURRENT,
             trust_basis="Documentation-derived synthetic policy fixture",
+        ),
+        EvidenceRecord(
+            reference=recovery_point_ref,
+            source="Commvault synthetic subclient-browse fixture",
+            source_version="11.3x-contract.1",
+            observed_at=observed_at,
+            freshness=FreshnessState.CURRENT,
+            trust_basis="Documentation-derived synthetic browse fixture",
+        ),
+    )
+    recovery_points = (
+        BackupRecoveryPoint(
+            client_id="101",
+            client_name="app-server-01",
+            subclient_id="1",
+            subclient_name="default",
+            name="sample_meta.xml",
+            path="\\c:\\test_data\\sample_meta.xml",
+            size=2048,
+            modification_time=observed_at,
+            backup_job_id=4501,
+            backup_time=observed_at,
+            observed_at=observed_at,
+            evidence_references=(recovery_point_ref,),
         ),
     )
     clients = (
@@ -176,6 +202,7 @@ def build_synthetic_backup_overview(
         generated_at=observed_at,
         clients=clients,
         policies=policies,
+        recovery_points=recovery_points,
         findings=findings,
         evidence=evidence,
         investigation=investigation,
