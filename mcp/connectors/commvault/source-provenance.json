@@ -1,11 +1,16 @@
 {
   "source_set_id": "source-set.commvault.commserve.rest-api.11-3x",
-  "reviewed_at": "2026-08-28T00:00:00Z",
+  "reviewed_at": "2026-08-31T00:00:00Z",
   "publisher": "Commvault Systems, Inc.",
   "document": {
     "title": "Commvault REST API Reference (Job Operations, Authentication Operations)",
     "version": "11.3x / latest",
     "url": "https://api.commvault.com/docs/latest/api/cv/JobOperations/get-list-of-jobs/"
+  },
+  "supplementary_document": {
+    "title": "Commvault REST API Reference (official PDF, complete)",
+    "revision": "Updated Sunday, January 18, 2026",
+    "note": "Supplied directly by the customer as a local file, not a public URL. Used on 2026-08-31 to re-verify ATLAS-IMP-267/269 against the complete documented parameter tables (rather than only the individual api.commvault.com reference pages cited below), which surfaced and corrected three real discrepancies: an incomplete job-status vocabulary, an over-scoped required IsDeletedClient/osInfo.Type on the Client list read, and an over-scoped required numberOfCopies on the StoragePolicy list read. See ATLAS-IMP-270."
   },
   "capability_sources": [
     {
@@ -14,7 +19,7 @@
       "path": "/webservice/Job",
       "confirmation": "confirmed_via_working_example",
       "url": "https://api.commvault.com/docs/latest/api/cv/JobOperations/get-list-of-jobs/",
-      "note": "Endpoint path, query parameters (jobFilter, jobCategory, completedJobLookupTime), and the complete response field set were confirmed directly from the official api.commvault.com machine-generated reference page, which shows a literal, complete example JSON response: {\"totalRecordsWithoutPaging\": N, \"jobs\": [{\"jobSummary\": {\"jobId\", \"status\", \"jobType\", \"percentComplete\", \"jobStartTime\", \"subclientName\", \"destClientName\", \"subclient\": {\"clientName\", ...}, ...}}]}. Only the status vocabulary directly evidenced across this page and Commvault's own REST API / cvpysdk documentation (Completed, Running, Waiting, Suspended, Killed) is modeled; Commvault's own documentation states the complete status vocabulary is longer, so an unrecognized value maps to an honest UNKNOWN rather than being guessed."
+      "note": "Endpoint path, query parameters (jobFilter, jobCategory, completedJobLookupTime), and the complete response field set were confirmed directly from the official api.commvault.com machine-generated reference page, which shows a literal, complete example JSON response: {\"totalRecordsWithoutPaging\": N, \"jobs\": [{\"jobSummary\": {\"jobId\", \"status\", \"jobType\", \"percentComplete\", \"jobStartTime\", \"subclientName\", \"destClientName\", \"subclient\": {\"clientName\", ...}, ...}}]}. The complete 19-value status vocabulary (Running, Waiting, Pending, Suspend, Suspended, Kill Pending, Interrupt Pending, Interrupted, Queued, Running (cannot be verified), Abnormal Terminated, Cleanup, Completed, Completed w/ one or more errors, Completed w/ one or more warnings, Committed, Failed, Failed to Start, Killed) is confirmed via the official PDF reference's own \"Valid values are\" table for jobSummary.status (see supplementary_document); any value outside this set still maps to an honest UNKNOWN rather than being guessed."
     },
     {
       "capability_id": "commvault.commserve.client.inventory.read",
@@ -22,7 +27,7 @@
       "path": "/webservice/Client",
       "confirmation": "confirmed_via_working_example",
       "url": "https://api.commvault.com/docs/latest/api/cv/ClientOperations/get-client/",
-      "note": "Endpoint path and the complete response field set were confirmed directly from the official api.commvault.com machine-generated reference page, which shows a literal, complete example JSON response: {\"clientProperties\": [{\"clientProps\": {\"iSCSIPort\", \"clusterType\", \"IsDeletedClient\"}, \"client\": {\"evmgrcPort\", \"cvdPort\", \"osInfo\": {\"Type\", \"SubType\", \"osId\"}, \"clientEntity\": {\"hostName\", \"clientId\", \"clientName\", \"displayName\", \"clientGUID\"}, \"versionInfo\": {\"version\"}}}]}. This connector only reads clientId, clientName, hostName, osInfo.Type, and clientProps.IsDeletedClient -- the one field treated as a real protection-coverage signal (a deleted client flags a possible stale registration)."
+      "note": "Endpoint path and clientId/clientName/hostName were confirmed directly from the official api.commvault.com machine-generated reference page. The official PDF reference's own response-parameter table for this exact list endpoint (as opposed to the single-client GET Client/{clientId} endpoint, whose table is longer) documents only clientEntity.{clientId, clientName, hostName, displayName, clientGUID} and clientProps.enableAccessControl -- confirmed further by a literal example list response whose clientProps element carries only enableAccessControl. Neither clientProps.IsDeletedClient nor any osInfo.Type field is confirmed present on this list read, so both are read defensively and modeled as optional; a client is only flagged as a protection-coverage finding on a confirmed IsDeletedClient == true."
     },
     {
       "capability_id": "commvault.commserve.storagepolicy.inventory.read",
@@ -30,7 +35,15 @@
       "path": "/webservice/V2/StoragePolicy",
       "confirmation": "confirmed_via_working_example",
       "url": "https://api.commvault.com/docs/SP40/api/cv/Storage/get-storage-policies/",
-      "note": "The full path (with the V2 prefix) was confirmed via a separate community/documentation source describing the same GET/PUT/DELETE StoragePolicy endpoint family; the response field set was confirmed from the official api.commvault.com machine-generated reference page's literal example JSON: {\"policies\": [{\"type\", \"numberOfStreams\", \"numberOfCopies\", \"smReplicationProtocolType\", \"incrementalStoragePolicy\": {...}, \"storagePolicy\": {\"storagePolicyName\", \"storagePolicyId\"}}], \"error\": {\"errorMessage\", \"errorCode\"}}. numberOfCopies is the one field treated as a real redundancy signal (a policy with zero copies retains no backup data). A separate community thread noted there is no single canned API to retrieve storage policy assignment per-subclient in bulk -- that is a different question (subclient-to-policy mapping) from listing policies themselves, which this confirmed endpoint does directly."
+      "note": "The full path (with the V2 prefix) was confirmed via a separate community/documentation source describing the same GET/PUT/DELETE StoragePolicy endpoint family. The official PDF reference's own response-parameter table for this exact list endpoint documents only storagePolicyName/storagePolicyId (element: policies), and its literal example response (<policies numberOfStreams=\"1\"><storagePolicy storagePolicyId=\"2\" storagePolicyName=\"SP1\"/>...) confirms numberOfStreams is present but numberOfCopies is not. numberOfCopies -- the one field this connector treats as a real redundancy signal (a policy with zero copies retains no backup data) -- is therefore not read from this list endpoint; see the separate GET .../StoragePolicy/{id}?propertyLevel=10 source below."
+    },
+    {
+      "capability_id": "commvault.commserve.storagepolicy.inventory.read",
+      "method": "GET",
+      "path": "/webservice/V2/StoragePolicy/{storagePolicyId}?propertyLevel=10",
+      "confirmation": "confirmed_via_working_example",
+      "url": null,
+      "note": "The \"GET Storage Policy Details\" operation and its propertyLevel parameter (1 = ID and name only, 10 = complete information) are confirmed in the official PDF reference (see supplementary_document); its literal propertyLevel=10 example response (<policies ... numberOfStreams=\"50\" ... numberOfCopies=\"5\" ...>) is where numberOfCopies is actually confirmed present. Read as a bounded, per-policy enrichment call (first 25 policies) after the list read, mirroring the vCenter host-to-cluster membership precedent from ATLAS-IMP-268; a policy whose Details read fails is left with number_of_copies=None rather than failing the whole overview."
     }
   ],
   "authentication_source": {
@@ -46,9 +59,8 @@
     "note": "No confirmed dedicated version/compatibility endpoint independent of the job-status read was found; the self-test reuses a narrow, one-hour-lookback job-status read itself, the same pattern used for every prior connector's probe."
   },
   "unconfirmed_gaps": [
-    "The complete Commvault job-status vocabulary is longer than what could be independently confirmed via real, working examples during connector construction; only Completed/Running/Waiting/Suspended/Killed are modeled, and any other value (e.g. a partial-success or specific failure-reason status) maps to UNKNOWN rather than being guessed at a severity.",
     "No confirmed field connects a Commvault-protected client or storage policy to entities from any other connector in this project, so no cross-vendor graph relationship (e.g. BACKED_BY) is asserted.",
-    "Recovery-point/point-in-time browse catalog (Commvault's Browse API) was investigated but not implemented: real documentation describes a POST-with-XML-request-body workflow (databrowse_BrowseRequest, opType, filePaths) oriented around restore operations, and no literal, confirmed JSON example response was found matching the rigor already achieved for Job/Client/StoragePolicy. Rather than guess a response shape, this capability is deliberately not built.",
+    "Recovery-point/point-in-time browse catalog is NOT implemented, but is now confirmed buildable (corrected from an earlier, mistaken 'genuinely unresolvable' claim): the official PDF reference documents a real GET-based read path -- GET Subclient?clientId={id} (list a client's subclients) followed by GET Subclient/{id}/Browse?path=%5C (root-level browse) -- with a literal, complete example JSON-equivalent XML response (databrowse_BrowseResponseList -> browseResponses[] -> browseResult -> dataResultSet[] -> {name, path, size, modificationTime, advancedData: {archiveFileId, backupJobId, backupTime}}). This was not built in ATLAS-IMP-270 because the response shape nests three levels deep with genuine array-vs-single-object collapsing ambiguity at each level (the same ambiguity already handled defensively for the StoragePolicy Details endpoint, but compounded here), which warrants its own dedicated, fully-verified task rather than folding into a correction pass.",
     "A real but different question -- mapping which storage policy is assigned to a specific subclient -- has no confirmed bulk REST endpoint (per a real community thread); only the storage-policy list itself (this connector's scope) and Commvault's own admin console/per-subclient properties API cover that."
   ],
   "data_policy": "synthetic-only",

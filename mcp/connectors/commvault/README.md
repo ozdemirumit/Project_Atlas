@@ -54,32 +54,48 @@ Commvault's own official documentation, including a literal example JSON respons
   a second, independent official source corroborating the `Authtoken` header requirement for
   subsequent requests.
 - [Commvault REST API: Get Client](https://api.commvault.com/docs/latest/api/cv/ClientOperations/get-client/) --
-  official machine-generated reference showing the complete `clientProperties` response shape
-  verbatim (`clientProps.IsDeletedClient`, `client.osInfo`, `client.clientEntity`).
+  official machine-generated reference showing the `clientProperties` response shape
+  (`client.clientEntity`); `clientProps.IsDeletedClient` and `client.osInfo.Type` are documented
+  only for the single-client `GET Client/{clientId}` endpoint, not this list endpoint, and are
+  therefore read defensively as optional here (see `source-provenance.json`).
 - [Commvault REST API: Get Storage Policies](https://api.commvault.com/docs/SP40/api/cv/Storage/get-storage-policies/) --
-  official machine-generated reference showing the complete `policies` response shape verbatim
-  (`numberOfCopies`, `numberOfStreams`, `storagePolicy.storagePolicyId/Name`); the full path
-  (with its `V2` prefix) was independently corroborated from a second real source describing the
-  same endpoint family.
+  official machine-generated reference showing the `policies` list response shape
+  (`numberOfStreams`, `storagePolicy.storagePolicyId/Name`); the full path (with its `V2` prefix)
+  was independently corroborated from a second real source describing the same endpoint family.
+- Commvault REST API Reference (official PDF, complete, "Updated Sunday, January 18, 2026") --
+  supplied directly by the customer; used to re-verify this connector's documented parameter
+  tables in full (not just individual reference pages), confirming the complete job-status
+  vocabulary, the `IsDeletedClient`/`osInfo.Type` field-scoping nuance, the `numberOfCopies`
+  field-scoping nuance and its real Details-endpoint source, and the Subclient/Browse read path.
+  See `supplementary_document` in `source-provenance.json`.
 
-**Known gaps, stated plainly**: Commvault's own documentation states its complete job-status
-vocabulary is longer than what could be independently confirmed via real, working examples during
-connector construction, so this connector only models the values directly evidenced
-(`Completed`, `Running`, `Waiting`, `Suspended`, `Killed`); any other value maps to `UNKNOWN`
-rather than being guessed at a severity. Recovery-point/point-in-time browse catalog (Commvault's
-Browse API) was investigated but deliberately not implemented: real documentation describes a
-POST-with-XML-request-body restore workflow, and no literal, confirmed JSON example response was
-found matching the rigor achieved for Job/Client/StoragePolicy -- rather than guess a response
-shape, this capability was left out. No cross-vendor graph relationship (e.g. `BACKED_BY`) is
-asserted: no confirmed field connects a Commvault client or policy to entities from any other
-connector in this project. See `source-provenance.json`'s `unconfirmed_gaps` for the complete list.
+**Known gaps, stated plainly**: this connector models the complete, real 19-value job-status
+vocabulary (confirmed directly against the official REST API reference's own "Valid values are"
+table for `jobSummary.status`) -- any value genuinely outside that set still maps to `UNKNOWN`
+rather than being guessed at a severity. `clientProps.IsDeletedClient` and `client.osInfo.Type`
+are read defensively as optional on the Client list read: the official reference's documented
+response-parameter table for that exact list endpoint does not include either field (only the
+single-client `GET Client/{clientId}` endpoint's table does), confirmed further by a literal
+example list response whose `clientProps` element carries only `enableAccessControl`. Similarly,
+`numberOfCopies` is not part of the StoragePolicy list endpoint's documented response -- it is
+read via a separate, bounded per-policy `GET StoragePolicy/{id}?propertyLevel=10` Details call
+(first 25 policies), mirroring the vCenter host-to-cluster membership precedent from
+ATLAS-IMP-268. Recovery-point/point-in-time browse catalog is **not implemented, but is now
+confirmed buildable** (correcting an earlier, mistaken "genuinely unresolvable" claim): the
+official reference documents a real GET-based path, `GET Subclient?clientId={id}` followed by
+`GET Subclient/{id}/Browse?path=%5C`, with a literal, complete example response -- left as a
+scoped follow-on rather than built here because its response nests three levels deep with real
+array-vs-single-object ambiguity at each level, warranting its own dedicated task. No cross-vendor
+graph relationship (e.g. `BACKED_BY`) is asserted: no confirmed field connects a Commvault client
+or policy to entities from any other connector in this project. See `source-provenance.json`'s
+`unconfirmed_gaps` for the complete list.
 
 ## Promotion Requirements
 
 1. Review the exact source version and capability mapping with a backup domain owner.
 2. Validate the package digest, dependency inventory, network destination, and certificate policy.
-3. Confirm the full job-status vocabulary and the gaps stated above against a real, non-production
-   CommServe (or Commvault's authoritative REST API reference) before promotion.
+3. Confirm the gaps stated above -- especially the not-yet-implemented Subclient/Browse
+   recovery-point path -- against a real, non-production CommServe before promotion.
 4. Run contract tests against an approved non-production CommServe using a least-privileged,
    read-only account.
 5. Compare sanitized lab responses with the synthetic fixtures and document schema differences.

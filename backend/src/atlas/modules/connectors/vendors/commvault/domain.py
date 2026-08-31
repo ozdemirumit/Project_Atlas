@@ -6,18 +6,31 @@ from enum import StrEnum
 
 
 class CommvaultJobStatus(StrEnum):
-    """Commvault's GET Job API `status` field. Only the values directly confirmed against real
-    sources are named here -- a literal example response on the official api.commvault.com
-    JobOperations reference page ("Completed"), and the "Killed" and "Suspended, Waiting, ..."
-    values referenced by Commvault's own REST API and cvpysdk documentation. Commvault's own
-    documentation states the complete status vocabulary is longer than what could be
-    independently confirmed during connector construction, so any value not in this confirmed set
-    maps to UNKNOWN rather than being guessed."""
+    """Commvault's GET Job API `status` field. This is the complete 19-value vocabulary
+    documented in the "Valid values are" list under `jobSummary.status` in Commvault's official
+    REST API reference (a two-column table; values confirmed by inspecting each entry's exact
+    page coordinates to correctly resolve wrapped multi-word entries, e.g. "Running" and
+    "Running (cannot be verified)" are two distinct documented values, not one wrapped entry).
+    Any value not in this confirmed set maps to UNKNOWN rather than being guessed."""
 
-    COMPLETED = "Completed"
     RUNNING = "Running"
     WAITING = "Waiting"
+    PENDING = "Pending"
+    SUSPEND = "Suspend"
     SUSPENDED = "Suspended"
+    KILL_PENDING = "Kill Pending"
+    INTERRUPT_PENDING = "Interrupt Pending"
+    INTERRUPTED = "Interrupted"
+    QUEUED = "Queued"
+    RUNNING_CANNOT_BE_VERIFIED = "Running (cannot be verified)"
+    ABNORMAL_TERMINATED = "Abnormal Terminated"
+    CLEANUP = "Cleanup"
+    COMPLETED = "Completed"
+    COMPLETED_WITH_ERRORS = "Completed w/ one or more errors"
+    COMPLETED_WITH_WARNINGS = "Completed w/ one or more warnings"
+    COMMITTED = "Committed"
+    FAILED = "Failed"
+    FAILED_TO_START = "Failed to Start"
     KILLED = "Killed"
     UNKNOWN = "unknown"
 
@@ -65,14 +78,20 @@ class CommvaultJobListResult:
 @dataclass(frozen=True, slots=True)
 class CommvaultClientRecord:
     """One registered Commvault client, read from the real `GET webservice/Client` inventory.
-    `is_deleted` (the confirmed real `clientProps.IsDeletedClient` field) is the one field this
-    connector treats as a real protection-coverage signal."""
+    The official REST API reference's response-parameter table for this exact list endpoint
+    (as opposed to the single-client `GET Client/{clientId}` endpoint, whose table is longer)
+    documents only `clientId`, `clientName`, `hostName`, `displayName`, and `clientGUID` under
+    `clientEntity`, plus `enableAccessControl` under `clientProps` -- confirmed further by a
+    literal example list response whose `clientProps` element carries only
+    `enableAccessControl`. Neither `clientProps.IsDeletedClient` (documented only for the
+    single-client endpoint) nor any `osInfo.Type` field is confirmed present on this list read,
+    so both are optional here and parsed defensively rather than required."""
 
     client_id: str
     client_name: str
     host_name: str
-    os_type: str
-    is_deleted: bool
+    os_type: str | None
+    is_deleted: bool | None
 
     def __post_init__(self) -> None:
         if not self.client_id.strip() or not self.client_name.strip():
@@ -95,17 +114,21 @@ class CommvaultClientListResult:
 @dataclass(frozen=True, slots=True)
 class CommvaultStoragePolicy:
     """One Commvault storage policy, read from the real `GET webservice/V2/StoragePolicy`
-    inventory."""
+    inventory. `number_of_copies` is not part of that list endpoint's documented response --
+    it is optional here, sourced instead (when available) from the bounded per-policy Details
+    read, see `CommvaultClient.read_storage_policy_copy_count()`."""
 
     policy_id: str
     policy_name: str
-    number_of_copies: int
+    number_of_copies: int | None
     number_of_streams: int
 
     def __post_init__(self) -> None:
         if not self.policy_id.strip() or not self.policy_name.strip():
             raise ValueError("storage policy requires an identifier and name")
-        if self.number_of_copies < 0 or self.number_of_streams < 0:
+        if (self.number_of_copies is not None and self.number_of_copies < 0) or (
+            self.number_of_streams < 0
+        ):
             raise ValueError("storage policy counts must not be negative")
 
 

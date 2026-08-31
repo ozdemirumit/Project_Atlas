@@ -33,10 +33,27 @@ _SAFE_CONNECTOR_ERROR_CODES = frozenset(
     }
 )
 _OBSERVATION_STATE: dict[CommvaultJobStatus, ObservationState] = {
-    CommvaultJobStatus.COMPLETED: ObservationState.NORMAL,
+    # In-progress or successfully-terminal states: nothing to flag.
     CommvaultJobStatus.RUNNING: ObservationState.NORMAL,
     CommvaultJobStatus.WAITING: ObservationState.NORMAL,
+    CommvaultJobStatus.PENDING: ObservationState.NORMAL,
+    CommvaultJobStatus.QUEUED: ObservationState.NORMAL,
+    CommvaultJobStatus.CLEANUP: ObservationState.NORMAL,
+    CommvaultJobStatus.COMPLETED: ObservationState.NORMAL,
+    CommvaultJobStatus.COMMITTED: ObservationState.NORMAL,
+    # Transient or degraded-but-not-failed states worth surfacing.
+    CommvaultJobStatus.SUSPEND: ObservationState.WARNING,
     CommvaultJobStatus.SUSPENDED: ObservationState.WARNING,
+    CommvaultJobStatus.KILL_PENDING: ObservationState.WARNING,
+    CommvaultJobStatus.INTERRUPT_PENDING: ObservationState.WARNING,
+    CommvaultJobStatus.INTERRUPTED: ObservationState.WARNING,
+    CommvaultJobStatus.RUNNING_CANNOT_BE_VERIFIED: ObservationState.WARNING,
+    CommvaultJobStatus.COMPLETED_WITH_WARNINGS: ObservationState.WARNING,
+    # Definite failure states.
+    CommvaultJobStatus.ABNORMAL_TERMINATED: ObservationState.CRITICAL,
+    CommvaultJobStatus.COMPLETED_WITH_ERRORS: ObservationState.CRITICAL,
+    CommvaultJobStatus.FAILED: ObservationState.CRITICAL,
+    CommvaultJobStatus.FAILED_TO_START: ObservationState.CRITICAL,
     CommvaultJobStatus.KILLED: ObservationState.CRITICAL,
     CommvaultJobStatus.UNKNOWN: ObservationState.UNKNOWN,
 }

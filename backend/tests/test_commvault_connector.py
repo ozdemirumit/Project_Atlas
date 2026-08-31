@@ -43,6 +43,7 @@ INSTANCE_ID = "connector-instance.commvault.lab"
 JOB_PATH = "/webservice/Job?jobFilter=backup&jobCategory=All&completedJobLookupTime=86400"
 CLIENT_PATH = "/webservice/Client"
 STORAGE_POLICY_PATH = "/webservice/V2/StoragePolicy"
+STORAGE_POLICY_DETAIL_PATH = "/webservice/V2/StoragePolicy/2?propertyLevel=10"
 
 
 def _job_summary(
@@ -215,7 +216,46 @@ async def test_client_inventory_reads_real_fields() -> None:
 
 
 @pytest.mark.asyncio
+async def test_client_inventory_tolerates_the_minimal_confirmed_list_shape() -> None:
+    """The official REST API reference's own literal example response for the list endpoint
+    carries a bare `<clientProps enableAccessControl="false"/>` with no `IsDeletedClient`, and
+    no `osInfo` at all -- this is the real minimal shape the connector must not reject."""
+
+    connector, _transport = client(
+        {
+            CLIENT_PATH: SyntheticCommvaultResponse(
+                payload={
+                    "clientProperties": [
+                        {
+                            "clientProps": {"enableAccessControl": False},
+                            "client": {
+                                "clientEntity": {
+                                    "hostName": "client001.company.com",
+                                    "clientId": 2,
+                                    "clientName": "client001",
+                                },
+                            },
+                        },
+                    ]
+                }
+            )
+        }
+    )
+
+    result = await connector.read_client_inventory()
+
+    assert result.clients[0].client_id == "2"
+    assert result.clients[0].os_type is None
+    assert result.clients[0].is_deleted is None
+
+
+@pytest.mark.asyncio
 async def test_storage_policies_read_real_fields() -> None:
+    """`numberOfCopies` is not part of this list endpoint's documented response (its literal
+    example response carries only `numberOfStreams` alongside the nested `storagePolicy`
+    identity), so the list read leaves `number_of_copies` unset (None) -- it is sourced
+    separately via `read_storage_policy_copy_count()`."""
+
     connector, transport = client(
         {
             STORAGE_POLICY_PATH: SyntheticCommvaultResponse(
@@ -224,7 +264,6 @@ async def test_storage_policies_read_real_fields() -> None:
                         {
                             "type": 2,
                             "numberOfStreams": 1,
-                            "numberOfCopies": 1,
                             "storagePolicy": {
                                 "storagePolicyName": "CommServeDR",
                                 "storagePolicyId": 2,
@@ -241,9 +280,43 @@ async def test_storage_policies_read_real_fields() -> None:
 
     assert result.policies[0].policy_id == "2"
     assert result.policies[0].policy_name == "CommServeDR"
-    assert result.policies[0].number_of_copies == 1
+    assert result.policies[0].number_of_copies is None
     assert result.policies[0].number_of_streams == 1
     assert transport.requests == [STORAGE_POLICY_PATH]
+
+
+@pytest.mark.asyncio
+async def test_storage_policy_copy_count_reads_the_details_endpoint() -> None:
+    connector, transport = client(
+        {
+            STORAGE_POLICY_DETAIL_PATH: SyntheticCommvaultResponse(
+                payload={
+                    "policies": {
+                        "numberOfStreams": 50,
+                        "numberOfCopies": 5,
+                        "auxCopyAlertGB": 0,
+                    },
+                    "error": {"errorMessage": "", "errorCode": 0},
+                }
+            )
+        }
+    )
+
+    count = await connector.read_storage_policy_copy_count("2")
+
+    assert count == 5
+    assert transport.requests == [STORAGE_POLICY_DETAIL_PATH]
+
+
+@pytest.mark.asyncio
+async def test_storage_policy_copy_count_rejects_an_unsafe_policy_identifier() -> None:
+    connector, transport = client({})
+
+    with pytest.raises(CommvaultConnectorError) as error:
+        await connector.read_storage_policy_copy_count("2?propertyLevel=1")
+
+    assert error.value.code == "invalid_target_identifier"
+    assert transport.requests == []
 
 
 @pytest.mark.asyncio
@@ -253,7 +326,7 @@ async def test_unrecognized_status_maps_to_unknown() -> None:
             JOB_PATH: SyntheticCommvaultResponse(
                 payload={
                     "totalRecordsWithoutPaging": 1,
-                    "jobs": [_job_summary(104, status="Completed w/ one or more errors")],
+                    "jobs": [_job_summary(104, status="Not A Real Commvault Status")],
                 }
             )
         }
@@ -262,6 +335,52 @@ async def test_unrecognized_status_maps_to_unknown() -> None:
     result = await connector.read_job_status()
 
     assert result.jobs[0].status is CommvaultJobStatus.UNKNOWN
+
+
+@pytest.mark.asyncio
+async def test_the_full_confirmed_status_vocabulary_is_recognized() -> None:
+    """All 19 values are drawn from the official REST API reference's own "Valid values are"
+    table for `jobSummary.status` -- confirmed by inspecting each entry's page coordinates to
+    correctly resolve wrapped multi-word entries (e.g. "Running" and "Running (cannot be
+    verified)" are two distinct documented values, not a wrapped duplicate)."""
+
+    raw_statuses = [
+        "Running",
+        "Waiting",
+        "Pending",
+        "Suspend",
+        "Suspended",
+        "Kill Pending",
+        "Interrupt Pending",
+        "Interrupted",
+        "Queued",
+        "Running (cannot be verified)",
+        "Abnormal Terminated",
+        "Cleanup",
+        "Completed",
+        "Completed w/ one or more errors",
+        "Completed w/ one or more warnings",
+        "Committed",
+        "Failed",
+        "Failed to Start",
+        "Killed",
+    ]
+    connector, _transport = client(
+        {
+            JOB_PATH: SyntheticCommvaultResponse(
+                payload={
+                    "jobs": [
+                        _job_summary(100 + index, status=status)
+                        for index, status in enumerate(raw_statuses)
+                    ]
+                }
+            )
+        }
+    )
+
+    result = await connector.read_job_status()
+
+    assert [job.status for job in result.jobs] == list(CommvaultJobStatus)[:-1]
 
 
 @pytest.mark.asyncio

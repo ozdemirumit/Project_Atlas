@@ -47,6 +47,7 @@ from atlas.modules.inventory.application.ports import InventoryDeviceRepository
 from atlas.modules.inventory.domain.devices import InventoryDeviceLifecycle, InventoryDeviceType
 
 _DATA_PROFILE = "configured_commvault_read_only"
+_MAX_POLICIES_FOR_COPY_COUNT = 25
 _SAFETY_NOTICE = (
     "Decision support only. No infrastructure change or service-impacting action is authorized."
 )
@@ -74,10 +75,13 @@ def _identity(*parts: str) -> str:
 
 class ConfiguredCommvaultBackupOverviewProvider:
     """Serves the backup overview from the single configured, enabled Commvault MCP, reading real
-    client and storage-policy inventory. No recovery-point/browse catalog is represented: no
-    confirmed real JSON response shape for Commvault's Browse API was found during construction
-    (unlike Job/Client/StoragePolicy, which each have a literal confirmed example response) --
-    stated plainly rather than guessed. See ATLAS-IMP-269.
+    client and storage-policy inventory, the latter enriched per-policy with a real confirmed
+    copy count (see `_read_copy_counts`). No recovery-point/browse catalog is represented yet:
+    a real, confirmed GET-based read path exists (`GET Subclient` + `GET Subclient/{id}/Browse`,
+    see ATLAS-IMP-270's correction to ATLAS-IMP-269's earlier, mistaken "unresolvable" claim) but
+    is not implemented here -- its three-level-deep response nesting has genuine array-vs-object
+    collapsing ambiguity at each level, warranting its own dedicated task rather than folding into
+    a correction pass. See ATLAS-IMP-269 and ATLAS-IMP-270.
     """
 
     def __init__(
@@ -154,6 +158,7 @@ class ConfiguredCommvaultBackupOverviewProvider:
                 client = CommvaultClient(transport=transport, maximum_response_bytes=1_048_576)
                 clients = await client.read_client_inventory()
                 policies = await client.read_storage_policies()
+                copy_counts, copy_count_gaps = await self._read_copy_counts(client, policies)
         except ConnectorConnectionTestError:
             return self._unavailable_overview(
                 requested_at,
@@ -166,13 +171,49 @@ class ConfiguredCommvaultBackupOverviewProvider:
                 requested_at, reason="The configured Commvault backup read failed safely."
             )
 
-        return self._build_overview(clients=clients, policies=policies, requested_at=requested_at)
+        return self._build_overview(
+            clients=clients,
+            policies=policies,
+            copy_counts=copy_counts,
+            copy_count_gaps=copy_count_gaps,
+            requested_at=requested_at,
+        )
+
+    @staticmethod
+    async def _read_copy_counts(
+        client: CommvaultClient, policies: CommvaultStoragePolicyListResult
+    ) -> tuple[dict[str, int], tuple[str, ...]]:
+        """Enriches a bounded number of policies with their confirmed real `numberOfCopies`
+        (not present on the plain list read) via the per-policy Details call. Each policy is
+        read independently: one policy's failure does not block the others or the overview."""
+
+        budget = min(len(policies.policies), _MAX_POLICIES_FOR_COPY_COUNT)
+        copy_counts: dict[str, int] = {}
+        gaps: list[str] = []
+        for policy in policies.policies[:budget]:
+            try:
+                count = await client.read_storage_policy_copy_count(policy.policy_id)
+            except CommvaultConnectorError as exc:
+                gaps.append(
+                    "Copy-count detail could not be read for at least one storage policy: "
+                    f"{_connector_failure_reason(exc)}"
+                )
+                continue
+            copy_counts[policy.policy_id] = count
+        if len(policies.policies) > budget:
+            gaps.append(
+                "Copy-count detail was not read for storage policies beyond the bounded "
+                "enrichment budget."
+            )
+        return copy_counts, tuple(dict.fromkeys(gaps))
 
     def _build_overview(
         self,
         *,
         clients: CommvaultClientListResult,
         policies: CommvaultStoragePolicyListResult,
+        copy_counts: dict[str, int],
+        copy_count_gaps: tuple[str, ...],
         requested_at: datetime,
     ) -> BackupOverview:
         client_evidence = EvidenceRecord(
@@ -215,7 +256,7 @@ class ConfiguredCommvaultBackupOverviewProvider:
             BackupStoragePolicy(
                 policy_id=item.policy_id,
                 policy_name=item.policy_name,
-                number_of_copies=item.number_of_copies,
+                number_of_copies=copy_counts.get(item.policy_id),
                 number_of_streams=item.number_of_streams,
                 observed_at=policies.observed_at,
                 evidence_references=(policy_evidence.reference,),
@@ -259,10 +300,14 @@ class ConfiguredCommvaultBackupOverviewProvider:
             )
 
         unknowns = (
-            "No recovery-point/browse catalog is represented: no confirmed real API response "
-            "shape was found for Commvault's Browse operation during construction.",
+            "No recovery-point/browse catalog is represented: a real GET-based read path is "
+            "confirmed (GET Subclient + GET Subclient/{id}/Browse) but not yet implemented here.",
             "No job-outcome correlation is made here; job status is a separate, already-real "
             "health_checks signal (see health_checks/adapters/commvault.py).",
+            "Deletion status and OS type are not confirmed present on this list endpoint's "
+            "response for every client; a client with an unknown deletion status is not "
+            "flagged as a finding (only a confirmed 'deleted' value is).",
+            *copy_count_gaps,
         )
         if findings:
             summary = (

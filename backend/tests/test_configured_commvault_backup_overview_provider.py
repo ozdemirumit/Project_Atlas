@@ -46,6 +46,10 @@ CLIENT_PATH = "/webservice/Client"
 STORAGE_POLICY_PATH = "/webservice/V2/StoragePolicy"
 
 
+def _detail_path(policy_id: str) -> str:
+    return f"/webservice/V2/StoragePolicy/{policy_id}?propertyLevel=10"
+
+
 class ScopeRepository[T]:
     def __init__(self, records: Iterable[T]) -> None:
         self.records = tuple(records)
@@ -191,7 +195,6 @@ def _routes() -> dict[str, SyntheticCommvaultResponse]:
                 "policies": [
                     {
                         "numberOfStreams": 1,
-                        "numberOfCopies": 2,
                         "storagePolicy": {
                             "storagePolicyName": "Primary-Policy",
                             "storagePolicyId": 1,
@@ -199,7 +202,6 @@ def _routes() -> dict[str, SyntheticCommvaultResponse]:
                     },
                     {
                         "numberOfStreams": 1,
-                        "numberOfCopies": 0,
                         "storagePolicy": {
                             "storagePolicyName": "Legacy-Policy",
                             "storagePolicyId": 2,
@@ -207,6 +209,12 @@ def _routes() -> dict[str, SyntheticCommvaultResponse]:
                     },
                 ]
             }
+        ),
+        _detail_path("1"): SyntheticCommvaultResponse(
+            payload={"policies": {"numberOfStreams": 1, "numberOfCopies": 2}}
+        ),
+        _detail_path("2"): SyntheticCommvaultResponse(
+            payload={"policies": {"numberOfStreams": 1, "numberOfCopies": 0}}
         ),
     }
 
@@ -276,7 +284,15 @@ async def test_overview_maps_real_clients_and_policies_with_findings() -> None:
         reference for client in overview.clients for reference in client.evidence_references
     } | {reference for policy in overview.policies for reference in policy.evidence_references}
     assert referenced <= evidence_ids
-    assert transport.requests == [CLIENT_PATH, STORAGE_POLICY_PATH]
+    assert transport.requests == [
+        CLIENT_PATH,
+        STORAGE_POLICY_PATH,
+        _detail_path("1"),
+        _detail_path("2"),
+    ]
+    policy_by_id = {policy.policy_id: policy for policy in overview.policies}
+    assert policy_by_id["1"].number_of_copies == 2
+    assert policy_by_id["2"].number_of_copies == 0
 
 
 @pytest.mark.asyncio
@@ -290,7 +306,6 @@ async def test_overview_reports_no_findings_when_all_clients_and_policies_are_he
                 "policies": [
                     {
                         "numberOfStreams": 1,
-                        "numberOfCopies": 2,
                         "storagePolicy": {
                             "storagePolicyName": "Primary-Policy",
                             "storagePolicyId": 1,
@@ -298,6 +313,9 @@ async def test_overview_reports_no_findings_when_all_clients_and_policies_are_he
                     }
                 ]
             }
+        ),
+        _detail_path("1"): SyntheticCommvaultResponse(
+            payload={"policies": {"numberOfStreams": 1, "numberOfCopies": 2}}
         ),
     }
     provider, _transport = build_provider(
@@ -310,6 +328,44 @@ async def test_overview_reports_no_findings_when_all_clients_and_policies_are_he
     overview = await provider.get_overview(requested_at=NOW)
 
     assert overview.findings == ()
+
+
+@pytest.mark.asyncio
+async def test_overview_degrades_copy_count_gracefully_when_detail_route_is_missing() -> None:
+    routes = {
+        CLIENT_PATH: SyntheticCommvaultResponse(
+            payload={"clientProperties": [_client_item(1, name="app-server-01", is_deleted=False)]}
+        ),
+        STORAGE_POLICY_PATH: SyntheticCommvaultResponse(
+            payload={
+                "policies": [
+                    {
+                        "numberOfStreams": 1,
+                        "storagePolicy": {
+                            "storagePolicyName": "Primary-Policy",
+                            "storagePolicyId": 1,
+                        },
+                    }
+                ]
+            }
+        ),
+        # No _detail_path("1") route configured: the enrichment read fails safely.
+    }
+    provider, transport = build_provider(
+        configurations=(_configuration(),),
+        instances=(_instance(),),
+        devices=(_device(),),
+        routes=routes,
+    )
+
+    overview = await provider.get_overview(requested_at=NOW)
+
+    assert overview.policies[0].number_of_copies is None
+    assert overview.findings == ()
+    assert any(
+        "Copy-count detail could not be read" in item for item in overview.investigation.unknowns
+    )
+    assert transport.requests == [CLIENT_PATH, STORAGE_POLICY_PATH, _detail_path("1")]
 
 
 @pytest.mark.asyncio

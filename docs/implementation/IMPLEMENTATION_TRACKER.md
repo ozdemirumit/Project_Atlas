@@ -4,16 +4,76 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-269 |
-| Title | Add a real backup_operations module for Commvault: client and storage-policy inventory, with a full API/authorization vertical slice |
-| Status | Verified (backend, tool-verified with real toolchain) -- client and storage-policy inventory only; recovery-point/browse catalog is out of scope (no confirmed real API response shape found), not deferred |
+| Task ID | ATLAS-IMP-270 |
+| Title | Correct three Commvault field-scoping bugs and the job-status vocabulary against the official REST API reference PDF; correct ATLAS-IMP-269's mistaken "unresolvable" Browse claim |
+| Status | Verified (backend, tool-verified with real toolchain) |
 | Branch | `main` |
 | Pull Request | none (pushed directly to `main`; no PR tooling available in this environment) |
 | Governing Documents | ATLAS-003, ATLAS-020/021/022/047 (connector quarantine/promotion), `docs/adr/ADR-004`+ |
 | Last Updated | 2026-08-31 |
-| Next Action | The full genuinely-scoped Commvault backup module named in ATLAS-IMP-267's gaps is now built, with one honest exception (recovery-point/browse catalog -- investigated, confirmed unresolvable with real evidence). VM-to-host placement (vCenter) and cross-vendor graph relationships remain the only other named, not-committed-to gaps across the whole connector series. |
+| Next Action | Recovery-point/browse catalog (`GET Subclient` + `GET Subclient/{id}/Browse`) is now confirmed buildable with a real, literal example response, but is deliberately deferred to its own task given its three-level-deep response nesting. VM-to-host placement (vCenter) and cross-vendor graph relationships remain the only other named, not-committed-to gaps across the whole connector series. |
+
+### ATLAS-IMP-270 Scope and Verification
+
+- **What this is**: the customer supplied the official Commvault REST API Reference as a complete
+  PDF (not just the individual api.commvault.com pages ATLAS-IMP-267/269 had access to). Reading
+  its full documented parameter tables (rather than only literal example responses) surfaced three
+  real discrepancies between what was shipped and what is actually confirmed, plus showed one of
+  ATLAS-IMP-269's own gap claims was mistaken. All four are corrected here.
+- **Fix 1 -- incomplete job-status vocabulary**: `CommvaultJobStatus` only modeled 5 of the real,
+  complete 19-value vocabulary documented in the PDF's own "Valid values are" table for
+  `jobSummary.status` (confirmed by inspecting each entry's exact page coordinates via PyMuPDF to
+  correctly resolve wrapped multi-word entries -- e.g. "Running" and "Running (cannot be
+  verified)" are two distinct documented values, not one wrapped duplicate). Expanded to all 19,
+  with a defensible severity mapping added to `health_checks/adapters/commvault.py`'s
+  `_OBSERVATION_STATE` for every new value.
+- **Fix 2 -- over-scoped required fields on the Client list read**: `clientProps.IsDeletedClient`
+  and `client.osInfo.Type` were required (raising `malformed_vendor_response` if absent) in
+  `read_client_inventory()`, but the PDF's own response-parameter table for this exact list
+  endpoint (`GET webservice/Client`, distinct from the single-client `GET Client/{clientId}`
+  endpoint, whose table is longer) documents neither field -- confirmed further by a literal
+  example list response whose `clientProps` element carries only `enableAccessControl`. Against a
+  real CommServe this would very likely have raised on every read. Both fields are now optional
+  (`str | None` / `bool | None`), parsed defensively; a client is flagged as a finding only on a
+  confirmed `is_deleted == True`.
+- **Fix 3 -- over-scoped required field on the StoragePolicy list read**: `numberOfCopies` was
+  required in `read_storage_policies()`, but the PDF's own parameter table for
+  `GET webservice/V2/StoragePolicy` documents only `storagePolicyName`/`storagePolicyId`, and its
+  literal example response confirms `numberOfStreams` is present while `numberOfCopies` is not.
+  `numberOfCopies` is genuinely confirmed elsewhere -- the PDF's literal `propertyLevel=10`
+  example for `GET StoragePolicy/{id}?propertyLevel=10` ("GET Storage Policy Details") carries it
+  directly. Added `CommvaultClient.read_storage_policy_copy_count()` as a new bounded, per-policy
+  enrichment call (first 25 policies), called from
+  `ConfiguredCommvaultBackupOverviewProvider._read_copy_counts()` after the list read -- mirroring
+  the vCenter host-to-cluster membership precedent from ATLAS-IMP-268 exactly: one policy's
+  Details-read failure does not block the others or the overview, and is recorded as an honest
+  `unknowns` entry rather than failing the whole read.
+- **Correction to ATLAS-IMP-269's own claim**: that task stated the recovery-point/browse catalog
+  was "investigated, confirmed unresolvable" because no confirmed JSON response shape could be
+  found. The PDF shows this was wrong -- `GET Subclient?clientId={id}` (list a client's
+  subclients) and `GET Subclient/{id}/Browse?path=%5C` (root-level browse) are both real, simple
+  GET reads with literal, complete example responses
+  (`databrowse_BrowseResponseList -> browseResponses[] -> browseResult -> dataResultSet[] ->
+  {name, path, size, modificationTime, advancedData: {archiveFileId, backupJobId, backupTime}}`).
+  This is **not implemented** in this task -- the response nests three levels deep with genuine
+  array-vs-single-object collapsing ambiguity at each level (the same category of ambiguity
+  already handled defensively for the StoragePolicy Details response, but compounded here),
+  which is judged to warrant its own dedicated, fully-verified task rather than folding into this
+  correction pass. `mcp/connectors/commvault/source-provenance.json` and `README.md` are updated
+  to state this accurately (confirmed-buildable-but-not-built, not unresolvable), and the
+  adapter's own docstring and API-facing `unknowns` text are corrected to match.
+- **Verified with the real toolchain**: `ruff format --check`, `ruff check`, and `mypy` strict
+  clean across every touched file. Targeted suite (`test_commvault_connector.py`,
+  `test_configured_commvault_backup_overview_provider.py`,
+  `test_configured_commvault_health_executor.py`): 31 passed (5 new: the full 19-value status
+  vocabulary, the minimal-confirmed-list-shape tolerance test, the StoragePolicy Details read, its
+  unsafe-identifier rejection, and the copy-count graceful-degradation test).
 
 ### ATLAS-IMP-269 Scope and Verification
+
+**Correction (ATLAS-IMP-270, 2026-08-31)**: the "recovery-point/browse catalog... confirmed
+unresolvable" claim below was mistaken -- the customer's official PDF documentation shows a real,
+confirmed GET-based read path exists. See ATLAS-IMP-270 above.
 
 - **What this is**: closes the largest of the named remaining gaps -- ATLAS-IMP-267 shipped
   Commvault's health_checks signal only, explicitly deferring "a new module (e.g.

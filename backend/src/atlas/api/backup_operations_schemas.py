@@ -25,8 +25,8 @@ class BackupProtectedClientData(BaseModel):
     client_id: str
     client_name: str
     host_name: str
-    os_type: str
-    is_deleted: bool
+    os_type: str | None
+    is_deleted: bool | None
     observed_at: datetime
     evidence_references: list[str]
 
@@ -36,7 +36,7 @@ class BackupStoragePolicyData(BaseModel):
 
     policy_id: str
     policy_name: str
-    number_of_copies: int
+    number_of_copies: int | None
     number_of_streams: int
     observed_at: datetime
     evidence_references: list[str]

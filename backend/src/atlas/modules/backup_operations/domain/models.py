@@ -45,13 +45,15 @@ class BackupProtectedClient:
     """One Commvault-protected client, read from the real `GET webservice/Client` inventory.
     Represents registration in Commvault's protection scope -- not backup job outcome, which is
     a separate, already-implemented health_checks signal (see
-    health_checks/adapters/commvault.py)."""
+    health_checks/adapters/commvault.py). `os_type` and `is_deleted` are optional: the official
+    REST API reference does not confirm either field on this list endpoint's response (only on
+    the single-client `GET Client/{clientId}` endpoint), so a real server may omit them."""
 
     client_id: str
     client_name: str
     host_name: str
-    os_type: str
-    is_deleted: bool
+    os_type: str | None
+    is_deleted: bool | None
     observed_at: datetime
     evidence_references: tuple[str, ...]
 
@@ -68,11 +70,13 @@ class BackupProtectedClient:
 class BackupStoragePolicy:
     """One Commvault storage policy, read from the real `GET webservice/V2/StoragePolicy`
     inventory. `number_of_copies` is the one field this connector treats as a real redundancy
-    signal (a policy with zero copies retains no backup data)."""
+    signal (a policy with zero copies retains no backup data); it is optional because it is
+    read from a separate, bounded per-policy Details call and may be unavailable for some
+    policies (see `ConfiguredCommvaultBackupOverviewProvider`)."""
 
     policy_id: str
     policy_name: str
-    number_of_copies: int
+    number_of_copies: int | None
     number_of_streams: int
     observed_at: datetime
     evidence_references: tuple[str, ...]
@@ -82,7 +86,9 @@ class BackupStoragePolicy:
             raise ValueError("observed_at must be timezone-aware")
         if not self.policy_id.strip() or not self.policy_name.strip():
             raise ValueError("storage policies require an identifier and name")
-        if self.number_of_copies < 0 or self.number_of_streams < 0:
+        if (self.number_of_copies is not None and self.number_of_copies < 0) or (
+            self.number_of_streams < 0
+        ):
             raise ValueError("storage policy counts must not be negative")
         if not self.evidence_references:
             raise ValueError("storage policies require evidence")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 
@@ -27,6 +28,8 @@ _JOB_PATH_TEMPLATE = (
 )
 _CLIENT_PATH = "/webservice/Client"
 _STORAGE_POLICY_PATH = "/webservice/V2/StoragePolicy"
+_STORAGE_POLICY_DETAIL_PATH_TEMPLATE = "/webservice/V2/StoragePolicy/{policy_id}?propertyLevel=10"
+_SAFE_NUMERIC_ID = re.compile(r"^[0-9]{1,10}$")
 
 
 class CommvaultConnectorError(Exception):
@@ -198,34 +201,42 @@ class CommvaultClient:
             raise CommvaultConnectorError(
                 "malformed_vendor_response", "A client item is malformed."
             )
-        client_props = value.get("clientProps")
         client = value.get("client")
-        if not isinstance(client_props, Mapping) or not isinstance(client, Mapping):
+        if not isinstance(client, Mapping):
             raise CommvaultConnectorError(
-                "malformed_vendor_response", "A client item is missing its properties."
+                "malformed_vendor_response", "A client item is missing its identity."
             )
         client_entity = client.get("clientEntity")
-        os_info = client.get("osInfo")
-        if not isinstance(client_entity, Mapping) or not isinstance(os_info, Mapping):
+        if not isinstance(client_entity, Mapping):
             raise CommvaultConnectorError(
-                "malformed_vendor_response", "A client item is missing its identity or OS info."
+                "malformed_vendor_response", "A client item is missing its identity."
             )
         client_id = client_entity.get("clientId")
         client_name = client_entity.get("clientName")
         host_name = client_entity.get("hostName")
-        os_type = os_info.get("Type")
-        is_deleted = client_props.get("IsDeletedClient")
         if (
             not isinstance(client_id, int)
             or isinstance(client_id, bool)
             or not isinstance(client_name, str)
             or not isinstance(host_name, str)
-            or not isinstance(os_type, str)
-            or not isinstance(is_deleted, bool)
         ):
             raise CommvaultConnectorError(
                 "malformed_vendor_response", "A client item has invalid fields."
             )
+
+        # Not confirmed present on this list endpoint's documented response (only the
+        # single-client `GET Client/{clientId}` endpoint's table carries them) -- parsed
+        # defensively rather than required, see CommvaultClientRecord's docstring.
+        os_info = client.get("osInfo")
+        os_type = os_info.get("Type") if isinstance(os_info, Mapping) else None
+        if not isinstance(os_type, str):
+            os_type = None
+        client_props = value.get("clientProps")
+        is_deleted = (
+            client_props.get("IsDeletedClient") if isinstance(client_props, Mapping) else None
+        )
+        if not isinstance(is_deleted, bool):
+            is_deleted = None
         try:
             return CommvaultClientRecord(
                 client_id=str(client_id),
@@ -252,31 +263,60 @@ class CommvaultClient:
             )
         policy_id = storage_policy.get("storagePolicyId")
         policy_name = storage_policy.get("storagePolicyName")
-        number_of_copies = value.get("numberOfCopies")
         number_of_streams = value.get("numberOfStreams")
         if (
             not isinstance(policy_id, int)
             or isinstance(policy_id, bool)
             or not isinstance(policy_name, str)
-            or not isinstance(number_of_copies, int)
-            or isinstance(number_of_copies, bool)
             or not isinstance(number_of_streams, int)
             or isinstance(number_of_streams, bool)
         ):
             raise CommvaultConnectorError(
                 "malformed_vendor_response", "A storage policy item has invalid fields."
             )
+        # `numberOfCopies` is not confirmed present on this list endpoint's documented response
+        # (its literal example response carries only `numberOfStreams` alongside the nested
+        # `storagePolicy` identity) -- read via the bounded per-policy Details call instead, see
+        # `read_storage_policy_copy_count()`.
         try:
             return CommvaultStoragePolicy(
                 policy_id=str(policy_id),
                 policy_name=policy_name,
-                number_of_copies=number_of_copies,
+                number_of_copies=None,
                 number_of_streams=number_of_streams,
             )
         except ValueError as exc:
             raise CommvaultConnectorError(
                 "malformed_vendor_response", "A storage policy item failed validation."
             ) from exc
+
+    async def read_storage_policy_copy_count(self, policy_id: str) -> int:
+        """Reads one storage policy's confirmed real `numberOfCopies` via the Details endpoint
+        (`GET V2/StoragePolicy/{id}?propertyLevel=10`), whose literal example response carries
+        `numberOfCopies` directly on the `policies` element -- unlike the plain list endpoint.
+        Bounded to one policy per call; the caller is responsible for bounding how many policies
+        it enriches this way."""
+
+        if not _SAFE_NUMERIC_ID.match(policy_id):
+            raise CommvaultConnectorError(
+                "invalid_target_identifier", "The storage policy id is not safe to interpolate."
+            )
+        path = _STORAGE_POLICY_DETAIL_PATH_TEMPLATE.format(policy_id=policy_id)
+        payload = await self._get(path)
+        policies = payload.get("policies")
+        if isinstance(policies, list):
+            policies = policies[0] if policies else None
+        if not isinstance(policies, Mapping):
+            raise CommvaultConnectorError(
+                "malformed_vendor_response", "The storage policy details response is malformed."
+            )
+        number_of_copies = policies.get("numberOfCopies")
+        if not isinstance(number_of_copies, int) or isinstance(number_of_copies, bool):
+            raise CommvaultConnectorError(
+                "malformed_vendor_response",
+                "The storage policy details response is missing numberOfCopies.",
+            )
+        return number_of_copies
 
     async def _get(self, path: str) -> Mapping[str, object]:
         try:
