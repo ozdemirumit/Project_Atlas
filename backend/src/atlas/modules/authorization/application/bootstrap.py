@@ -29,6 +29,7 @@ WORKLOAD_IDENTITY_ADMIN_CREATE = "identity.workload.admin.create"
 WORKLOAD_IDENTITY_ADMIN_ROTATE = "identity.workload.admin.rotate"
 WORKLOAD_IDENTITY_ADMIN_REVOKE = "identity.workload.admin.revoke"
 STORAGE_OVERVIEW_READ = "storage.overview.read"
+BACKUP_OVERVIEW_READ = "backup.overview.read"
 INVENTORY_DEVICE_READ = "inventory.devices.read"
 INVENTORY_DEVICE_CREATE = "inventory.devices.create"
 INVENTORY_DEVICE_RETIRE = "inventory.devices.retire"
@@ -604,6 +605,17 @@ def storage_overview_scope(organization_id: str, environment: str) -> ResourceSc
         site_id="site.local",
         domain_id="domain.storage",
         resource_id="resource.storage.lab-overview",
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+def backup_overview_scope(organization_id: str, environment: str) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.backup",
+        resource_id="resource.backup.lab-overview",
         capability_class=CapabilityClass.C1_READ_ONLY,
     )
 
@@ -2387,6 +2399,7 @@ def personal_api_grant_scopes(organization_id: str, environment: str) -> dict[st
     return {
         IDENTITY_SELF_READ: current_identity_scope(organization_id, environment),
         STORAGE_OVERVIEW_READ: storage_overview_scope(organization_id, environment),
+        BACKUP_OVERVIEW_READ: backup_overview_scope(organization_id, environment),
         GRAPH_STORAGE_IMPACT_READ: graph_storage_impact_scope(organization_id, environment),
         HEALTH_CHECK_OVERVIEW_READ: health_check_scope(organization_id, environment),
         APPROVAL_REQUEST_READ: approval_scope(
@@ -2446,6 +2459,10 @@ def build_development_authorization_service(
         PermissionDefinition(
             permission_id=STORAGE_OVERVIEW_READ,
             description="Read the exact synthetic storage operations overview scope.",
+        ),
+        PermissionDefinition(
+            permission_id=BACKUP_OVERVIEW_READ,
+            description="Read the exact backup operations overview scope.",
         ),
         PermissionDefinition(
             permission_id=AI_GROUNDED_QUERY_CREATE,
@@ -3608,6 +3625,7 @@ def build_development_authorization_service(
                 API_CREDENTIAL_SELF_READ,
                 API_CREDENTIAL_SELF_REVOKE,
                 STORAGE_OVERVIEW_READ,
+                BACKUP_OVERVIEW_READ,
                 INVENTORY_DEVICE_READ,
                 INVENTORY_DEVICE_CREATE,
                 INVENTORY_DEVICE_RETIRE,
@@ -3956,6 +3974,16 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=storage_overview_scope(
+                    settings.development_organization_id, settings.environment
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.backup-overview",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=backup_overview_scope(
                     settings.development_organization_id, settings.environment
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),

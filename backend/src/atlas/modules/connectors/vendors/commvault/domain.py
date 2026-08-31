@@ -60,3 +60,63 @@ class CommvaultJobListResult:
             raise ValueError("observed_at must be timezone-aware")
         if not self.evidence_references:
             raise ValueError("job list results require evidence")
+
+
+@dataclass(frozen=True, slots=True)
+class CommvaultClientRecord:
+    """One registered Commvault client, read from the real `GET webservice/Client` inventory.
+    `is_deleted` (the confirmed real `clientProps.IsDeletedClient` field) is the one field this
+    connector treats as a real protection-coverage signal."""
+
+    client_id: str
+    client_name: str
+    host_name: str
+    os_type: str
+    is_deleted: bool
+
+    def __post_init__(self) -> None:
+        if not self.client_id.strip() or not self.client_name.strip():
+            raise ValueError("client record requires an identifier and name")
+
+
+@dataclass(frozen=True, slots=True)
+class CommvaultClientListResult:
+    clients: tuple[CommvaultClientRecord, ...]
+    observed_at: datetime
+    evidence_references: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if self.observed_at.tzinfo is None:
+            raise ValueError("observed_at must be timezone-aware")
+        if not self.evidence_references:
+            raise ValueError("client list results require evidence")
+
+
+@dataclass(frozen=True, slots=True)
+class CommvaultStoragePolicy:
+    """One Commvault storage policy, read from the real `GET webservice/V2/StoragePolicy`
+    inventory."""
+
+    policy_id: str
+    policy_name: str
+    number_of_copies: int
+    number_of_streams: int
+
+    def __post_init__(self) -> None:
+        if not self.policy_id.strip() or not self.policy_name.strip():
+            raise ValueError("storage policy requires an identifier and name")
+        if self.number_of_copies < 0 or self.number_of_streams < 0:
+            raise ValueError("storage policy counts must not be negative")
+
+
+@dataclass(frozen=True, slots=True)
+class CommvaultStoragePolicyListResult:
+    policies: tuple[CommvaultStoragePolicy, ...]
+    observed_at: datetime
+    evidence_references: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if self.observed_at.tzinfo is None:
+            raise ValueError("observed_at must be timezone-aware")
+        if not self.evidence_references:
+            raise ValueError("storage policy list results require evidence")

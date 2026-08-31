@@ -11,6 +11,8 @@ from atlas.modules.connectors.domain.models import (
 )
 
 JOB_STATUS_CAPABILITY_ID = "commvault.commserve.job.status.read"
+CLIENT_INVENTORY_CAPABILITY_ID = "commvault.commserve.client.inventory.read"
+STORAGE_POLICY_CAPABILITY_ID = "commvault.commserve.storagepolicy.inventory.read"
 PACKAGE_ID = "connector.commvault.commserve"
 OFFICIAL_REFERENCE = "https://api.commvault.com/docs/latest/api/cv/JobOperations/get-list-of-jobs/"
 
@@ -54,6 +56,26 @@ def build_candidate_manifest(
                 capability_id=JOB_STATUS_CAPABILITY_ID,
                 version="1.0.0",
                 description="Read bounded recent backup job status for one exact CommServe.",
+                capability_class=CapabilityClass.C1_READ_ONLY,
+                side_effects=frozenset({SideEffect.READ}),
+                target_types=("target.backup.commserve",),
+                timeout_seconds=60,
+                idempotency=IdempotencyClass.SAFE,
+            ),
+            CapabilityManifest(
+                capability_id=CLIENT_INVENTORY_CAPABILITY_ID,
+                version="1.0.0",
+                description="Read the registered protected clients for one exact CommServe.",
+                capability_class=CapabilityClass.C1_READ_ONLY,
+                side_effects=frozenset({SideEffect.READ}),
+                target_types=("target.backup.commserve",),
+                timeout_seconds=60,
+                idempotency=IdempotencyClass.SAFE,
+            ),
+            CapabilityManifest(
+                capability_id=STORAGE_POLICY_CAPABILITY_ID,
+                version="1.0.0",
+                description="Read the storage policies for one exact CommServe.",
                 capability_class=CapabilityClass.C1_READ_ONLY,
                 side_effects=frozenset({SideEffect.READ}),
                 target_types=("target.backup.commserve",),

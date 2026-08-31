@@ -21,6 +21,7 @@ from atlas.api.routes import (
     approvals,
     audit_export,
     authority_behavior_validations,
+    backup_operations,
     bootstrap_artifacts,
     bootstrap_configuration,
     bootstrap_data,
@@ -302,6 +303,11 @@ from atlas.modules.authorization.application.bootstrap import (
     build_development_authorization_service,
 )
 from atlas.modules.authorization.application.service import AuthorizationService
+from atlas.modules.backup_operations.adapters.configured_commvault import (
+    ConfiguredCommvaultBackupOverviewProvider,
+)
+from atlas.modules.backup_operations.adapters.synthetic import SyntheticBackupOverviewProvider
+from atlas.modules.backup_operations.application.service import BackupOperationsService
 from atlas.modules.change_review.adapters.completion_receipt_memory import (
     InMemoryCompletionReceiptRepository,
 )
@@ -3139,6 +3145,7 @@ def create_app(
     identity_provider: IdentityProvider | None = None,
     authorization_service: AuthorizationService | None = None,
     storage_operations_service: StorageOperationsService | None = None,
+    backup_operations_service: BackupOperationsService | None = None,
     document_knowledge_service: DocumentKnowledgeService | None = None,
     document_knowledge_retrieval_service: DocumentKnowledgeRetrievalService | None = None,
     inventory_device_service: InventoryDeviceService | None = None,
@@ -7255,6 +7262,29 @@ def create_app(
         site_id="site.local",
         audit_sink=resolved_audit_sink,
     )
+    resolved_backup_operations_service = backup_operations_service or BackupOperationsService(
+        provider=(
+            ConfiguredCommvaultBackupOverviewProvider(
+                configuration_repository=bundled_connection_configuration_repository,
+                instance_repository=resolved_connector_instance_creation_service.repository,
+                inventory_repository=resolved_inventory_device_service.repository,
+                credential_materializer=connector_credential_materializer,
+                transport_factory=commvault_transport_factory,
+                organization_id=resolved_settings.development_organization_id,
+                environment_id=f"environment.{resolved_settings.environment}",
+                runtime_state_repository=bundled_runtime_state_repository,
+            )
+            if configured_connector_paths_enabled
+            else SyntheticBackupOverviewProvider(
+                organization_id=resolved_settings.development_organization_id,
+                environment=resolved_settings.environment,
+            )
+        ),
+        organization_id=resolved_settings.development_organization_id,
+        environment_id=f"environment.{resolved_settings.environment}",
+        site_id="site.local",
+        audit_sink=resolved_audit_sink,
+    )
     resolved_graph_impact_service = graph_impact_service or GraphImpactService(
         provider=(
             CompositeGraphSnapshotProvider(
@@ -10277,6 +10307,7 @@ def create_app(
         app.state.authorization_service = resolved_authorization_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
+        app.state.backup_operations_service = resolved_backup_operations_service
         app.state.document_knowledge_service = resolved_document_knowledge_service
         app.state.document_knowledge_retrieval_service = (
             resolved_document_knowledge_retrieval_service
@@ -10819,6 +10850,7 @@ def create_app(
     app.include_router(final_recommendation_dispositions.router, prefix="/api/v1")
     app.include_router(change_reviews.router, prefix="/api/v1")
     app.include_router(storage.router, prefix="/api/v1")
+    app.include_router(backup_operations.router, prefix="/api/v1")
     app.include_router(document_knowledge.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
     app.include_router(health_checks.router, prefix="/api/v1")

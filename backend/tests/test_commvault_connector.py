@@ -41,6 +41,8 @@ from atlas.modules.connectors.vendors.commvault.synthetic import (
 NOW = datetime(2026, 8, 28, 12, 0, tzinfo=UTC)
 INSTANCE_ID = "connector-instance.commvault.lab"
 JOB_PATH = "/webservice/Job?jobFilter=backup&jobCategory=All&completedJobLookupTime=86400"
+CLIENT_PATH = "/webservice/Client"
+STORAGE_POLICY_PATH = "/webservice/V2/StoragePolicy"
 
 
 def _job_summary(
@@ -162,6 +164,86 @@ async def test_job_status_reads_real_fields() -> None:
     assert result.jobs[1].client_name == "dr-client"
     assert result.evidence_references[0].startswith("commvault://Job#sha256:")
     assert transport.requests == [JOB_PATH]
+
+
+@pytest.mark.asyncio
+async def test_client_inventory_reads_real_fields() -> None:
+    connector, transport = client(
+        {
+            CLIENT_PATH: SyntheticCommvaultResponse(
+                payload={
+                    "clientProperties": [
+                        {
+                            "clientProps": {"IsDeletedClient": False},
+                            "client": {
+                                "osInfo": {"Type": "Windows", "SubType": "Server", "osId": 210},
+                                "clientEntity": {
+                                    "hostName": "example.test.com",
+                                    "clientId": 2,
+                                    "clientName": "exampleclient",
+                                    "displayName": "ExampleClient",
+                                },
+                            },
+                        },
+                        {
+                            "clientProps": {"IsDeletedClient": True},
+                            "client": {
+                                "osInfo": {"Type": "Linux", "SubType": "Server", "osId": 211},
+                                "clientEntity": {
+                                    "hostName": "old.test.com",
+                                    "clientId": 3,
+                                    "clientName": "oldclient",
+                                    "displayName": "OldClient",
+                                },
+                            },
+                        },
+                    ]
+                }
+            )
+        }
+    )
+
+    result = await connector.read_client_inventory()
+
+    assert [item.client_id for item in result.clients] == ["2", "3"]
+    assert result.clients[0].client_name == "exampleclient"
+    assert result.clients[0].os_type == "Windows"
+    assert result.clients[0].is_deleted is False
+    assert result.clients[1].is_deleted is True
+    assert result.evidence_references[0].startswith("commvault://Client#sha256:")
+    assert transport.requests == [CLIENT_PATH]
+
+
+@pytest.mark.asyncio
+async def test_storage_policies_read_real_fields() -> None:
+    connector, transport = client(
+        {
+            STORAGE_POLICY_PATH: SyntheticCommvaultResponse(
+                payload={
+                    "policies": [
+                        {
+                            "type": 2,
+                            "numberOfStreams": 1,
+                            "numberOfCopies": 1,
+                            "storagePolicy": {
+                                "storagePolicyName": "CommServeDR",
+                                "storagePolicyId": 2,
+                            },
+                        }
+                    ],
+                    "error": {"errorMessage": "", "errorCode": 0},
+                }
+            )
+        }
+    )
+
+    result = await connector.read_storage_policies()
+
+    assert result.policies[0].policy_id == "2"
+    assert result.policies[0].policy_name == "CommServeDR"
+    assert result.policies[0].number_of_copies == 1
+    assert result.policies[0].number_of_streams == 1
+    assert transport.requests == [STORAGE_POLICY_PATH]
 
 
 @pytest.mark.asyncio

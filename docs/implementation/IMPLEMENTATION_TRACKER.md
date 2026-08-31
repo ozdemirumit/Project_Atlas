@@ -4,14 +4,69 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-268 |
-| Title | Close the vCenter host-to-cluster graph relationship gap named in ATLAS-IMP-266 |
-| Status | Verified (backend, tool-verified with real toolchain) |
+| Task ID | ATLAS-IMP-269 |
+| Title | Add a real backup_operations module for Commvault: client and storage-policy inventory, with a full API/authorization vertical slice |
+| Status | Verified (backend, tool-verified with real toolchain) -- client and storage-policy inventory only; recovery-point/browse catalog is out of scope (no confirmed real API response shape found), not deferred |
 | Branch | `main` |
 | Pull Request | none (pushed directly to `main`; no PR tooling available in this environment) |
 | Governing Documents | ATLAS-003, ATLAS-020/021/022/047 (connector quarantine/promotion), `docs/adr/ADR-004`+ |
-| Last Updated | 2026-08-28 |
-| Next Action | All five vendors named in the original request are real, connector-backed, and wired; this closes one of the honest gaps ATLAS-IMP-266 named. VM-to-host placement remains genuinely unconfirmed (no vSphere Automation API source found carries that field at all) and is not pursued further. Other named candidates (Commvault client inventory/policy/recovery-point catalog, cross-vendor graph relationships) remain not committed to. |
+| Last Updated | 2026-08-31 |
+| Next Action | The full genuinely-scoped Commvault backup module named in ATLAS-IMP-267's gaps is now built, with one honest exception (recovery-point/browse catalog -- investigated, confirmed unresolvable with real evidence). VM-to-host placement (vCenter) and cross-vendor graph relationships remain the only other named, not-committed-to gaps across the whole connector series. |
+
+### ATLAS-IMP-269 Scope and Verification
+
+- **What this is**: closes the largest of the named remaining gaps -- ATLAS-IMP-267 shipped
+  Commvault's health_checks signal only, explicitly deferring "a new module (e.g.
+  `modules/backup_operations`) for job/policy/recovery-point domain concepts" as too large to
+  design speculatively in that session. This task builds that module for real, following the
+  user's explicit instruction to fully complete it, mirroring `modules/storage`'s proven shape
+  end to end: domain model, application service, connector-backed and synthetic adapters, API
+  route, and full authorization wiring (permission, scope, role grant, dev-mode assignment) --
+  the first new domain module and first new authenticated API endpoint added in this entire
+  multi-vendor connector series (every prior task extended an existing module).
+- **Real API research, honest about what could and could not be confirmed**: `GET
+  webservice/Client` and `GET webservice/V2/StoragePolicy` were each confirmed via the official
+  api.commvault.com machine-generated reference pages, each showing a literal, complete example
+  JSON response (matching the exact rigor already used for `GET webservice/Job` in
+  ATLAS-IMP-267) -- `clientProperties[].{clientProps.IsDeletedClient, client.osInfo.Type,
+  client.clientEntity.{clientId,clientName,hostName}}` for clients, and
+  `policies[].{numberOfCopies, numberOfStreams, storagePolicy.{storagePolicyId,
+  storagePolicyName}}` for storage policies. The Storage Policy endpoint's full path (with its
+  `V2` prefix) was independently corroborated from a second real source. A third candidate
+  capability -- the recovery-point/browse catalog -- was investigated with the same rigor and
+  explicitly **not** implemented: real Commvault documentation describes Browse as a
+  POST-with-XML-request-body workflow (`databrowse_BrowseRequest`, `opType`, `filePaths`)
+  oriented around restore operations, and no literal, confirmed JSON example response was found
+  anywhere. Rather than guess a response shape -- the one thing this entire connector series has
+  never done -- this capability was left out and stated as a gap.
+- **Findings are derived only from real, confirmed fields, never invented health semantics**: the
+  new domain model's two finding types are `client.is_deleted` (a real, confirmed field) implying
+  a possibly-stale protection registration, and `policy.number_of_copies == 0` (a real, confirmed
+  field) implying a policy retains no backup data at all. Both are defensible, literal readings
+  of confirmed fields -- no synthetic "health" concept was invented for data that carries none.
+- **Full authorization vertical slice, not just a connector**: added `BACKUP_OVERVIEW_READ`
+  permission, `backup_overview_scope()`, a `PermissionDefinition` catalog entry, a role
+  permission-set grant, and a development-mode `RoleAssignment` in
+  `authorization/application/bootstrap.py`, plus `authorize_backup_overview_read()` in
+  `api/security.py` -- mirroring every one of `storage_overview`'s six touch points exactly, so
+  `GET /api/v1/backup/overview` is a real, authenticated, audited endpoint from day one, not a
+  bolt-on read with no access control.
+- **Verified with the real toolchain**: `ruff format --check` and `ruff check` clean across the
+  full repository (1805 files); `mypy` strict clean across every touched file (1273 source
+  files). New tests: 2 for the connector package's new client/storage-policy reads, 6 for the
+  connector-backed backup overview adapter (unavailable/disabled/unallowlisted/real-mapping-with-
+  findings/no-findings/missing-credential), 5 for the full API vertical slice (authentication
+  required, exact-scope authorization required, evidence-linked synthetic response, audit-failure
+  blocks the response, service-level scope-mismatch rejection before audit) -- 13 new tests
+  total, all passing (36 total across every touched Commvault/backup/storage test file).
+  Authorization-focused sweep (`-k "authorization or bootstrap_configuration_rendering or
+  security or permission"`): 795 passed, 8 failed, all baseline, zero overlap -- specifically
+  confirming the new `BACKUP_OVERVIEW_READ` permission and role-grant wiring introduced no
+  authorization regression. Full backend suite: 3969 passed, 67 failed, 68 skipped -- the failure
+  count matches the established ~67 pre-existing baseline exactly (bootstrap/upgrade/support-
+  bundle/backup-workflow/mcp-builder and alembic-head-drift categories), confirmed by name to
+  share zero overlap with commvault, backup, storage, authorization, or security. The pass-count
+  increase (+13 over ATLAS-IMP-268's 3956) matches exactly the 13 new tests this task adds.
 
 ### ATLAS-IMP-268 Scope and Verification
 

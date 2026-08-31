@@ -2,7 +2,7 @@
 
 ## Status
 
-`Quarantined` generated candidate for ATLAS-IMP-267. It cannot create an enabled connector
+`Quarantined` generated candidate for ATLAS-IMP-267/269. It cannot create an enabled connector
 instance until the exact package digest receives domain, security, lab, and environment approval.
 
 ## Supported Candidate Capabilities
@@ -10,6 +10,8 @@ instance until the exact package digest receives domain, security, lab, and envi
 | Capability | Class | Vendor request |
 | --- | --- | --- |
 | `commvault.commserve.job.status.read` | C1 read-only | `GET /webservice/Job` |
+| `commvault.commserve.client.inventory.read` | C1 read-only | `GET /webservice/Client` |
+| `commvault.commserve.storagepolicy.inventory.read` | C1 read-only | `GET /webservice/V2/StoragePolicy` |
 
 The self-test reuses a narrow, one-hour-lookback job-status read (no confirmed dedicated
 version/compatibility endpoint exists). One configured connector instance manages exactly one
@@ -51,15 +53,26 @@ Commvault's own official documentation, including a literal example JSON respons
 - [Commvault REST API Authentication Operations: Login](https://api.commvault.com/docs/SP40/api/cv/AuthenticationOperations/login/) --
   a second, independent official source corroborating the `Authtoken` header requirement for
   subsequent requests.
+- [Commvault REST API: Get Client](https://api.commvault.com/docs/latest/api/cv/ClientOperations/get-client/) --
+  official machine-generated reference showing the complete `clientProperties` response shape
+  verbatim (`clientProps.IsDeletedClient`, `client.osInfo`, `client.clientEntity`).
+- [Commvault REST API: Get Storage Policies](https://api.commvault.com/docs/SP40/api/cv/Storage/get-storage-policies/) --
+  official machine-generated reference showing the complete `policies` response shape verbatim
+  (`numberOfCopies`, `numberOfStreams`, `storagePolicy.storagePolicyId/Name`); the full path
+  (with its `V2` prefix) was independently corroborated from a second real source describing the
+  same endpoint family.
 
 **Known gaps, stated plainly**: Commvault's own documentation states its complete job-status
 vocabulary is longer than what could be independently confirmed via real, working examples during
 connector construction, so this connector only models the values directly evidenced
 (`Completed`, `Running`, `Waiting`, `Suspended`, `Killed`); any other value maps to `UNKNOWN`
-rather than being guessed at a severity. Client inventory, backup/storage policy, and
-recovery-point catalog concepts are real, confirmed Commvault domain areas this first pass does
-not implement -- only the job-status health signal was built. See `source-provenance.json`'s
-`unconfirmed_gaps` for the complete list.
+rather than being guessed at a severity. Recovery-point/point-in-time browse catalog (Commvault's
+Browse API) was investigated but deliberately not implemented: real documentation describes a
+POST-with-XML-request-body restore workflow, and no literal, confirmed JSON example response was
+found matching the rigor achieved for Job/Client/StoragePolicy -- rather than guess a response
+shape, this capability was left out. No cross-vendor graph relationship (e.g. `BACKED_BY`) is
+asserted: no confirmed field connects a Commvault client or policy to entities from any other
+connector in this project. See `source-provenance.json`'s `unconfirmed_gaps` for the complete list.
 
 ## Promotion Requirements
 

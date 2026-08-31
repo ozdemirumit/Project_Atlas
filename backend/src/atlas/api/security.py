@@ -42,6 +42,7 @@ from atlas.modules.authorization.application.bootstrap import (
     BACKUP_LOGICAL_CREATE,
     BACKUP_LOGICAL_PREVIEW,
     BACKUP_LOGICAL_RESTORE_VALIDATE,
+    BACKUP_OVERVIEW_READ,
     BOOTSTRAP_INVALIDATION_PREVIEW,
     BOOTSTRAP_PLAN_READ,
     BOOTSTRAP_STATE_MANAGE,
@@ -311,6 +312,7 @@ from atlas.modules.authorization.application.bootstrap import (
     api_credential_self_scope,
     approval_scope,
     audit_export_scope,
+    backup_overview_scope,
     bootstrap_invalidation_scope,
     bootstrap_plan_scope,
     bootstrap_state_scope,
@@ -2346,6 +2348,33 @@ async def authorize_storage_overview_read(
             permission_id=STORAGE_OVERVIEW_READ,
             resource_type="resource.storage.overview",
             scope=storage_overview_scope(subject.organization_id, settings.environment),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_backup_overview_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=BACKUP_OVERVIEW_READ,
+            resource_type="resource.backup.overview",
+            scope=backup_overview_scope(subject.organization_id, settings.environment),
             correlation_id=str(request.state.correlation_id),
             requested_at=datetime.now(UTC),
         )
