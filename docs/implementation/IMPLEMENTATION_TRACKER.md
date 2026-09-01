@@ -4,14 +4,63 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-271 |
-| Title | Build the Commvault recovery-point catalog: bounded `GET Subclient` + `GET Subclient/{id}/Browse` sampling, closing the gap ATLAS-IMP-269 mistakenly called unresolvable |
-| Status | Verified (backend, tool-verified with real toolchain) |
+| Task ID | ATLAS-IMP-272 |
+| Title | Eliminate the entire ~67-test pre-existing local-Windows failure baseline: MAX_PATH filesystem artifacts (conftest fix) + 5 stale alembic-head-drift assertions |
+| Status | Verified (backend, tool-verified with real toolchain) -- full suite now 0 failed |
 | Branch | `main` |
 | Pull Request | none (pushed directly to `main`; no PR tooling available in this environment) |
 | Governing Documents | ATLAS-003, ATLAS-020/021/022/047 (connector quarantine/promotion), `docs/adr/ADR-004`+ |
-| Last Updated | 2026-08-31 |
-| Next Action | All three genuinely-scoped Commvault backup capabilities from the original gap list (client inventory, storage-policy inventory, recovery-point catalog) are now built and real. VM-to-host placement (vCenter) and cross-vendor graph relationships remain the only other named, not-committed-to gaps across the whole connector series. |
+| Last Updated | 2026-09-01 |
+| Next Action | The full backend suite is clean (0 failed) for the first time across this whole multi-session engagement. No further backend correctness gaps are known. Frontend and any other non-backend areas have not been surveyed in this engagement and are the natural next candidate if further work is wanted. |
+
+### ATLAS-IMP-272 Scope and Verification
+
+- **What this is**: every prior task in this series ran the full backend suite before committing
+  and reported "matches the established ~67-failure baseline, all pre-existing and unrelated" --
+  true in the sense that none of those tasks caused the failures, but the baseline itself was
+  never actually diagnosed. Asked to prioritize and finish outstanding work, this task
+  investigated and closed it completely: **0 failures remain**.
+- **Root cause 1 (the large majority, ~62 of 67)**: Windows' 260-character `MAX_PATH` limit.
+  Pytest's own default temp-dir naming (`%TEMP%\pytest-of-<user>\pytest-<N>\<test-name><index>`)
+  stacked on this project's real, legitimate deep content-addressed storage paths (e.g.
+  `deployments/<org>/<env>/<site>/<release>/.../<64-char digest>/target...`) routinely exceeds
+  260 characters on this local Windows machine. Confirmed by exact character-counting the failing
+  paths (one measured at precisely 260, several others 263-285) and by confirming this project's
+  CI runs exclusively on `ubuntu-latest` (`.github/workflows/ci.yml`), so this never manifested
+  there. Two distinct symptoms of the same limit were found and both handled: outright
+  `WinError 3`/`WinError 206` on `mkdir`/`rename`, and a *silent* one -- `Path.is_file()` and
+  `Path.exists()` swallow the `OSError` from a failing `stat()` call on an over-length path and
+  return `False`, so `bootstrap_integrations_filesystem.py`'s `inspect()` (and its siblings)
+  raised a business-logic-looking `bootstrap_integration_unknown_target` error even though the
+  file was genuinely present on disk (confirmed by direct post-run filesystem inspection).
+- **Fix (test-only, zero production-code changes)**: new `backend/tests/conftest.py` overrides
+  pytest's `tmp_path` fixture on `sys.platform == "win32"` only (every other platform, including
+  CI, is untouched) to wrap the path in Windows' `\\?\` extended-length prefix, which makes
+  Windows accept paths up to ~32,767 characters and bypasses `MAX_PATH` entirely -- with no
+  machine-wide registry change (`LongPathsEnabled`) required, which would have been
+  inappropriate to make unilaterally. Confirmed correct through `resolve()`, `mkdir()`,
+  `rename()`, `is_file()`, `rglob()`, and `relative_to()` via a standalone script before wiring
+  it into the fixture, since `pathlib`'s handling of `\\?\`-prefixed paths has historically been
+  inconsistent across Python versions.
+- **Root cause 2 (5 tests)**: `test_alembic_graph_has_single_0150_head` and four siblings each
+  assert `script.get_heads() == ["20260827_0168"]` as a "the migration graph is still
+  single-headed (no accidental branch), and here's the current tip" sanity check, alongside an
+  unrelated, still-valid lineage assertion for a specific older revision named in each test's own
+  title. A real, already-committed, correctly-linear migration
+  (`20260827_0169_document_knowledge_vectors.py`, `down_revision = "20260827_0168"`, part of the
+  earlier ATLAS-IMP-256 document-knowledge work) advanced the true head, and these five assertions
+  were never bumped to match. Verified the graph is still genuinely single-headed
+  (`script.get_heads() == ["20260827_0169"]`, confirmed via a direct Alembic `ScriptDirectory`
+  query) before updating -- this is a real, no-branching, linear graph, not a masked bug.
+- **Verified with the real toolchain**: `ruff format --check .`, `ruff check .`, and `mypy` strict
+  clean across the full repository. Full backend suite:
+  **4046 passed, 69 skipped, 0 failed** (0:24:24) -- versus the immediately prior run's 3980
+  passed / 67 failed / 68 skipped. The failure count fully explains the delta: 66 of the 67
+  former failures now pass, and the 67th now reaches a legitimate, pre-existing
+  `symlink creation is not available on this Windows host` skip in
+  `test_bootstrap_artifact_acquisition.py` that an earlier MAX_PATH failure had been masking
+  (accounting for the skip count's +1). This is the first fully clean backend suite run across
+  this entire multi-session connector engagement.
 
 ### ATLAS-IMP-271 Scope and Verification
 
