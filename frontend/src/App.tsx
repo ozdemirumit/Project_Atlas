@@ -87,7 +87,7 @@ import { WorkspaceLoadBoundary } from "./features/shell/WorkspaceLoadBoundary";
 import type { ConnectorViewId, HealthViewId, WorkspaceId } from "./features/shell/workspace";
 import { HealthWorkspaceNavigation } from "./features/health/HealthWorkspaceNavigation";
 import { healthViewDescriptor } from "./features/health/healthWorkspace";
-import { PackageApprovalPanel } from "./features/connectors/PackageApprovalPanel";
+import { FinalValidationPanel } from "./features/connectors/FinalValidationPanel";
 import {
   acquireConnectorPackage,
   analyzeConnectorPackageLicenses,
@@ -99,7 +99,6 @@ import {
   validateConnectorPackage,
   validateConnectorPackageAuthorityBehavior,
   validateConnectorPackageContracts,
-  validateConnectorPackageFinal,
   validateConnectorPackageLabSelfTest,
   validateConnectorPackageRunner,
   validateConnectorPackageSchemaSemantics,
@@ -563,19 +562,11 @@ export function OperationalApplication({
   const [builderContractAcknowledged, setBuilderContractAcknowledged] = useState(false);
   const [builderRunnerAcknowledged, setBuilderRunnerAcknowledged] = useState(false);
   const [builderLabSelfTestAcknowledged, setBuilderLabSelfTestAcknowledged] = useState(false);
-  const [builderFinalValidationAcknowledged, setBuilderFinalValidationAcknowledged] =
-    useState(false);
   const [builderLabPlanId, setBuilderLabPlanId] = useState(
     "connector-lab-plan.development-readonly",
   );
   const [builderLabPlanDigest, setBuilderLabPlanDigest] = useState(
     "ca40dd40e192ccb62e644cd5151e2445c0fa018f8849ded22eada41a1c93f770",
-  );
-  const [builderFinalPolicyId, setBuilderFinalPolicyId] = useState(
-    "connector-final-policy.development",
-  );
-  const [builderFinalPolicyDigest, setBuilderFinalPolicyDigest] = useState(
-    "bed76a50dd603345e42fb5206b44bead8da5f5ff6a27033913d899dcf7989149",
   );
   const [builderSelectedGeneratedFile, setBuilderSelectedGeneratedFile] = useState("");
   const [builderDesignDecisions, setBuilderDesignDecisions] = useState<
@@ -659,10 +650,6 @@ export function OperationalApplication({
     mutationFn: validateConnectorPackageLabSelfTest,
     onSuccess: () => setBuilderLabSelfTestAcknowledged(false),
   });
-  const builderFinalValidationMutation = useMutation({
-    mutationFn: validateConnectorPackageFinal,
-    onSuccess: () => setBuilderFinalValidationAcknowledged(false),
-  });
   const builderCandidateArchiveMutation = useMutation({
     mutationFn: downloadMcpBuilderCandidateArchive,
     onSuccess: ({ blob, filename }) => {
@@ -692,7 +679,6 @@ export function OperationalApplication({
     builderContractMutation.reset();
     builderRunnerMutation.reset();
     builderLabSelfTestMutation.reset();
-    builderFinalValidationMutation.reset();
     setBuilderCandidateHandoffAcknowledged(false);
     setBuilderPackageAcquisitionAcknowledged(false);
     setBuilderPackageValidationAcknowledged(false);
@@ -707,7 +693,6 @@ export function OperationalApplication({
     setBuilderContractAcknowledged(false);
     setBuilderRunnerAcknowledged(false);
     setBuilderLabSelfTestAcknowledged(false);
-    setBuilderFinalValidationAcknowledged(false);
   };
   const builderPackageValidationSeparated = Boolean(
     identity &&
@@ -892,32 +877,6 @@ export function OperationalApplication({
       builderContractMutation.data?.data &&
       ![
         builderRunnerMutation.data.data.validated_by,
-        builderContractMutation.data.data.validated_by,
-        builderContractMutation.data.data.source_license_analyzed_by,
-        builderContractMutation.data.data.source_malware_analyzed_by,
-        builderContractMutation.data.data.source_vulnerability_analyzed_by,
-        builderContractMutation.data.data.source_static_analyzed_by,
-        builderContractMutation.data.data.source_authority_validated_by,
-        builderContractMutation.data.data.source_schema_validated_by,
-        builderContractMutation.data.data.source_content_scanned_by,
-        builderContractMutation.data.data.source_inventoried_by,
-        builderContractMutation.data.data.source_manifest_validated_by,
-        builderContractMutation.data.data.source_acquired_by,
-        builderContractMutation.data.data.source_custodied_by,
-        builderContractMutation.data.data.source_domain_reviewed_by,
-        builderContractMutation.data.data.source_security_reviewed_by,
-        builderContractMutation.data.data.source_lab_operated_by,
-      ].includes(identity.subject_id),
-  );
-  const builderFinalValidationSeparated = Boolean(
-    identity &&
-      builderLabSelfTestMutation.data?.data &&
-      builderContractMutation.data?.data &&
-      ![
-        builderLabSelfTestMutation.data.data.validated_by,
-        builderLabSelfTestMutation.data.data.source_runner_validated_by,
-        builderLabSelfTestMutation.data.data.lab_plan_approved_by,
-        builderLabSelfTestMutation.data.data.credential_custodied_by,
         builderContractMutation.data.data.validated_by,
         builderContractMutation.data.data.source_license_analyzed_by,
         builderContractMutation.data.data.source_malware_analyzed_by,
@@ -7885,274 +7844,12 @@ export function OperationalApplication({
                                                               )}
                                                               {builderLabSelfTestMutation.data?.data.outcome ===
                                                                 "passed" &&
-                                                                !builderFinalValidationSeparated &&
-                                                                !builderFinalValidationMutation.data && (
-                                                                  <div
-                                                                    className="workspace-message error-state"
-                                                                    role="alert"
-                                                                  >
-                                                                    <UserX size={20} />
-                                                                    <div>
-                                                                      <h3>
-                                                                        Independent final validator required
-                                                                      </h3>
-                                                                      <p>
-                                                                        No prior package, runner, lab, policy, or
-                                                                        custody actor can perform final validation.
-                                                                      </p>
-                                                                    </div>
-                                                                  </div>
-                                                                )}
-                                                              {builderLabSelfTestMutation.data?.data.outcome ===
-                                                                "passed" &&
-                                                                builderFinalValidationSeparated &&
-                                                                !builderFinalValidationMutation.data && (
-                                                                  <section className="mcp-builder-validation">
-                                                                    <div className="section-heading">
-                                                                      <div>
-                                                                        <p className="eyebrow">
-                                                                          GOVERNED FINAL VALIDATION
-                                                                        </p>
-                                                                        <h3>
-                                                                          Reconcile the complete evidence chain
-                                                                        </h3>
-                                                                        <p>
-                                                                          The signed policy evaluates exact lineage,
-                                                                          coverage, freshness, limitations, and risk.
-                                                                          This step cannot approve or operate a
-                                                                          connector.
-                                                                        </p>
-                                                                      </div>
-                                                                      <ShieldCheck size={24} />
-                                                                    </div>
-                                                                    <div className="mcp-builder-review-fields">
-                                                                      <label>
-                                                                        <span>Final-validation policy ID</span>
-                                                                        <input
-                                                                          value={builderFinalPolicyId}
-                                                                          onChange={(event) =>
-                                                                            setBuilderFinalPolicyId(event.target.value)
-                                                                          }
-                                                                          autoComplete="off"
-                                                                        />
-                                                                      </label>
-                                                                      <label>
-                                                                        <span>Signed policy digest</span>
-                                                                        <input
-                                                                          value={builderFinalPolicyDigest}
-                                                                          onChange={(event) =>
-                                                                            setBuilderFinalPolicyDigest(
-                                                                              event.target.value,
-                                                                            )
-                                                                          }
-                                                                          autoComplete="off"
-                                                                          spellCheck={false}
-                                                                        />
-                                                                      </label>
-                                                                    </div>
-                                                                    <label className="approval-check">
-                                                                      <input
-                                                                        type="checkbox"
-                                                                        checked={builderFinalValidationAcknowledged}
-                                                                        onChange={(event) =>
-                                                                          setBuilderFinalValidationAcknowledged(
-                                                                            event.target.checked,
-                                                                          )
-                                                                        }
-                                                                      />
-                                                                      <span>
-                                                                        I am the independent final validator. I
-                                                                        understand this creates evidence only and
-                                                                        does not approve, sign, install, enable, or
-                                                                        execute the connector.
-                                                                      </span>
-                                                                    </label>
-                                                                    <button
-                                                                      className="primary-button"
-                                                                      type="button"
-                                                                      disabled={
-                                                                        !builderFinalValidationAcknowledged ||
-                                                                        !/^[a-z][a-z0-9_.:-]{2,127}$/.test(
-                                                                          builderFinalPolicyId,
-                                                                        ) ||
-                                                                        !/^[a-f0-9]{64}$/.test(
-                                                                          builderFinalPolicyDigest,
-                                                                        ) ||
-                                                                        builderFinalValidationMutation.isPending
-                                                                      }
-                                                                      onClick={() => {
-                                                                        const source =
-                                                                          builderLabSelfTestMutation.data?.data;
-                                                                        if (source) {
-                                                                          builderFinalValidationMutation.mutate({
-                                                                            source,
-                                                                            policyId: builderFinalPolicyId,
-                                                                            policyDigest: builderFinalPolicyDigest,
-                                                                          });
-                                                                        }
-                                                                      }}
-                                                                    >
-                                                                      {builderFinalValidationMutation.isPending ? (
-                                                                        <RefreshCw
-                                                                          className="spin"
-                                                                          size={16}
-                                                                        />
-                                                                      ) : (
-                                                                        <ShieldCheck size={16} />
-                                                                      )}
-                                                                      Run final validation
-                                                                    </button>
-                                                                  </section>
-                                                                )}
-                                                              {builderFinalValidationMutation.isError && (
-                                                                <div
-                                                                  className="workspace-message error-state"
-                                                                  role="alert"
-                                                                >
-                                                                  <AlertTriangle size={20} />
-                                                                  <div>
-                                                                    <h3>Final validation unavailable</h3>
-                                                                    <p>
-                                                                      Exact lineage, actor separation, signed policy,
-                                                                      evidence freshness, coverage, or risk did not
-                                                                      reconcile.
-                                                                    </p>
-                                                                  </div>
-                                                                </div>
-                                                              )}
-                                                              {builderFinalValidationMutation.data?.data && (
-                                                                <div className="mcp-builder-validation">
-                                                                  <div className="section-heading">
-                                                                    <div>
-                                                                      <p className="eyebrow">
-                                                                        IMMUTABLE FINAL REPORT
-                                                                      </p>
-                                                                      <strong>
-                                                                        {
-                                                                          builderFinalValidationMutation.data.data
-                                                                            .validation_id
-                                                                        }
-                                                                      </strong>
-                                                                      <code>
-                                                                        {
-                                                                          builderFinalValidationMutation.data.data
-                                                                            .canonical_digest
-                                                                        }
-                                                                      </code>
-                                                                    </div>
-                                                                    <span
-                                                                      className={`state-badge ${
-                                                                        builderFinalValidationMutation.data.data
-                                                                          .eligible_for_human_approval
-                                                                          ? "healthy"
-                                                                          : "critical"
-                                                                      }`}
-                                                                    >
-                                                                      {builderFinalValidationMutation.data.data
-                                                                        .eligible_for_human_approval ? (
-                                                                        <CheckCircle2 size={14} />
-                                                                      ) : (
-                                                                        <AlertTriangle size={14} />
-                                                                      )}
-                                                                      {
-                                                                        builderFinalValidationMutation.data.data
-                                                                          .outcome
-                                                                      }
-                                                                    </span>
-                                                                  </div>
-                                                                  <div className="mcp-builder-facts">
-                                                                    <div>
-                                                                      <span>Policy</span>
-                                                                      <strong>
-                                                                        {
-                                                                          builderFinalValidationMutation.data.data
-                                                                            .policy_version
-                                                                        }
-                                                                      </strong>
-                                                                    </div>
-                                                                    <div>
-                                                                      <span>Stages</span>
-                                                                      <strong>
-                                                                        {`${builderFinalValidationMutation.data.data.passed_stage_count}/${builderFinalValidationMutation.data.data.stage_count}`}
-                                                                      </strong>
-                                                                    </div>
-                                                                    <div>
-                                                                      <span>Coverage</span>
-                                                                      <strong>
-                                                                        {`${builderFinalValidationMutation.data.data.tested_capability_count}/${builderFinalValidationMutation.data.data.capability_count}`}
-                                                                      </strong>
-                                                                    </div>
-                                                                    <div>
-                                                                      <span>Blocking risks</span>
-                                                                      <strong>
-                                                                        {builderFinalValidationMutation.data.data.blocking_risk_count.toLocaleString()}
-                                                                      </strong>
-                                                                    </div>
-                                                                  </div>
-                                                                  <div className="mcp-builder-validation-checks">
-                                                                    {builderFinalValidationMutation.data.data.stage_evidence.map(
-                                                                      (stage) => (
-                                                                        <article
-                                                                          key={stage.stage_code}
-                                                                          data-state={
-                                                                            stage.promotion_blocked
-                                                                              ? "failed"
-                                                                              : "passed"
-                                                                          }
-                                                                        >
-                                                                          {stage.promotion_blocked ? (
-                                                                            <AlertTriangle size={16} />
-                                                                          ) : (
-                                                                            <CheckCircle2 size={16} />
-                                                                          )}
-                                                                          <div>
-                                                                            <strong>
-                                                                              {stage.stage_code}
-                                                                            </strong>
-                                                                            <p>{stage.evidence_id}</p>
-                                                                          </div>
-                                                                          <span>{stage.outcome}</span>
-                                                                        </article>
-                                                                      ),
-                                                                    )}
-                                                                  </div>
-                                                                  {builderFinalValidationMutation.data.data.risks
-                                                                    .length > 0 && (
-                                                                    <div className="mcp-builder-limitations">
-                                                                      <strong>Risk summary</strong>
-                                                                      <ul>
-                                                                        {builderFinalValidationMutation.data.data.risks.map(
-                                                                          (risk) => (
-                                                                            <li key={risk.code}>
-                                                                              {risk.code}: {risk.next_step}
-                                                                            </li>
-                                                                          ),
-                                                                        )}
-                                                                      </ul>
-                                                                    </div>
-                                                                  )}
-                                                                  <div className="mcp-builder-limitations">
-                                                                    <strong>Final-validation boundaries</strong>
-                                                                    <ul>
-                                                                      {builderFinalValidationMutation.data.data.limitations.map(
-                                                                        (limitation) => (
-                                                                          <li key={limitation}>{limitation}</li>
-                                                                        ),
-                                                                      )}
-                                                                    </ul>
-                                                                  </div>
-                                                                </div>
-                                                              )}
-                                                              {builderFinalValidationMutation.data?.data &&
+                                                                builderContractMutation.data?.data &&
                                                                 identity && (
-                                                                  <PackageApprovalPanel
-                                                                    key={
-                                                                      builderFinalValidationMutation.data.data
-                                                                        .validation_id
-                                                                    }
-                                                                    source={
-                                                                      builderFinalValidationMutation.data.data
-                                                                    }
+                                                                  <FinalValidationPanel
+                                                                    key={builderLabSelfTestMutation.data.data.self_test_id}
+                                                                    source={builderLabSelfTestMutation.data.data}
+                                                                    contractSource={builderContractMutation.data.data}
                                                                     subjectId={identity.subject_id}
                                                                   />
                                                                 )}
