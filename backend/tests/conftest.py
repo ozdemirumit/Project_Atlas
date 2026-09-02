@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import re
 import sys
 from pathlib import Path
@@ -7,6 +8,15 @@ from pathlib import Path
 import pytest
 
 if sys.platform == "win32":
+    # asyncio's default event loop policy on Windows is the proactor policy, but psycopg's
+    # async mode only implements the selector-based reader/writer transport, raising
+    # `psycopg.InterfaceError: Psycopg cannot use the 'ProactorEventLoop' to run in async
+    # mode` on every ATLAS_TEST_POSTGRES_DSN-backed test. This project's actual CI target
+    # (Linux, see `.github/workflows/ci.yml`) never hits this -- POSIX event loops are
+    # already selector-based. Nothing in this codebase's async tests uses
+    # `asyncio.create_subprocess_*` (the one capability the proactor policy adds over the
+    # selector policy on Windows), so switching policy for the whole Windows test run is safe.
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
     @pytest.fixture
     def tmp_path(tmp_path_factory: pytest.TempPathFactory, request: pytest.FixtureRequest) -> Path:
