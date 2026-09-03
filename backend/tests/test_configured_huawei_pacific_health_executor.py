@@ -42,7 +42,11 @@ from atlas.modules.health_checks.adapters.synthetic import (
     SyntheticStorageHealthExecutor,
     build_synthetic_health_check_definitions,
 )
-from atlas.modules.health_checks.domain.models import HealthCheckDefinition, HealthCheckRunState
+from atlas.modules.health_checks.domain.models import (
+    HealthCheckDefinition,
+    HealthCheckRunState,
+    ObservationState,
+)
 from atlas.modules.inventory.application.ports import InventoryDeviceRepository
 from atlas.modules.inventory.domain.devices import InventoryDeviceLifecycle, InventoryDeviceType
 
@@ -260,6 +264,53 @@ async def test_node_check_uses_configured_read_only_huawei_pacific_transport() -
     assert result.state is HealthCheckRunState.COMPLETED
     assert transport.requests == [CLUSTER_SERVERS_PATH]
     assert result.observations[0].value == "normal"
+
+
+@pytest.mark.asyncio
+async def test_node_check_surfaces_oam_agent_warranty_and_a_nonzero_error_code() -> None:
+    routes = {
+        CLUSTER_SERVERS_PATH: SyntheticHuaweiPacificResponse(
+            payload={
+                "result": {"code": 0},
+                "data": [
+                    {
+                        "id": "node1",
+                        "name": "node-1",
+                        "management_ip": "192.0.2.10",
+                        "model": "Pacific 9550",
+                        "running_status": "online",
+                        "in_cluster": True,
+                        "oam_agent_status": "normal",
+                        "error_code": "5",
+                        "warranty_status": "expired",
+                    }
+                ],
+            }
+        )
+    }
+    executor, _transport = build_executor(
+        configurations=(_configuration(),),
+        instances=(_instance(),),
+        devices=(_device(),),
+        routes=routes,
+    )
+    node, _capacity = definitions()
+
+    result = await executor.execute(node, started_at=NOW)
+
+    by_metric = {observation.metric: observation for observation in result.observations}
+    assert by_metric["node.oam_agent_status"].value == "normal"
+    assert by_metric["node.oam_agent_status"].state is ObservationState.UNKNOWN
+    assert by_metric["node.warranty_status"].value == "expired"
+    assert by_metric["node.warranty_status"].state is ObservationState.UNKNOWN
+    assert by_metric["node.error_code"].value == "5"
+    assert by_metric["node.error_code"].state is ObservationState.WARNING
+    error_findings = [
+        finding for finding in result.findings if finding.finding_id.endswith(".error-code")
+    ]
+    assert len(error_findings) == 1
+    assert error_findings[0].severity is ObservationState.WARNING
+    assert "5" in error_findings[0].summary
 
 
 @pytest.mark.asyncio

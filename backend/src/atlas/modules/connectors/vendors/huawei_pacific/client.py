@@ -141,11 +141,28 @@ class HuaweiPacificClient:
                 model=model,
                 running_status=node_running_status_from_value(value.get("running_status")),
                 in_cluster=in_cluster,
+                oam_agent_status=HuaweiPacificClient._optional_str(value.get("oam_agent_status")),
+                error_code=HuaweiPacificClient._optional_str(value.get("error_code")),
+                warranty_status=HuaweiPacificClient._optional_str(value.get("warranty_status")),
             )
         except ValueError as exc:
             raise HuaweiPacificConnectorError(
                 "malformed_vendor_response", "A cluster node item failed validation."
             ) from exc
+
+    @staticmethod
+    def _optional_str(value: object) -> str | None:
+        """oam_agent_status, error_code, and warranty_status are not confirmed-required fields
+        (unlike node_id/name/management_ip/model/in_cluster) -- absent or unrecognized-shape
+        values are treated as unavailable (None) rather than failing the whole node read."""
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        if isinstance(value, int):
+            return str(value)
+        return None
 
     def _parse_pool(
         self, value: object, *, observed_at: datetime, evidence: tuple[str, ...]

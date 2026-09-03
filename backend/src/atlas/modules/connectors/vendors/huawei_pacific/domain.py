@@ -68,6 +68,15 @@ class HuaweiPacificClusterNode:
     model: str
     running_status: HuaweiPacificNodeRunningStatus
     in_cluster: bool
+    # oam_agent_status, error_code, and warranty_status are real, confirmed field names (see
+    # source-provenance.json) read by the same independently-maintained monitoring-plugin library
+    # that confirmed running_status -- but unlike running_status, that library was not read for
+    # their value vocabulary (no get_oam_agent_status_state()-equivalent function exists to
+    # confirm against), so these are kept as raw, optional vendor strings rather than mapped into
+    # a guessed enum. A missing field is None, not a guessed default.
+    oam_agent_status: str | None = None
+    error_code: str | None = None
+    warranty_status: str | None = None
 
     def __post_init__(self) -> None:
         if not self.node_id.strip() or not self.name.strip():

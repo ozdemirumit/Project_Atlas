@@ -173,6 +173,78 @@ class HuaweiPacificNodeHealthExecutor:
                     evidence_references=tuple(item.reference for item in evidence),
                 )
             )
+            if node.oam_agent_status is not None:
+                observations.append(
+                    HealthObservation(
+                        observation_id=f"observation.huawei-pacific.node.{identity}.oam-agent",
+                        target_id=f"{definition.target_id}/{node.node_id}",
+                        component=f"node:{node.node_id}:{node.name}",
+                        metric="node.oam_agent_status",
+                        value=node.oam_agent_status,
+                        unit=None,
+                        # Value vocabulary is not confirmed (see domain.py) -- reported as
+                        # informational only, never used to derive severity or a finding.
+                        state=ObservationState.UNKNOWN,
+                        observed_at=inventory.observed_at,
+                        freshness=FreshnessState.CURRENT,
+                        evidence_references=tuple(item.reference for item in evidence),
+                    )
+                )
+            if node.warranty_status is not None:
+                observations.append(
+                    HealthObservation(
+                        observation_id=f"observation.huawei-pacific.node.{identity}.warranty",
+                        target_id=f"{definition.target_id}/{node.node_id}",
+                        component=f"node:{node.node_id}:{node.name}",
+                        metric="node.warranty_status",
+                        value=node.warranty_status,
+                        unit=None,
+                        state=ObservationState.UNKNOWN,
+                        observed_at=inventory.observed_at,
+                        freshness=FreshnessState.CURRENT,
+                        evidence_references=tuple(item.reference for item in evidence),
+                    )
+                )
+            if node.error_code is not None:
+                # error_code's own vocabulary is unconfirmed, but treating a present, non-zero
+                # code as a signal worth surfacing (rather than silently dropping it) matches this
+                # same connector's own established convention for interpreting vendor "code"
+                # fields (see client.py's _bounded(), which treats a non-zero/non-"0" result.code
+                # as a logical error) -- WARNING rather than CRITICAL because the exact severity
+                # behind an unrecognized code is still unknown.
+                error_present = node.error_code not in ("0", "")
+                error_state = ObservationState.WARNING if error_present else ObservationState.NORMAL
+                error_observation_id = f"observation.huawei-pacific.node.{identity}.error-code"
+                observations.append(
+                    HealthObservation(
+                        observation_id=error_observation_id,
+                        target_id=f"{definition.target_id}/{node.node_id}",
+                        component=f"node:{node.node_id}:{node.name}",
+                        metric="node.error_code",
+                        value=node.error_code,
+                        unit=None,
+                        state=error_state,
+                        observed_at=inventory.observed_at,
+                        freshness=FreshnessState.CURRENT,
+                        evidence_references=tuple(item.reference for item in evidence),
+                    )
+                )
+                if error_present:
+                    findings.append(
+                        HealthCheckFinding(
+                            finding_id=f"finding.huawei-pacific.node.{identity}.error-code",
+                            severity=error_state,
+                            title="Huawei Pacific cluster node reports a non-zero error code",
+                            summary=(
+                                f"Node {node.node_id} ({node.name}) reports error code "
+                                f"'{node.error_code}'; this connector does not have a confirmed "
+                                "mapping from vendor error codes to specific causes."
+                            ),
+                            observation_ids=(error_observation_id,),
+                            evidence_references=tuple(item.reference for item in evidence),
+                        )
+                    )
+
             if state is ObservationState.NORMAL:
                 continue
             findings.append(

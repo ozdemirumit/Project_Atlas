@@ -167,6 +167,51 @@ async def test_cluster_inventory_reads_real_node_fields() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cluster_inventory_reads_oam_agent_status_error_code_and_warranty_status() -> None:
+    connector, _ = client(
+        {
+            CLUSTER_SERVERS_PATH: SyntheticHuaweiPacificResponse(
+                payload={
+                    "result": {"code": 0},
+                    "data": [
+                        {
+                            "id": "node1",
+                            "name": "node-1",
+                            "management_ip": "192.0.2.10",
+                            "model": "Pacific 9550",
+                            "running_status": "online",
+                            "in_cluster": True,
+                            "oam_agent_status": "normal",
+                            "error_code": "0",
+                            "warranty_status": "in_warranty",
+                        },
+                        {
+                            "id": "node2",
+                            "name": "node-2",
+                            "management_ip": "192.0.2.11",
+                            "model": "Pacific 9550",
+                            "running_status": "online",
+                            "in_cluster": True,
+                        },
+                    ],
+                }
+            )
+        }
+    )
+
+    inventory = await connector.read_cluster_inventory()
+
+    assert inventory.nodes[0].oam_agent_status == "normal"
+    assert inventory.nodes[0].error_code == "0"
+    assert inventory.nodes[0].warranty_status == "in_warranty"
+    # A node that omits these optional fields is not a malformed read -- only the confirmed
+    # required fields (id/name/management_ip/model/running_status/in_cluster) are enforced.
+    assert inventory.nodes[1].oam_agent_status is None
+    assert inventory.nodes[1].error_code is None
+    assert inventory.nodes[1].warranty_status is None
+
+
+@pytest.mark.asyncio
 async def test_pool_capacity_reads_pools_and_computes_utilization() -> None:
     connector, transport = client(
         {

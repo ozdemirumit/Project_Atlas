@@ -61,8 +61,9 @@ family also exists (used by the official OpenStack Cinder driver, under `/api/v1
 endpoints like `/storagePool` and `/volume/create`) -- it was found and read during construction
 but deliberately not used here, because the `/api/v2/` cluster-manager family is the one with
 confirmed health/status fields relevant to this project's read-only monitoring purpose. See
-`source-provenance.json`'s `unconfirmed_gaps` for the complete list, including real node fields
-(`oam_agent_status`, `error_code`, `warranty_status`) this connector does not yet surface.
+`source-provenance.json`'s `unconfirmed_gaps` for the complete list, including `oam_agent_status`
+and `warranty_status`, which this connector surfaces as informational-only observations since
+their value vocabulary (unlike `running_status`'s) was never independently confirmed.
 
 ## Promotion Requirements
 
