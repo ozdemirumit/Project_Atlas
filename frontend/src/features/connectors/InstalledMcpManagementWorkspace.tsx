@@ -32,7 +32,7 @@ import {
   type BundledConnectorDescriptor,
 } from "../../api/bundledConnectorCatalog";
 import {
-  HITACHI_BUNDLED_CONNECTOR_ID,
+  BUNDLED_CONNECTOR_VENDOR_DEFAULTS,
   disableBundledConnectorRuntime,
   enableBundledConnectorRuntime,
   getBundledConnectionConfiguration,
@@ -42,6 +42,8 @@ import {
   type BundledConnectorRuntimeState,
   type ConnectorConnectionTestResult,
 } from "../../api/bundledConnectorConnections";
+
+const BUNDLED_CONNECTOR_IDS = new Set(Object.keys(BUNDLED_CONNECTOR_VENDOR_DEFAULTS));
 import {
   getConnectorCapabilityEnablements,
   type ConnectorCapabilityEnablementInventoryItem,
@@ -2268,8 +2270,8 @@ export default function InstalledMcpManagementWorkspace({
     },
   });
   const instances = instanceQuery.data ?? [];
-  const bundledInstances = instances.filter(
-    (instance) => instance.connector_id === HITACHI_BUNDLED_CONNECTOR_ID,
+  const bundledInstances = instances.filter((instance) =>
+    BUNDLED_CONNECTOR_IDS.has(instance.connector_id),
   );
   const bundledConnectionQueries = useQueries({
     queries: bundledInstances.map((instance) => ({
@@ -3255,14 +3257,14 @@ export default function InstalledMcpManagementWorkspace({
             <tbody>
               {instances.map((instance) => {
                 const binding = bindingByInstance.get(instance.record_id);
-                const isBundledHitachi = instance.connector_id === HITACHI_BUNDLED_CONNECTOR_ID;
-                const bundledConnection = isBundledHitachi
+                const isBundledConnector = BUNDLED_CONNECTOR_IDS.has(instance.connector_id);
+                const bundledConnection = isBundledConnector
                   ? bundledConnectionByInstance.get(instance.instance_id)
                   : undefined;
-                const bundledConnectionTest = isBundledHitachi
+                const bundledConnectionTest = isBundledConnector
                   ? bundledConnectionTestByInstance.get(instance.instance_id)
                   : undefined;
-                const bundledRuntimeState = isBundledHitachi
+                const bundledRuntimeState = isBundledConnector
                   ? bundledRuntimeStateByInstance.get(instance.instance_id)
                   : undefined;
                 const bundledRuntimeEnabled = bundledRuntimeState?.state === "enabled_read_only";
@@ -3335,7 +3337,7 @@ export default function InstalledMcpManagementWorkspace({
                     )
                   : undefined;
                 const knowledgeReviewersAssigned = Boolean(knowledgeReviewerAssignment);
-                const setupSteps = isBundledHitachi
+                const setupSteps = isBundledConnector
                   ? [
                       { complete: configured, label: "Connection" },
                       { complete: credentialsAssigned, label: "Credential reference" },
@@ -3356,12 +3358,12 @@ export default function InstalledMcpManagementWorkspace({
                 const nextSetupAction = !configured
                   ? {
                       icon: <Link2 size={15} />,
-                      label: isBundledHitachi ? "Configure connection" : "Configure target",
-                      onClick: () => isBundledHitachi
+                      label: isBundledConnector ? "Configure connection" : "Configure target",
+                      onClick: () => isBundledConnector
                         ? setConfiguringBundledConnection(instance)
                         : setTargeting(instance),
                     }
-                  : isBundledHitachi
+                  : isBundledConnector
                     ? !configurationValidated
                       ? {
                           icon: <Link2 size={15} />,
@@ -3601,7 +3603,7 @@ export default function InstalledMcpManagementWorkspace({
                               <span>Advanced governance</span>
                             </summary>
                             <div className="installed-mcp-row-actions">
-                              {isBundledHitachi && bundledConnection && (
+                              {isBundledConnector && bundledConnection && (
                                 <button
                                   className="secondary-button installed-mcp-row-action"
                                   type="button"

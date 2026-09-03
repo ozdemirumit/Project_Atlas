@@ -9,6 +9,7 @@ import {
   type BundledConnectorDescriptor,
 } from "../../api/bundledConnectorCatalog";
 import {
+  BROCADE_BUNDLED_CONNECTOR_ID,
   HITACHI_BUNDLED_CONNECTOR_ID,
   disableBundledConnectorRuntime,
   enableBundledConnectorRuntime,
@@ -222,6 +223,15 @@ const bundledInstance = {
   instance_id: "connector-instance.hitachi-east",
   instance_key: "hitachi-east",
   display_name: "Hitachi East",
+};
+
+const brocadeBundledInstance = {
+  ...instance,
+  record_id: "connector-instance-record.brocade-east",
+  connector_id: BROCADE_BUNDLED_CONNECTOR_ID,
+  instance_id: "connector-instance.brocade-east",
+  instance_key: "brocade-east",
+  display_name: "Brocade East",
 };
 
 const bundledConnection: BundledConnectionConfiguration = {
@@ -1422,6 +1432,21 @@ describe("InstalledMcpManagementWorkspace", () => {
     expect(await screen.findByText("Enabled / read-only")).toBeVisible();
     expect(progress).toHaveAttribute("aria-valuenow", "4");
     expect(screen.getByRole("button", { name: "Disable MCP for Hitachi East" })).toBeVisible();
+  });
+
+  it("gives every bundled vendor the same concise flow, not just Hitachi", async () => {
+    vi.mocked(getConnectorInstances).mockResolvedValue([brocadeBundledInstance]);
+    vi.mocked(getBundledConnectionConfiguration).mockResolvedValue(null);
+    renderWorkspace();
+
+    const progress = await screen.findByRole("progressbar", {
+      name: "Setup progress for Brocade East",
+    });
+    expect(progress).toHaveAttribute("aria-valuemax", "4");
+    expect(progress).toHaveAttribute("aria-valuenow", "0");
+    expect(
+      screen.getByRole("button", { name: "Configure connection for Brocade East" }),
+    ).toBeVisible();
   });
 
   it("disables an enabled bundled MCP with an operator reason", async () => {

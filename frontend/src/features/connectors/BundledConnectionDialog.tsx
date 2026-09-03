@@ -3,7 +3,7 @@ import { BadgeCheck, Link2, RefreshCw, ShieldCheck, X } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
 import {
-  HITACHI_AUTHORIZATION_SECRET_REFERENCE,
+  BUNDLED_CONNECTOR_VENDOR_DEFAULTS,
   getBundledConnectionConfiguration,
   saveBundledConnectionConfiguration,
   testBundledConnectorConnection,
@@ -34,19 +34,25 @@ export function BundledConnectionDialog({
     retry: false,
   });
   const current = configurationQuery.data;
+  const vendorDefaults = BUNDLED_CONNECTOR_VENDOR_DEFAULTS[instance.connector_id] ?? {
+    vendorLabel: instance.display_name,
+    authorizationSecretReference: "",
+    defaultPort: null,
+    hostnamePlaceholder: "target.example.internal",
+  };
   const [hostnameOverride, setHostnameOverride] = useState("");
   const [portOverride, setPortOverride] = useState<number | null>(null);
   const [secretReferenceOverride, setSecretReferenceOverride] = useState("");
   const hostname = hostnameOverride || current?.hostname || "";
-  const port = portOverride ?? current?.port ?? 23450;
+  const port = portOverride ?? current?.port ?? vendorDefaults.defaultPort;
   const secretReferenceId = secretReferenceOverride || current?.secret_reference_id ||
-    HITACHI_AUTHORIZATION_SECRET_REFERENCE;
+    vendorDefaults.authorizationSecretReference;
 
   const saveMutation = useMutation({
     mutationFn: () => saveBundledConnectionConfiguration({
       instanceId: instance.instance_id,
       hostname,
-      port,
+      port: port ?? 0,
       secretReferenceId,
     }),
     onSuccess: (saved) => {
@@ -72,7 +78,7 @@ export function BundledConnectionDialog({
     },
   });
   const valid = /^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$/.test(hostname.trim()) &&
-    port >= 1 && port <= 65_535 &&
+    port !== null && port >= 1 && port <= 65_535 &&
     /^secret\.[a-z0-9_.:-]{2,120}$/.test(secretReferenceId.trim());
   const error = saveMutation.error ?? testMutation.error ?? configurationQuery.error;
 
@@ -100,7 +106,7 @@ export function BundledConnectionDialog({
         </header>
         <p className="muted-copy">
           Atlas stores HTTPS target metadata and a credential reference only. The connection test
-          reads the Hitachi API version and cannot change the managed infrastructure.
+          reads the {vendorDefaults.vendorLabel} API version and cannot change the managed infrastructure.
         </p>
 
         {configurationQuery.isLoading ? (
@@ -116,7 +122,7 @@ export function BundledConnectionDialog({
                   value={hostname}
                   maxLength={253}
                   required
-                  placeholder="opscenter.example.internal"
+                  placeholder={vendorDefaults.hostnamePlaceholder}
                   onChange={(event) => setHostnameOverride(event.target.value)}
                 />
               </label>
@@ -126,9 +132,12 @@ export function BundledConnectionDialog({
                   type="number"
                   min={1}
                   max={65_535}
-                  value={port}
+                  value={port ?? ""}
                   required
-                  onChange={(event) => setPortOverride(Number(event.target.value))}
+                  placeholder={vendorDefaults.defaultPort === null ? "e.g. 443" : undefined}
+                  onChange={(event) =>
+                    setPortOverride(event.target.value === "" ? null : Number(event.target.value))
+                  }
                 />
               </label>
             </div>
@@ -139,7 +148,7 @@ export function BundledConnectionDialog({
                 maxLength={127}
                 required
                 pattern={"secret\\.[a-z0-9_.:\\-]{2,120}"}
-                placeholder="secret.hitachi.readonly"
+                placeholder={vendorDefaults.authorizationSecretReference || "secret.vendor.readonly"}
                 onChange={(event) => setSecretReferenceOverride(event.target.value.toLowerCase())}
               />
             </label>

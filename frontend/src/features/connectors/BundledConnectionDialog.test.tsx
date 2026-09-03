@@ -79,6 +79,9 @@ describe("BundledConnectionDialog", () => {
     fireEvent.change(await screen.findByRole("textbox", { name: "Hostname or IP address" }), {
       target: { value: configuration.hostname },
     });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "HTTPS port" }), {
+      target: { value: String(configuration.port) },
+    });
     fireEvent.change(screen.getByRole("textbox", { name: "Credential reference ID" }), {
       target: { value: secretReferenceId },
     });

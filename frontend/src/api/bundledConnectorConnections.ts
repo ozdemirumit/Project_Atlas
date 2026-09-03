@@ -2,9 +2,80 @@ import { ApiRequestError, apiFetch } from "./client";
 
 export const HITACHI_BUNDLED_CONNECTOR_ID =
   "connector.hitachi.opscenter.configuration-manager";
-export const HITACHI_SYSTEM_CA_TRUST_PROFILE = "trust.system-ca";
-export const HITACHI_AUTHORIZATION_SECRET_REFERENCE =
-  "secret.hitachi.readonly";
+export const BROCADE_BUNDLED_CONNECTOR_ID =
+  "connector.brocade.sannav.management-portal";
+export const HUAWEI_DORADO_BUNDLED_CONNECTOR_ID =
+  "connector.huawei.dorado.device-manager";
+export const HUAWEI_PACIFIC_BUNDLED_CONNECTOR_ID =
+  "connector.huawei.pacific.cluster-manager";
+export const VCENTER_BUNDLED_CONNECTOR_ID =
+  "connector.vmware.vcenter.automation-api";
+export const COMMVAULT_BUNDLED_CONNECTOR_ID = "connector.commvault.commserve";
+
+export const SYSTEM_CA_TRUST_PROFILE = "trust.system-ca";
+/** @deprecated Use {@link SYSTEM_CA_TRUST_PROFILE}; every bundled connector shares this same, vendor-neutral trust profile. */
+export const HITACHI_SYSTEM_CA_TRUST_PROFILE = SYSTEM_CA_TRUST_PROFILE;
+
+export const HITACHI_AUTHORIZATION_SECRET_REFERENCE = "secret.hitachi.readonly";
+export const BROCADE_AUTHORIZATION_SECRET_REFERENCE = "secret.brocade.readonly";
+export const HUAWEI_DORADO_AUTHORIZATION_SECRET_REFERENCE =
+  "secret.huawei.dorado.readonly";
+export const HUAWEI_PACIFIC_AUTHORIZATION_SECRET_REFERENCE =
+  "secret.huawei.pacific.readonly";
+export const VCENTER_AUTHORIZATION_SECRET_REFERENCE = "secret.vmware.vcenter.readonly";
+export const COMMVAULT_AUTHORIZATION_SECRET_REFERENCE = "secret.commvault.readonly";
+
+/**
+ * Per-vendor UI defaults for the bundled connection dialog, keyed by `connector_id`.
+ * `defaultPort` is only populated where a vendor's real API port is confirmed in this
+ * project's own vendor documentation research (`mcp/connectors/<vendor>/README.md` /
+ * `source-provenance.json`) -- left `null` rather than guessed where it isn't (e.g. Huawei
+ * Pacific's own README states plainly that no default management port was confirmed).
+ * `authorizationSecretReference` mirrors the same mapping the backend's
+ * `DevelopmentEnvironmentCredentialMaterializer` uses (`backend/src/atlas/api/app.py`), kept
+ * only as an editable starting suggestion here -- the dialog's field is never trusted as-is.
+ */
+export const BUNDLED_CONNECTOR_VENDOR_DEFAULTS: Record<
+  string,
+  { vendorLabel: string; authorizationSecretReference: string; defaultPort: number | null; hostnamePlaceholder: string }
+> = {
+  [HITACHI_BUNDLED_CONNECTOR_ID]: {
+    vendorLabel: "Hitachi Ops Center",
+    authorizationSecretReference: HITACHI_AUTHORIZATION_SECRET_REFERENCE,
+    defaultPort: 23450,
+    hostnamePlaceholder: "opscenter.example.internal",
+  },
+  [BROCADE_BUNDLED_CONNECTOR_ID]: {
+    vendorLabel: "Brocade SANnav",
+    authorizationSecretReference: BROCADE_AUTHORIZATION_SECRET_REFERENCE,
+    defaultPort: null,
+    hostnamePlaceholder: "sannav.example.internal",
+  },
+  [HUAWEI_DORADO_BUNDLED_CONNECTOR_ID]: {
+    vendorLabel: "Huawei OceanStor Dorado",
+    authorizationSecretReference: HUAWEI_DORADO_AUTHORIZATION_SECRET_REFERENCE,
+    defaultPort: 8088,
+    hostnamePlaceholder: "dorado.example.internal",
+  },
+  [HUAWEI_PACIFIC_BUNDLED_CONNECTOR_ID]: {
+    vendorLabel: "Huawei OceanStor Pacific",
+    authorizationSecretReference: HUAWEI_PACIFIC_AUTHORIZATION_SECRET_REFERENCE,
+    defaultPort: null,
+    hostnamePlaceholder: "pacific.example.internal",
+  },
+  [VCENTER_BUNDLED_CONNECTOR_ID]: {
+    vendorLabel: "VMware vCenter",
+    authorizationSecretReference: VCENTER_AUTHORIZATION_SECRET_REFERENCE,
+    defaultPort: null,
+    hostnamePlaceholder: "vcenter.example.internal",
+  },
+  [COMMVAULT_BUNDLED_CONNECTOR_ID]: {
+    vendorLabel: "Commvault CommServe",
+    authorizationSecretReference: COMMVAULT_AUTHORIZATION_SECRET_REFERENCE,
+    defaultPort: null,
+    hostnamePlaceholder: "commserve.example.internal",
+  },
+};
 
 export type BundledConnectionConfiguration = {
   configuration_id: string;
@@ -128,7 +199,7 @@ export async function saveBundledConnectionConfiguration(input: {
     body: JSON.stringify({
       hostname: input.hostname.trim().toLowerCase(),
       port: input.port,
-      trust_profile_id: HITACHI_SYSTEM_CA_TRUST_PROFILE,
+      trust_profile_id: SYSTEM_CA_TRUST_PROFILE,
       secret_reference_id: input.secretReferenceId.trim().toLowerCase(),
     }),
   });
