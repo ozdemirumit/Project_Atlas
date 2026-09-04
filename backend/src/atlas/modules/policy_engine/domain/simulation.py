@@ -26,6 +26,11 @@ class SimulationCase:
     case_id: str
     request: PolicyDecisionRequest
     expected_outcome: PolicyDecisionOutcome
+    mandatory: bool = False
+    """SS18: "a policy package cannot activate with failing mandatory deny tests." A case marked
+    mandatory is one of those activation-gating tests, checked by
+    `lifecycle.require_mandatory_tests_pass`; a non-mandatory case is still simulated and
+    reported, just not activation-blocking on its own."""
 
     def __post_init__(self) -> None:
         if not self.case_id.strip():
@@ -37,6 +42,7 @@ class SimulationCaseResult:
     case_id: str
     expected_outcome: PolicyDecisionOutcome
     actual_outcome: PolicyDecisionOutcome
+    mandatory: bool
 
     @property
     def passed(self) -> bool:
@@ -55,6 +61,10 @@ class SimulationResult:
     def failures(self) -> tuple[SimulationCaseResult, ...]:
         return tuple(result for result in self.case_results if not result.passed)
 
+    @property
+    def mandatory_failures(self) -> tuple[SimulationCaseResult, ...]:
+        return tuple(result for result in self.failures if result.mandatory)
+
 
 def simulate_policy(
     cases: tuple[SimulationCase, ...],
@@ -68,6 +78,7 @@ def simulate_policy(
         SimulationCaseResult(
             case_id=case.case_id,
             expected_outcome=case.expected_outcome,
+            mandatory=case.mandatory,
             actual_outcome=evaluate_policy(
                 case.request,
                 candidate_policy_sets,

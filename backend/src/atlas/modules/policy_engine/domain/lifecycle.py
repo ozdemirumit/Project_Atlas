@@ -12,6 +12,11 @@ suspension is separately authorized and audited."
 from __future__ import annotations
 
 from atlas.modules.policy_engine.domain.policy_set import PolicyLifecycleState
+from atlas.modules.policy_engine.domain.simulation import SimulationResult
+
+_STATES_REQUIRING_MANDATORY_TESTS = frozenset(
+    {PolicyLifecycleState.SCHEDULED, PolicyLifecycleState.ACTIVE}
+)
 
 _ALLOWED_TRANSITIONS: dict[PolicyLifecycleState, frozenset[PolicyLifecycleState]] = {
     PolicyLifecycleState.DRAFT: frozenset({PolicyLifecycleState.VALIDATING}),
@@ -72,3 +77,28 @@ class PolicyAuthoringSeparationError(Exception):
 def require_authoring_separation(*, author_id: str, approver_id: str) -> None:
     if author_id == approver_id:
         raise PolicyAuthoringSeparationError(author_id)
+
+
+class PolicyMandatoryTestFailureError(Exception):
+    """SS18: "a policy package cannot activate with failing mandatory deny tests.\""""
+
+    def __init__(self, failing_case_ids: tuple[str, ...]) -> None:
+        super().__init__(
+            "cannot activate a policy set with failing mandatory tests: "
+            + ", ".join(failing_case_ids)
+        )
+        self.failing_case_ids = failing_case_ids
+
+
+def require_mandatory_tests_pass(
+    target: PolicyLifecycleState, simulation_result: SimulationResult
+) -> None:
+    """Call this alongside `require_allowed_transition` whenever `target` is SCHEDULED or ACTIVE
+    (SS18's activation gate applies to both -- a scheduled activation is still an activation, just
+    deferred). States that do not lead toward production (DRAFT, VALIDATING, SIMULATION, REVIEW,
+    ...) are never gated here; a candidate can fail every test and still sit in REVIEW."""
+    if target not in _STATES_REQUIRING_MANDATORY_TESTS:
+        return
+    failures = simulation_result.mandatory_failures
+    if failures:
+        raise PolicyMandatoryTestFailureError(tuple(result.case_id for result in failures))
