@@ -32,7 +32,7 @@ from atlas.modules.workflows.domain import (
     canonical_digest,
 )
 
-NOW = datetime(2026, 8, 15, 12, 0, tzinfo=UTC)
+NOW = datetime.now(UTC)
 SCOPE = WorkflowScope("org-atlas", "environment-lab", "site-istanbul")
 
 
