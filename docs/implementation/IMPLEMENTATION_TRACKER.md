@@ -6,7 +6,7 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-278 |
 | Title | Build the four remaining zero-implementation subsystems (Policy Engine, Guardrails, Explainability, Runbook Engine) slice by slice, in dependency order, per user direction ("hepsini durmadan yap, sen karar ver") |
-| Status | In progress -- Policy Engine slice 1 of ~14 done |
+| Status | In progress -- Policy Engine slices 1-2 of ~14 done |
 | Branch | `main` |
 | Pull Request | none (pushed directly to `main`; no PR tooling available in this environment) |
 | Governing Documents | ATLAS-025 (Policy Engine), ATLAS-047 (Guardrails), ATLAS-046 (Explainability), ATLAS-045 (Runbook Engine) |
@@ -16,6 +16,7 @@
 ### ATLAS-IMP-278 Scope and Verification
 
 - **Slice 1 -- Policy Engine decision domain model + non-overridable minimum** (`backend/src/atlas/modules/policy_engine/domain/models.py`): the `PolicyDecisionOutcome` (9 values, ATLAS-025 SS8), `NonOverridableRule` (10 fixed platform rules, SS10), `PolicyDecisionRequest`/`PolicyDecision`/`PolicyReason` domain types, and a pure `evaluate_non_overridable_minimum` / `evaluate_policy_decision` pair -- deliberately not the full SS7 input contract yet, only the fields the non-overridable evaluator actually reads; later slices extend the request as policy-set evaluation gains fields to consume. Reused existing conventions rather than inventing new ones: `CapabilityClass` from `atlas.core.capabilities`, `validate_stable_identifier` from `atlas.modules.identity.domain.models`, the frozen-dataclass-with-`__post_init__`-validation shape already established by `approvals`/`authorization`. 33 new tests, one (or a parametrized group) per rule per the doc's own SS18 "unit tests for each rule" testing requirement, plus construction-validation and decision-invariant tests. `ruff format --check`, `ruff check`, `mypy` (full project), and the new test file all clean.
+- **Slice 2 -- versioned policy store + policy set resolution** (`domain/policy_set.py`, `application/policy_set_ports.py`, `adapters/policy_set_memory.py`): `PolicySetLayer` (9 layers, SS14, in the document's own order -- also this module's resolution order, general to specific), `PolicyLifecycleState` (10 states, SS15), `PolicySet`/`PolicySetScope`/`PolicySetResolutionScope`, and a pure `resolve_policy_sets` -- active-only, scope-matched, deterministically ordered. `rule_document_digest` is a content-addressed placeholder; actual rule content/schema is the evaluation-engine slice's job, not this one's. 15 new tests covering every layer's scope-matching behavior, all 10 lifecycle states, effective-window boundaries, ordering, and the in-memory repository's multi-version storage. `ruff format --check`, `ruff check`, `mypy` (full project), and both Policy Engine test files (46 total) clean.
 
 - **What this is**: `mcp/connectors/huawei_pacific/source-provenance.json` stated plainly that
   `oam_agent_status`, `error_code`, and `warranty_status` are real, confirmed OceanStor Pacific
