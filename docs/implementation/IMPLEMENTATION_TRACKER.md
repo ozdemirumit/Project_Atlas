@@ -4,16 +4,18 @@
 
 | Field | Value |
 | --- | --- |
-| Task ID | ATLAS-IMP-277 |
-| Title | Surface Huawei Pacific's oam_agent_status, error_code, and warranty_status node fields, closing the last of a self-directed post-mandate punch list (CI pgvector fix, ADR index rebuild, bundled-connector UI generalization, this) |
-| Status | Verified (backend, tool-verified with real toolchain) |
+| Task ID | ATLAS-IMP-278 |
+| Title | Build the four remaining zero-implementation subsystems (Policy Engine, Guardrails, Explainability, Runbook Engine) slice by slice, in dependency order, per user direction ("hepsini durmadan yap, sen karar ver") |
+| Status | In progress -- Policy Engine slice 1 of ~14 done |
 | Branch | `main` |
 | Pull Request | none (pushed directly to `main`; no PR tooling available in this environment) |
-| Governing Documents | ATLAS-003, ATLAS-020/021/022/047 (connector quarantine/promotion), `docs/adr/ADR-004`+ |
-| Last Updated | 2026-09-03 |
-| Next Action | The originally-scoped 5-vendor connector mandate, the App.tsx modularization, and the Postgres test-environment work are all complete; this self-directed punch list (274-277) closed every concrete, coding-agent-actionable gap a full-repository survey found. What remains -- pgvector's native Windows build (blocked on the user's own admin-elevated terminal), real connector promotion beyond quarantine (needs a human domain-owner/security review and non-production vendor credentials), and the two large unbuilt feature areas (ATLAS-045 Runbook Engine, ATLAS-046 Explainability, both fully-scoped Approved ADRs with zero implementation) -- are not something this agent can responsibly self-select into without a scoping conversation; ATLAS-045/046 in particular are substantial enough (their own multi-section architecture docs) to warrant asking the user which one to prioritize before starting. |
+| Governing Documents | ATLAS-025 (Policy Engine), ATLAS-047 (Guardrails), ATLAS-046 (Explainability), ATLAS-045 (Runbook Engine) |
+| Last Updated | 2026-09-04 |
+| Next Action | Continue Policy Engine slice 2 (versioned policy store + policy set layering/resolution), then the rest of the ~14-slice Policy Engine sequence, then Guardrails, then Explainability, then Runbook Engine -- the dependency order the docs themselves imply (see the published "Atlas Completion Roadmap" artifact for the full slice list per subsystem). Each slice gets its own commit and a short entry below rather than a full essay, matching the scale of ~60 total slices across all four subsystems. |
 
-### ATLAS-IMP-277 Scope and Verification
+### ATLAS-IMP-278 Scope and Verification
+
+- **Slice 1 -- Policy Engine decision domain model + non-overridable minimum** (`backend/src/atlas/modules/policy_engine/domain/models.py`): the `PolicyDecisionOutcome` (9 values, ATLAS-025 SS8), `NonOverridableRule` (10 fixed platform rules, SS10), `PolicyDecisionRequest`/`PolicyDecision`/`PolicyReason` domain types, and a pure `evaluate_non_overridable_minimum` / `evaluate_policy_decision` pair -- deliberately not the full SS7 input contract yet, only the fields the non-overridable evaluator actually reads; later slices extend the request as policy-set evaluation gains fields to consume. Reused existing conventions rather than inventing new ones: `CapabilityClass` from `atlas.core.capabilities`, `validate_stable_identifier` from `atlas.modules.identity.domain.models`, the frozen-dataclass-with-`__post_init__`-validation shape already established by `approvals`/`authorization`. 33 new tests, one (or a parametrized group) per rule per the doc's own SS18 "unit tests for each rule" testing requirement, plus construction-validation and decision-invariant tests. `ruff format --check`, `ruff check`, `mypy` (full project), and the new test file all clean.
 
 - **What this is**: `mcp/connectors/huawei_pacific/source-provenance.json` stated plainly that
   `oam_agent_status`, `error_code`, and `warranty_status` are real, confirmed OceanStor Pacific
