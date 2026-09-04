@@ -1,12 +1,12 @@
-"""ATLAS-025 Policy Engine domain contracts.
+"""ATLAS-025 Policy Engine decision domain contracts.
 
-This is the first vertical slice: the decision domain model plus a pure, deterministic
-evaluator for the ten fixed platform rules ATLAS-025 SS10 calls the "non-overridable minimum".
-There is no versioned policy store yet (a later slice) -- a request that clears every rule here
-resolves to ALLOW because no policy set exists to add further conditions. Policy is a control
-distinct from authentication and RBAC (ATLAS-025 SS4): this module does not decide whether an
-actor is authenticated or authorized for a scope, it only refuses to proceed when upstream
-context says either one failed.
+The decision outcome/reason/request model, plus a pure evaluator for the ten fixed platform
+rules ATLAS-025 SS10 calls the "non-overridable minimum" -- the floor every request must clear
+before `policy_engine.domain.policy_set` (versioned policy sets) and
+`policy_engine.domain.evaluation` (full SS9 precedence combination) are even consulted. Policy is
+a control distinct from authentication and RBAC (ATLAS-025 SS4): this module does not decide
+whether an actor is authenticated or authorized for a scope, it only refuses to proceed when
+upstream context says either one failed.
 """
 
 from __future__ import annotations
@@ -136,24 +136,37 @@ class PolicyDecisionRequest:
 
 @dataclass(frozen=True, slots=True)
 class PolicyReason:
-    """One entry in a decision's ordered reasons (ATLAS-025 SS8). Every reason in this slice
-    traces to a NonOverridableRule; a later slice adds a policy-rule-reference variant once a
-    versioned policy set exists to reference."""
+    """One entry in a decision's ordered reasons (ATLAS-025 SS8). Exactly one of
+    non_overridable_rule or policy_rule_reference is populated for a reason driven by a rule;
+    both are None for a deny-by-default reason (no policy rule granted the operation at all --
+    ATLAS-025 SS3's "enforce deny-by-default behavior")."""
 
-    rule_reference: NonOverridableRule
     summary: str
+    non_overridable_rule: NonOverridableRule | None = None
+    policy_rule_reference: str | None = None
 
     def __post_init__(self) -> None:
         if not self.summary.strip():
             raise ValueError("a policy reason requires a summary")
+        if self.non_overridable_rule is not None and self.policy_rule_reference is not None:
+            raise ValueError(
+                "a reason cannot reference both a non-overridable rule and a policy rule"
+            )
 
 
 @dataclass(frozen=True, slots=True)
 class PolicyDecision:
-    """ATLAS-025 SS8's decision record. This slice only ever produces an ALLOW (empty reasons,
-    no non-overridable rule references) or a DENY driven entirely by NonOverridableRule
-    violations -- versioned-policy-set evaluation, declared conditions, validity intervals, and
-    the seven REQUIRE_* outcomes are later slices."""
+    """ATLAS-025 SS8's decision record.
+
+    `outcome` is the single most restrictive result (DENY, else the most restrictive matched
+    REQUIRE_* outcome by this module's own documented ranking -- SS8 lists nine outcomes but does
+    not rank the seven REQUIRE_* variants against each other, so this module picks one:
+    REQUIRE_MANUAL_EXECUTION > REQUIRE_STEP_UP_AUTHENTICATION > REQUIRE_CHANGE_WINDOW >
+    REQUIRE_CHANGE_RECORD > REQUIRE_ELEVATED_ROLE > REQUIRE_ADDITIONAL_EVIDENCE >
+    REQUIRE_APPROVAL, else ALLOW). SS9's "multiple conditions are combined; one satisfied
+    condition does not remove another" is honored by `additional_conditions`, which carries every
+    other distinct REQUIRE_* outcome that also matched -- nothing is silently dropped just
+    because it was not the most restrictive."""
 
     decision_id: str
     decided_at: datetime
@@ -164,6 +177,8 @@ class PolicyDecision:
     actor_id: str
     operation_id: str
     non_overridable_rule_references: tuple[NonOverridableRule, ...]
+    evaluated_policy_set_versions: tuple[str, ...] = ()
+    additional_conditions: tuple[PolicyDecisionOutcome, ...] = ()
 
     def __post_init__(self) -> None:
         validate_stable_identifier(self.decision_id, "decision_id")
@@ -173,9 +188,17 @@ class PolicyDecision:
             raise ValueError("a deny decision requires at least one reason")
         if self.outcome.allowed and self.non_overridable_rule_references:
             raise ValueError("an allow decision cannot carry non-overridable rule references")
+        if self.outcome in (PolicyDecisionOutcome.ALLOW, PolicyDecisionOutcome.DENY) and (
+            self.additional_conditions
+        ):
+            raise ValueError("only a REQUIRE_* outcome can carry additional conditions")
+        if self.outcome in self.additional_conditions:
+            raise ValueError("the primary outcome must not repeat in additional_conditions")
+        if len(set(self.additional_conditions)) != len(self.additional_conditions):
+            raise ValueError("additional_conditions must not repeat an outcome")
 
 
-_NON_OVERRIDABLE_SUMMARIES: dict[NonOverridableRule, str] = {
+NON_OVERRIDABLE_RULE_SUMMARIES: dict[NonOverridableRule, str] = {
     NonOverridableRule.UNAUTHENTICATED_ACCESS: "The request is not authenticated.",
     NonOverridableRule.UNAUTHORIZED_SCOPE: "The actor is not authorized for the requested scope.",
     NonOverridableRule.UNKNOWN_CAPABILITY_CLASS: (
@@ -249,9 +272,12 @@ def evaluate_policy_decision(
     decision_id: str,
     decided_at: datetime,
 ) -> PolicyDecision:
-    """Slice-1 entry point: evaluates only the non-overridable minimum (SS10). A clean request
-    resolves to ALLOW here because no versioned policy set exists yet to add further conditions
-    -- a later slice inserts policy-set evaluation between this floor and the final outcome."""
+    """Evaluates only the non-overridable minimum (SS10) -- the floor every request must clear
+    before any versioned policy set is even consulted. A clean request resolves to ALLOW *from
+    this function alone*, which is correct only when nothing else is meant to run: the full
+    evaluator (`policy_engine.domain.evaluation.evaluate_policy`) calls this as its first step,
+    then goes on to policy-set evaluation and deny-by-default before producing a real decision --
+    use that, not this, wherever a policy set actually exists to evaluate."""
     violations = evaluate_non_overridable_minimum(request)
     if not violations:
         return PolicyDecision(
@@ -266,7 +292,7 @@ def evaluate_policy_decision(
             non_overridable_rule_references=(),
         )
     reasons = tuple(
-        PolicyReason(rule_reference=rule, summary=_NON_OVERRIDABLE_SUMMARIES[rule])
+        PolicyReason(non_overridable_rule=rule, summary=NON_OVERRIDABLE_RULE_SUMMARIES[rule])
         for rule in violations
     )
     return PolicyDecision(

@@ -260,7 +260,67 @@ def test_decision_rejects_an_allow_outcome_carrying_rule_references() -> None:
 
 def test_reason_rejects_a_blank_summary() -> None:
     with pytest.raises(ValueError, match="requires a summary"):
-        PolicyReason(rule_reference=NonOverridableRule.SECRET_IN_CONTEXT, summary="   ")
+        PolicyReason(non_overridable_rule=NonOverridableRule.SECRET_IN_CONTEXT, summary="   ")
+
+
+def test_reason_rejects_both_a_non_overridable_rule_and_a_policy_rule_reference() -> None:
+    with pytest.raises(ValueError, match="cannot reference both"):
+        PolicyReason(
+            summary="Example.",
+            non_overridable_rule=NonOverridableRule.SECRET_IN_CONTEXT,
+            policy_rule_reference="policy-set.example:v1#policy-rule.example",
+        )
+
+
+def test_decision_rejects_additional_conditions_on_an_allow_outcome() -> None:
+    with pytest.raises(ValueError, match="only a REQUIRE_\\* outcome"):
+        PolicyDecision(
+            decision_id="policy-decision.example",
+            decided_at=NOW,
+            outcome=PolicyDecisionOutcome.ALLOW,
+            reasons=(PolicyReason(summary="Example."),),
+            decision_request_id="policy-decision-request.example",
+            correlation_id="correlation.example",
+            actor_id="subject.example",
+            operation_id="operation.example",
+            non_overridable_rule_references=(),
+            additional_conditions=(PolicyDecisionOutcome.REQUIRE_APPROVAL,),
+        )
+
+
+def test_decision_rejects_the_primary_outcome_repeated_in_additional_conditions() -> None:
+    with pytest.raises(ValueError, match="must not repeat"):
+        PolicyDecision(
+            decision_id="policy-decision.example",
+            decided_at=NOW,
+            outcome=PolicyDecisionOutcome.REQUIRE_APPROVAL,
+            reasons=(PolicyReason(summary="Example."),),
+            decision_request_id="policy-decision-request.example",
+            correlation_id="correlation.example",
+            actor_id="subject.example",
+            operation_id="operation.example",
+            non_overridable_rule_references=(),
+            additional_conditions=(PolicyDecisionOutcome.REQUIRE_APPROVAL,),
+        )
+
+
+def test_decision_rejects_a_duplicated_additional_condition() -> None:
+    with pytest.raises(ValueError, match="must not repeat an outcome"):
+        PolicyDecision(
+            decision_id="policy-decision.example",
+            decided_at=NOW,
+            outcome=PolicyDecisionOutcome.REQUIRE_CHANGE_WINDOW,
+            reasons=(PolicyReason(summary="Example."),),
+            decision_request_id="policy-decision-request.example",
+            correlation_id="correlation.example",
+            actor_id="subject.example",
+            operation_id="operation.example",
+            non_overridable_rule_references=(),
+            additional_conditions=(
+                PolicyDecisionOutcome.REQUIRE_APPROVAL,
+                PolicyDecisionOutcome.REQUIRE_APPROVAL,
+            ),
+        )
 
 
 def test_outcome_allowed_property_is_true_only_for_allow() -> None:

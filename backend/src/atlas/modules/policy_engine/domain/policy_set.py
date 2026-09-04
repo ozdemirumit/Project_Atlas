@@ -1,9 +1,9 @@
 """ATLAS-025 SS14/SS15: versioned policy sets and their deterministic resolution.
 
 This slice adds the store's domain shape and a pure resolution function -- given every known
-policy set and one request's scope, which sets are in play, in what order. It does not evaluate
-any rule content: `rule_document_digest` is a content-addressed placeholder until the evaluation
-engine slice defines what a rule actually looks like.
+policy set and one request's scope, which sets are in play, in what order. Resolution itself
+still does not evaluate any rule content -- that is `policy_engine.domain.evaluation`'s job, once
+resolution has already narrowed candidates down to the ones actually in play.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from datetime import datetime
 from enum import StrEnum
 
 from atlas.modules.identity.domain.models import validate_stable_identifier
+from atlas.modules.policy_engine.domain.rule import PolicyRule
 
 
 class PolicySetLayer(StrEnum):
@@ -73,6 +74,7 @@ class PolicySet:
     rule_document_digest: str
     effective_from: datetime
     effective_until: datetime | None = None
+    rules: tuple[PolicyRule, ...] = ()
 
     def __post_init__(self) -> None:
         validate_stable_identifier(self.set_id, "set_id")
