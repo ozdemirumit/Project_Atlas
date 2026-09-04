@@ -6,12 +6,12 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-278 |
 | Title | Build the four remaining zero-implementation subsystems (Policy Engine, Guardrails, Explainability, Runbook Engine) slice by slice, in dependency order, per user direction ("hepsini durmadan yap, sen karar ver") |
-| Status | In progress -- Policy Engine (ATLAS-025) complete, 14/14 slices. Guardrails (ATLAS-047) complete, 16/16 slices. Explainability (ATLAS-046) complete, 15/15 slices. Runbook Engine (ATLAS-045) not yet started. |
+| Status | In progress -- Policy Engine (ATLAS-025) complete, 14/14 slices. Guardrails (ATLAS-047) complete, 16/16 slices. Explainability (ATLAS-046) complete, 15/15 slices. Runbook Engine (ATLAS-045) slice 1/~18. |
 | Branch | `main` |
 | Pull Request | none (pushed directly to `main`; no PR tooling available in this environment) |
 | Governing Documents | ATLAS-025 (Policy Engine), ATLAS-047 (Guardrails), ATLAS-046 (Explainability), ATLAS-045 (Runbook Engine) |
 | Last Updated | 2026-09-04 |
-| Next Action | Start Runbook Engine (ATLAS-045), the last of the four subsystems -- read the full doc, then build slice by slice in dependency order, expected to reuse the `knowledge` module's existing draft-review-decision-publication governance-chain scaffold as its primary architectural precedent (per the earlier research agent's findings), with the same rigor (ruff format/check, mypy bare, targeted pytest, tracker update, commit+push) used for all 45 slices completed so far across the first three subsystems. |
+| Next Action | Continue Runbook Engine (ATLAS-045) slice 2 (structured runbook contract / step contract), following the doc's own section order (SS4/SS7/SS19 identity-class-lifecycle done in slice 1; next: SS8 structured contract, SS9 step contract, SS10 branch/decision, SS11 preconditions, SS12 risk/impact/duration, SS13 rollback/recovery, SS17 validation findings, SS18 review/approval, SS20 applicability matching, SS21 retrieval/selection, SS22 interpretation/plan generation, SS23 dry-run, SS24-25 execution boundary/human handoff, SS26 deviation handling, SS27 outcome/improvement, SS29 audit). The `knowledge` module's evidence-draft chain (`evidence_draft.py`) was checked and found to be a much heavier, digest-obsessed pattern built for a specific protected-workflow-authorization flow -- not a fit for a pure governance/content object like a runbook, so this subsystem instead continues the simpler `@dataclass(frozen=True, slots=True)` + `validate_stable_identifier` convention already established across Policy Engine/Guardrails/Explainability. Reuses `atlas.core.capabilities.CapabilityClass` and `atlas.core.classification.DataClassification` rather than new enums. |
 
 ### ATLAS-IMP-278 Scope and Verification
 
