@@ -6,7 +6,7 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-278 |
 | Title | Build the four remaining zero-implementation subsystems (Policy Engine, Guardrails, Explainability, Runbook Engine) slice by slice, in dependency order, per user direction ("hepsini durmadan yap, sen karar ver") |
-| Status | In progress -- Policy Engine (ATLAS-025) complete, 14/14 slices. Guardrails (ATLAS-047) slice 1/~16. |
+| Status | In progress -- Policy Engine (ATLAS-025) complete, 14/14 slices. Guardrails (ATLAS-047) slice 2/~16. |
 | Branch | `main` |
 | Pull Request | none (pushed directly to `main`; no PR tooling available in this environment) |
 | Governing Documents | ATLAS-025 (Policy Engine), ATLAS-047 (Guardrails), ATLAS-046 (Explainability), ATLAS-045 (Runbook Engine) |
@@ -33,6 +33,7 @@
 ### ATLAS-047 Guardrails -- in progress
 
 - **Slice 1 -- invariant registry and decision contract** (`backend/src/atlas/modules/guardrails/domain/models.py`): `GuardrailClass` (SS7's four configuration postures), `GuardrailInvariant` (all 16 GRD-001 through GRD-016, using the document's own identifiers as enum values so a decision's `rule_id` can reference one directly), a summary for each, `GuardrailOutcome` (SS26's six outcomes), and `GuardrailDecision` (SS26's exact decision contract). Enforces one real, defensible invariant of its own: an `INVARIANT`-class decision can only be `pass` or `block` -- SS7's own table says an invariant "must always hold; violation stops operation," which is inherently binary, not a five-outcome spectrum. 24 tests, including exhaustive coverage of every invariant having a summary and the GRD-NNN identifier set matching the document exactly. `ruff format --check`, `ruff check`, `mypy` (full project) clean.
+- **Slice 2 -- instruction hierarchy** (`domain/instruction_hierarchy.py`): `InstructionSource` (SS9's six-level precedence as an `IntEnum`, 1=platform invariant through 6=retrieved/tool content), `effective_source` (always returns the real governed channel, never a claimed one -- there is no code path where a claim wins, which is the control itself), and `can_override`/`require_no_precedence_violation` enforcing "lower-level content cannot modify higher-level controls." **Caught a real bug via its own test suite**: the first `can_override` draft had the comparison direction backwards (`acting_source.value >= target_source.value`, which would have let *weaker* sources override *stronger* ones -- the exact opposite of SS9); 6 of 12 tests failed immediately, the fix (`<=`) made all 35 guardrails tests pass. Left as a visible example of why every slice runs its full test suite before being called done, not after being trusted on read-through alone. `ruff format --check`, `ruff check`, `mypy` (full project) clean.
 
 - **What this is**: `mcp/connectors/huawei_pacific/source-provenance.json` stated plainly that
   `oam_agent_status`, `error_code`, and `warranty_status` are real, confirmed OceanStor Pacific
