@@ -6,7 +6,7 @@
 | --- | --- |
 | Task ID | ATLAS-IMP-278 |
 | Title | Build the four remaining zero-implementation subsystems (Policy Engine, Guardrails, Explainability, Runbook Engine) slice by slice, in dependency order, per user direction ("hepsini durmadan yap, sen karar ver") |
-| Status | In progress -- Policy Engine (ATLAS-025) complete, 14/14 slices. Guardrails (ATLAS-047) complete, 16/16 slices. Explainability (ATLAS-046) slice 1/~15. |
+| Status | In progress -- Policy Engine (ATLAS-025) complete, 14/14 slices. Guardrails (ATLAS-047) complete, 16/16 slices. Explainability (ATLAS-046) slice 2/~15. |
 | Branch | `main` |
 | Pull Request | none (pushed directly to `main`; no PR tooling available in this environment) |
 | Governing Documents | ATLAS-025 (Policy Engine), ATLAS-047 (Guardrails), ATLAS-046 (Explainability), ATLAS-045 (Runbook Engine) |
@@ -52,6 +52,7 @@
 ### ATLAS-046 Explainability -- in progress
 
 - **Slice 1 -- explanation object and claim-to-evidence mapping** (`backend/src/atlas/modules/explainability/domain/models.py`): `Explanation` (SS6's object, every field except renderer/model/template versions -- deferred until a rendering pipeline exists to version), `ExplanationClaim` (SS8's stable claim IDs, `is_evidence_gap` making "missing evidence is a gap, not an empty citation" a first-class checkable property), `EvidenceLink` (SS8's source/version/target/timestamp/authority/applicability). Reuses Guardrails' `ClaimType`/`ConfidenceLevel` (slice 7 of ATLAS-047) rather than inventing a second taxonomy for the same idea -- direct continuity between the two subsystems. `Explanation.is_stale` takes `at` explicitly rather than reading the wall clock, matching every other freshness check already established in this codebase (e.g. `PolicySet.is_active_at`). 16 new tests. `ruff format --check`, `ruff check`, `mypy` (full project) clean.
+- **Slice 2 -- evidence access and progressive inspection** (`domain/evidence_access.py`): `EvidenceInspectionLevel` (SS9's five progressive levels) and `is_inspection_permitted`, which caps a request at the grant's own maximum and additionally gates `ORIGINAL_ARTIFACT` behind its own explicit flag -- SS9: "it does not expose entire restricted documents merely to support one claim" is a stricter, separate gate from the ordinary level order, not something a high enough `maximum_permitted_level` alone should satisfy. `filter_authorized_evidence` (SS23: filtered by current user/purpose/scope) silently excludes an unauthorized or ungranted reference rather than surfacing it as an error -- SS23's own "counts, labels, snippets, graph paths, and error messages do not leak hidden data" applied to the filtering mechanism itself. Reuses `guardrails.input_guardrails.detect_secret_patterns` for the prohibited-content check, a third reuse of that same detector. 14 new tests. `ruff format --check`, `ruff check`, `mypy` (full project), and both explainability test files (30 total) clean.
 
 - **What this is**: `mcp/connectors/huawei_pacific/source-provenance.json` stated plainly that
   `oam_agent_status`, `error_code`, and `warranty_status` are real, confirmed OceanStor Pacific
