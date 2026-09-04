@@ -103,6 +103,7 @@ class PolicyDecisionRequest:
     actor_environment_id: str
     target_organization_id: str
     target_environment_id: str
+    target_id: str
     capability_class: CapabilityClass | None
     connector_trust: ConnectorTrustState
     approval_status: PolicyApprovalStatus
@@ -123,6 +124,7 @@ class PolicyDecisionRequest:
         validate_stable_identifier(self.actor_environment_id, "actor_environment_id")
         validate_stable_identifier(self.target_organization_id, "target_organization_id")
         validate_stable_identifier(self.target_environment_id, "target_environment_id")
+        validate_stable_identifier(self.target_id, "target_id")
         if self.requested_at.tzinfo is None:
             raise ValueError("requested_at must be timezone-aware")
 

@@ -42,6 +42,7 @@ def request(**overrides: object) -> PolicyDecisionRequest:
         "actor_environment_id": "environment.production",
         "target_organization_id": "organization.example",
         "target_environment_id": "environment.production",
+        "target_id": "target.example",
         "capability_class": CapabilityClass.C1_READ_ONLY,
         "connector_trust": ConnectorTrustState.TRUSTED,
         "approval_status": PolicyApprovalStatus.NOT_REQUIRED,
