@@ -13,6 +13,8 @@ vocabulary means extending that request type first, in its own reviewed slice.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -103,3 +105,28 @@ class PolicyRule:
 
     def matches(self, request: PolicyDecisionRequest) -> bool:
         return all(condition.matches(request) for condition in self.conditions)
+
+
+def compute_rule_document_digest(rules: tuple[PolicyRule, ...]) -> str:
+    """A canonical SHA-256 digest of one rule set's content, independent of Python object
+    identity -- the same rules in the same order always produce the same digest, matching how
+    this project's other content-addressed evidence digests are computed (e.g. the vendor
+    connector clients' response digests)."""
+    canonical = [
+        {
+            "rule_id": rule.rule_id,
+            "effect": rule.effect.value,
+            "conditions": [
+                {
+                    "field": condition.field.value,
+                    "operator": condition.operator.value,
+                    "values": list(condition.values),
+                }
+                for condition in rule.conditions
+            ],
+            "summary": rule.summary,
+        }
+        for rule in rules
+    ]
+    encoded = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
