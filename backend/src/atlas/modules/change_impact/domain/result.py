@@ -8,7 +8,10 @@ carry a `prior_version_id`, every later version requires one. Beyond that shared
 aggregator also cross-checks that every nested analysis was actually computed for the same change
 request (and, where a single target applies, a target the change request actually names) --
 nothing here established that guarantee for the aggregator's caller, so the aggregator enforces it
-itself.
+itself. `classification`/`retention_note` were added after SS28 (security and privacy) was read in
+full -- "change details and impact reports carry classification and retention" -- extending this
+still-in-progress subsystem's own earlier aggregator slice, the same way Policy Engine's slice 5
+broadened `PolicyDecisionRequest` mid-subsystem when a later section revealed a real gap.
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
+from atlas.core.classification import DataClassification
 from atlas.modules.change_impact.domain.data_protection_service import (
     DataProtectionRecoverabilityAnalysis,
     ServiceImpactRecord,
@@ -136,6 +140,8 @@ class ImpactResult:
     component_versions: ImpactComponentVersions
     supersession_state: ImpactResultSupersessionState
     superseded_by_result_id: str | None
+    classification: DataClassification
+    retention_note: str
 
     def __post_init__(self) -> None:
         validate_stable_identifier(self.result_id, "result_id")
@@ -159,6 +165,11 @@ class ImpactResult:
             raise ValueError("an impact result requires a rollback and recovery impact note")
         if not self.overall_confidence.strip():
             raise ValueError("an impact result requires an overall confidence")
+        if not self.retention_note.strip():
+            raise ValueError(
+                'an impact result requires a retention note -- SS28: "change details and '
+                'impact reports carry classification and retention"'
+            )
 
         request_id = self.change_request.request_id
         for label, change_request_id in (

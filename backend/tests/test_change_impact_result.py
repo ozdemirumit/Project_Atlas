@@ -419,6 +419,8 @@ def impact_result(**overrides: object) -> ImpactResult:
         ),
         "supersession_state": ImpactResultSupersessionState.CURRENT,
         "superseded_by_result_id": None,
+        "classification": DataClassification.INTERNAL,
+        "retention_note": "Retained 180 days per infrastructure change record policy.",
     }
     defaults.update(overrides)
     return ImpactResult(**defaults)  # type: ignore[arg-type]
@@ -499,6 +501,11 @@ def test_impact_result_version_2_requires_prior_version_id() -> None:
 def test_impact_result_superseded_requires_successor_id() -> None:
     with pytest.raises(ValueError, match="requires the result that superseded it"):
         impact_result(supersession_state=ImpactResultSupersessionState.SUPERSEDED)
+
+
+def test_impact_result_requires_retention_note() -> None:
+    with pytest.raises(ValueError, match="requires a retention note"):
+        impact_result(retention_note="")
 
 
 def test_unknown_factor_requires_underestimation_note() -> None:
