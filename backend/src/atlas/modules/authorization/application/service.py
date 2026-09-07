@@ -10,6 +10,8 @@ from atlas.modules.authorization.domain.models import (
     AuthorizationDecision,
     AuthorizationRequest,
     DecisionOutcome,
+    EffectiveAccessPreview,
+    EffectiveGrant,
     PermissionDefinition,
     RoleAssignment,
     RoleDefinition,
@@ -114,6 +116,60 @@ class AuthorizationService:
         )
         await self._audit_decision(request, decision)
         return decision
+
+    async def effective_access_preview(
+        self,
+        subject_id: str,
+        *,
+        requested_by: str,
+        correlation_id: str,
+        at: datetime | None = None,
+    ) -> EffectiveAccessPreview:
+        """SS21: "What can this subject do, and where?" -- SS26's MVP-included
+        "effective-access preview." Every currently-active assignment for `subject_id`,
+        regardless of which role a caller happens to be evaluating, grouped by scope. Since this
+        only ever returns the named subject's own grants, it cannot leak an unrelated resource
+        name the way a raw permission-check probe could (SS23's enumeration-control concern)."""
+        generated_at = at if at is not None else self._clock()
+        grants = tuple(
+            EffectiveGrant(
+                role_reference=self._roles[assignment.role_id].version_reference,
+                scope_reference=assignment.scope.reference,
+                assignment_reference=assignment.version_reference,
+                permission_ids=self._roles[assignment.role_id].permissions,
+                expires_at=assignment.expires_at,
+            )
+            for assignment in self._assignments
+            if assignment.subject_id == subject_id
+            and assignment.role_id in self._roles
+            and assignment.is_active(generated_at)
+        )
+        preview = EffectiveAccessPreview(
+            subject_id=subject_id, generated_at=generated_at, grants=grants
+        )
+        await self._audit_sink.record(
+            AuditRecord(
+                event_id=f"evt_{uuid4().hex}",
+                event_type="atlas.authorization.effective_access.previewed",
+                schema_version="1.0",
+                producer="project-atlas-api",
+                producer_version=__version__,
+                occurred_at=generated_at,
+                correlation_id=correlation_id,
+                subject_id=requested_by,
+                actor_type="human",
+                authentication_method=None,
+                assurance_level=None,
+                permission_id=None,
+                resource_type="resource.authorization.effective-access",
+                scope_reference=None,
+                decision_id=None,
+                outcome="succeeded",
+                result_code="effective_access_previewed",
+                target_subject_id=subject_id,
+            )
+        )
+        return preview
 
     async def _audit_decision(
         self, request: AuthorizationRequest, decision: AuthorizationDecision

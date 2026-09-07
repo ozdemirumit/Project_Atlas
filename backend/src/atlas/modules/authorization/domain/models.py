@@ -140,3 +140,35 @@ class AuthorizationDecision:
     @property
     def allowed(self) -> bool:
         return self.outcome is DecisionOutcome.ALLOWED
+
+
+@dataclass(frozen=True, slots=True)
+class EffectiveGrant:
+    """One active role assignment contributing to a subject's effective access, as returned by
+    SS26's "effective-access preview" -- SS21's first preview direction, "what can this subject
+    do, and where?" answered scope by scope."""
+
+    role_reference: str
+    scope_reference: str
+    assignment_reference: str
+    permission_ids: frozenset[str]
+    expires_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class EffectiveAccessPreview:
+    subject_id: str
+    generated_at: datetime
+    grants: tuple[EffectiveGrant, ...]
+
+    def __post_init__(self) -> None:
+        validate_stable_identifier(self.subject_id, "subject_id")
+        if self.generated_at.tzinfo is None:
+            raise ValueError("generated_at must be timezone-aware")
+
+    @property
+    def all_permission_ids(self) -> frozenset[str]:
+        result: frozenset[str] = frozenset()
+        for grant in self.grants:
+            result |= grant.permission_ids
+        return result

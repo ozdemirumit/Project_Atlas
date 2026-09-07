@@ -167,3 +167,51 @@ def test_role_cannot_reference_permission_outside_registry() -> None:
             assignments=(),
             audit_sink=CollectingAuditSink(),
         )
+
+
+@pytest.mark.asyncio
+async def test_effective_access_preview_lists_the_subjects_active_grant() -> None:
+    audit_sink = CollectingAuditSink()
+    preview = await service(audit_sink).effective_access_preview(
+        "subject.test.operator",
+        requested_by="subject.test.administrator",
+        correlation_id="cor_preview_test",
+    )
+
+    assert preview.subject_id == "subject.test.operator"
+    assert len(preview.grants) == 1
+    grant = preview.grants[0]
+    assert grant.role_reference == "role.test.viewer:v2"
+    assert grant.assignment_reference == "assignment.test.viewer:v3"
+    assert grant.scope_reference == scope().reference
+    assert preview.all_permission_ids == frozenset({"inventory.read"})
+    assert audit_sink.records[0].event_type == "atlas.authorization.effective_access.previewed"
+    assert audit_sink.records[0].target_subject_id == "subject.test.operator"
+    assert audit_sink.records[0].subject_id == "subject.test.administrator"
+
+
+@pytest.mark.asyncio
+async def test_effective_access_preview_excludes_an_expired_assignment() -> None:
+    audit_sink = CollectingAuditSink()
+    preview = await service(
+        audit_sink, expires_at=NOW - timedelta(minutes=1)
+    ).effective_access_preview(
+        "subject.test.operator",
+        requested_by="subject.test.administrator",
+        correlation_id="cor_preview_expired_test",
+    )
+
+    assert preview.grants == ()
+    assert preview.all_permission_ids == frozenset()
+
+
+@pytest.mark.asyncio
+async def test_effective_access_preview_is_empty_for_a_subject_with_no_assignments() -> None:
+    audit_sink = CollectingAuditSink()
+    preview = await service(audit_sink).effective_access_preview(
+        "subject.test.unrelated",
+        requested_by="subject.test.administrator",
+        correlation_id="cor_preview_unrelated_test",
+    )
+
+    assert preview.grants == ()
