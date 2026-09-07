@@ -22,4 +22,5 @@ regexes = [
   '''_WF_RT\w*_AUTH_(POLICY|PROFILE)_DIGEST''',
   '''key="final-tamper-001"''',
   '''key="claim-foreign-0001"''',
+  '''atlas-test-fixture-password-[a-z0-9-]+''',
 ]

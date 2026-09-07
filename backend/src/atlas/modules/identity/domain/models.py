@@ -21,6 +21,7 @@ class SubjectKind(StrEnum):
 
 class AuthenticationMethod(StrEnum):
     DEVELOPMENT = "development"
+    LOCAL = "local"
     LDAP = "ldap"
     OIDC = "oidc"
     SAML = "saml"

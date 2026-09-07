@@ -911,13 +911,20 @@ from atlas.modules.identity.adapters.api_credentials import InMemoryApiCredentia
 from atlas.modules.identity.adapters.development import DevelopmentIdentityProvider
 from atlas.modules.identity.adapters.directory import build_directory_identity_provider
 from atlas.modules.identity.adapters.identity_status import InMemoryIdentityStatusRepository
+from atlas.modules.identity.adapters.local_credentials import InMemoryLocalCredentialRepository
 from atlas.modules.identity.adapters.sessions import InMemorySessionRepository
 from atlas.modules.identity.adapters.workload_identities import (
     InMemoryWorkloadIdentityRepository,
 )
 from atlas.modules.identity.application.api_credentials import ApiCredentialService
+from atlas.modules.identity.application.composite import CompositeIdentityProvider
 from atlas.modules.identity.application.governance import IdentityGovernanceService
 from atlas.modules.identity.application.identity_status_ports import IdentityStatusRepository
+from atlas.modules.identity.application.local_credential_ports import LocalCredentialRepository
+from atlas.modules.identity.application.local_credentials import (
+    LocalCredentialIdentityProvider,
+    LocalCredentialService,
+)
 from atlas.modules.identity.application.ports import IdentityProvider
 from atlas.modules.identity.application.service import IdentityService
 from atlas.modules.identity.application.sessions import SessionService
@@ -3357,6 +3364,8 @@ def create_app(
     api_credential_service: ApiCredentialService | None = None,
     identity_governance_service: IdentityGovernanceService | None = None,
     identity_status_repository: IdentityStatusRepository | None = None,
+    local_credential_repository: LocalCredentialRepository | None = None,
+    local_credential_service: LocalCredentialService | None = None,
     workload_identity_service: WorkloadIdentityService | None = None,
     release_preflight_service: ReleasePreflightService | None = None,
     deployment_configuration_service: DeploymentConfigurationService | None = None,
@@ -3529,12 +3538,28 @@ def create_app(
         site_id="site.local",
     )
     resolved_audit_sink: AuditSink = resolved_security_export_service
+    resolved_local_credential_repository = (
+        local_credential_repository or InMemoryLocalCredentialRepository()
+    )
+    resolved_local_credential_service = local_credential_service or LocalCredentialService(
+        repository=resolved_local_credential_repository,
+        audit_sink=resolved_audit_sink,
+    )
     if identity_provider is not None:
         resolved_identity_provider = identity_provider
-    elif resolved_settings.directory_identity_enabled:
-        resolved_identity_provider = build_directory_identity_provider(resolved_settings)
     else:
-        resolved_identity_provider = DevelopmentIdentityProvider(resolved_settings)
+        if resolved_settings.directory_identity_enabled:
+            base_identity_provider: IdentityProvider = build_directory_identity_provider(
+                resolved_settings
+            )
+        else:
+            base_identity_provider = DevelopmentIdentityProvider(resolved_settings)
+        resolved_identity_provider = CompositeIdentityProvider(
+            (
+                LocalCredentialIdentityProvider(resolved_local_credential_service),
+                base_identity_provider,
+            )
+        )
     resolved_identity_status_repository = (
         identity_status_repository or InMemoryIdentityStatusRepository()
     )
@@ -10112,6 +10137,7 @@ def create_app(
         app.state.audit_sink = resolved_audit_sink
         app.state.security_export_service = resolved_security_export_service
         app.state.identity_service = identity_service
+        app.state.local_credential_service = resolved_local_credential_service
         app.state.session_service = resolved_session_service
         app.state.api_credential_service = resolved_api_credential_service
         app.state.identity_governance_service = resolved_identity_governance_service
