@@ -34,6 +34,12 @@ from atlas.modules.authorization.application.bootstrap import (
     AI_PROTECTED_MODEL_INVOCATION_CREATE,
     AI_PROTECTED_MODEL_INVOCATION_READ,
 )
+from atlas.modules.guardrails.application.audit import (
+    GuardrailAuditEventKind,
+    record_guardrail_event,
+)
+from atlas.modules.guardrails.domain.input_guardrails import detect_secret_patterns
+from atlas.modules.guardrails.domain.prompt_injection import detect_injection_signals
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
@@ -202,6 +208,9 @@ class GovernedProtectedModelInvocationService:
             raise ProtectedModelInvocationError(
                 "protected_model_invocation_context_integrity_failed"
             )
+        await self._enforce_input_guardrails(
+            package, actor=actor, invocation_id=invocation_id, correlation_id=correlation_id
+        )
         expires_at = min(
             context.record.expires_at, now + timedelta(minutes=policy.retention_minutes)
         )
@@ -234,6 +243,9 @@ class GovernedProtectedModelInvocationService:
             raise ProtectedModelInvocationUncertainError(
                 "protected_model_invocation_outcome_uncertain"
             ) from error
+        await self._enforce_output_guardrails(
+            draft, actor=actor, invocation_id=invocation_id, correlation_id=correlation_id
+        )
         record = ProtectedModelInvocationRecord(
             invocation_id=invocation_id,
             schema_version=INVOCATION_RECORD_SCHEMA,
@@ -601,6 +613,88 @@ class GovernedProtectedModelInvocationService:
                 result_code=result_code,
                 target_metadata=(),
             )
+        )
+
+    async def _enforce_input_guardrails(
+        self,
+        package: ProtectedModelContextPackage,
+        *,
+        actor: AuthenticatedSubject,
+        invocation_id: str,
+        correlation_id: str,
+    ) -> None:
+        """ATLAS-047 SS10/SS11/SS13: this is the one real, HTTP-reachable model-invocation path
+        in this codebase (`GovernedProtectedModelInvocationService`); Guardrails' deterministic
+        secret and prompt-injection detectors run against every text field the assembled context
+        actually carries to the model -- the caller-provided `untrusted_objective` and every
+        retrieved evidence unit's content -- before that context ever reaches
+        `TrustedProtectedModelGateway.invoke`. A finding denies the invocation outright rather
+        than attempting to sanitize; SS11's own framing is that detection here is defense in
+        depth, not proof of safety, so a positive match is treated as disqualifying, not as
+        something to strip and continue."""
+        findings: list[str] = []
+        for text in (
+            package.untrusted_objective,
+            *(unit.content for unit in package.evidence_units),
+        ):
+            findings.extend(detect_secret_patterns(text))
+            findings.extend(detect_injection_signals(text))
+        if not findings:
+            return
+        await self._audit_guardrail_denial(
+            actor=actor,
+            invocation_id=invocation_id,
+            correlation_id=correlation_id,
+            findings=tuple(dict.fromkeys(findings)),
+        )
+        raise ProtectedModelInvocationError("protected_model_invocation_guardrail_denied")
+
+    async def _enforce_output_guardrails(
+        self,
+        draft: ProtectedModelResponseDraft,
+        *,
+        actor: AuthenticatedSubject,
+        invocation_id: str,
+        correlation_id: str,
+    ) -> None:
+        """ATLAS-047 SS18: "the same shapes that must never enter a prompt must also never leave
+        one." Scans the model's own response summary for the same secret and injection-residue
+        patterns before it is ever persisted or returned to the caller."""
+        findings = (
+            *detect_secret_patterns(draft.summary),
+            *detect_injection_signals(draft.summary),
+        )
+        if not findings:
+            return
+        await self._audit_guardrail_denial(
+            actor=actor,
+            invocation_id=invocation_id,
+            correlation_id=correlation_id,
+            findings=tuple(dict.fromkeys(findings)),
+        )
+        raise ProtectedModelInvocationError("protected_model_invocation_guardrail_denied")
+
+    async def _audit_guardrail_denial(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        invocation_id: str,
+        correlation_id: str,
+        findings: tuple[str, ...],
+    ) -> None:
+        await record_guardrail_event(
+            self._audit_sink,
+            event_kind=GuardrailAuditEventKind.BLOCK,
+            rule_or_incident_reference=invocation_id,
+            actor_identity=actor.subject_id,
+            is_automation=False,
+            outcome="denied",
+            detail_references=findings,
+            occurred_at=self._clock(),
+            correlation_id=correlation_id,
+            event_id=f"evt_{uuid4().hex}",
+            producer="project-atlas-api",
+            producer_version=__version__,
         )
 
     @classmethod
