@@ -39,6 +39,7 @@ ITSM_INTEGRATION_RETIRE = "itsm.integrations.retire"
 ITSM_SANDBOX_CONFORMANCE_READ = "itsm.integrations.sandbox-conformance.read"
 ITSM_SANDBOX_CONFORMANCE_CREATE = "itsm.integrations.sandbox-conformance.create"
 ITSM_SANDBOX_ONBOARDING_READ = "itsm.integrations.sandbox-onboarding.read"
+ITSM_DISPATCH_AUTHORIZATION_CREATE = "itsm.integrations.dispatch-authorizations.create"
 AI_GROUNDED_QUERY_CREATE = "ai.grounded-query.create"
 AI_MODEL_LIFECYCLE_ADMINISTER = "ai.model-lifecycle.administer"
 CONVERSATION_READ = "conversation.read"
@@ -177,6 +178,7 @@ BOOTSTRAP_PLAN_READ = "platform.bootstrap-plan.read"
 BOOTSTRAP_STATE_READ = "platform.bootstrap-state.read"
 BOOTSTRAP_STATE_MANAGE = "platform.bootstrap-state.manage"
 BOOTSTRAP_INVALIDATION_PREVIEW = "platform.bootstrap-invalidation.preview"
+BOOTSTRAP_ROLLBACK_MANAGE = "platform.bootstrap-rollback.manage"
 SUPPORT_BUNDLE_PREVIEW = "support.bundle.preview"
 SUPPORT_BUNDLE_EXPORT = "support.bundle.export"
 BACKUP_LOGICAL_PREVIEW = "backup.logical.preview"
@@ -321,6 +323,7 @@ CONNECTOR_BOUNDED_INVOCATION_READ = "connectors.bounded-invocations.read"
 CONNECTOR_INVOCATION_EVIDENCE_CREATE = "connectors.invocation-evidence.create"
 CONNECTOR_INVOCATION_EVIDENCE_READ = "connectors.invocation-evidence.read"
 KNOWLEDGE_EMBEDDING_MODEL_LIFECYCLE_ADMINISTER = "knowledge.embedding-model-lifecycle.administer"
+KNOWLEDGE_SOURCE_REGISTRATION_ADMINISTER = "knowledge.source-registration.administer"
 KNOWLEDGE_EVIDENCE_DRAFT_CREATE = "knowledge.operational-evidence-drafts.create"
 KNOWLEDGE_EVIDENCE_DRAFT_READ = "knowledge.operational-evidence-drafts.read"
 KNOWLEDGE_DRAFT_REVIEW_REQUEST_CREATE = "knowledge.operational-review-requests.create"
@@ -413,7 +416,19 @@ RECOMMENDATION_CORRECTION_RESUBMISSION_CREATE = "recommendation.correction-resub
 RECOMMENDATION_CORRECTION_RESUBMISSION_READ = "recommendation.correction-resubmissions.read"
 RECOMMENDATION_FINAL_DISPOSITION_CREATE = "recommendation.final-dispositions.create"
 RECOMMENDATION_FINAL_DISPOSITION_READ = "recommendation.final-dispositions.read"
+RECOMMENDATION_OUTCOME_RECORD = "recommendation.outcomes.record"
+RECOMMENDATION_OUTCOME_READ = "recommendation.outcomes.read"
 STORAGE_HEALTH_READ = "storage.health.read"
+KNOWLEDGE_FEEDBACK_SUBMIT = "knowledge.feedback.submit"
+KNOWLEDGE_FEEDBACK_TRIAGE = "knowledge.feedback.triage"
+KNOWLEDGE_FEEDBACK_RESOLVE = "knowledge.feedback.resolve"
+KNOWLEDGE_REVIEW_EXPIRY_SCHEDULE = "knowledge.review-expiry.schedule"
+KNOWLEDGE_REVIEW_EXPIRY_RENEW = "knowledge.review-expiry.renew"
+KNOWLEDGE_REVIEW_EXPIRY_OWNER_ABSENCE_RESOLVE = "knowledge.review-expiry.owner-absence-resolve"
+KNOWLEDGE_DELETION_LEGAL_HOLD_PLACE = "knowledge.deletion-legal-hold.place"
+KNOWLEDGE_DELETION_LEGAL_HOLD_RELEASE = "knowledge.deletion-legal-hold.release"
+KNOWLEDGE_DELETION_LEGAL_HOLD_REQUEST = "knowledge.deletion-legal-hold.request"
+KNOWLEDGE_DELETION_LEGAL_HOLD_COMPLETE = "knowledge.deletion-legal-hold.complete"
 DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
 SECURITY_AUDITOR_ROLE_ID = "role.security-auditor"
@@ -570,6 +585,13 @@ def itsm_integration_permission_definitions() -> tuple[PermissionDefinition, ...
             permission_id=ITSM_SANDBOX_ONBOARDING_READ,
             description="Read exact-profile ITSM sandbox adapter onboarding readiness.",
         ),
+        PermissionDefinition(
+            permission_id=ITSM_DISPATCH_AUTHORIZATION_CREATE,
+            description=(
+                "Compose an exact profile, onboarding readiness, and accepted human handoff "
+                "review into one outbound dispatch authorization decision."
+            ),
+        ),
     )
 
 
@@ -707,6 +729,17 @@ def bootstrap_invalidation_scope(organization_id: str, environment: str) -> Reso
         domain_id="domain.platform",
         resource_id="resource.platform.bootstrap-invalidation",
         capability_class=CapabilityClass.C0_INFORMATIONAL,
+    )
+
+
+def bootstrap_rollback_scope(organization_id: str, environment: str) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.platform",
+        resource_id="resource.platform.bootstrap-rollback",
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
     )
 
 
@@ -1275,6 +1308,50 @@ def ai_model_lifecycle_scope(organization_id: str, environment: str) -> Resource
         domain_id="domain.ai",
         resource_id="resource.ai.model-lifecycle",
         capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+def knowledge_source_registration_scope(organization_id: str, environment: str) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.knowledge",
+        resource_id="resource.knowledge.source-registration",
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+def knowledge_feedback_scope(organization_id: str, environment: str) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.knowledge",
+        resource_id="resource.knowledge.feedback",
+        capability_class=CapabilityClass.C3_CONTROLLED_CHANGE,
+    )
+
+
+def knowledge_review_expiry_scope(organization_id: str, environment: str) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.knowledge",
+        resource_id="resource.knowledge.review-expiry",
+        capability_class=CapabilityClass.C3_CONTROLLED_CHANGE,
+    )
+
+
+def knowledge_deletion_legal_hold_scope(organization_id: str, environment: str) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.knowledge",
+        resource_id="resource.knowledge.deletion-legal-hold",
+        capability_class=CapabilityClass.C4_SERVICE_IMPACTING,
     )
 
 
@@ -2328,6 +2405,19 @@ def recommendation_scope(organization_id: str, environment: str) -> ResourceScop
     )
 
 
+def recommendation_outcome_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.recommendation",
+        resource_id="resource.recommendation.outcomes",
+        capability_class=capability_class,
+    )
+
+
 def approval_scope(
     organization_id: str, environment: str, capability_class: CapabilityClass
 ) -> ResourceScope:
@@ -2858,6 +2948,10 @@ def build_development_authorization_service(
             description="Preview checkpoint invalidation caused by exact bootstrap input drift.",
         ),
         PermissionDefinition(
+            permission_id=BOOTSTRAP_ROLLBACK_MANAGE,
+            description="Plan a release rollback and record a bounded rollback attempt.",
+        ),
+        PermissionDefinition(
             permission_id=SUPPORT_BUNDLE_PREVIEW,
             description="Preview one bounded local support bundle without collecting host files.",
         ),
@@ -3334,6 +3428,10 @@ def build_development_authorization_service(
             ),
         ),
         PermissionDefinition(
+            permission_id=KNOWLEDGE_SOURCE_REGISTRATION_ADMINISTER,
+            description="Register a knowledge source and transition its governed lifecycle.",
+        ),
+        PermissionDefinition(
             permission_id=KNOWLEDGE_EVIDENCE_DRAFT_CREATE,
             description="Create one governed non-retrievable operational evidence draft.",
         ),
@@ -3673,6 +3771,54 @@ def build_development_authorization_service(
             permission_id=RECOMMENDATION_FINAL_DISPOSITION_READ,
             description="Read minimized final recommendation disposition metadata.",
         ),
+        PermissionDefinition(
+            permission_id=RECOMMENDATION_OUTCOME_RECORD,
+            description="Record what a human reports happened after a recommendation was acted on.",
+        ),
+        PermissionDefinition(
+            permission_id=RECOMMENDATION_OUTCOME_READ,
+            description="Read a recorded recommendation outcome.",
+        ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_FEEDBACK_SUBMIT,
+            description="Submit one governed knowledge feedback work item.",
+        ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_FEEDBACK_TRIAGE,
+            description="Triage one open knowledge feedback work item.",
+        ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_FEEDBACK_RESOLVE,
+            description="Resolve or dismiss one triaged knowledge feedback work item.",
+        ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_REVIEW_EXPIRY_SCHEDULE,
+            description="Schedule a knowledge item's governed review interval.",
+        ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_REVIEW_EXPIRY_RENEW,
+            description="Renew a knowledge item's review with required evidence.",
+        ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_REVIEW_EXPIRY_OWNER_ABSENCE_RESOLVE,
+            description="Resolve a knowledge item's owner absence by reassignment or suspension.",
+        ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_DELETION_LEGAL_HOLD_PLACE,
+            description="Place a governed legal hold on a knowledge item.",
+        ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_DELETION_LEGAL_HOLD_RELEASE,
+            description="Release an active legal hold on a knowledge item.",
+        ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_DELETION_LEGAL_HOLD_REQUEST,
+            description="Request governed deletion of a knowledge item.",
+        ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_DELETION_LEGAL_HOLD_COMPLETE,
+            description="Complete a governed knowledge deletion, recording its tombstone.",
+        ),
     )
     role = RoleDefinition(
         role_id=DEVELOPMENT_ROLE_ID,
@@ -3696,6 +3842,7 @@ def build_development_authorization_service(
                 ITSM_SANDBOX_CONFORMANCE_READ,
                 ITSM_SANDBOX_CONFORMANCE_CREATE,
                 ITSM_SANDBOX_ONBOARDING_READ,
+                ITSM_DISPATCH_AUTHORIZATION_CREATE,
                 AI_GROUNDED_QUERY_CREATE,
                 AI_MODEL_LIFECYCLE_ADMINISTER,
                 CONVERSATION_READ,
@@ -3767,6 +3914,7 @@ def build_development_authorization_service(
                 BOOTSTRAP_STATE_READ,
                 BOOTSTRAP_STATE_MANAGE,
                 BOOTSTRAP_INVALIDATION_PREVIEW,
+                BOOTSTRAP_ROLLBACK_MANAGE,
                 SUPPORT_BUNDLE_PREVIEW,
                 SUPPORT_BUNDLE_EXPORT,
                 BACKUP_LOGICAL_PREVIEW,
@@ -3884,6 +4032,7 @@ def build_development_authorization_service(
                 CONNECTOR_INVOCATION_EVIDENCE_CREATE,
                 CONNECTOR_INVOCATION_EVIDENCE_READ,
                 KNOWLEDGE_EMBEDDING_MODEL_LIFECYCLE_ADMINISTER,
+                KNOWLEDGE_SOURCE_REGISTRATION_ADMINISTER,
                 KNOWLEDGE_EVIDENCE_DRAFT_CREATE,
                 KNOWLEDGE_EVIDENCE_DRAFT_READ,
                 KNOWLEDGE_DRAFT_REVIEW_REQUEST_CREATE,
@@ -3968,6 +4117,18 @@ def build_development_authorization_service(
                 RECOMMENDATION_CORRECTION_RESUBMISSION_READ,
                 RECOMMENDATION_FINAL_DISPOSITION_CREATE,
                 RECOMMENDATION_FINAL_DISPOSITION_READ,
+                RECOMMENDATION_OUTCOME_RECORD,
+                RECOMMENDATION_OUTCOME_READ,
+                KNOWLEDGE_FEEDBACK_SUBMIT,
+                KNOWLEDGE_FEEDBACK_TRIAGE,
+                KNOWLEDGE_FEEDBACK_RESOLVE,
+                KNOWLEDGE_REVIEW_EXPIRY_SCHEDULE,
+                KNOWLEDGE_REVIEW_EXPIRY_RENEW,
+                KNOWLEDGE_REVIEW_EXPIRY_OWNER_ABSENCE_RESOLVE,
+                KNOWLEDGE_DELETION_LEGAL_HOLD_PLACE,
+                KNOWLEDGE_DELETION_LEGAL_HOLD_RELEASE,
+                KNOWLEDGE_DELETION_LEGAL_HOLD_REQUEST,
+                KNOWLEDGE_DELETION_LEGAL_HOLD_COMPLETE,
             }
         ),
     )
@@ -4164,6 +4325,16 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=bootstrap_invalidation_scope(
+                    settings.development_organization_id, settings.environment
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.bootstrap-rollback",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=bootstrap_rollback_scope(
                     settings.development_organization_id, settings.environment
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),
@@ -6350,6 +6521,30 @@ def build_development_authorization_service(
                 valid_from=datetime.min.replace(tzinfo=UTC),
             ),
             RoleAssignment(
+                assignment_id="assignment.development.recommendation-outcome-record",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=recommendation_outcome_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.recommendation-outcome-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=recommendation_outcome_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
                 assignment_id="assignment.development.approval-read",
                 version=1,
                 subject_id=settings.development_subject_id,
@@ -6443,6 +6638,46 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=ai_model_lifecycle_scope(
+                    settings.development_organization_id, settings.environment
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.knowledge-source-registration",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=knowledge_source_registration_scope(
+                    settings.development_organization_id, settings.environment
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.knowledge-feedback",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=knowledge_feedback_scope(
+                    settings.development_organization_id, settings.environment
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.knowledge-review-expiry",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=knowledge_review_expiry_scope(
+                    settings.development_organization_id, settings.environment
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.knowledge-deletion-legal-hold",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=knowledge_deletion_legal_hold_scope(
                     settings.development_organization_id, settings.environment
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),

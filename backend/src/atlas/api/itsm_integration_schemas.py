@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from atlas.api.schemas import ResponseMeta
 from atlas.core.classification import DataClassification
+from atlas.modules.itsm.application.dispatch_authorization import ItsmDispatchAuthorizationResult
 from atlas.modules.itsm.domain.models import (
     ItsmAllowedOperation,
     ItsmCheckState,
@@ -290,4 +291,55 @@ class ItsmSandboxOnboardingReadinessResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     data: ItsmSandboxOnboardingReadinessData
+    meta: ResponseMeta
+
+
+class CreateItsmDispatchAuthorizationInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = Field(
+        default="atlas.itsm-dispatch-authorization-input.v1", pattern=STABLE_ID
+    )
+    expected_profile_version: int = Field(ge=1)
+    report_id: str = Field(pattern=STABLE_ID)
+    handoff_draft_id: str = Field(pattern=STABLE_ID)
+
+
+class ItsmDispatchAuthorizationData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    authorization_id: str
+    profile_id: str
+    operation: ItsmAllowedOperation
+    draft_id: str
+    draft_idempotency_key: str
+    human_reviewer_id: str | None
+    human_review_completed_at: datetime | None
+    dispatch_authorized: bool
+    denial_reason: str | None
+    decided_at: datetime
+    reused: bool
+
+    @classmethod
+    def from_result(cls, result: ItsmDispatchAuthorizationResult) -> ItsmDispatchAuthorizationData:
+        authorization = result.authorization
+        return cls(
+            authorization_id=authorization.authorization_id,
+            profile_id=authorization.profile_id,
+            operation=authorization.operation,
+            draft_id=authorization.draft_id,
+            draft_idempotency_key=authorization.draft_idempotency_key,
+            human_reviewer_id=authorization.human_reviewer_id,
+            human_review_completed_at=authorization.human_review_completed_at,
+            dispatch_authorized=authorization.dispatch_authorized,
+            denial_reason=authorization.denial_reason,
+            decided_at=authorization.decided_at,
+            reused=result.reused,
+        )
+
+
+class ItsmDispatchAuthorizationResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: ItsmDispatchAuthorizationData
     meta: ResponseMeta

@@ -35,6 +35,7 @@ from atlas.modules.ai.domain.protected_model_invocation import (
     ProtectedModelInvocationPolicySnapshot,
     ProtectedModelInvocationResult,
 )
+from atlas.modules.guardrails.domain.dlp import VolumeLimits
 from atlas.modules.identity.domain.models import AssuranceLevel, AuthenticatedSubject, SubjectKind
 from atlas.modules.knowledge.adapters.model_context_assembly_synthetic import (
     SyntheticTrustedProtectedModelContextAssembler,
@@ -394,6 +395,179 @@ async def test_invocation_denies_a_secret_shaped_response_summary() -> None:
         await create_invocation(service, context, policy, actor)
     assert repository._claims and not repository._records
     assert any(item.event_type == "atlas.guardrails.block" for item in audit.records)
+
+
+class CertaintyLeakingProtectedModelGateway(SyntheticTrustedProtectedModelGateway):
+    """Wraps the real synthetic gateway but replaces the response summary with unsupported
+    certainty language, exercising ATLAS-047 SS18's "unsupported certainty, causal, safety, or
+    success language" check -- distinct from the secret/injection checks above."""
+
+    async def invoke(self, instruction, context):  # type: ignore[no-untyped-def]
+        receipt, draft = await super().invoke(instruction, context)
+        leaking = replace(
+            draft,
+            summary="This remediation is guaranteed to succeed with no risk to production.",
+            canonical_digest="0" * 64,
+        )
+        leaking = replace(
+            leaking,
+            canonical_digest=GovernedProtectedModelInvocationService._digest(
+                GovernedProtectedModelInvocationService._payload(leaking)
+            ),
+        )
+        artifact_reference = receipt.protected_draft_reference
+        artifact_digest = GovernedProtectedModelInvocationService._digest(asdict(leaking))
+        self._vault[artifact_reference] = (
+            leaking,
+            instruction.invocation_authorization_digest,
+            artifact_digest,
+        )
+        updated_receipt = replace(
+            receipt,
+            protected_draft_digest=artifact_digest,
+            draft_digest=leaking.canonical_digest,
+            canonical_digest="0" * 64,
+        )
+        updated_receipt = replace(
+            updated_receipt,
+            canonical_digest=GovernedProtectedModelInvocationService._digest(
+                GovernedProtectedModelInvocationService._payload(updated_receipt)
+            ),
+        )
+        return updated_receipt, leaking
+
+
+@pytest.mark.asyncio
+async def test_invocation_denies_unsupported_certainty_language_in_a_response_summary() -> None:
+    """ATLAS-047 SS18: output is checked for "unsupported certainty, causal, safety, or success
+    language" -- a distinct check from secrets/injection, backed by
+    `guardrails.domain.output_guardrails.detect_unsupported_certainty_language`."""
+    service, repository, context, policy, actor, _, _, audit = await invocation_fixture()
+    leaking_gateway = CertaintyLeakingProtectedModelGateway(
+        clock=lambda: context.record.assembled_at
+    )
+    service = GovernedProtectedModelInvocationService(
+        repository=repository,
+        context_source=service._context_source,
+        context_vault=service._context_vault,
+        policy_source=service._policy_source,
+        permission_authorizer=RecordingInvocationPermissionAuthorizer(),
+        gateway=leaking_gateway,
+        audit_sink=audit,
+        environment_id=context.record.environment_id,
+        clock=lambda: context.record.assembled_at,
+    )
+    with pytest.raises(ProtectedModelInvocationError, match="guardrail_denied"):
+        await create_invocation(service, context, policy, actor)
+    assert repository._claims and not repository._records
+    assert any(item.event_type == "atlas.guardrails.block" for item in audit.records)
+
+
+class UrlLeakingProtectedModelGateway(SyntheticTrustedProtectedModelGateway):
+    """Wraps the real synthetic gateway but replaces the response summary with a model-generated
+    external URL, exercising ATLAS-047 SS19's "prevent model-generated external URLs, callbacks,
+    or network requests from bypassing tools"."""
+
+    async def invoke(self, instruction, context):  # type: ignore[no-untyped-def]
+        receipt, draft = await super().invoke(instruction, context)
+        leaking = replace(
+            draft,
+            summary="See https://attacker-controlled.example/exfil for further detail.",
+            canonical_digest="0" * 64,
+        )
+        leaking = replace(
+            leaking,
+            canonical_digest=GovernedProtectedModelInvocationService._digest(
+                GovernedProtectedModelInvocationService._payload(leaking)
+            ),
+        )
+        artifact_reference = receipt.protected_draft_reference
+        artifact_digest = GovernedProtectedModelInvocationService._digest(asdict(leaking))
+        self._vault[artifact_reference] = (
+            leaking,
+            instruction.invocation_authorization_digest,
+            artifact_digest,
+        )
+        updated_receipt = replace(
+            receipt,
+            protected_draft_digest=artifact_digest,
+            draft_digest=leaking.canonical_digest,
+            canonical_digest="0" * 64,
+        )
+        updated_receipt = replace(
+            updated_receipt,
+            canonical_digest=GovernedProtectedModelInvocationService._digest(
+                GovernedProtectedModelInvocationService._payload(updated_receipt)
+            ),
+        )
+        return updated_receipt, leaking
+
+
+@pytest.mark.asyncio
+async def test_invocation_denies_a_model_generated_external_url_in_a_response_summary() -> None:
+    """ATLAS-047 SS19 DLP: a URL in the response summary that is not on the destination
+    allowlist is treated the same as a secret or injection finding -- denied before persistence,
+    audited as `injection_or_dlp_signal` rather than the generic `block` kind since this is a DLP
+    finding specifically, not a secret/injection one."""
+    service, repository, context, policy, actor, _, _, audit = await invocation_fixture()
+    leaking_gateway = UrlLeakingProtectedModelGateway(clock=lambda: context.record.assembled_at)
+    service = GovernedProtectedModelInvocationService(
+        repository=repository,
+        context_source=service._context_source,
+        context_vault=service._context_vault,
+        policy_source=service._policy_source,
+        permission_authorizer=RecordingInvocationPermissionAuthorizer(),
+        gateway=leaking_gateway,
+        audit_sink=audit,
+        environment_id=context.record.environment_id,
+        clock=lambda: context.record.assembled_at,
+    )
+    with pytest.raises(ProtectedModelInvocationError, match="guardrail_denied"):
+        await create_invocation(service, context, policy, actor)
+    assert repository._claims and not repository._records
+    assert any(
+        item.event_type == "atlas.guardrails.injection_or_dlp_signal" for item in audit.records
+    )
+
+
+@pytest.mark.asyncio
+async def test_invocation_audits_but_does_not_deny_a_dlp_volume_anomaly() -> None:
+    """ATLAS-047 SS19: volume-anomaly detection is different in kind from the other output
+    checks -- `VolumeAnomalyDetector` exists to detect an anomaly in what already happened, not
+    to gatekeep a request before it occurs, so a response that trips the (deliberately tiny, for
+    this test) volume threshold is still returned to the caller and persisted, but a
+    `injection_or_dlp_signal` audit event with outcome `anomaly_detected` is recorded."""
+    (
+        service,
+        repository,
+        context,
+        policy,
+        actor,
+        gateway,
+        _,
+        audit,
+    ) = await invocation_fixture()
+    service = GovernedProtectedModelInvocationService(
+        repository=repository,
+        context_source=service._context_source,
+        context_vault=service._context_vault,
+        policy_source=service._policy_source,
+        permission_authorizer=RecordingInvocationPermissionAuthorizer(),
+        gateway=gateway,
+        audit_sink=audit,
+        environment_id=context.record.environment_id,
+        clock=lambda: context.record.assembled_at,
+        dlp_volume_limits=VolumeLimits(max_bytes_per_window=1, window_seconds=3_600),
+    )
+    result = await create_invocation(service, context, policy, actor)
+    assert result.record.instance_state == "protected_model_invoked"
+    assert repository._records
+    anomaly_events = [
+        item
+        for item in audit.records
+        if item.event_type == "atlas.guardrails.injection_or_dlp_signal"
+    ]
+    assert anomaly_events and anomaly_events[0].outcome == "anomaly_detected"
 
 
 def test_invocation_input_is_strict() -> None:

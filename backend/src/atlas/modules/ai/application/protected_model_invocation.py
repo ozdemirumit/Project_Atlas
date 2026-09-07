@@ -38,7 +38,16 @@ from atlas.modules.guardrails.application.audit import (
     GuardrailAuditEventKind,
     record_guardrail_event,
 )
+from atlas.modules.guardrails.domain.dlp import (
+    DlpDestinationAllowlist,
+    VolumeAnomalyDetector,
+    VolumeLimits,
+    detect_external_urls,
+)
 from atlas.modules.guardrails.domain.input_guardrails import detect_secret_patterns
+from atlas.modules.guardrails.domain.output_guardrails import (
+    detect_unsupported_certainty_language,
+)
 from atlas.modules.guardrails.domain.prompt_injection import detect_injection_signals
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
@@ -78,6 +87,8 @@ class GovernedProtectedModelInvocationService:
         audit_sink: AuditSink,
         environment_id: str,
         clock: Callable[[], datetime] | None = None,
+        dlp_destination_allowlist: DlpDestinationAllowlist | None = None,
+        dlp_volume_limits: VolumeLimits | None = None,
     ) -> None:
         self._repository = repository
         self._context_source = context_source
@@ -88,6 +99,13 @@ class GovernedProtectedModelInvocationService:
         self._audit_sink = audit_sink
         self._environment_id = environment_id
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._dlp_allowlist = dlp_destination_allowlist or DlpDestinationAllowlist(
+            allowed_destinations=frozenset()
+        )
+        self._dlp_volume_limits = dlp_volume_limits or VolumeLimits(
+            max_bytes_per_window=2_000_000, window_seconds=3_600
+        )
+        self._volume_anomaly_detector = VolumeAnomalyDetector()
 
     async def create(
         self,
@@ -641,7 +659,7 @@ class GovernedProtectedModelInvocationService:
             findings.extend(detect_injection_signals(text))
         if not findings:
             return
-        await self._audit_guardrail_denial(
+        await self._audit_guardrail_event(
             actor=actor,
             invocation_id=invocation_id,
             correlation_id=correlation_id,
@@ -657,38 +675,68 @@ class GovernedProtectedModelInvocationService:
         invocation_id: str,
         correlation_id: str,
     ) -> None:
-        """ATLAS-047 SS18: "the same shapes that must never enter a prompt must also never leave
-        one." Scans the model's own response summary for the same secret and injection-residue
-        patterns before it is ever persisted or returned to the caller."""
-        findings = (
+        """ATLAS-047 SS18/SS19: "the same shapes that must never enter a prompt must also never
+        leave one," plus SS18's unsupported-certainty-language check and SS19's DLP controls.
+        Scans the model's own response summary for secret shapes, injection-residue, unsupported
+        certainty/causal/safety/success language, and any model-generated external URL before it
+        is ever persisted or returned to the caller -- a positive match on any of these denies the
+        invocation outright, the same disqualifying treatment SS11 establishes for the input side.
+        Volume-anomaly detection (SS19's "rate and volume anomaly detection") is different in kind
+        -- `VolumeAnomalyDetector` exists to *detect* an anomaly in what already happened, not to
+        gatekeep a request before it occurs, so an anomalous volume is audited but does not deny
+        this invocation."""
+        content_findings = (
             *detect_secret_patterns(draft.summary),
             *detect_injection_signals(draft.summary),
+            *detect_unsupported_certainty_language(draft.summary),
         )
-        if not findings:
-            return
-        await self._audit_guardrail_denial(
-            actor=actor,
-            invocation_id=invocation_id,
-            correlation_id=correlation_id,
-            findings=tuple(dict.fromkeys(findings)),
+        external_urls = detect_external_urls(draft.summary, allowlist=self._dlp_allowlist)
+        if content_findings or external_urls:
+            await self._audit_guardrail_event(
+                actor=actor,
+                invocation_id=invocation_id,
+                correlation_id=correlation_id,
+                findings=tuple(dict.fromkeys((*content_findings, *external_urls))),
+                event_kind=(
+                    GuardrailAuditEventKind.INJECTION_OR_DLP_SIGNAL
+                    if external_urls and not content_findings
+                    else GuardrailAuditEventKind.BLOCK
+                ),
+            )
+            raise ProtectedModelInvocationError("protected_model_invocation_guardrail_denied")
+        within_volume_limits = self._volume_anomaly_detector.record_and_check(
+            key=actor.subject_id,
+            size_bytes=len(draft.summary.encode("utf-8")),
+            limits=self._dlp_volume_limits,
+            now=self._clock(),
         )
-        raise ProtectedModelInvocationError("protected_model_invocation_guardrail_denied")
+        if not within_volume_limits:
+            await self._audit_guardrail_event(
+                actor=actor,
+                invocation_id=invocation_id,
+                correlation_id=correlation_id,
+                findings=("dlp_volume_anomaly",),
+                event_kind=GuardrailAuditEventKind.INJECTION_OR_DLP_SIGNAL,
+                outcome="anomaly_detected",
+            )
 
-    async def _audit_guardrail_denial(
+    async def _audit_guardrail_event(
         self,
         *,
         actor: AuthenticatedSubject,
         invocation_id: str,
         correlation_id: str,
         findings: tuple[str, ...],
+        event_kind: GuardrailAuditEventKind = GuardrailAuditEventKind.BLOCK,
+        outcome: str = "denied",
     ) -> None:
         await record_guardrail_event(
             self._audit_sink,
-            event_kind=GuardrailAuditEventKind.BLOCK,
+            event_kind=event_kind,
             rule_or_incident_reference=invocation_id,
             actor_identity=actor.subject_id,
             is_automation=False,
-            outcome="denied",
+            outcome=outcome,
             detail_references=findings,
             occurred_at=self._clock(),
             correlation_id=correlation_id,

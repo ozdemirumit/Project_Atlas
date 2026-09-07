@@ -243,6 +243,22 @@ class ItsmHandoffReviewService:
         handoff_draft_id: str,
         correlation_id: str,
     ) -> ItsmHandoffHumanReview | None:
+        _report, review = await self.get_handoff_and_review(
+            actor=actor,
+            report_id=report_id,
+            handoff_draft_id=handoff_draft_id,
+            correlation_id=correlation_id,
+        )
+        return review
+
+    async def get_handoff_and_review(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        report_id: str,
+        handoff_draft_id: str,
+        correlation_id: str,
+    ) -> tuple[TechnicalReport, ItsmHandoffHumanReview | None]:
         report = await self._load_report(actor, report_id)
         if report.expires_at <= self._clock():
             raise ItsmHandoffReviewError("itsm_handoff_review_source_changed")
@@ -261,7 +277,7 @@ class ItsmHandoffReviewService:
             permission_id="report.itsm-handoff-review.read",
             capability_class="C1",
         )
-        return review
+        return report, review
 
     async def close(self) -> None:
         await self._repository.close()

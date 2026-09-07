@@ -48,6 +48,7 @@ from atlas.modules.authorization.application.bootstrap import (
     BACKUP_OVERVIEW_READ,
     BOOTSTRAP_INVALIDATION_PREVIEW,
     BOOTSTRAP_PLAN_READ,
+    BOOTSTRAP_ROLLBACK_MANAGE,
     BOOTSTRAP_STATE_MANAGE,
     BOOTSTRAP_STATE_READ,
     CONNECTOR_BOUNDED_INVOCATION_CREATE,
@@ -148,6 +149,7 @@ from atlas.modules.authorization.application.bootstrap import (
     INVENTORY_DEVICE_READ,
     INVENTORY_DEVICE_RETIRE,
     INVESTIGATION_CREATE,
+    ITSM_DISPATCH_AUTHORIZATION_CREATE,
     ITSM_HANDOFF_REVIEW_DECIDE,
     ITSM_HANDOFF_REVIEW_READ,
     ITSM_INTEGRATION_CREATE,
@@ -158,6 +160,10 @@ from atlas.modules.authorization.application.bootstrap import (
     ITSM_SANDBOX_ONBOARDING_READ,
     KNOWLEDGE_CORRECTION_RESUBMISSION_CREATE,
     KNOWLEDGE_CORRECTION_RESUBMISSION_READ,
+    KNOWLEDGE_DELETION_LEGAL_HOLD_COMPLETE,
+    KNOWLEDGE_DELETION_LEGAL_HOLD_PLACE,
+    KNOWLEDGE_DELETION_LEGAL_HOLD_RELEASE,
+    KNOWLEDGE_DELETION_LEGAL_HOLD_REQUEST,
     KNOWLEDGE_DETERMINISTIC_CHUNKING_CREATE,
     KNOWLEDGE_DETERMINISTIC_CHUNKING_READ,
     KNOWLEDGE_DOCUMENT_APPROVAL_CREATE,
@@ -174,6 +180,9 @@ from atlas.modules.authorization.application.bootstrap import (
     KNOWLEDGE_EMBEDDING_MODEL_LIFECYCLE_ADMINISTER,
     KNOWLEDGE_EVIDENCE_DRAFT_CREATE,
     KNOWLEDGE_EVIDENCE_DRAFT_READ,
+    KNOWLEDGE_FEEDBACK_RESOLVE,
+    KNOWLEDGE_FEEDBACK_SUBMIT,
+    KNOWLEDGE_FEEDBACK_TRIAGE,
     KNOWLEDGE_FINAL_RESOLUTION_CREATE,
     KNOWLEDGE_FINAL_RESOLUTION_READ,
     KNOWLEDGE_FINDING_PRESENTATION_CREATE,
@@ -190,12 +199,16 @@ from atlas.modules.authorization.application.bootstrap import (
     KNOWLEDGE_PUBLICATION_PREPARATION_READ,
     KNOWLEDGE_RETRIEVAL_PUBLICATION_CREATE,
     KNOWLEDGE_RETRIEVAL_PUBLICATION_READ,
+    KNOWLEDGE_REVIEW_EXPIRY_OWNER_ABSENCE_RESOLVE,
+    KNOWLEDGE_REVIEW_EXPIRY_RENEW,
+    KNOWLEDGE_REVIEW_EXPIRY_SCHEDULE,
     KNOWLEDGE_REVIEW_FINDING_CREATE,
     KNOWLEDGE_REVIEW_FINDING_READ,
     KNOWLEDGE_REVIEWER_ASSIGNMENT_CREATE,
     KNOWLEDGE_REVIEWER_ASSIGNMENT_READ,
     KNOWLEDGE_SOURCE_MATERIALIZATION_CREATE,
     KNOWLEDGE_SOURCE_MATERIALIZATION_READ,
+    KNOWLEDGE_SOURCE_REGISTRATION_ADMINISTER,
     KNOWLEDGE_TRACK_REVIEW_DECISION_CREATE,
     KNOWLEDGE_TRACK_REVIEW_DECISION_READ,
     MCP_BUILDER_CANDIDATE_HANDOFF_CREATE,
@@ -227,6 +240,8 @@ from atlas.modules.authorization.application.bootstrap import (
     RECOMMENDATION_FINDING_PRESENTATION_READ,
     RECOMMENDATION_HUMAN_REVIEW_FINDING_CREATE,
     RECOMMENDATION_HUMAN_REVIEW_FINDING_READ,
+    RECOMMENDATION_OUTCOME_READ,
+    RECOMMENDATION_OUTCOME_RECORD,
     RECOMMENDATION_PROMOTION_CREATE,
     RECOMMENDATION_PROMOTION_READ,
     RECOMMENDATION_PROTECTED_CONTENT_PRESENTATION_CREATE,
@@ -323,6 +338,7 @@ from atlas.modules.authorization.application.bootstrap import (
     backup_overview_scope,
     bootstrap_invalidation_scope,
     bootstrap_plan_scope,
+    bootstrap_rollback_scope,
     bootstrap_state_scope,
     connector_bounded_invocation_scope,
     connector_capability_enablement_scope,
@@ -368,6 +384,10 @@ from atlas.modules.authorization.application.bootstrap import (
     investigation_scope,
     itsm_handoff_review_scope,
     itsm_integration_scope,
+    knowledge_deletion_legal_hold_scope,
+    knowledge_feedback_scope,
+    knowledge_review_expiry_scope,
+    knowledge_source_registration_scope,
     logical_backup_scope,
     mcp_builder_scope,
     operational_evidence_knowledge_draft_scope,
@@ -392,6 +412,7 @@ from atlas.modules.authorization.application.bootstrap import (
     recommendation_final_disposition_scope,
     recommendation_finding_presentation_scope,
     recommendation_human_review_finding_scope,
+    recommendation_outcome_scope,
     recommendation_promotion_scope,
     recommendation_protected_content_scope,
     recommendation_protected_inspection_scope,
@@ -2706,6 +2727,18 @@ async def authorize_itsm_sandbox_onboarding_read(
     )
 
 
+async def authorize_itsm_dispatch_authorization_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(itsm_integration_mutation_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_itsm_integration(
+        request,
+        subject,
+        permission_id=ITSM_DISPATCH_AUTHORIZATION_CREATE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
 async def authorize_release_preflight_read(
     request: Request,
     subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
@@ -3228,6 +3261,33 @@ async def authorize_bootstrap_state_manage(
         permission_id=BOOTSTRAP_STATE_MANAGE,
         capability_class=CapabilityClass.C2_DIAGNOSTIC,
     )
+
+
+async def authorize_bootstrap_rollback_manage(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=BOOTSTRAP_ROLLBACK_MANAGE,
+            resource_type="resource.platform.bootstrap-rollback",
+            scope=bootstrap_rollback_scope(subject.organization_id, settings.environment),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
 
 
 async def authorize_ai_grounded_query(
@@ -4874,6 +4934,35 @@ async def authorize_knowledge_embedding_model_lifecycle_administer(
     return decision
 
 
+async def authorize_knowledge_source_registration_administer(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=KNOWLEDGE_SOURCE_REGISTRATION_ADMINISTER,
+            resource_type="resource.knowledge.source-registration",
+            scope=knowledge_source_registration_scope(
+                subject.organization_id, settings.environment
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
 async def authorize_ai_model_lifecycle_administer(
     request: Request,
     subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
@@ -4886,6 +4975,284 @@ async def authorize_ai_model_lifecycle_administer(
             permission_id=AI_MODEL_LIFECYCLE_ADMINISTER,
             resource_type="resource.ai.model",
             scope=ai_model_lifecycle_scope(subject.organization_id, settings.environment),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_knowledge_feedback_submit(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=KNOWLEDGE_FEEDBACK_SUBMIT,
+            resource_type="resource.knowledge.feedback",
+            scope=knowledge_feedback_scope(subject.organization_id, settings.environment),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_knowledge_feedback_triage(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=KNOWLEDGE_FEEDBACK_TRIAGE,
+            resource_type="resource.knowledge.feedback",
+            scope=knowledge_feedback_scope(subject.organization_id, settings.environment),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_knowledge_feedback_resolve(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=KNOWLEDGE_FEEDBACK_RESOLVE,
+            resource_type="resource.knowledge.feedback",
+            scope=knowledge_feedback_scope(subject.organization_id, settings.environment),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_knowledge_review_expiry_schedule(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=KNOWLEDGE_REVIEW_EXPIRY_SCHEDULE,
+            resource_type="resource.knowledge.review-expiry",
+            scope=knowledge_review_expiry_scope(subject.organization_id, settings.environment),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_knowledge_review_expiry_renew(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=KNOWLEDGE_REVIEW_EXPIRY_RENEW,
+            resource_type="resource.knowledge.review-expiry",
+            scope=knowledge_review_expiry_scope(subject.organization_id, settings.environment),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_knowledge_review_expiry_owner_absence_resolve(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=KNOWLEDGE_REVIEW_EXPIRY_OWNER_ABSENCE_RESOLVE,
+            resource_type="resource.knowledge.review-expiry",
+            scope=knowledge_review_expiry_scope(subject.organization_id, settings.environment),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_knowledge_deletion_legal_hold_place(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=KNOWLEDGE_DELETION_LEGAL_HOLD_PLACE,
+            resource_type="resource.knowledge.deletion-legal-hold",
+            scope=knowledge_deletion_legal_hold_scope(
+                subject.organization_id, settings.environment
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_knowledge_deletion_legal_hold_release(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=KNOWLEDGE_DELETION_LEGAL_HOLD_RELEASE,
+            resource_type="resource.knowledge.deletion-legal-hold",
+            scope=knowledge_deletion_legal_hold_scope(
+                subject.organization_id, settings.environment
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_knowledge_deletion_legal_hold_request(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=KNOWLEDGE_DELETION_LEGAL_HOLD_REQUEST,
+            resource_type="resource.knowledge.deletion-legal-hold",
+            scope=knowledge_deletion_legal_hold_scope(
+                subject.organization_id, settings.environment
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_knowledge_deletion_legal_hold_complete(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=KNOWLEDGE_DELETION_LEGAL_HOLD_COMPLETE,
+            resource_type="resource.knowledge.deletion-legal-hold",
+            scope=knowledge_deletion_legal_hold_scope(
+                subject.organization_id, settings.environment
+            ),
             correlation_id=str(request.state.correlation_id),
             requested_at=datetime.now(UTC),
         )
@@ -9547,5 +9914,61 @@ async def authorize_recommendation_final_disposition_read(
         request,
         subject,
         permission_id=RECOMMENDATION_FINAL_DISPOSITION_READ,
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+async def _authorize_recommendation_outcome(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+    capability_class: CapabilityClass,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.recommendation.outcomes",
+            scope=recommendation_outcome_scope(
+                subject.organization_id, settings.environment, capability_class
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Authorization denied",
+            detail="The current identity cannot access recommendation outcomes.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_recommendation_outcome_record(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_recommendation_outcome(
+        request,
+        subject,
+        permission_id=RECOMMENDATION_OUTCOME_RECORD,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+async def authorize_recommendation_outcome_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_recommendation_outcome(
+        request,
+        subject,
+        permission_id=RECOMMENDATION_OUTCOME_READ,
         capability_class=CapabilityClass.C1_READ_ONLY,
     )

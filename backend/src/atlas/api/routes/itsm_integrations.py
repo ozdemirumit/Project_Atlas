@@ -7,8 +7,11 @@ from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response
 
 from atlas.api.errors import AtlasError
 from atlas.api.itsm_integration_schemas import (
+    CreateItsmDispatchAuthorizationInput,
     CreateItsmIntegrationProfileInput,
     CreateItsmSandboxConformanceInput,
+    ItsmDispatchAuthorizationData,
+    ItsmDispatchAuthorizationResponse,
     ItsmIntegrationProfileData,
     ItsmIntegrationProfileInventoryData,
     ItsmIntegrationProfileInventoryResponse,
@@ -22,6 +25,7 @@ from atlas.api.itsm_integration_schemas import (
 from atlas.api.schemas import ResponseMeta
 from atlas.api.security import (
     authenticated_subject,
+    authorize_itsm_dispatch_authorization_create,
     authorize_itsm_integration_create,
     authorize_itsm_integration_read,
     authorize_itsm_integration_retire,
@@ -32,6 +36,9 @@ from atlas.api.security import (
 )
 from atlas.modules.authorization.domain.models import AuthorizationDecision
 from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.itsm.application.dispatch_authorization import (
+    ItsmDispatchAuthorizationService,
+)
 from atlas.modules.itsm.application.service import ItsmIntegrationError, ItsmIntegrationService
 from atlas.modules.itsm.domain.models import (
     ItsmFieldMapping,
@@ -260,4 +267,39 @@ async def get_itsm_sandbox_onboarding_readiness(
     return ItsmSandboxOnboardingReadinessResponse(
         data=ItsmSandboxOnboardingReadinessData.from_domain(readiness),
         meta=_meta(request),
+    )
+
+
+@router.post(
+    "/{profile_id}/dispatch-authorizations",
+    response_model=ItsmDispatchAuthorizationResponse,
+    status_code=201,
+)
+async def create_itsm_dispatch_authorization(
+    profile_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")],
+    payload: CreateItsmDispatchAuthorizationInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(itsm_integration_mutation_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_itsm_dispatch_authorization_create)
+    ],
+    idempotency_key: Annotated[str, IDEMPOTENCY],
+) -> ItsmDispatchAuthorizationResponse:
+    service: ItsmDispatchAuthorizationService = (
+        request.app.state.itsm_dispatch_authorization_service
+    )
+    try:
+        result = await service.authorize(
+            actor=subject,
+            profile_id=profile_id,
+            idempotency_key=idempotency_key,
+            correlation_id=str(request.state.correlation_id),
+            **payload.model_dump(exclude={"schema_version"}),
+        )
+    except ItsmIntegrationError as error:
+        _raise(error)
+    response.headers["Cache-Control"] = "no-store"
+    return ItsmDispatchAuthorizationResponse(
+        data=ItsmDispatchAuthorizationData.from_result(result), meta=_meta(request)
     )

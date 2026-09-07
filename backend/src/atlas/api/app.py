@@ -30,6 +30,7 @@ from atlas.api.routes import (
     bootstrap_integrations,
     bootstrap_invalidation,
     bootstrap_plan,
+    bootstrap_rollback,
     bootstrap_services,
     bootstrap_state,
     bootstrap_trust,
@@ -70,6 +71,10 @@ from atlas.api.routes import (
     invocation_authorizations,
     invocation_evidence,
     itsm_integrations,
+    knowledge_deletion_legal_hold,
+    knowledge_feedback,
+    knowledge_review_expiry,
+    knowledge_source_registration,
     lab_self_tests,
     license_analyses,
     malware_analyses,
@@ -98,6 +103,7 @@ from atlas.api.routes import (
     recommendation_correction_resubmissions,
     recommendation_finding_presentations,
     recommendation_human_review_findings,
+    recommendation_outcomes,
     recommendation_promotions,
     recommendation_protected_contents,
     recommendation_protected_inspections,
@@ -938,6 +944,9 @@ from atlas.modules.inventory.adapters.postgres import PostgreSQLInventoryDeviceR
 from atlas.modules.inventory.application.service import InventoryDeviceService
 from atlas.modules.investigations.adapters.synthetic import SyntheticInvestigationAssembler
 from atlas.modules.investigations.application.service import InvestigationService
+from atlas.modules.itsm.adapters.dispatch_authorization_memory import (
+    InMemoryItsmDispatchAuthorizationRepository,
+)
 from atlas.modules.itsm.adapters.memory import InMemoryItsmIntegrationProfileRepository
 from atlas.modules.itsm.adapters.onboarding import (
     DeterministicDevelopmentItsmSandboxOnboardingEvidenceSource,
@@ -954,6 +963,9 @@ from atlas.modules.itsm.adapters.sandbox import (
     DeterministicNoNetworkItsmSandboxConformanceAdapter,
     UnavailableItsmSandboxConformanceAdapter,
 )
+from atlas.modules.itsm.application.dispatch_authorization import (
+    ItsmDispatchAuthorizationService,
+)
 from atlas.modules.itsm.application.service import ItsmIntegrationService
 from atlas.modules.knowledge.adapters.correction_resubmission_memory import (
     InMemoryOperationalKnowledgeCorrectionPolicySource,
@@ -968,6 +980,9 @@ from atlas.modules.knowledge.adapters.correction_resubmission_postgres import (
 from atlas.modules.knowledge.adapters.correction_resubmission_synthetic import (
     SyntheticOperationalKnowledgeCorrectionAdapter,
     UnavailableOperationalKnowledgeCorrectionAdapter,
+)
+from atlas.modules.knowledge.adapters.deletion_legal_hold_memory import (
+    InMemoryKnowledgeDeletionRepository,
 )
 from atlas.modules.knowledge.adapters.deterministic_chunking_memory import (
     InMemoryOperationalKnowledgeChunkingPolicySource,
@@ -1046,6 +1061,9 @@ from atlas.modules.knowledge.adapters.evidence_draft_postgres import (
 from atlas.modules.knowledge.adapters.evidence_draft_synthetic import (
     SyntheticOperationalEvidenceKnowledgeDraftAdapter,
     UnavailableOperationalEvidenceKnowledgeDraftAdapter,
+)
+from atlas.modules.knowledge.adapters.feedback_memory import (
+    InMemoryKnowledgeFeedbackRepository,
 )
 from atlas.modules.knowledge.adapters.final_resolution_memory import (
     InMemoryOperationalKnowledgeFinalResolutionPolicySource,
@@ -1188,6 +1206,9 @@ from atlas.modules.knowledge.adapters.review_decision_synthetic import (
     SyntheticOperationalKnowledgeTrackReviewDecisionAttestor,
     UnavailableOperationalKnowledgeTrackReviewDecisionAttestor,
 )
+from atlas.modules.knowledge.adapters.review_expiry_memory import (
+    InMemoryKnowledgeReviewRepository,
+)
 from atlas.modules.knowledge.adapters.review_finding_memory import (
     InMemoryOperationalKnowledgeReviewFindingPolicySource,
     InMemoryOperationalKnowledgeReviewFindingRepository,
@@ -1230,10 +1251,16 @@ from atlas.modules.knowledge.adapters.source_materialization_synthetic import (
     SyntheticOperationalKnowledgeSourceMaterializer,
     UnavailableOperationalKnowledgeSourceMaterializer,
 )
+from atlas.modules.knowledge.adapters.source_registration_memory import (
+    InMemoryKnowledgeSourceRegistrationRepository,
+)
 from atlas.modules.knowledge.adapters.synthetic import build_synthetic_knowledge_chunks
 from atlas.modules.knowledge.application.correction_resubmission import (
     OperationalKnowledgeCorrectionService,
     build_development_operational_knowledge_correction_policy,
+)
+from atlas.modules.knowledge.application.deletion_legal_hold import (
+    KnowledgeDeletionService,
 )
 from atlas.modules.knowledge.application.deterministic_chunking import (
     OperationalKnowledgeDeterministicChunkingService,
@@ -1257,6 +1284,9 @@ from atlas.modules.knowledge.application.embedding_model_lifecycle import (
 from atlas.modules.knowledge.application.evidence_draft import (
     OperationalEvidenceKnowledgeDraftService,
     build_development_operational_evidence_knowledge_draft_policy,
+)
+from atlas.modules.knowledge.application.feedback import (
+    KnowledgeFeedbackService,
 )
 from atlas.modules.knowledge.application.final_resolution import (
     OperationalKnowledgeFinalResolutionService,
@@ -1301,6 +1331,9 @@ from atlas.modules.knowledge.application.review_decision import (
     OperationalKnowledgeTrackReviewDecisionService,
     build_development_operational_knowledge_track_review_decision_policy,
 )
+from atlas.modules.knowledge.application.review_expiry import (
+    KnowledgeReviewService,
+)
 from atlas.modules.knowledge.application.review_finding import (
     OperationalKnowledgeReviewFindingService,
     build_development_operational_knowledge_review_finding_policy,
@@ -1316,6 +1349,9 @@ from atlas.modules.knowledge.application.service import KnowledgeRetrievalServic
 from atlas.modules.knowledge.application.source_materialization import (
     OperationalKnowledgeSourceMaterializationService,
     build_development_operational_knowledge_source_materialization_policy,
+)
+from atlas.modules.knowledge.application.source_registration import (
+    KnowledgeSourceRegistrationService,
 )
 from atlas.modules.mcp_builder.adapters.candidate_archive_filesystem import (
     FileSystemMcpBuilderCandidateArchivePublisher,
@@ -1395,6 +1431,9 @@ from atlas.modules.platform.adapters.bootstrap_integrations_filesystem import (
 from atlas.modules.platform.adapters.bootstrap_integrations_synthetic import (
     SyntheticBootstrapIntegrationCatalog,
 )
+from atlas.modules.platform.adapters.bootstrap_rollback_memory import (
+    InMemoryBootstrapRollbackRepository,
+)
 from atlas.modules.platform.adapters.bootstrap_services_filesystem import (
     FilesystemBootstrapServiceTarget,
 )
@@ -1449,6 +1488,7 @@ from atlas.modules.platform.application.bootstrap_operational_handoff import (
     BootstrapOperationalHandoffService,
 )
 from atlas.modules.platform.application.bootstrap_plan import BootstrapPlanService
+from atlas.modules.platform.application.bootstrap_rollback import BootstrapRollbackService
 from atlas.modules.platform.application.bootstrap_service_deployment import (
     BootstrapServiceDeploymentService,
     BootstrapServicePlanService,
@@ -1540,6 +1580,9 @@ from atlas.modules.recommendations.adapters.human_review_finding_postgres import
 from atlas.modules.recommendations.adapters.human_review_finding_synthetic import (
     SyntheticRecommendationHumanReviewFindingRecorder,
     UnavailableRecommendationHumanReviewFindingRecorder,
+)
+from atlas.modules.recommendations.adapters.outcome_learning_memory import (
+    InMemoryRecommendationOutcomeRepository,
 )
 from atlas.modules.recommendations.adapters.promotion_memory import (
     InMemoryRecommendationPromotionPolicySource,
@@ -1666,6 +1709,9 @@ from atlas.modules.recommendations.application.human_review_finding import (
 )
 from atlas.modules.recommendations.application.human_review_finding_ports import (
     RecommendationHumanReviewFindingRecorder,
+)
+from atlas.modules.recommendations.application.outcome_learning import (
+    RecommendationOutcomeService,
 )
 from atlas.modules.recommendations.application.promotion import (
     GovernedRecommendationPromotionService,
@@ -3184,6 +3230,7 @@ def create_app(
     approval_service: ApprovalService | None = None,
     report_service: ReportService | None = None,
     itsm_handoff_review_service: ItsmHandoffReviewService | None = None,
+    itsm_dispatch_authorization_service: ItsmDispatchAuthorizationService | None = None,
     grounded_answer_service: GroundedAnswerService | None = None,
     conversation_service: ConversationService | None = None,
     conversation_target_access_source: ConversationTargetAccessSource | None = None,
@@ -3381,6 +3428,12 @@ def create_app(
     ) = None,
     embedding_model_lifecycle_service: EmbeddingModelLifecycleService | None = None,
     model_lifecycle_service: ModelLifecycleService | None = None,
+    knowledge_feedback_service: KnowledgeFeedbackService | None = None,
+    knowledge_review_expiry_service: KnowledgeReviewService | None = None,
+    knowledge_deletion_legal_hold_service: KnowledgeDeletionService | None = None,
+    recommendation_outcome_service: RecommendationOutcomeService | None = None,
+    bootstrap_rollback_service: BootstrapRollbackService | None = None,
+    knowledge_source_registration_service: KnowledgeSourceRegistrationService | None = None,
     session_service: SessionService | None = None,
     api_credential_service: ApiCredentialService | None = None,
     identity_governance_service: IdentityGovernanceService | None = None,
@@ -3576,6 +3629,42 @@ def create_app(
     resolved_model_lifecycle_service = model_lifecycle_service or ModelLifecycleService(
         repository=InMemoryModelLifecycleRepository(),
         audit_sink=resolved_audit_sink,
+    )
+    resolved_knowledge_feedback_service = knowledge_feedback_service or KnowledgeFeedbackService(
+        repository=InMemoryKnowledgeFeedbackRepository(),
+        audit_sink=resolved_audit_sink,
+    )
+    resolved_knowledge_review_expiry_service = (
+        knowledge_review_expiry_service
+        or KnowledgeReviewService(
+            repository=InMemoryKnowledgeReviewRepository(),
+            audit_sink=resolved_audit_sink,
+        )
+    )
+    resolved_knowledge_deletion_legal_hold_service = (
+        knowledge_deletion_legal_hold_service
+        or KnowledgeDeletionService(
+            repository=InMemoryKnowledgeDeletionRepository(),
+            audit_sink=resolved_audit_sink,
+        )
+    )
+    resolved_recommendation_outcome_service = (
+        recommendation_outcome_service
+        or RecommendationOutcomeService(
+            repository=InMemoryRecommendationOutcomeRepository(),
+            audit_sink=resolved_audit_sink,
+        )
+    )
+    resolved_bootstrap_rollback_service = bootstrap_rollback_service or BootstrapRollbackService(
+        repository=InMemoryBootstrapRollbackRepository(),
+        audit_sink=resolved_audit_sink,
+    )
+    resolved_knowledge_source_registration_service = (
+        knowledge_source_registration_service
+        or KnowledgeSourceRegistrationService(
+            repository=InMemoryKnowledgeSourceRegistrationRepository(),
+            audit_sink=resolved_audit_sink,
+        )
     )
     resolved_local_credential_repository = (
         local_credential_repository or InMemoryLocalCredentialRepository()
@@ -7561,6 +7650,15 @@ def create_app(
         audit_sink=resolved_audit_sink,
         environment_id=f"environment.{resolved_settings.environment}",
     )
+    resolved_itsm_dispatch_authorization_service = (
+        itsm_dispatch_authorization_service
+        or ItsmDispatchAuthorizationService(
+            integration_service=resolved_itsm_integration_service,
+            handoff_review_service=resolved_itsm_handoff_review_service,
+            repository=InMemoryItsmDispatchAuthorizationRepository(),
+            audit_sink=resolved_audit_sink,
+        )
+    )
     resolved_approval_service = approval_service or ApprovalService(
         recommendation_provider=resolved_recommendation_service,
         audit_sink=resolved_audit_sink,
@@ -10180,6 +10278,16 @@ def create_app(
         )
         app.state.embedding_model_lifecycle_service = resolved_embedding_model_lifecycle_service
         app.state.model_lifecycle_service = resolved_model_lifecycle_service
+        app.state.knowledge_feedback_service = resolved_knowledge_feedback_service
+        app.state.knowledge_review_expiry_service = resolved_knowledge_review_expiry_service
+        app.state.knowledge_deletion_legal_hold_service = (
+            resolved_knowledge_deletion_legal_hold_service
+        )
+        app.state.recommendation_outcome_service = resolved_recommendation_outcome_service
+        app.state.bootstrap_rollback_service = resolved_bootstrap_rollback_service
+        app.state.knowledge_source_registration_service = (
+            resolved_knowledge_source_registration_service
+        )
         app.state.identity_service = identity_service
         app.state.local_credential_service = resolved_local_credential_service
         app.state.session_service = resolved_session_service
@@ -10404,6 +10512,7 @@ def create_app(
         app.state.approval_service = resolved_approval_service
         app.state.report_service = resolved_report_service
         app.state.itsm_handoff_review_service = resolved_itsm_handoff_review_service
+        app.state.itsm_dispatch_authorization_service = resolved_itsm_dispatch_authorization_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         app.state.conversation_service = resolved_conversation_service
         app.state.conversation_target_access_source = resolved_conversation_target_access_source
@@ -10798,6 +10907,7 @@ def create_app(
         await resolved_inventory_device_service.close()
         await resolved_itsm_integration_service.close()
         await resolved_itsm_handoff_review_service.close()
+        await resolved_itsm_dispatch_authorization_service.close()
         await resolved_report_service.close()
         await resolved_bootstrap_state_service.close()
         await database_probe.close()
@@ -10844,6 +10954,7 @@ def create_app(
     app.include_router(bootstrap_plan.router, prefix="/api/v1")
     app.include_router(bootstrap_invalidation.router, prefix="/api/v1")
     app.include_router(bootstrap_state.router, prefix="/api/v1")
+    app.include_router(bootstrap_rollback.router, prefix="/api/v1")
     app.include_router(bootstrap_artifacts.router, prefix="/api/v1")
     app.include_router(bootstrap_configuration.router, prefix="/api/v1")
     app.include_router(bootstrap_trust.router, prefix="/api/v1")
@@ -10909,6 +11020,11 @@ def create_app(
     app.include_router(embedding_generation.router, prefix="/api/v1")
     app.include_router(embedding_model_lifecycle.router, prefix="/api/v1")
     app.include_router(model_lifecycle.router, prefix="/api/v1")
+    app.include_router(knowledge_feedback.router, prefix="/api/v1")
+    app.include_router(knowledge_review_expiry.router, prefix="/api/v1")
+    app.include_router(knowledge_deletion_legal_hold.router, prefix="/api/v1")
+    app.include_router(knowledge_source_registration.router, prefix="/api/v1")
+    app.include_router(recommendation_outcomes.router, prefix="/api/v1")
     app.include_router(index_staging_validation.router, prefix="/api/v1")
     app.include_router(retrieval_index_publication.router, prefix="/api/v1")
     app.include_router(protected_retrieval.router, prefix="/api/v1")
