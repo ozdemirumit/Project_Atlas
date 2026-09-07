@@ -34,9 +34,11 @@ from atlas.modules.authorization.application.bootstrap import (
     API_CREDENTIAL_SELF_CREATE,
     API_CREDENTIAL_SELF_READ,
     API_CREDENTIAL_SELF_REVOKE,
+    APPROVAL_REQUEST_CANCEL,
     APPROVAL_REQUEST_CREATE,
     APPROVAL_REQUEST_DECIDE,
     APPROVAL_REQUEST_READ,
+    APPROVAL_REQUEST_REVOKE,
     AUDIT_EXPORT,
     AUDIT_READ,
     BACKUP_LOGICAL_CREATE,
@@ -4846,6 +4848,30 @@ async def authorize_approval_decide(
         request,
         subject,
         permission_id=APPROVAL_REQUEST_DECIDE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+async def authorize_approval_cancel(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_approval(
+        request,
+        subject,
+        permission_id=APPROVAL_REQUEST_CANCEL,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+async def authorize_approval_revoke(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_approval(
+        request,
+        subject,
+        permission_id=APPROVAL_REQUEST_REVOKE,
         capability_class=CapabilityClass.C2_DIAGNOSTIC,
     )
 

@@ -7,11 +7,14 @@ from enum import StrEnum
 
 class ApprovalState(StrEnum):
     PENDING = "pending"
+    PARTIALLY_APPROVED = "partially_approved"
     APPROVED = "approved"
     REJECTED = "rejected"
     NEEDS_EVIDENCE = "needs_evidence"
     DEFERRED = "deferred"
     EXPIRED = "expired"
+    REVOKED = "revoked"
+    CANCELLED = "cancelled"
 
 
 class ApprovalOutcome(StrEnum):
@@ -19,6 +22,8 @@ class ApprovalOutcome(StrEnum):
     REJECT = "reject"
     NEEDS_EVIDENCE = "needs_evidence"
     DEFER = "defer"
+    CANCEL = "cancel"
+    REVOKE = "revoke"
 
 
 @dataclass(frozen=True, slots=True)

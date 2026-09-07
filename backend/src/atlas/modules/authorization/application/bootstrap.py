@@ -157,6 +157,8 @@ RECOMMENDATION_CREATE = "recommendation.create"
 APPROVAL_REQUEST_CREATE = "approval.request.create"
 APPROVAL_REQUEST_READ = "approval.request.read"
 APPROVAL_REQUEST_DECIDE = "approval.request.decide"
+APPROVAL_REQUEST_CANCEL = "approval.request.cancel"
+APPROVAL_REQUEST_REVOKE = "approval.request.revoke"
 REPORT_CREATE = "report.create"
 REPORT_READ = "report.read"
 ITSM_HANDOFF_REVIEW_READ = "report.itsm-handoff-review.read"
@@ -2755,6 +2757,14 @@ def build_development_authorization_service(
             description="Record a separated human decision on an exact approval packet.",
         ),
         PermissionDefinition(
+            permission_id=APPROVAL_REQUEST_CANCEL,
+            description="Withdraw the requester's own not-yet-decided approval request.",
+        ),
+        PermissionDefinition(
+            permission_id=APPROVAL_REQUEST_REVOKE,
+            description="Withdraw a previously approved request before handoff or completion.",
+        ),
+        PermissionDefinition(
             permission_id=REPORT_CREATE,
             description="Create a governed report and non-dispatching ITSM handoff draft.",
         ),
@@ -3688,6 +3698,8 @@ def build_development_authorization_service(
                 APPROVAL_REQUEST_CREATE,
                 APPROVAL_REQUEST_READ,
                 APPROVAL_REQUEST_DECIDE,
+                APPROVAL_REQUEST_CANCEL,
+                APPROVAL_REQUEST_REVOKE,
                 REPORT_CREATE,
                 REPORT_READ,
                 ITSM_HANDOFF_REVIEW_READ,

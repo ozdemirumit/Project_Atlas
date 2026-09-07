@@ -569,3 +569,255 @@ async def test_required_audit_failure_blocks_create_read_and_decision() -> None:
         )
     assert response.status_code == 500
     assert response.json()["code"] == "internal_error"
+
+
+@pytest.mark.asyncio
+async def test_requester_can_cancel_a_pending_request() -> None:
+    sink = CollectingAuditSink()
+    rca, recommendation, approval = build_services(sink)
+    with TestClient(
+        create_app(
+            settings(),
+            audit_sink=sink,
+            rca_service=rca,
+            recommendation_service=recommendation,
+            approval_service=approval,
+        )
+    ) as client:
+        data = create_approval(client)
+
+    updated = await approval.cancel(
+        str(data["request_id"]),
+        rationale="The requester no longer needs this reviewed.",
+        expected_version=int(data["version"]),
+        idempotency_key="approval-cancel-key-0001",
+        context=access_context(data, subject_id="subject.development.operator"),
+    )
+
+    assert updated.state is ApprovalState.CANCELLED
+    assert updated.decisions[0].outcome is ApprovalOutcome.CANCEL
+    assert updated.decisions[0].reviewer_id == "subject.development.operator"
+    assert sink.records[-1].result_code == "approval_cancelled"
+
+
+@pytest.mark.asyncio
+async def test_non_requester_cannot_cancel() -> None:
+    sink = CollectingAuditSink()
+    rca, recommendation, approval = build_services(sink)
+    with TestClient(
+        create_app(
+            settings(),
+            audit_sink=sink,
+            rca_service=rca,
+            recommendation_service=recommendation,
+            approval_service=approval,
+        )
+    ) as client:
+        data = create_approval(client)
+
+    with pytest.raises(ApprovalOperationsError) as raised:
+        await approval.cancel(
+            str(data["request_id"]),
+            rationale="Someone other than the requester tries to cancel.",
+            expected_version=int(data["version"]),
+            idempotency_key="approval-cancel-key-0002",
+            context=access_context(data),
+        )
+
+    assert raised.value.code == "approval_cancel_not_requester"
+
+
+@pytest.mark.asyncio
+async def test_cancel_requires_a_rationale() -> None:
+    sink = CollectingAuditSink()
+    rca, recommendation, approval = build_services(sink)
+    with TestClient(
+        create_app(
+            settings(),
+            audit_sink=sink,
+            rca_service=rca,
+            recommendation_service=recommendation,
+            approval_service=approval,
+        )
+    ) as client:
+        data = create_approval(client)
+
+    with pytest.raises(ApprovalOperationsError) as raised:
+        await approval.cancel(
+            str(data["request_id"]),
+            rationale="   ",
+            expected_version=int(data["version"]),
+            idempotency_key="approval-cancel-key-0003",
+            context=access_context(data, subject_id="subject.development.operator"),
+        )
+
+    assert raised.value.code == "approval_rationale_required"
+
+
+@pytest.mark.asyncio
+async def test_cancel_is_idempotent_and_a_decided_request_cannot_be_cancelled() -> None:
+    sink = CollectingAuditSink()
+    rca, recommendation, approval = build_services(sink)
+    with TestClient(
+        create_app(
+            settings(),
+            audit_sink=sink,
+            rca_service=rca,
+            recommendation_service=recommendation,
+            approval_service=approval,
+        )
+    ) as client:
+        data = create_approval(client)
+    context = access_context(data, subject_id="subject.development.operator")
+
+    first = await approval.cancel(
+        str(data["request_id"]),
+        rationale="Withdrawing this request.",
+        expected_version=int(data["version"]),
+        idempotency_key="approval-cancel-key-0004",
+        context=context,
+    )
+    replay = await approval.cancel(
+        str(data["request_id"]),
+        rationale="Withdrawing this request.",
+        expected_version=int(data["version"]),
+        idempotency_key="approval-cancel-key-0004",
+        context=context,
+    )
+    assert replay == first
+
+    with pytest.raises(ApprovalOperationsError) as stale:
+        await approval.cancel(
+            str(data["request_id"]),
+            rationale="A second, distinct cancellation attempt.",
+            expected_version=int(data["version"]),
+            idempotency_key="approval-cancel-key-0005",
+            context=context,
+        )
+    assert stale.value.code == "approval_state_conflict"
+
+
+@pytest.mark.asyncio
+async def test_governance_identity_can_revoke_an_approved_request() -> None:
+    sink = CollectingAuditSink()
+    rca, recommendation, approval = build_services(sink)
+    with TestClient(
+        create_app(
+            settings(),
+            audit_sink=sink,
+            rca_service=rca,
+            recommendation_service=recommendation,
+            approval_service=approval,
+        )
+    ) as client:
+        data = create_approval(client)
+    approved = await approval.decide(
+        str(data["request_id"]),
+        outcome=ApprovalOutcome.APPROVE,
+        rationale="The evidence supports this bounded read-only diagnostic plan.",
+        expected_version=int(data["version"]),
+        idempotency_key="approval-revoke-decide-key-0001",
+        context=access_context(data),
+    )
+
+    revoked = await approval.revoke(
+        str(data["request_id"]),
+        rationale="New information invalidates this approval before handoff.",
+        expected_version=approved.version,
+        idempotency_key="approval-revoke-key-0001",
+        context=access_context(data),
+    )
+
+    assert revoked.state is ApprovalState.REVOKED
+    assert revoked.decisions[-1].outcome is ApprovalOutcome.REVOKE
+    assert sink.records[-1].result_code == "approval_revoked"
+
+
+@pytest.mark.asyncio
+async def test_requester_cannot_revoke_their_own_approval() -> None:
+    sink = CollectingAuditSink()
+    rca, recommendation, approval = build_services(sink)
+    with TestClient(
+        create_app(
+            settings(),
+            audit_sink=sink,
+            rca_service=rca,
+            recommendation_service=recommendation,
+            approval_service=approval,
+        )
+    ) as client:
+        data = create_approval(client)
+    approved = await approval.decide(
+        str(data["request_id"]),
+        outcome=ApprovalOutcome.APPROVE,
+        rationale="The evidence supports this bounded read-only diagnostic plan.",
+        expected_version=int(data["version"]),
+        idempotency_key="approval-revoke-decide-key-0002",
+        context=access_context(data),
+    )
+
+    with pytest.raises(ApprovalOperationsError) as raised:
+        await approval.revoke(
+            str(data["request_id"]),
+            rationale="The requester tries to revoke their own approved request.",
+            expected_version=approved.version,
+            idempotency_key="approval-revoke-key-0002",
+            context=access_context(data, subject_id="subject.development.operator"),
+        )
+
+    assert raised.value.code == "approval_separation_required"
+
+
+@pytest.mark.asyncio
+async def test_decide_rejects_cancel_and_revoke_outcomes() -> None:
+    sink = CollectingAuditSink()
+    rca, recommendation, approval = build_services(sink)
+    with TestClient(
+        create_app(
+            settings(),
+            audit_sink=sink,
+            rca_service=rca,
+            recommendation_service=recommendation,
+            approval_service=approval,
+        )
+    ) as client:
+        data = create_approval(client)
+
+    for outcome in (ApprovalOutcome.CANCEL, ApprovalOutcome.REVOKE):
+        with pytest.raises(ApprovalOperationsError) as raised:
+            await approval.decide(
+                str(data["request_id"]),
+                outcome=outcome,
+                rationale="decide() should reject this outcome.",
+                expected_version=int(data["version"]),
+                idempotency_key=f"approval-wrong-op-{outcome.value}",
+                context=access_context(data),
+            )
+        assert raised.value.code == "approval_wrong_operation"
+
+
+def test_cancel_endpoint_is_reachable_over_http() -> None:
+    sink = CollectingAuditSink()
+    rca, recommendation, approval = build_services(sink)
+    with TestClient(
+        create_app(
+            settings(),
+            audit_sink=sink,
+            rca_service=rca,
+            recommendation_service=recommendation,
+            approval_service=approval,
+        )
+    ) as client:
+        data = create_approval(client)
+        response = client.post(
+            f"/api/v1/approvals/{data['request_id']}/cancel",
+            json={
+                "rationale": "Withdrawing via the HTTP API.",
+                "expected_version": data["version"],
+            },
+            headers={"Idempotency-Key": "approval-cancel-http-key-0001"},
+        )
+
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.json()["data"]["state"] == "cancelled"

@@ -162,6 +162,17 @@ class ApprovalService:
         context: ApprovalAccessContext,
     ) -> ApprovalRecord:
         self._validate_context(context)
+        if outcome is ApprovalOutcome.CANCEL:
+            raise ApprovalOperationsError(
+                "approval_wrong_operation",
+                "Use cancel() to withdraw a request; decide() records an approver's decision.",
+            )
+        if outcome is ApprovalOutcome.REVOKE:
+            raise ApprovalOperationsError(
+                "approval_wrong_operation",
+                "Use revoke() to withdraw an approved request; decide() records the initial"
+                " decision.",
+            )
         fingerprint = self._decision_fingerprint(
             outcome=outcome,
             rationale=rationale,
@@ -235,6 +246,188 @@ class ApprovalService:
                 permission_id="approval.request.decide",
             )
             self._records[request_id] = updated
+            self._idempotency[(request_id, idempotency_key)] = (fingerprint, updated)
+            return updated
+
+    async def cancel(
+        self,
+        request_id: str,
+        *,
+        rationale: str,
+        expected_version: int,
+        idempotency_key: str,
+        context: ApprovalAccessContext,
+    ) -> ApprovalRecord:
+        """SS9: "Cancel: the requester or authorized workflow withdraws the request." SS8's
+        state diagram permits this from Pending, NeedsEvidence, or Deferred (this
+        implementation has no separate Draft step -- `create()` already submits)."""
+        self._validate_context(context)
+        if not rationale.strip():
+            raise ApprovalOperationsError(
+                "approval_rationale_required", "Cancellation requires a rationale."
+            )
+        async with self._lock:
+            record = self._records.get(request_id)
+            if not self._visible(record, context):
+                await self._deny(context, "approval_not_found", request_id=request_id)
+                raise ApprovalOperationsError(
+                    "approval_not_found", "The requested approval is unavailable."
+                )
+            assert record is not None
+            record = await self._expire_if_needed(record, context)
+            if context.subject_id != record.packet.requested_by:
+                await self._deny(context, "approval_cancel_not_requester", request_id=request_id)
+                raise ApprovalOperationsError(
+                    "approval_cancel_not_requester",
+                    "Only the original requester may cancel this request.",
+                )
+            replay = self._idempotency.get((request_id, idempotency_key))
+            if replay is not None:
+                if replay[1].state is not ApprovalState.CANCELLED:
+                    await self._deny(
+                        context, "approval_idempotency_conflict", request_id=request_id
+                    )
+                    raise ApprovalOperationsError(
+                        "approval_idempotency_conflict",
+                        "The cancellation conflicts with an earlier request.",
+                    )
+                return replay[1]
+            if (
+                record.state
+                not in {
+                    ApprovalState.PENDING,
+                    ApprovalState.NEEDS_EVIDENCE,
+                    ApprovalState.DEFERRED,
+                }
+                or record.version != expected_version
+            ):
+                await self._deny(context, "approval_state_conflict", request_id=request_id)
+                raise ApprovalOperationsError(
+                    "approval_state_conflict",
+                    "The approval request changed before this cancellation.",
+                )
+            decision = ApprovalDecision(
+                decision_id=f"approval_decision_{uuid4().hex}",
+                request_version=record.version,
+                outcome=ApprovalOutcome.CANCEL,
+                reviewer_id=context.subject_id,
+                decided_at=context.requested_at,
+                rationale=rationale,
+            )
+            updated = replace(
+                record,
+                version=record.version + 1,
+                state=ApprovalState.CANCELLED,
+                updated_at=context.requested_at,
+                decisions=(*record.decisions, decision),
+            )
+            await self._audit(
+                context,
+                event_type="atlas.approval.request.cancelled",
+                outcome="succeeded",
+                result_code="approval_cancelled",
+                request_id=request_id,
+                permission_id="approval.request.cancel",
+            )
+            self._records[request_id] = updated
+            fingerprint = self._digest_values(
+                {
+                    "operation": "cancel",
+                    "rationale": rationale,
+                    "expected_version": expected_version,
+                }
+            )
+            self._idempotency[(request_id, idempotency_key)] = (fingerprint, updated)
+            return updated
+
+    async def revoke(
+        self,
+        request_id: str,
+        *,
+        rationale: str,
+        expected_version: int,
+        idempotency_key: str,
+        context: ApprovalAccessContext,
+    ) -> ApprovalRecord:
+        """SS9: "Revoke: a previously valid approval is withdrawn before handoff or
+        completion." Unlike cancel (the requester withdrawing their own request), revoke acts
+        on an already-Approved record and requires a governance identity distinct from the
+        requester -- SS15 lists "an authorized approver or governance role revokes it" as the
+        first revocation trigger."""
+        self._validate_context(context)
+        if not rationale.strip():
+            raise ApprovalOperationsError(
+                "approval_rationale_required", "Revocation requires a rationale."
+            )
+        async with self._lock:
+            record = self._records.get(request_id)
+            if not self._visible(record, context):
+                await self._deny(context, "approval_not_found", request_id=request_id)
+                raise ApprovalOperationsError(
+                    "approval_not_found", "The requested approval is unavailable."
+                )
+            assert record is not None
+            record = await self._expire_if_needed(record, context)
+            if context.actor_type != "human":
+                await self._deny(context, "approval_human_reviewer_required", request_id=request_id)
+                raise ApprovalOperationsError(
+                    "approval_human_reviewer_required",
+                    "Only a human governance identity may revoke an approval.",
+                )
+            if context.subject_id == record.packet.requested_by:
+                await self._deny(context, "approval_separation_required", request_id=request_id)
+                raise ApprovalOperationsError(
+                    "approval_separation_required",
+                    "The original requester cannot revoke their own approved request.",
+                )
+            replay = self._idempotency.get((request_id, idempotency_key))
+            if replay is not None:
+                if replay[1].state is not ApprovalState.REVOKED:
+                    await self._deny(
+                        context, "approval_idempotency_conflict", request_id=request_id
+                    )
+                    raise ApprovalOperationsError(
+                        "approval_idempotency_conflict",
+                        "The revocation conflicts with an earlier request.",
+                    )
+                return replay[1]
+            if record.state is not ApprovalState.APPROVED or record.version != expected_version:
+                await self._deny(context, "approval_state_conflict", request_id=request_id)
+                raise ApprovalOperationsError(
+                    "approval_state_conflict",
+                    "The approval request changed before this revocation.",
+                )
+            decision = ApprovalDecision(
+                decision_id=f"approval_decision_{uuid4().hex}",
+                request_version=record.version,
+                outcome=ApprovalOutcome.REVOKE,
+                reviewer_id=context.subject_id,
+                decided_at=context.requested_at,
+                rationale=rationale,
+            )
+            updated = replace(
+                record,
+                version=record.version + 1,
+                state=ApprovalState.REVOKED,
+                updated_at=context.requested_at,
+                decisions=(*record.decisions, decision),
+            )
+            await self._audit(
+                context,
+                event_type="atlas.approval.request.revoked",
+                outcome="succeeded",
+                result_code="approval_revoked",
+                request_id=request_id,
+                permission_id="approval.request.revoke",
+            )
+            self._records[request_id] = updated
+            fingerprint = self._digest_values(
+                {
+                    "operation": "revoke",
+                    "rationale": rationale,
+                    "expected_version": expected_version,
+                }
+            )
             self._idempotency[(request_id, idempotency_key)] = (fingerprint, updated)
             return updated
 

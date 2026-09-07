@@ -10,14 +10,17 @@ from atlas.api.approval_schemas import (
     ApprovalDecisionPayload,
     ApprovalRecordData,
     ApprovalResponse,
+    ApprovalWithdrawalPayload,
 )
 from atlas.api.errors import AtlasError
 from atlas.api.schemas import ResponseMeta
 from atlas.api.security import (
     authenticated_subject,
+    authorize_approval_cancel,
     authorize_approval_create,
     authorize_approval_decide,
     authorize_approval_read,
+    authorize_approval_revoke,
 )
 from atlas.core.capabilities import CapabilityClass
 from atlas.modules.approvals.application.service import (
@@ -67,8 +70,11 @@ def _error(exc: ApprovalOperationsError) -> AtlasError:
         "approval_human_reviewer_required",
         "approval_assurance_insufficient",
         "approval_separation_required",
+        "approval_cancel_not_requester",
     }:
         status = 403
+    elif exc.code in {"approval_rationale_required", "approval_wrong_operation"}:
+        status = 422
     else:
         status = 409
     return AtlasError(
@@ -154,6 +160,70 @@ async def decide_approval(
         record = await service.decide(
             request_id,
             outcome=ApprovalOutcome(payload.outcome),
+            rationale=payload.rationale,
+            expected_version=payload.expected_version,
+            idempotency_key=idempotency_key,
+            context=_context(request, subject, decision, now, CapabilityClass.C2_DIAGNOSTIC),
+        )
+    except ApprovalOperationsError as exc:
+        raise _error(exc) from exc
+    response.headers["Cache-Control"] = "no-store"
+    return ApprovalResponse(
+        data=ApprovalRecordData.from_domain(record),
+        meta=ResponseMeta(correlation_id=str(request.state.correlation_id), generated_at=now),
+    )
+
+
+@router.post("/{request_id}/cancel", response_model=ApprovalResponse)
+async def cancel_approval(
+    request_id: str,
+    payload: ApprovalWithdrawalPayload,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+    decision: Annotated[AuthorizationDecision, Depends(authorize_approval_cancel)],
+    idempotency_key: Annotated[
+        str,
+        Header(alias="Idempotency-Key", min_length=16, max_length=128),
+    ],
+) -> ApprovalResponse:
+    now = datetime.now(UTC)
+    service: ApprovalService = request.app.state.approval_service
+    try:
+        record = await service.cancel(
+            request_id,
+            rationale=payload.rationale,
+            expected_version=payload.expected_version,
+            idempotency_key=idempotency_key,
+            context=_context(request, subject, decision, now, CapabilityClass.C2_DIAGNOSTIC),
+        )
+    except ApprovalOperationsError as exc:
+        raise _error(exc) from exc
+    response.headers["Cache-Control"] = "no-store"
+    return ApprovalResponse(
+        data=ApprovalRecordData.from_domain(record),
+        meta=ResponseMeta(correlation_id=str(request.state.correlation_id), generated_at=now),
+    )
+
+
+@router.post("/{request_id}/revoke", response_model=ApprovalResponse)
+async def revoke_approval(
+    request_id: str,
+    payload: ApprovalWithdrawalPayload,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+    decision: Annotated[AuthorizationDecision, Depends(authorize_approval_revoke)],
+    idempotency_key: Annotated[
+        str,
+        Header(alias="Idempotency-Key", min_length=16, max_length=128),
+    ],
+) -> ApprovalResponse:
+    now = datetime.now(UTC)
+    service: ApprovalService = request.app.state.approval_service
+    try:
+        record = await service.revoke(
+            request_id,
             rationale=payload.rationale,
             expected_version=payload.expected_version,
             idempotency_key=idempotency_key,

@@ -27,6 +27,13 @@ class ApprovalDecisionPayload(BaseModel):
     expected_version: int = Field(ge=1)
 
 
+class ApprovalWithdrawalPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rationale: str = Field(min_length=5, max_length=1000)
+    expected_version: int = Field(ge=1)
+
+
 class ApprovalPlanStepData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
