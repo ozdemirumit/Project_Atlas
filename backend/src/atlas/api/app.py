@@ -60,6 +60,8 @@ from atlas.api.routes import (
     final_validations,
     finding_presentations,
     graph,
+    guardrail_human_review,
+    guardrail_security_incidents,
     health,
     health_checks,
     identity,
@@ -79,6 +81,7 @@ from atlas.api.routes import (
     license_analyses,
     malware_analyses,
     mcp_builder,
+    mcp_builder_drafts,
     model_context_assembly,
     model_lifecycle,
     package_approvals,
@@ -870,6 +873,14 @@ from atlas.modules.graph.adapters.synthetic import (
 )
 from atlas.modules.graph.application.engine import InMemoryGraphImpactAnalyzer
 from atlas.modules.graph.application.service import GraphImpactService
+from atlas.modules.guardrails.adapters.human_review_memory import (
+    InMemoryGuardrailReviewRepository,
+)
+from atlas.modules.guardrails.adapters.security_incident_memory import (
+    InMemorySecurityIncidentRepository,
+)
+from atlas.modules.guardrails.application.human_review import GuardrailReviewService
+from atlas.modules.guardrails.application.security_incident import SecurityIncidentService
 from atlas.modules.health_checks.adapters.brocade_sannav import FABRIC_HEALTH_DEFINITION_ID
 from atlas.modules.health_checks.adapters.commvault import (
     JOB_STATUS_DEFINITION_ID as COMMVAULT_JOB_STATUS_DEFINITION_ID,
@@ -1374,6 +1385,9 @@ from atlas.modules.mcp_builder.adapters.domain_review_memory import (
 from atlas.modules.mcp_builder.adapters.domain_review_postgres import (
     PostgreSQLMcpBuilderDomainReviewRepository,
 )
+from atlas.modules.mcp_builder.adapters.draft_and_supersession_memory import (
+    InMemoryBuilderDraftRepository,
+)
 from atlas.modules.mcp_builder.adapters.generation_filesystem import (
     FileSystemMcpBuilderArtifactPublisher,
 )
@@ -1406,6 +1420,7 @@ from atlas.modules.mcp_builder.adapters.validation_memory import (
 from atlas.modules.mcp_builder.adapters.validation_postgres import (
     PostgreSQLMcpBuilderValidationRepository,
 )
+from atlas.modules.mcp_builder.application.draft_and_supersession import BuilderDraftService
 from atlas.modules.mcp_builder.application.service import McpBuilderService
 from atlas.modules.platform.adapters.bootstrap_artifact_filesystem import (
     FileSystemReleaseArtifactPublisher,
@@ -3434,6 +3449,8 @@ def create_app(
     recommendation_outcome_service: RecommendationOutcomeService | None = None,
     bootstrap_rollback_service: BootstrapRollbackService | None = None,
     knowledge_source_registration_service: KnowledgeSourceRegistrationService | None = None,
+    guardrail_review_service: GuardrailReviewService | None = None,
+    security_incident_service: SecurityIncidentService | None = None,
     session_service: SessionService | None = None,
     api_credential_service: ApiCredentialService | None = None,
     identity_governance_service: IdentityGovernanceService | None = None,
@@ -3469,6 +3486,7 @@ def create_app(
     human_review_service: HumanReviewService | None = None,
     completion_receipt_service: CompletionReceiptService | None = None,
     mcp_builder_service: McpBuilderService | None = None,
+    builder_draft_service: BuilderDraftService | None = None,
     package_acquisition_service: PackageAcquisitionService | None = None,
     package_validation_service: PackageValidationService | None = None,
     package_supply_chain_inventory_service: PackageSupplyChainInventoryService | None = None,
@@ -3665,6 +3683,14 @@ def create_app(
             repository=InMemoryKnowledgeSourceRegistrationRepository(),
             audit_sink=resolved_audit_sink,
         )
+    )
+    resolved_guardrail_review_service = guardrail_review_service or GuardrailReviewService(
+        repository=InMemoryGuardrailReviewRepository(),
+        audit_sink=resolved_audit_sink,
+    )
+    resolved_security_incident_service = security_incident_service or SecurityIncidentService(
+        repository=InMemorySecurityIncidentRepository(),
+        audit_sink=resolved_audit_sink,
     )
     resolved_local_credential_repository = (
         local_credential_repository or InMemoryLocalCredentialRepository()
@@ -4137,6 +4163,10 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
+    resolved_builder_draft_service = builder_draft_service or BuilderDraftService(
+        repository=InMemoryBuilderDraftRepository(),
+        audit_sink=resolved_audit_sink,
+    )
     if package_acquisition_service is not None:
         resolved_package_acquisition_service = package_acquisition_service
     else:
@@ -10288,6 +10318,8 @@ def create_app(
         app.state.knowledge_source_registration_service = (
             resolved_knowledge_source_registration_service
         )
+        app.state.guardrail_review_service = resolved_guardrail_review_service
+        app.state.security_incident_service = resolved_security_incident_service
         app.state.identity_service = identity_service
         app.state.local_credential_service = resolved_local_credential_service
         app.state.session_service = resolved_session_service
@@ -10339,6 +10371,7 @@ def create_app(
         app.state.human_review_service = resolved_human_review_service
         app.state.completion_receipt_service = resolved_completion_receipt_service
         app.state.mcp_builder_service = resolved_mcp_builder_service
+        app.state.builder_draft_service = resolved_builder_draft_service
         app.state.package_acquisition_service = resolved_package_acquisition_service
         app.state.package_validation_service = resolved_package_validation_service
         app.state.package_supply_chain_inventory_service = (
@@ -10968,6 +11001,7 @@ def create_app(
     app.include_router(recovery.router, prefix="/api/v1")
     app.include_router(upgrades.router, prefix="/api/v1")
     app.include_router(mcp_builder.router, prefix="/api/v1")
+    app.include_router(mcp_builder_drafts.router, prefix="/api/v1")
     app.include_router(connectors.router, prefix="/api/v1")
     app.include_router(conversations.router, prefix="/api/v1")
     app.include_router(workflows.router, prefix="/api/v1")
@@ -11053,6 +11087,8 @@ def create_app(
     app.include_router(backup_operations.router, prefix="/api/v1")
     app.include_router(document_knowledge.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
+    app.include_router(guardrail_human_review.router, prefix="/api/v1")
+    app.include_router(guardrail_security_incidents.router, prefix="/api/v1")
     app.include_router(health_checks.router, prefix="/api/v1")
     app.include_router(investigations.router, prefix="/api/v1")
     app.include_router(rca.router, prefix="/api/v1")

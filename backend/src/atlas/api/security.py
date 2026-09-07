@@ -140,6 +140,12 @@ from atlas.modules.authorization.application.bootstrap import (
     CONVERSATION_TURN_APPEND,
     DEPLOYMENT_CONFIGURATION_PREVIEW,
     GRAPH_STORAGE_IMPACT_READ,
+    GUARDRAIL_HUMAN_REVIEW_ENQUEUE,
+    GUARDRAIL_HUMAN_REVIEW_RESOLVE,
+    GUARDRAIL_SECURITY_INCIDENT_CLOSE,
+    GUARDRAIL_SECURITY_INCIDENT_CONTAIN,
+    GUARDRAIL_SECURITY_INCIDENT_OPEN,
+    GUARDRAIL_SECURITY_INCIDENT_RECOVER,
     HEALTH_CHECK_OVERVIEW_READ,
     HEALTH_CHECK_RUN_CREATE,
     IDENTITY_GOVERNANCE_READ,
@@ -218,6 +224,8 @@ from atlas.modules.authorization.application.bootstrap import (
     MCP_BUILDER_DESIGN_READ,
     MCP_BUILDER_DOMAIN_REVIEW_CREATE,
     MCP_BUILDER_DOMAIN_REVIEW_READ,
+    MCP_BUILDER_DRAFT_ANALYZE,
+    MCP_BUILDER_DRAFT_CREATE,
     MCP_BUILDER_GENERATION_CREATE,
     MCP_BUILDER_GENERATION_READ,
     MCP_BUILDER_LAB_VALIDATION_CREATE,
@@ -226,6 +234,7 @@ from atlas.modules.authorization.application.bootstrap import (
     MCP_BUILDER_PROJECT_READ,
     MCP_BUILDER_SECURITY_REVIEW_CREATE,
     MCP_BUILDER_SECURITY_REVIEW_READ,
+    MCP_BUILDER_SUPERSESSION_CREATE,
     MCP_BUILDER_VALIDATION_CREATE,
     MCP_BUILDER_VALIDATION_READ,
     RCA_CLOSE,
@@ -378,6 +387,8 @@ from atlas.modules.authorization.application.bootstrap import (
     document_knowledge_scope,
     embedding_model_lifecycle_scope,
     graph_storage_impact_scope,
+    guardrail_human_review_scope,
+    guardrail_security_incident_scope,
     health_check_scope,
     identity_governance_scope,
     inventory_device_scope,
@@ -389,6 +400,7 @@ from atlas.modules.authorization.application.bootstrap import (
     knowledge_review_expiry_scope,
     knowledge_source_registration_scope,
     logical_backup_scope,
+    mcp_builder_draft_scope,
     mcp_builder_scope,
     operational_evidence_knowledge_draft_scope,
     operational_knowledge_correction_scope,
@@ -5253,6 +5265,249 @@ async def authorize_knowledge_deletion_legal_hold_complete(
             scope=knowledge_deletion_legal_hold_scope(
                 subject.organization_id, settings.environment
             ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_guardrail_human_review_enqueue(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=GUARDRAIL_HUMAN_REVIEW_ENQUEUE,
+            resource_type="resource.guardrails.human-review-entry",
+            scope=guardrail_human_review_scope(subject.organization_id, settings.environment),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_guardrail_human_review_resolve(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=GUARDRAIL_HUMAN_REVIEW_RESOLVE,
+            resource_type="resource.guardrails.human-review-entry",
+            scope=guardrail_human_review_scope(subject.organization_id, settings.environment),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_guardrail_security_incident_open(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=GUARDRAIL_SECURITY_INCIDENT_OPEN,
+            resource_type="resource.guardrails.security-incident",
+            scope=guardrail_security_incident_scope(subject.organization_id, settings.environment),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_guardrail_security_incident_contain(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=GUARDRAIL_SECURITY_INCIDENT_CONTAIN,
+            resource_type="resource.guardrails.security-incident",
+            scope=guardrail_security_incident_scope(subject.organization_id, settings.environment),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_guardrail_security_incident_recover(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=GUARDRAIL_SECURITY_INCIDENT_RECOVER,
+            resource_type="resource.guardrails.security-incident",
+            scope=guardrail_security_incident_scope(subject.organization_id, settings.environment),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_guardrail_security_incident_close(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=GUARDRAIL_SECURITY_INCIDENT_CLOSE,
+            resource_type="resource.guardrails.security-incident",
+            scope=guardrail_security_incident_scope(subject.organization_id, settings.environment),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_mcp_builder_draft_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=MCP_BUILDER_DRAFT_CREATE,
+            resource_type="resource.mcp-builder.draft",
+            scope=mcp_builder_draft_scope(subject.organization_id, settings.environment),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_mcp_builder_draft_analyze(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=MCP_BUILDER_DRAFT_ANALYZE,
+            resource_type="resource.mcp-builder.draft",
+            scope=mcp_builder_draft_scope(subject.organization_id, settings.environment),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_mcp_builder_supersession_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=MCP_BUILDER_SUPERSESSION_CREATE,
+            resource_type="resource.mcp-builder.supersession",
+            scope=mcp_builder_draft_scope(subject.organization_id, settings.environment),
             correlation_id=str(request.state.correlation_id),
             requested_at=datetime.now(UTC),
         )
