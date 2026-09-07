@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from uuid import uuid4
 
@@ -27,7 +27,15 @@ from atlas.modules.connectors.vendors.huawei_pacific.manifest import (
     NODE_EVENTS_CAPABILITY_ID as _HUAWEI_PACIFIC_NODE_EVENTS_CAPABILITY_ID,
 )
 from atlas.modules.rca.application.ports import RcaAssembler
-from atlas.modules.rca.domain.models import ConfirmationLevel, RcaCase, RcaCreateRequest
+from atlas.modules.rca.domain.models import (
+    ConfirmationLevel,
+    HumanReview,
+    RcaCase,
+    RcaCaseState,
+    RcaCreateRequest,
+    ReviewStatus,
+    is_valid_rca_case_transition,
+)
 
 RCA_RESOURCE_ID = "resource.rca.storage.synthetic"
 # Each vendor contributes its own named capability-id constants (see health_checks/application/
@@ -127,6 +135,84 @@ class RcaService:
             if case is None or case.version != version or case.target_id != target_id:
                 raise KeyError(case_id)
             return case
+
+    async def review(
+        self,
+        case_id: str,
+        *,
+        version: int,
+        reviewer_id: str,
+        status: ReviewStatus,
+        decision_reason: str,
+        domain_confirmation_criterion: str | None,
+        context: RcaAccessContext,
+    ) -> RcaCase:
+        """SS22: "reviewers can... approve the final problem-record summary." Moves a
+        `PROVISIONAL`/`INCONCLUSIVE` case to `REVIEWED` -- the one real state transition this
+        slice can honestly perform, since it never confirms a root cause itself (see
+        `RcaCaseState`'s docstring)."""
+        if status is ReviewStatus.PENDING:
+            raise RcaOperationsError(
+                "rca_review_requires_decision", "A review must record an explicit decision."
+            )
+        async with self._lock:
+            case = self._cases.get(case_id)
+            if case is None or case.version != version:
+                raise RcaOperationsError(
+                    "rca_case_unavailable", "The requested RCA case is unavailable."
+                )
+            if not is_valid_rca_case_transition(case.state, RcaCaseState.REVIEWED):
+                raise RcaOperationsError(
+                    "rca_review_invalid_state",
+                    "This RCA case cannot be reviewed from its current state.",
+                )
+            try:
+                updated = replace(
+                    case,
+                    state=RcaCaseState.REVIEWED,
+                    human_review=HumanReview(
+                        status=status,
+                        reviewer_id=reviewer_id,
+                        reviewed_at=context.requested_at,
+                        decision_reason=decision_reason,
+                        domain_confirmation_criterion=domain_confirmation_criterion,
+                    ),
+                    updated_at=context.requested_at,
+                )
+            except ValueError as exc:
+                raise RcaOperationsError(
+                    "rca_review_invalid", "The review decision is invalid for this case."
+                ) from exc
+            self._cases[case.case_id] = updated
+            await self._record_audit(
+                context,
+                event_type="atlas.rca.reviewed",
+                outcome="succeeded",
+                result_code="rca_case_reviewed",
+            )
+            return updated
+
+    async def close(self, case_id: str, *, version: int, context: RcaAccessContext) -> RcaCase:
+        async with self._lock:
+            case = self._cases.get(case_id)
+            if case is None or case.version != version:
+                raise RcaOperationsError(
+                    "rca_case_unavailable", "The requested RCA case is unavailable."
+                )
+            if not is_valid_rca_case_transition(case.state, RcaCaseState.CLOSED):
+                raise RcaOperationsError(
+                    "rca_close_invalid_state",
+                    "This RCA case cannot be closed from its current state.",
+                )
+            updated = replace(case, state=RcaCaseState.CLOSED, updated_at=context.requested_at)
+            self._cases[case.case_id] = updated
+            await self._record_audit(
+                context,
+                event_type="atlas.rca.closed",
+                outcome="succeeded",
+                result_code="rca_case_closed",
+            )
+            return updated
 
     @staticmethod
     def _validate_scope(request: RcaCreateRequest, context: RcaAccessContext) -> None:

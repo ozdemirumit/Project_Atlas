@@ -9,9 +9,56 @@ from atlas.modules.investigations.domain.models import EvidenceUnit, TimelineEve
 
 
 class RcaCaseState(StrEnum):
+    """SS6's eleven-state lifecycle diagram. This slice's assembler always produces a case
+    already at `PROVISIONAL`/`INCONCLUSIVE` in one synchronous call -- there is no incremental
+    intake/scoping/collection workflow anywhere in this codebase, so `INTAKE`/`SCOPING`/
+    `COLLECTING`/`ANALYZING`/`TESTING` are real, documented diagram states with no current
+    producer, the same honest gap this session already named for `RecommendationState.DRAFT`/
+    `VALIDATING`. `CONFIRMED` is likewise real but unreachable *by this module's own design*:
+    `RcaService._validate_case` deliberately raises if a case ever confirms a root cause ("this
+    slice cannot confirm root cause") -- extending the enum to include it documents the target
+    shape without pretending this slice grants confirmation authority it doesn't have. Because
+    `CONFIRMED` can never actually be reached, `PROVISIONAL` (like `INCONCLUSIVE`) transitions
+    directly to `REVIEWED` below -- the diagram's `Confirmed -> Reviewed` edge only ever collapses
+    onto `Provisional -> Reviewed` in a codebase where nothing ever produces `Confirmed`."""
+
+    INTAKE = "intake"
+    SCOPING = "scoping"
+    COLLECTING = "collecting"
+    ANALYZING = "analyzing"
+    TESTING = "testing"
     PROVISIONAL = "provisional"
+    CONFIRMED = "confirmed"
     INCONCLUSIVE = "inconclusive"
     REVIEWED = "reviewed"
+    CLOSED = "closed"
+    CANCELLED = "cancelled"
+
+
+_RCA_CASE_STATE_TRANSITIONS: dict[RcaCaseState, frozenset[RcaCaseState]] = {
+    RcaCaseState.INTAKE: frozenset({RcaCaseState.SCOPING, RcaCaseState.CANCELLED}),
+    RcaCaseState.SCOPING: frozenset({RcaCaseState.COLLECTING, RcaCaseState.CANCELLED}),
+    RcaCaseState.COLLECTING: frozenset({RcaCaseState.ANALYZING, RcaCaseState.CANCELLED}),
+    RcaCaseState.ANALYZING: frozenset({RcaCaseState.TESTING, RcaCaseState.PROVISIONAL}),
+    RcaCaseState.TESTING: frozenset(
+        {RcaCaseState.COLLECTING, RcaCaseState.ANALYZING, RcaCaseState.PROVISIONAL}
+    ),
+    RcaCaseState.PROVISIONAL: frozenset(
+        {RcaCaseState.CONFIRMED, RcaCaseState.INCONCLUSIVE, RcaCaseState.REVIEWED}
+    ),
+    RcaCaseState.CONFIRMED: frozenset({RcaCaseState.REVIEWED}),
+    RcaCaseState.INCONCLUSIVE: frozenset({RcaCaseState.REVIEWED}),
+    RcaCaseState.REVIEWED: frozenset({RcaCaseState.CLOSED}),
+    RcaCaseState.CLOSED: frozenset(),
+    RcaCaseState.CANCELLED: frozenset(),
+}
+
+
+def is_valid_rca_case_transition(current: RcaCaseState, target: RcaCaseState) -> bool:
+    """SS6's eleven-state lifecycle diagram, reproduced as an explicit adjacency table (mirrors
+    `RunbookLifecycleState`'s and `is_valid_recommendation_state_transition`'s established
+    pattern elsewhere)."""
+    return target in _RCA_CASE_STATE_TRANSITIONS[current]
 
 
 class RcaSeverity(StrEnum):
