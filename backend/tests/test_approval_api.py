@@ -11,6 +11,8 @@ from fastapi.testclient import TestClient
 from atlas.api.app import create_app
 from atlas.core.audit import AuditRecord
 from atlas.core.config import Settings
+from atlas.core.event_catalog import ApprovalGranted, ApprovalRequestCreated
+from atlas.core.events import InMemoryDomainEventBus
 from atlas.modules.approvals.application.service import (
     ApprovalAccessContext,
     ApprovalOperationsError,
@@ -821,3 +823,101 @@ def test_cancel_endpoint_is_reachable_over_http() -> None:
     assert response.status_code == 200
     assert response.headers["Cache-Control"] == "no-store"
     assert response.json()["data"]["state"] == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_creation_publishes_approval_request_created_event() -> None:
+    sink = CollectingAuditSink()
+    bus = InMemoryDomainEventBus()
+    rca = RcaService(assembler=SyntheticStorageRcaAssembler(), audit_sink=sink)
+    recommendation = RecommendationService(
+        source_provider=rca,
+        assembler=SyntheticStorageRecommendationAssembler(),
+        audit_sink=sink,
+    )
+    approval = ApprovalService(
+        recommendation_provider=recommendation, audit_sink=sink, event_bus=bus
+    )
+    with TestClient(
+        create_app(
+            settings(),
+            audit_sink=sink,
+            rca_service=rca,
+            recommendation_service=recommendation,
+            approval_service=approval,
+        )
+    ) as client:
+        data = create_approval(client)
+
+    assert len(bus.published) == 1
+    envelope = bus.published[0]
+    assert envelope.event_type == "ApprovalRequestCreated"
+    assert envelope.subject_id == data["request_id"]
+    assert isinstance(envelope.payload, ApprovalRequestCreated)
+    assert envelope.payload.request_id == data["request_id"]
+    assert envelope.payload.requested_by == "subject.development.operator"
+
+
+@pytest.mark.asyncio
+async def test_approval_publishes_approval_granted_event_but_rejection_does_not() -> None:
+    sink = CollectingAuditSink()
+    bus = InMemoryDomainEventBus()
+    rca = RcaService(assembler=SyntheticStorageRcaAssembler(), audit_sink=sink)
+    recommendation = RecommendationService(
+        source_provider=rca,
+        assembler=SyntheticStorageRecommendationAssembler(),
+        audit_sink=sink,
+    )
+    approval = ApprovalService(
+        recommendation_provider=recommendation, audit_sink=sink, event_bus=bus
+    )
+    with TestClient(
+        create_app(
+            settings(),
+            audit_sink=sink,
+            rca_service=rca,
+            recommendation_service=recommendation,
+            approval_service=approval,
+        )
+    ) as client:
+        data = create_approval(client)
+
+    granted = await approval.decide(
+        str(data["request_id"]),
+        outcome=ApprovalOutcome.APPROVE,
+        rationale="The evidence supports this bounded read-only diagnostic plan.",
+        expected_version=int(data["version"]),
+        idempotency_key="approval-event-key-0001",
+        context=access_context(data),
+    )
+
+    assert granted.state is ApprovalState.APPROVED
+    granted_events = [event for event in bus.published if event.event_type == "ApprovalGranted"]
+    assert len(granted_events) == 1
+    assert isinstance(granted_events[0].payload, ApprovalGranted)
+    assert granted_events[0].payload.request_id == data["request_id"]
+    assert granted_events[0].payload.reviewer_id == "subject.enterprise.reviewer"
+
+    # A second, separate request that is rejected must never publish ApprovalGranted.
+    with TestClient(
+        create_app(
+            settings(),
+            audit_sink=sink,
+            rca_service=rca,
+            recommendation_service=recommendation,
+            approval_service=approval,
+        )
+    ) as client:
+        second_data = create_approval(client)
+    await approval.decide(
+        str(second_data["request_id"]),
+        outcome=ApprovalOutcome.REJECT,
+        rationale="This bounded read-only diagnostic plan is not needed.",
+        expected_version=int(second_data["version"]),
+        idempotency_key="approval-event-key-0002",
+        context=access_context(second_data),
+    )
+    granted_events_after_rejection = [
+        event for event in bus.published if event.event_type == "ApprovalGranted"
+    ]
+    assert len(granted_events_after_rejection) == 1

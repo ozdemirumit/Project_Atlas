@@ -11,6 +11,9 @@ from uuid import uuid4
 
 from atlas import __version__
 from atlas.core.audit import AuditRecord, AuditSink
+from atlas.core.classification import DataClassification
+from atlas.core.event_catalog import ApprovalGranted, ApprovalRequestCreated
+from atlas.core.events import EventEnvelope, InMemoryDomainEventBus
 from atlas.modules.approvals.application.ports import RecommendationProvider
 from atlas.modules.approvals.domain.models import (
     ApprovalCreateRequest,
@@ -22,6 +25,8 @@ from atlas.modules.approvals.domain.models import (
     ApprovalState,
 )
 from atlas.modules.recommendations.domain.models import OptionState, RecommendationArtifact
+
+EVENT_PRODUCER = "approvals"
 
 APPROVAL_RESOURCE_ID = "resource.approval.storage.synthetic"
 CANONICALIZATION_VERSION = "atlas-approval-packet.v1"
@@ -56,9 +61,11 @@ class ApprovalService:
         *,
         recommendation_provider: RecommendationProvider,
         audit_sink: AuditSink,
+        event_bus: InMemoryDomainEventBus | None = None,
     ) -> None:
         self._recommendation_provider = recommendation_provider
         self._audit_sink = audit_sink
+        self._event_bus = event_bus if event_bus is not None else InMemoryDomainEventBus()
         self._records: dict[str, ApprovalRecord] = {}
         self._idempotency: dict[tuple[str, str], tuple[str, ApprovalRecord]] = {}
         self._lock = asyncio.Lock()
@@ -121,6 +128,17 @@ class ApprovalService:
         )
         async with self._lock:
             self._records[request_id] = record
+        await self._publish_domain_event(
+            context,
+            event_type="ApprovalRequestCreated",
+            subject_id=request_id,
+            payload=ApprovalRequestCreated(
+                request_id=request_id,
+                packet_version=packet.packet_version,
+                requested_by=context.subject_id,
+                created_at=context.requested_at,
+            ),
+        )
         return record
 
     async def get(
@@ -247,7 +265,19 @@ class ApprovalService:
             )
             self._records[request_id] = updated
             self._idempotency[(request_id, idempotency_key)] = (fingerprint, updated)
-            return updated
+        if outcome is ApprovalOutcome.APPROVE:
+            await self._publish_domain_event(
+                context,
+                event_type="ApprovalGranted",
+                subject_id=request_id,
+                payload=ApprovalGranted(
+                    request_id=request_id,
+                    decision_id=decision.decision_id,
+                    reviewer_id=context.subject_id,
+                    granted_at=context.requested_at,
+                ),
+            )
+        return updated
 
     async def cancel(
         self,
@@ -792,5 +822,35 @@ class ApprovalService:
                 decision_id=context.decision_id,
                 outcome=outcome,
                 result_code=result_code,
+            )
+        )
+
+    async def _publish_domain_event(
+        self,
+        context: ApprovalAccessContext,
+        *,
+        event_type: str,
+        subject_id: str,
+        payload: object,
+    ) -> None:
+        """ATLAS-016: publishes one of the Initial Event Catalog's approval events
+        (`ApprovalRequestCreated`/`ApprovalGranted`) after the owned state transition has
+        already committed (SS4.3), through the shared in-process bus rather than a bespoke
+        approvals-only mechanism."""
+        await self._event_bus.publish(
+            EventEnvelope(
+                event_id=f"evt_{uuid4().hex}",
+                event_type=event_type,
+                event_version="1.0",
+                occurred_at=context.requested_at,
+                recorded_at=context.requested_at,
+                producer=EVENT_PRODUCER,
+                subject_type="approval_request",
+                subject_id=subject_id,
+                correlation_id=context.correlation_id,
+                classification=DataClassification.INTERNAL,
+                payload=payload,
+                organization_id=context.organization_id,
+                environment_id=context.environment_id,
             )
         )
