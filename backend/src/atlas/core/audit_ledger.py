@@ -238,6 +238,11 @@ class InMemoryDurableAuditLedger:
         self._by_event_id: dict[str, LedgerRecord] = {}
         self._lock = asyncio.Lock()
 
+    async def record(self, event: AuditRecord) -> None:
+        """Satisfies `atlas.core.audit.AuditSink` so this ledger can be used anywhere an
+        `AuditSink` is expected, not only through the richer `DurableAuditLedger` protocol."""
+        await self.append(event)
+
     async def append(self, event: AuditRecord) -> LedgerRecord:
         async with self._lock:
             existing = self._by_event_id.get(event.event_id)
@@ -250,7 +255,11 @@ class InMemoryDurableAuditLedger:
                 return existing
             sequence = len(self._records) + 1
             previous_digest = self._records[-1].record_digest if self._records else GENESIS_DIGEST
-            accepted_at = event.occurred_at
+            # SS6 tracks producer time (event.occurred_at) and ledger-acceptance time as two
+            # separate fields; acceptance time is the ledger's own clock at the moment of
+            # acceptance, never borrowed from the producer, whose clock can be skewed or simply
+            # unordered relative to concurrent producers.
+            accepted_at = datetime.now(UTC)
             digest = compute_record_digest(
                 previous_record_digest=previous_digest,
                 event=event,
@@ -308,6 +317,11 @@ class PostgresDurableAuditLedger:
             ledger_name=ledger_name,
         )
 
+    async def record(self, event: AuditRecord) -> None:
+        """Satisfies `atlas.core.audit.AuditSink` so this ledger can be used anywhere an
+        `AuditSink` is expected, not only through the richer `DurableAuditLedger` protocol."""
+        await self.append(event)
+
     async def append(self, event: AuditRecord) -> LedgerRecord:
         async with self._sessions.begin() as session:
             await session.execute(
@@ -337,7 +351,12 @@ class PostgresDurableAuditLedger:
                 return existing_record
             sequence = head.last_sequence + 1
             previous_digest = head.last_digest
-            accepted_at = event.occurred_at
+            # SS6 tracks producer time (event.occurred_at) and ledger-acceptance time as two
+            # separate fields; acceptance time is the ledger's own clock at the moment of
+            # acceptance, never borrowed from the producer, whose clock can be skewed or simply
+            # unordered relative to concurrent producers. Captured after the head row's lock is
+            # acquired, so acceptance order here matches true commit order.
+            accepted_at = datetime.now(UTC)
             digest = compute_record_digest(
                 previous_record_digest=previous_digest,
                 event=event,

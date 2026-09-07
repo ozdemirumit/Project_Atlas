@@ -66,6 +66,11 @@ async def test_live_postgres_audit_ledger_chains_appends_and_verifies_intact() -
         report = await ledger.verify_integrity(at=datetime.now(UTC))
         assert report.is_intact
         assert report.records_checked == 2
+
+        await ledger.record(_event("evt_via_record"))
+        report_after_record = await ledger.verify_integrity(at=datetime.now(UTC))
+        assert report_after_record.is_intact
+        assert report_after_record.records_checked == 3
     finally:
         async with engine.begin() as connection:
             await connection.execute(

@@ -4,12 +4,13 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from atlas.core.audit import AuditRecord
+from atlas.core.audit import AuditRecord, AuditSink
 from atlas.core.audit_ledger import (
     GENESIS_DIGEST,
     AuditIntegrityFindingKind,
     AuditLedgerConflictError,
     InMemoryDurableAuditLedger,
+    compute_record_digest,
 )
 
 NOW = datetime(2026, 9, 7, 12, 0, tzinfo=UTC)
@@ -37,6 +38,15 @@ def _event(**overrides: object) -> AuditRecord:
     }
     defaults.update(overrides)
     return AuditRecord(**defaults)  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_record_satisfies_audit_sink_and_appends() -> None:
+    ledger = InMemoryDurableAuditLedger()
+    sink: AuditSink = ledger
+    await sink.record(_event())
+    report = await ledger.verify_integrity(at=NOW)
+    assert report.records_checked == 1
 
 
 @pytest.mark.asyncio
@@ -135,10 +145,28 @@ async def test_verify_integrity_detects_a_forged_chain_link() -> None:
 
 @pytest.mark.asyncio
 async def test_verify_integrity_detects_a_clock_anomaly() -> None:
+    # Ledger-acceptance time is the ledger's own clock, independent of each event's own
+    # (producer-controlled) occurred_at -- so a genuine clock anomaly can only arise from the
+    # ledger's own acceptance clock going backwards, simulated here the same way as a forged
+    # chain link: splice in a record whose accepted_at precedes its predecessor's, recomputing
+    # its digest so only the clock anomaly (not also a chain mismatch) is detected.
     ledger = InMemoryDurableAuditLedger()
-    await ledger.append(_event(event_id="evt_001", occurred_at=NOW))
-    earlier = NOW - timedelta(hours=1)
-    await ledger.append(_event(event_id="evt_002", occurred_at=earlier))
+    await ledger.append(_event(event_id="evt_001"))
+    second = await ledger.append(_event(event_id="evt_002"))
+    earlier_accepted_at = second.accepted_at - timedelta(hours=1)
+    tampered_digest = compute_record_digest(
+        previous_record_digest=second.previous_record_digest,
+        event=second.event,
+        sequence=second.sequence,
+        accepted_at=earlier_accepted_at,
+    )
+    ledger._records[1] = type(second)(
+        sequence=second.sequence,
+        event=second.event,
+        accepted_at=earlier_accepted_at,
+        previous_record_digest=second.previous_record_digest,
+        record_digest=tampered_digest,
+    )
     report = await ledger.verify_integrity(at=NOW)
     assert report.is_intact is False
     assert any(

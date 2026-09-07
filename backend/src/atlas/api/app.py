@@ -132,6 +132,7 @@ from atlas.api.routes import (
     workload_identities,
 )
 from atlas.core.audit import AuditSink, LoggingAuditSink
+from atlas.core.audit_ledger import PostgresDurableAuditLedger
 from atlas.core.classification import DataClassification
 from atlas.core.config import Settings, get_settings
 from atlas.core.persistence.database import DatabaseHealthProbe
@@ -3512,7 +3513,11 @@ def create_app(
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     operational_posture = assert_advisory_only_composition()
-    base_audit_sink = audit_sink or LoggingAuditSink(resolved_settings.logger)
+    base_audit_sink = audit_sink or (
+        PostgresDurableAuditLedger.from_url(resolved_settings.database_url)
+        if resolved_settings.database_url
+        else LoggingAuditSink(resolved_settings.logger)
+    )
     resolved_security_export_service = security_export_service or SecurityExportService(
         delegate=base_audit_sink,
         destinations=build_synthetic_syslog_destinations(),
