@@ -19969,3 +19969,36 @@ class DocumentKnowledgeVectorModel(Base):
     model_profile_id: Mapped[str] = mapped_column(String(128), nullable=False)
     embedding: Mapped[list[float]] = mapped_column(Vector(384), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class AuditLedgerHeadModel(Base):
+    """Tracks each named ledger's chain tip (ATLAS-032 SS12's hash chain). Locked with
+    `SELECT ... FOR UPDATE` inside the append transaction to serialize concurrent appenders --
+    hash chaining is inherently sequential, so this table exists to make that serialization
+    explicit rather than scanning `audit_ledger_records` for its own tail on every append.
+    """
+
+    __tablename__ = "audit_ledger_heads"
+
+    ledger_name: Mapped[str] = mapped_column(String(128), primary_key=True)
+    last_sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    last_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class AuditLedgerRecordModel(Base):
+    """The durable, append-only audit ledger itself (ATLAS-032 SS5/SS12). No application code
+    issues UPDATE or DELETE against this table -- the only mutating operation is INSERT.
+    """
+
+    __tablename__ = "audit_ledger_records"
+    __table_args__ = (
+        UniqueConstraint("ledger_name", "event_id", name="uq_audit_ledger_records_event"),
+    )
+
+    ledger_name: Mapped[str] = mapped_column(String(128), primary_key=True)
+    sequence: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    previous_record_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    record_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
