@@ -31,8 +31,23 @@ class ItsmProviderFamily(StrEnum):
 
 
 class ItsmAllowedOperation(StrEnum):
+    """SS7's supported integration operations."""
+
+    # Inbound
+    RETRIEVE_RECORD = "retrieve_record"
+    READ_RECORD_STATE = "read_record_state"
+    RECEIVE_CHANGE_NOTIFICATION = "receive_change_notification"
+    RETRIEVE_RECORD_HISTORY = "retrieve_record_history"
+    RETRIEVE_CONFIGURATION_ITEMS = "retrieve_configuration_items"
+    VALIDATE_RECORD_CURRENT = "validate_record_current"
+    # Outbound
     APPEND_ANALYSIS = "append_analysis"
     CREATE_INCIDENT_DRAFT = "create_incident_draft"
+    LINK_EVIDENCE_REFERENCE = "link_evidence_reference"
+    CREATE_OR_UPDATE_TASK = "create_or_update_task"
+    ATTACH_EVIDENCE_PACKAGE = "attach_evidence_package"
+    RECORD_WORKFLOW_OUTCOME = "record_workflow_outcome"
+    UPDATE_INTEGRATION_OWNED_FIELD = "update_integration_owned_field"
 
 
 class ItsmWriteSemantics(StrEnum):
