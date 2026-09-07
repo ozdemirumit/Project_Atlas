@@ -12,6 +12,7 @@ from atlas.core.audit import AuditRecord
 from atlas.core.capabilities import CapabilityClass
 from atlas.modules.authorization.application.bootstrap import (
     AI_GROUNDED_QUERY_CREATE,
+    AI_MODEL_LIFECYCLE_ADMINISTER,
     AI_PROTECTED_ANSWER_PRESENTATION_CREATE,
     AI_PROTECTED_ANSWER_PRESENTATION_READ,
     AI_PROTECTED_CANDIDATE_IMPACT_CREATE,
@@ -306,6 +307,7 @@ from atlas.modules.authorization.application.bootstrap import (
     WORKLOAD_IDENTITY_ADMIN_ROTATE,
     WORKLOAD_IDENTITY_GOVERNANCE_READ,
     ai_grounded_query_scope,
+    ai_model_lifecycle_scope,
     ai_protected_answer_presentation_scope,
     ai_protected_candidate_impact_scope,
     ai_protected_candidate_risk_recovery_scope,
@@ -4857,6 +4859,33 @@ async def authorize_knowledge_embedding_model_lifecycle_administer(
             permission_id=KNOWLEDGE_EMBEDDING_MODEL_LIFECYCLE_ADMINISTER,
             resource_type="resource.knowledge.embedding-model",
             scope=embedding_model_lifecycle_scope(subject.organization_id, settings.environment),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_ai_model_lifecycle_administer(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=AI_MODEL_LIFECYCLE_ADMINISTER,
+            resource_type="resource.ai.model",
+            scope=ai_model_lifecycle_scope(subject.organization_id, settings.environment),
             correlation_id=str(request.state.correlation_id),
             requested_at=datetime.now(UTC),
         )

@@ -156,3 +156,23 @@ def test_embedding_model_lifecycle_is_reachable_through_the_api() -> None:
             )
             assert transitioned.status_code == 200
             assert transitioned.json()["data"]["stage"] == target_stage
+
+
+def test_ai_model_lifecycle_is_reachable_through_the_api() -> None:
+    with TestClient(create_app(_settings())) as client:
+        csrf = _login(client)
+        registered = client.post(
+            "/api/v1/ai/models/model.local-llama-70b-wiring-test",
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert registered.status_code == 201
+        assert registered.json()["data"]["stage"] == "registered"
+
+        for target_stage in ("under_evaluation", "approved_for_production_tasks"):
+            transitioned = client.post(
+                "/api/v1/ai/models/model.local-llama-70b-wiring-test/transitions",
+                json={"target_stage": target_stage},
+                headers={"X-CSRF-Token": csrf},
+            )
+            assert transitioned.status_code == 200
+            assert transitioned.json()["data"]["stage"] == target_stage

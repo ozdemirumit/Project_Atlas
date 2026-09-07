@@ -75,6 +75,7 @@ from atlas.api.routes import (
     malware_analyses,
     mcp_builder,
     model_context_assembly,
+    model_lifecycle,
     package_approvals,
     package_installations,
     package_registrations,
@@ -144,6 +145,7 @@ from atlas.core.protected_content import (
     ProtectedContentStore,
     UnavailableProtectedContentStore,
 )
+from atlas.modules.ai.adapters.model_lifecycle_memory import InMemoryModelLifecycleRepository
 from atlas.modules.ai.adapters.openai_compatible import OpenAICompatibleTransport
 from atlas.modules.ai.adapters.protected_answer_presentation_memory import (
     InMemoryProtectedAnswerPresentationPolicySource,
@@ -261,6 +263,7 @@ from atlas.modules.ai.adapters.protected_recommendation_presentation_synthetic i
 )
 from atlas.modules.ai.adapters.synthetic import SyntheticOpenAICompatibleTransport
 from atlas.modules.ai.application.gateway import ModelGateway
+from atlas.modules.ai.application.model_lifecycle import ModelLifecycleService
 from atlas.modules.ai.application.ports import ModelTransport
 from atlas.modules.ai.application.protected_answer_presentation import (
     GovernedProtectedAnswerPresentationService,
@@ -3377,6 +3380,7 @@ def create_app(
         SyslogDestinationAdministrationService | None
     ) = None,
     embedding_model_lifecycle_service: EmbeddingModelLifecycleService | None = None,
+    model_lifecycle_service: ModelLifecycleService | None = None,
     session_service: SessionService | None = None,
     api_credential_service: ApiCredentialService | None = None,
     identity_governance_service: IdentityGovernanceService | None = None,
@@ -3568,6 +3572,10 @@ def create_app(
             repository=InMemoryEmbeddingModelLifecycleRepository(),
             audit_sink=resolved_audit_sink,
         )
+    )
+    resolved_model_lifecycle_service = model_lifecycle_service or ModelLifecycleService(
+        repository=InMemoryModelLifecycleRepository(),
+        audit_sink=resolved_audit_sink,
     )
     resolved_local_credential_repository = (
         local_credential_repository or InMemoryLocalCredentialRepository()
@@ -10171,6 +10179,7 @@ def create_app(
             resolved_syslog_destination_administration_service
         )
         app.state.embedding_model_lifecycle_service = resolved_embedding_model_lifecycle_service
+        app.state.model_lifecycle_service = resolved_model_lifecycle_service
         app.state.identity_service = identity_service
         app.state.local_credential_service = resolved_local_credential_service
         app.state.session_service = resolved_session_service
@@ -10899,6 +10908,7 @@ def create_app(
     app.include_router(deterministic_chunking.router, prefix="/api/v1")
     app.include_router(embedding_generation.router, prefix="/api/v1")
     app.include_router(embedding_model_lifecycle.router, prefix="/api/v1")
+    app.include_router(model_lifecycle.router, prefix="/api/v1")
     app.include_router(index_staging_validation.router, prefix="/api/v1")
     app.include_router(retrieval_index_publication.router, prefix="/api/v1")
     app.include_router(protected_retrieval.router, prefix="/api/v1")

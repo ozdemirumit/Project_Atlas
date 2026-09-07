@@ -40,6 +40,7 @@ ITSM_SANDBOX_CONFORMANCE_READ = "itsm.integrations.sandbox-conformance.read"
 ITSM_SANDBOX_CONFORMANCE_CREATE = "itsm.integrations.sandbox-conformance.create"
 ITSM_SANDBOX_ONBOARDING_READ = "itsm.integrations.sandbox-onboarding.read"
 AI_GROUNDED_QUERY_CREATE = "ai.grounded-query.create"
+AI_MODEL_LIFECYCLE_ADMINISTER = "ai.model-lifecycle.administer"
 CONVERSATION_READ = "conversation.read"
 CONVERSATION_CREATE = "conversation.create"
 CONVERSATION_TURN_APPEND = "conversation.turn.append"
@@ -1266,6 +1267,17 @@ def embedding_model_lifecycle_scope(organization_id: str, environment: str) -> R
     )
 
 
+def ai_model_lifecycle_scope(organization_id: str, environment: str) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.ai",
+        resource_id="resource.ai.model-lifecycle",
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
 def operational_knowledge_review_request_scope(
     organization_id: str, environment: str, capability_class: CapabilityClass
 ) -> ResourceScope:
@@ -2486,6 +2498,10 @@ def build_development_authorization_service(
             description="Create an evidence-grounded answer in the exact authorized scope.",
         ),
         PermissionDefinition(
+            permission_id=AI_MODEL_LIFECYCLE_ADMINISTER,
+            description="Register and transition a model through its governed lifecycle.",
+        ),
+        PermissionDefinition(
             permission_id=CONVERSATION_READ,
             description="Read owned operational conversations in the exact authorized scope.",
         ),
@@ -3681,6 +3697,7 @@ def build_development_authorization_service(
                 ITSM_SANDBOX_CONFORMANCE_CREATE,
                 ITSM_SANDBOX_ONBOARDING_READ,
                 AI_GROUNDED_QUERY_CREATE,
+                AI_MODEL_LIFECYCLE_ADMINISTER,
                 CONVERSATION_READ,
                 CONVERSATION_CREATE,
                 CONVERSATION_TURN_APPEND,
@@ -6416,6 +6433,16 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=embedding_model_lifecycle_scope(
+                    settings.development_organization_id, settings.environment
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.ai-model-lifecycle",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=ai_model_lifecycle_scope(
                     settings.development_organization_id, settings.environment
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),
