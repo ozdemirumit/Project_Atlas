@@ -35,7 +35,76 @@ class RiskLevel(StrEnum):
 
 
 class RecommendationState(StrEnum):
+    """SS21's state diagram. `READY_FOR_REVIEW` is the only state any adapter in this codebase
+    currently produces -- candidate generation always creates a recommendation already validated
+    and ready for human review, so `DRAFT`/`VALIDATING` are real, documented states with no
+    current producer, not a gap: nothing in this codebase authors a recommendation draft
+    incrementally before it is complete. The remaining states are reachable only through human
+    review and (today, entirely external, undocumented-in-code) execution outcomes; nothing here
+    computes a transition automatically -- `is_valid_recommendation_state_transition` only
+    validates that a *proposed* transition matches SS21's diagram, matching the read-only,
+    advisory-only posture this module has everywhere else."""
+
+    DRAFT = "draft"
+    VALIDATING = "validating"
     READY_FOR_REVIEW = "ready_for_review"
+    REVIEWED = "reviewed"
+    APPROVED_FOR_PLANNING = "approved_for_planning"
+    IMPLEMENTED = "implemented"
+    OUTCOME_REVIEWED = "outcome_reviewed"
+    RETIRED = "retired"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+    SUPERSEDED = "superseded"
+
+
+_RECOMMENDATION_STATE_TRANSITIONS: dict[RecommendationState, frozenset[RecommendationState]] = {
+    RecommendationState.DRAFT: frozenset({RecommendationState.VALIDATING}),
+    RecommendationState.VALIDATING: frozenset(
+        {RecommendationState.DRAFT, RecommendationState.READY_FOR_REVIEW}
+    ),
+    RecommendationState.READY_FOR_REVIEW: frozenset(
+        {RecommendationState.REVIEWED, RecommendationState.REJECTED}
+    ),
+    RecommendationState.REVIEWED: frozenset(
+        {RecommendationState.APPROVED_FOR_PLANNING, RecommendationState.SUPERSEDED}
+    ),
+    RecommendationState.APPROVED_FOR_PLANNING: frozenset(
+        {
+            RecommendationState.EXPIRED,
+            RecommendationState.SUPERSEDED,
+            RecommendationState.IMPLEMENTED,
+        }
+    ),
+    RecommendationState.IMPLEMENTED: frozenset({RecommendationState.OUTCOME_REVIEWED}),
+    RecommendationState.OUTCOME_REVIEWED: frozenset({RecommendationState.RETIRED}),
+    RecommendationState.REJECTED: frozenset({RecommendationState.RETIRED}),
+    RecommendationState.EXPIRED: frozenset({RecommendationState.RETIRED}),
+    RecommendationState.SUPERSEDED: frozenset(),
+    RecommendationState.RETIRED: frozenset(),
+}
+
+
+def is_valid_recommendation_state_transition(
+    current: RecommendationState, target: RecommendationState
+) -> bool:
+    """SS21's state diagram, reproduced as an explicit adjacency table (mirrors
+    `RunbookLifecycleState`'s and `is_valid_transition`'s established pattern elsewhere)."""
+    return target in _RECOMMENDATION_STATE_TRANSITIONS[current]
+
+
+def a_draft_recommendation_reaches_ready_for_review_without_completing_validation() -> bool:
+    """SS21: the diagram routes `Draft` only to `Validating`, never directly to
+    `ReadyForReview`."""
+    return is_valid_recommendation_state_transition(
+        RecommendationState.DRAFT, RecommendationState.READY_FOR_REVIEW
+    )
+
+
+def an_approved_for_planning_recommendation_authorizes_infrastructure_execution() -> bool:
+    """SS21: "`ApprovedForPlanning` is not infrastructure execution authority." Structurally
+    reinforced by `RecommendationArtifact.execution_authorized` always being required `False`."""
+    return False
 
 
 class ReviewStatus(StrEnum):
