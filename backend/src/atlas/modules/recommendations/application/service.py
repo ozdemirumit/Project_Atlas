@@ -8,6 +8,8 @@ from uuid import uuid4
 from atlas import __version__
 from atlas.core.audit import AuditRecord, AuditSink
 from atlas.core.classification import DataClassification
+from atlas.core.event_catalog import AIRecommendationGenerated
+from atlas.core.events import EventEnvelope, InMemoryDomainEventBus
 from atlas.modules.connectors.vendors.hitachi_ops_center.manifest import (
     CONTROLLER_FAILOVER_PLAN_CAPABILITY_ID as _HITACHI_CONTROLLER_FAILOVER_PLAN_CAPABILITY_ID,
 )
@@ -110,10 +112,12 @@ class RecommendationService:
         source_provider: RcaCaseProvider,
         assembler: RecommendationAssembler,
         audit_sink: AuditSink,
+        event_bus: InMemoryDomainEventBus | None = None,
     ) -> None:
         self._source_provider = source_provider
         self._assembler = assembler
         self._audit_sink = audit_sink
+        self._event_bus = event_bus if event_bus is not None else InMemoryDomainEventBus()
         self._latest: dict[tuple[str, str], RecommendationArtifact] = {}
         self._artifacts: dict[str, RecommendationArtifact] = {}
         self._lock = asyncio.Lock()
@@ -173,7 +177,30 @@ class RecommendationService:
             )
             self._latest[key] = artifact
             self._artifacts[artifact.recommendation_id] = artifact
-            return artifact
+        await self._event_bus.publish(
+            EventEnvelope(
+                event_id=f"evt_{uuid4().hex}",
+                event_type="AIRecommendationGenerated",
+                event_version="1.0",
+                occurred_at=context.requested_at,
+                recorded_at=context.requested_at,
+                producer="recommendations",
+                subject_type="recommendation",
+                subject_id=artifact.recommendation_id,
+                correlation_id=context.correlation_id,
+                classification=context.classification_ceiling,
+                payload=AIRecommendationGenerated(
+                    recommendation_id=artifact.recommendation_id,
+                    source_case_id=artifact.source_case_id,
+                    version=artifact.version,
+                    generated_at=context.requested_at,
+                    option_count=len(artifact.options),
+                ),
+                organization_id=context.organization_id,
+                environment_id=context.environment_id,
+            )
+        )
+        return artifact
 
     async def get_recommendation(
         self,

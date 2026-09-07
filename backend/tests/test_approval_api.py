@@ -11,7 +11,11 @@ from fastapi.testclient import TestClient
 from atlas.api.app import create_app
 from atlas.core.audit import AuditRecord
 from atlas.core.config import Settings
-from atlas.core.event_catalog import ApprovalGranted, ApprovalRequestCreated
+from atlas.core.event_catalog import (
+    AIRecommendationGenerated,
+    ApprovalGranted,
+    ApprovalRequestCreated,
+)
 from atlas.core.events import InMemoryDomainEventBus
 from atlas.modules.approvals.application.service import (
     ApprovalAccessContext,
@@ -826,7 +830,7 @@ def test_cancel_endpoint_is_reachable_over_http() -> None:
 
 
 @pytest.mark.asyncio
-async def test_creation_publishes_approval_request_created_event() -> None:
+async def test_creation_publishes_recommendation_and_approval_created_events() -> None:
     sink = CollectingAuditSink()
     bus = InMemoryDomainEventBus()
     rca = RcaService(assembler=SyntheticStorageRcaAssembler(), audit_sink=sink)
@@ -834,6 +838,7 @@ async def test_creation_publishes_approval_request_created_event() -> None:
         source_provider=rca,
         assembler=SyntheticStorageRecommendationAssembler(),
         audit_sink=sink,
+        event_bus=bus,
     )
     approval = ApprovalService(
         recommendation_provider=recommendation, audit_sink=sink, event_bus=bus
@@ -849,13 +854,19 @@ async def test_creation_publishes_approval_request_created_event() -> None:
     ) as client:
         data = create_approval(client)
 
-    assert len(bus.published) == 1
-    envelope = bus.published[0]
-    assert envelope.event_type == "ApprovalRequestCreated"
-    assert envelope.subject_id == data["request_id"]
-    assert isinstance(envelope.payload, ApprovalRequestCreated)
-    assert envelope.payload.request_id == data["request_id"]
-    assert envelope.payload.requested_by == "subject.development.operator"
+    assert [envelope.event_type for envelope in bus.published] == [
+        "AIRecommendationGenerated",
+        "ApprovalRequestCreated",
+    ]
+    generated, created = bus.published
+    assert isinstance(generated.payload, AIRecommendationGenerated)
+    assert generated.payload.recommendation_id == data["packet"]["recommendation_id"]
+    assert generated.payload.option_count >= 1
+    assert created.event_type == "ApprovalRequestCreated"
+    assert created.subject_id == data["request_id"]
+    assert isinstance(created.payload, ApprovalRequestCreated)
+    assert created.payload.request_id == data["request_id"]
+    assert created.payload.requested_by == "subject.development.operator"
 
 
 @pytest.mark.asyncio

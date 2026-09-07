@@ -11,6 +11,9 @@ from uuid import uuid4
 
 from atlas import __version__
 from atlas.core.audit import AuditRecord, AuditSink
+from atlas.core.classification import DataClassification
+from atlas.core.event_catalog import KnowledgeItemPublished
+from atlas.core.events import EventEnvelope, InMemoryDomainEventBus
 from atlas.modules.authorization.application.bootstrap import (
     KNOWLEDGE_RETRIEVAL_PUBLICATION_CREATE,
     KNOWLEDGE_RETRIEVAL_PUBLICATION_READ,
@@ -56,6 +59,7 @@ class OperationalKnowledgeRetrievalIndexPublicationService:
         audit_sink: AuditSink,
         environment_id: str,
         clock: Callable[[], datetime] | None = None,
+        event_bus: InMemoryDomainEventBus | None = None,
     ) -> None:
         self._repository = repository
         self._index_source = index_source
@@ -65,6 +69,7 @@ class OperationalKnowledgeRetrievalIndexPublicationService:
         self._audit_sink = audit_sink
         self._environment_id = environment_id
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._event_bus = event_bus if event_bus is not None else InMemoryDomainEventBus()
 
     async def create(
         self,
@@ -371,6 +376,31 @@ class OperationalKnowledgeRetrievalIndexPublicationService:
             correlation_id,
             "operational_knowledge_retrieval_published",
             publication_id,
+        )
+        await self._event_bus.publish(
+            EventEnvelope(
+                event_id=f"evt_{uuid4().hex}",
+                event_type="KnowledgeItemPublished",
+                event_version="1.0",
+                occurred_at=record.published_at,
+                recorded_at=record.published_at,
+                producer="knowledge",
+                subject_type="knowledge_item",
+                subject_id=record.knowledge_item_id,
+                correlation_id=correlation_id,
+                classification=DataClassification(
+                    record.classification.removeprefix("classification.")
+                ),
+                payload=KnowledgeItemPublished(
+                    item_id=record.knowledge_item_id,
+                    source_draft_id=record.source_draft_id,
+                    version=record.version,
+                    published_at=record.published_at,
+                    published_by=receipt.published_by,
+                ),
+                organization_id=record.organization_id,
+                environment_id=record.environment_id,
+            )
         )
         return record
 

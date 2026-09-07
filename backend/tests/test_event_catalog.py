@@ -131,7 +131,7 @@ def test_knowledge_item_published_requires_positive_version() -> None:
     with pytest.raises(ValueError, match="version must be positive"):
         KnowledgeItemPublished(
             item_id="knowledge-item.example-001",
-            source_id="knowledge-source.example-001",
+            source_draft_id="knowledge-draft.example-001",
             version=0,
             published_at=NOW,
             published_by="subject.example",

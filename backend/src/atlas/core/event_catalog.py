@@ -146,7 +146,7 @@ class ConnectorCapabilityFailed:
 @dataclass(frozen=True, slots=True)
 class KnowledgeItemPublished:
     item_id: str
-    source_id: str
+    source_draft_id: str
     version: int
     published_at: datetime
     published_by: str
@@ -154,7 +154,7 @@ class KnowledgeItemPublished:
     def __post_init__(self) -> None:
         for value, name in (
             (self.item_id, "item_id"),
-            (self.source_id, "source_id"),
+            (self.source_draft_id, "source_draft_id"),
             (self.published_by, "published_by"),
         ):
             _require(value, name)

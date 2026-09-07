@@ -135,6 +135,7 @@ from atlas.core.audit import AuditSink, LoggingAuditSink
 from atlas.core.audit_ledger import PostgresDurableAuditLedger
 from atlas.core.classification import DataClassification
 from atlas.core.config import Settings, get_settings
+from atlas.core.events import InMemoryDomainEventBus
 from atlas.core.persistence.database import DatabaseHealthProbe
 from atlas.core.protected_content import (
     InMemoryProtectedContentStore,
@@ -3143,6 +3144,7 @@ def create_app(
     settings: Settings | None = None,
     *,
     audit_sink: AuditSink | None = None,
+    event_bus: InMemoryDomainEventBus | None = None,
     identity_provider: IdentityProvider | None = None,
     authorization_service: AuthorizationService | None = None,
     storage_operations_service: StorageOperationsService | None = None,
@@ -3518,6 +3520,7 @@ def create_app(
         if resolved_settings.database_url
         else LoggingAuditSink(resolved_settings.logger)
     )
+    resolved_event_bus = event_bus or InMemoryDomainEventBus()
     resolved_security_export_service = security_export_service or SecurityExportService(
         delegate=base_audit_sink,
         destinations=build_synthetic_syslog_destinations(),
@@ -5236,6 +5239,7 @@ def create_app(
             ),
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
+            event_bus=resolved_event_bus,
         )
     if invocation_evidence_service is not None:
         resolved_invocation_evidence_service = invocation_evidence_service
@@ -6032,6 +6036,7 @@ def create_app(
                 ),
                 audit_sink=resolved_audit_sink,
                 environment_id=f"environment.{resolved_settings.environment}",
+                event_bus=resolved_event_bus,
             )
         )
     if operational_knowledge_protected_retrieval_service is not None:
@@ -7470,6 +7475,7 @@ def create_app(
             else SyntheticStorageRecommendationAssembler()
         ),
         audit_sink=resolved_audit_sink,
+        event_bus=resolved_event_bus,
     )
     resolved_report_service = report_service or ReportService(
         source_provider=resolved_recommendation_service,
@@ -7494,6 +7500,7 @@ def create_app(
     resolved_approval_service = approval_service or ApprovalService(
         recommendation_provider=resolved_recommendation_service,
         audit_sink=resolved_audit_sink,
+        event_bus=resolved_event_bus,
     )
     synthetic_model_id = "atlas-local-synthetic"
     model_transport: ModelTransport

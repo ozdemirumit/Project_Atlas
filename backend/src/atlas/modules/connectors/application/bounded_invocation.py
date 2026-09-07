@@ -12,6 +12,9 @@ from uuid import uuid4
 
 from atlas import __version__
 from atlas.core.audit import AuditRecord, AuditSink
+from atlas.core.classification import DataClassification
+from atlas.core.event_catalog import ConnectorCapabilityCompleted, ConnectorCapabilityStarted
+from atlas.core.events import EventEnvelope, InMemoryDomainEventBus
 from atlas.modules.connectors.application.bounded_invocation_ports import (
     ConnectorBoundedInvocationAdapter,
     ConnectorBoundedInvocationError,
@@ -79,6 +82,7 @@ class ConnectorBoundedInvocationService:
         audit_sink: AuditSink,
         environment_id: str,
         clock: Callable[[], datetime] | None = None,
+        event_bus: InMemoryDomainEventBus | None = None,
     ) -> None:
         self._repository = repository
         self._source = source
@@ -88,6 +92,7 @@ class ConnectorBoundedInvocationService:
         self._audit_sink = audit_sink
         self._environment_id = environment_id
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._event_bus = event_bus if event_bus is not None else InMemoryDomainEventBus()
 
     @property
     def repository(self) -> ConnectorBoundedInvocationRepository:
@@ -374,7 +379,70 @@ class ConnectorBoundedInvocationService:
                     "bounded_invocation_completion_persistence_uncertain"
                 )
             return replace(raced, reused=True)
+        await self._publish_capability_lifecycle_events(record)
         return record
+
+    async def _publish_capability_lifecycle_events(
+        self, record: ConnectorBoundedInvocationRecord
+    ) -> None:
+        """ATLAS-016: this module records `started_at` and `completed_at` together in one
+        commit (there is no separately-durable "invocation started" state to publish from
+        earlier), so both `ConnectorCapabilityStarted` and `ConnectorCapabilityCompleted` are
+        published here, using the real historical `started_at` timestamp -- not published
+        before the fact, since both are already true and durably recorded by this point.
+
+        `ConnectorCapabilityFailed` is deliberately never published from this service: SS8.2's
+        own taxonomy lists "failed" and "left uncertain" as distinct outcomes, and this module
+        only ever reaches a confirmed-success or an uncertain-outcome path (see
+        `ConnectorBoundedInvocationUncertainError`) -- never a confirmed failure. Labeling an
+        uncertain outcome as "failed" would misrepresent it.
+        """
+        await self._event_bus.publish(
+            EventEnvelope(
+                event_id=f"evt_{uuid4().hex}",
+                event_type="ConnectorCapabilityStarted",
+                event_version="1.0",
+                occurred_at=record.started_at,
+                recorded_at=record.completed_at,
+                producer="connectors",
+                subject_type="connector_capability_invocation",
+                subject_id=record.invocation_id,
+                correlation_id=record.invocation_id,
+                classification=DataClassification.INTERNAL,
+                payload=ConnectorCapabilityStarted(
+                    connector_id=record.connector_id,
+                    instance_id=record.instance_id,
+                    capability_id=record.capability_id,
+                    capability_class=record.capability_class,
+                    started_at=record.started_at,
+                ),
+                organization_id=record.organization_id,
+                environment_id=record.environment_id,
+            )
+        )
+        await self._event_bus.publish(
+            EventEnvelope(
+                event_id=f"evt_{uuid4().hex}",
+                event_type="ConnectorCapabilityCompleted",
+                event_version="1.0",
+                occurred_at=record.completed_at,
+                recorded_at=record.completed_at,
+                producer="connectors",
+                subject_type="connector_capability_invocation",
+                subject_id=record.invocation_id,
+                correlation_id=record.invocation_id,
+                classification=DataClassification.INTERNAL,
+                payload=ConnectorCapabilityCompleted(
+                    connector_id=record.connector_id,
+                    instance_id=record.instance_id,
+                    capability_id=record.capability_id,
+                    completed_at=record.completed_at,
+                    result_code=record.instance_state,
+                ),
+                organization_id=record.organization_id,
+                environment_id=record.environment_id,
+            )
+        )
 
     async def get(
         self, *, actor: AuthenticatedSubject, invocation_id: str, correlation_id: str
