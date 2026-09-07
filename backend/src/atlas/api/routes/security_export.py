@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, NoReturn
 
 from fastapi import APIRouter, Depends, Request
 
@@ -7,6 +7,7 @@ from atlas.api.errors import AtlasError
 from atlas.api.schemas import ResponseMeta
 from atlas.api.security import (
     authenticated_subject,
+    authorize_security_export_destination_administer,
     authorize_security_export_overview_read,
     authorize_security_export_test_create,
 )
@@ -15,14 +16,28 @@ from atlas.api.security_export_schemas import (
     SecurityExportOverviewData,
     SecurityExportOverviewResponse,
     SecurityExportTestResponse,
+    SyslogDestinationDisablementPayload,
+    SyslogDestinationProfileData,
+    SyslogDestinationProfilePayload,
+    SyslogDestinationProfileResponse,
+    SyslogDestinationValidationData,
+    SyslogDestinationValidationResponse,
+    SyslogDestinationValidationStepPayload,
 )
 from atlas.modules.authorization.application.bootstrap import security_export_scope
 from atlas.modules.authorization.domain.models import AuthorizationDecision
 from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.security_export.application.destination_administration import (
+    SyslogDestinationAdministrationError,
+    SyslogDestinationAdministrationService,
+)
 from atlas.modules.security_export.application.service import (
     SecurityExportAccessContext,
     SecurityExportOperationsError,
     SecurityExportService,
+)
+from atlas.modules.security_export.domain.destination_administration import (
+    DestinationValidationStep,
 )
 
 router = APIRouter(prefix="/security-export", tags=["security-export"])
@@ -94,3 +109,149 @@ async def create_security_export_test_event(
         data=DeliveryRecordData.from_domain(delivery),
         meta=ResponseMeta(correlation_id=str(request.state.correlation_id), generated_at=now),
     )
+
+
+def _raise_destination_administration_error(
+    exc: SyslogDestinationAdministrationError,
+) -> NoReturn:
+    status_by_code = {
+        "syslog_destination_unavailable": 404,
+        "syslog_destination_already_registered": 409,
+        "syslog_destination_profile_invalid": 422,
+        "syslog_destination_validation_out_of_order": 422,
+        "syslog_destination_validation_incomplete": 409,
+        "syslog_destination_disablement_denied": 403,
+    }
+    raise AtlasError(
+        status=status_by_code.get(exc.code, 409),
+        code=exc.code,
+        title="Syslog destination administration unavailable",
+        detail="The requested destination administration operation could not be completed.",
+    ) from exc
+
+
+@router.post("/destinations", response_model=SyslogDestinationProfileResponse, status_code=201)
+async def register_syslog_destination(
+    payload: SyslogDestinationProfilePayload,
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_security_export_destination_administer)
+    ],
+) -> SyslogDestinationProfileResponse:
+    now = datetime.now(UTC)
+    service: SyslogDestinationAdministrationService = (
+        request.app.state.syslog_destination_administration_service
+    )
+    try:
+        profile = await service.register_profile(
+            destination_id=payload.destination_id,
+            owner=payload.owner,
+            purpose=payload.purpose,
+            environment_id=payload.environment_id,
+            maintenance_windows=payload.maintenance_windows,
+            health_alert_recipients=payload.health_alert_recipients,
+            mandatory=payload.mandatory,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except SyslogDestinationAdministrationError as exc:
+        _raise_destination_administration_error(exc)
+    return SyslogDestinationProfileResponse(
+        data=SyslogDestinationProfileData.from_domain(profile),
+        meta=ResponseMeta(correlation_id=str(request.state.correlation_id), generated_at=now),
+    )
+
+
+@router.post(
+    "/destinations/{destination_id}/validation-steps",
+    response_model=SyslogDestinationValidationResponse,
+)
+async def record_syslog_destination_validation_step(
+    destination_id: str,
+    payload: SyslogDestinationValidationStepPayload,
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_security_export_destination_administer)
+    ],
+) -> SyslogDestinationValidationResponse:
+    now = datetime.now(UTC)
+    service: SyslogDestinationAdministrationService = (
+        request.app.state.syslog_destination_administration_service
+    )
+    try:
+        step = DestinationValidationStep(payload.step)
+    except ValueError as exc:
+        raise AtlasError(
+            status=422,
+            code="syslog_destination_validation_step_invalid",
+            title="Syslog destination administration unavailable",
+            detail="The validation step is not recognized.",
+        ) from exc
+    try:
+        record = await service.record_validation_step(
+            destination_id=destination_id,
+            step=step,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except SyslogDestinationAdministrationError as exc:
+        _raise_destination_administration_error(exc)
+    return SyslogDestinationValidationResponse(
+        data=SyslogDestinationValidationData.from_domain(record),
+        meta=ResponseMeta(correlation_id=str(request.state.correlation_id), generated_at=now),
+    )
+
+
+@router.post(
+    "/destinations/{destination_id}/activate", response_model=SyslogDestinationProfileResponse
+)
+async def activate_syslog_destination(
+    destination_id: str,
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_security_export_destination_administer)
+    ],
+) -> SyslogDestinationProfileResponse:
+    now = datetime.now(UTC)
+    service: SyslogDestinationAdministrationService = (
+        request.app.state.syslog_destination_administration_service
+    )
+    try:
+        profile = await service.activate(
+            destination_id=destination_id,
+            activated_by=subject.subject_id,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except SyslogDestinationAdministrationError as exc:
+        _raise_destination_administration_error(exc)
+    return SyslogDestinationProfileResponse(
+        data=SyslogDestinationProfileData.from_domain(profile),
+        meta=ResponseMeta(correlation_id=str(request.state.correlation_id), generated_at=now),
+    )
+
+
+@router.post("/destinations/{destination_id}/disable", status_code=204)
+async def disable_syslog_destination(
+    destination_id: str,
+    payload: SyslogDestinationDisablementPayload,
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_security_export_destination_administer)
+    ],
+) -> None:
+    service: SyslogDestinationAdministrationService = (
+        request.app.state.syslog_destination_administration_service
+    )
+    try:
+        await service.disable(
+            destination_id=destination_id,
+            disabled_by=subject.subject_id,
+            reason=payload.reason,
+            elevated_authorization=payload.elevated_authorization,
+            warning_acknowledged=payload.warning_acknowledged,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except SyslogDestinationAdministrationError as exc:
+        _raise_destination_administration_error(exc)

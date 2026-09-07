@@ -52,6 +52,7 @@ from atlas.api.routes import (
     document_knowledge,
     draft_review_requests,
     embedding_generation,
+    embedding_model_lifecycle,
     evidence_drafts,
     final_recommendation_dispositions,
     final_resolutions,
@@ -1026,6 +1027,9 @@ from atlas.modules.knowledge.adapters.embedding_generation_synthetic import (
     SyntheticOperationalKnowledgeEmbedder,
     UnavailableOperationalKnowledgeEmbedder,
 )
+from atlas.modules.knowledge.adapters.embedding_model_lifecycle_memory import (
+    InMemoryEmbeddingModelLifecycleRepository,
+)
 from atlas.modules.knowledge.adapters.evidence_draft_memory import (
     InMemoryOperationalEvidenceKnowledgeDraftPolicySource,
     InMemoryOperationalEvidenceKnowledgeDraftRepository,
@@ -1243,6 +1247,9 @@ from atlas.modules.knowledge.application.draft_review_request import (
 from atlas.modules.knowledge.application.embedding_generation import (
     OperationalKnowledgeEmbeddingGenerationService,
     build_development_operational_knowledge_embedding_policy,
+)
+from atlas.modules.knowledge.application.embedding_model_lifecycle import (
+    EmbeddingModelLifecycleService,
 )
 from atlas.modules.knowledge.application.evidence_draft import (
     OperationalEvidenceKnowledgeDraftService,
@@ -1704,9 +1711,15 @@ from atlas.modules.reports.adapters.postgres import PostgreSQLTechnicalReportRep
 from atlas.modules.reports.adapters.synthetic import SyntheticTechnicalReportAssembler
 from atlas.modules.reports.application.handoff_review_service import ItsmHandoffReviewService
 from atlas.modules.reports.application.service import ReportService
+from atlas.modules.security_export.adapters.destination_administration_memory import (
+    InMemorySyslogDestinationAdministrationRepository,
+)
 from atlas.modules.security_export.adapters.synthetic import (
     SyntheticTlsSyslogTransport,
     build_synthetic_syslog_destinations,
+)
+from atlas.modules.security_export.application.destination_administration import (
+    SyslogDestinationAdministrationService,
 )
 from atlas.modules.security_export.application.service import SecurityExportService
 from atlas.modules.storage.adapters.chained import ChainedStorageOverviewProvider
@@ -3360,6 +3373,10 @@ def create_app(
         tuple[DeploymentEventTransportRouteSelectionHead, ...] | None
     ) = None,
     security_export_service: SecurityExportService | None = None,
+    syslog_destination_administration_service: (
+        SyslogDestinationAdministrationService | None
+    ) = None,
+    embedding_model_lifecycle_service: EmbeddingModelLifecycleService | None = None,
     session_service: SessionService | None = None,
     api_credential_service: ApiCredentialService | None = None,
     identity_governance_service: IdentityGovernanceService | None = None,
@@ -3538,6 +3555,20 @@ def create_app(
         site_id="site.local",
     )
     resolved_audit_sink: AuditSink = resolved_security_export_service
+    resolved_syslog_destination_administration_service = (
+        syslog_destination_administration_service
+        or SyslogDestinationAdministrationService(
+            repository=InMemorySyslogDestinationAdministrationRepository(),
+            audit_sink=resolved_audit_sink,
+        )
+    )
+    resolved_embedding_model_lifecycle_service = (
+        embedding_model_lifecycle_service
+        or EmbeddingModelLifecycleService(
+            repository=InMemoryEmbeddingModelLifecycleRepository(),
+            audit_sink=resolved_audit_sink,
+        )
+    )
     resolved_local_credential_repository = (
         local_credential_repository or InMemoryLocalCredentialRepository()
     )
@@ -10136,6 +10167,10 @@ def create_app(
         app.state.settings = resolved_settings
         app.state.audit_sink = resolved_audit_sink
         app.state.security_export_service = resolved_security_export_service
+        app.state.syslog_destination_administration_service = (
+            resolved_syslog_destination_administration_service
+        )
+        app.state.embedding_model_lifecycle_service = resolved_embedding_model_lifecycle_service
         app.state.identity_service = identity_service
         app.state.local_credential_service = resolved_local_credential_service
         app.state.session_service = resolved_session_service
@@ -10863,6 +10898,7 @@ def create_app(
     app.include_router(source_materializations.router, prefix="/api/v1")
     app.include_router(deterministic_chunking.router, prefix="/api/v1")
     app.include_router(embedding_generation.router, prefix="/api/v1")
+    app.include_router(embedding_model_lifecycle.router, prefix="/api/v1")
     app.include_router(index_staging_validation.router, prefix="/api/v1")
     app.include_router(retrieval_index_publication.router, prefix="/api/v1")
     app.include_router(protected_retrieval.router, prefix="/api/v1")

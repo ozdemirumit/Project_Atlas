@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from atlas.api.schemas import ResponseMeta
+from atlas.modules.security_export.domain.destination_administration import (
+    DestinationValidationRecord,
+    SyslogDestinationProfile,
+)
 from atlas.modules.security_export.domain.models import (
     DeliveryRecord,
     SecurityExportOverview,
@@ -155,4 +159,78 @@ class SecurityExportTestResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     data: DeliveryRecordData
+    meta: ResponseMeta
+
+
+class SyslogDestinationProfilePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    destination_id: str = Field(min_length=3, max_length=128)
+    owner: str = Field(min_length=3, max_length=128)
+    purpose: str = Field(min_length=1, max_length=500)
+    environment_id: str = Field(min_length=3, max_length=128)
+    maintenance_windows: tuple[str, ...] = ()
+    health_alert_recipients: tuple[str, ...]
+    mandatory: bool = False
+
+
+class SyslogDestinationValidationStepPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    step: str = Field(min_length=1, max_length=64)
+
+
+class SyslogDestinationDisablementPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(min_length=1, max_length=500)
+    elevated_authorization: bool = False
+    warning_acknowledged: bool = False
+
+
+class SyslogDestinationProfileData(BaseModel):
+    model_config = ConfigDict(extra="forbid", from_attributes=True)
+
+    destination_id: str
+    owner: str
+    purpose: str
+    environment_id: str
+    maintenance_windows: tuple[str, ...]
+    health_alert_recipients: tuple[str, ...]
+    mandatory: bool
+    last_validated_at: datetime | None
+    active_version: int
+
+    @classmethod
+    def from_domain(cls, profile: SyslogDestinationProfile) -> SyslogDestinationProfileData:
+        return cls.model_validate(profile)
+
+
+class SyslogDestinationValidationData(BaseModel):
+    model_config = ConfigDict(extra="forbid", from_attributes=True)
+
+    destination_id: str
+    completed_steps: tuple[str, ...]
+    is_fully_validated: bool
+
+    @classmethod
+    def from_domain(cls, record: DestinationValidationRecord) -> SyslogDestinationValidationData:
+        return cls(
+            destination_id=record.destination_id,
+            completed_steps=tuple(item.value for item in record.completed_steps),
+            is_fully_validated=record.is_fully_validated,
+        )
+
+
+class SyslogDestinationProfileResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: SyslogDestinationProfileData
+    meta: ResponseMeta
+
+
+class SyslogDestinationValidationResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: SyslogDestinationValidationData
     meta: ResponseMeta

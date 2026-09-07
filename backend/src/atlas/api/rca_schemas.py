@@ -29,6 +29,21 @@ class RcaCreatePayload(BaseModel):
         return self
 
 
+class RcaReviewPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+    status: str = Field(min_length=1, max_length=32)
+    decision_reason: str = Field(min_length=1, max_length=1000)
+    domain_confirmation_criterion: str | None = Field(default=None, max_length=500)
+
+
+class RcaClosePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+
+
 class IncidentReferenceData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

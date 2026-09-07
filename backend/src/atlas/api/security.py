@@ -170,6 +170,7 @@ from atlas.modules.authorization.application.bootstrap import (
     KNOWLEDGE_DRAFT_REVIEW_REQUEST_READ,
     KNOWLEDGE_EMBEDDING_GENERATION_CREATE,
     KNOWLEDGE_EMBEDDING_GENERATION_READ,
+    KNOWLEDGE_EMBEDDING_MODEL_LIFECYCLE_ADMINISTER,
     KNOWLEDGE_EVIDENCE_DRAFT_CREATE,
     KNOWLEDGE_EVIDENCE_DRAFT_READ,
     KNOWLEDGE_FINAL_RESOLUTION_CREATE,
@@ -213,7 +214,9 @@ from atlas.modules.authorization.application.bootstrap import (
     MCP_BUILDER_SECURITY_REVIEW_READ,
     MCP_BUILDER_VALIDATION_CREATE,
     MCP_BUILDER_VALIDATION_READ,
+    RCA_CLOSE,
     RCA_CREATE,
+    RCA_REVIEW,
     RECOMMENDATION_CORRECTION_RESUBMISSION_CREATE,
     RECOMMENDATION_CORRECTION_RESUBMISSION_READ,
     RECOMMENDATION_CREATE,
@@ -240,6 +243,7 @@ from atlas.modules.authorization.application.bootstrap import (
     RELEASE_PREFLIGHT_READ,
     REPORT_CREATE,
     REPORT_READ,
+    SECURITY_EXPORT_DESTINATION_ADMINISTER,
     SECURITY_EXPORT_OVERVIEW_READ,
     SECURITY_EXPORT_TEST_CREATE,
     SESSION_ADMIN_REVOKE,
@@ -354,6 +358,7 @@ from atlas.modules.authorization.application.bootstrap import (
     current_identity_scope,
     deployment_configuration_scope,
     document_knowledge_scope,
+    embedding_model_lifecycle_scope,
     graph_storage_impact_scope,
     health_check_scope,
     identity_governance_scope,
@@ -4744,6 +4749,114 @@ async def authorize_rca_create(
             permission_id=RCA_CREATE,
             resource_type="resource.rca",
             scope=rca_scope(subject.organization_id, settings.environment),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_rca_review(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=RCA_REVIEW,
+            resource_type="resource.rca",
+            scope=rca_scope(subject.organization_id, settings.environment),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_rca_close(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=RCA_CLOSE,
+            resource_type="resource.rca",
+            scope=rca_scope(subject.organization_id, settings.environment),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_security_export_destination_administer(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=SECURITY_EXPORT_DESTINATION_ADMINISTER,
+            resource_type="resource.security-export.syslog-destination",
+            scope=security_export_scope(subject.organization_id, settings.environment),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_knowledge_embedding_model_lifecycle_administer(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=KNOWLEDGE_EMBEDDING_MODEL_LIFECYCLE_ADMINISTER,
+            resource_type="resource.knowledge.embedding-model",
+            scope=embedding_model_lifecycle_scope(subject.organization_id, settings.environment),
             correlation_id=str(request.state.correlation_id),
             requested_at=datetime.now(UTC),
         )

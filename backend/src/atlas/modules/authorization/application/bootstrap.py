@@ -153,6 +153,8 @@ WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_MATERIALIZATION_READ = (
 )
 INVESTIGATION_CREATE = "investigation.create"
 RCA_CREATE = "rca.create"
+RCA_REVIEW = "rca.review"
+RCA_CLOSE = "rca.close"
 RECOMMENDATION_CREATE = "recommendation.create"
 APPROVAL_REQUEST_CREATE = "approval.request.create"
 APPROVAL_REQUEST_READ = "approval.request.read"
@@ -165,6 +167,7 @@ ITSM_HANDOFF_REVIEW_READ = "report.itsm-handoff-review.read"
 ITSM_HANDOFF_REVIEW_DECIDE = "report.itsm-handoff-review.decide"
 SECURITY_EXPORT_OVERVIEW_READ = "security-export.overview.read"
 SECURITY_EXPORT_TEST_CREATE = "security-export.test.create"
+SECURITY_EXPORT_DESTINATION_ADMINISTER = "security-export.destination.administer"
 AUDIT_READ = "audit.read"
 AUDIT_EXPORT = "audit.export"
 RELEASE_PREFLIGHT_READ = "platform.release-preflight.read"
@@ -316,6 +319,7 @@ CONNECTOR_BOUNDED_INVOCATION_CREATE = "connectors.bounded-invocations.create"
 CONNECTOR_BOUNDED_INVOCATION_READ = "connectors.bounded-invocations.read"
 CONNECTOR_INVOCATION_EVIDENCE_CREATE = "connectors.invocation-evidence.create"
 CONNECTOR_INVOCATION_EVIDENCE_READ = "connectors.invocation-evidence.read"
+KNOWLEDGE_EMBEDDING_MODEL_LIFECYCLE_ADMINISTER = "knowledge.embedding-model-lifecycle.administer"
 KNOWLEDGE_EVIDENCE_DRAFT_CREATE = "knowledge.operational-evidence-drafts.create"
 KNOWLEDGE_EVIDENCE_DRAFT_READ = "knowledge.operational-evidence-drafts.read"
 KNOWLEDGE_DRAFT_REVIEW_REQUEST_CREATE = "knowledge.operational-review-requests.create"
@@ -1248,6 +1252,17 @@ def document_knowledge_scope(
         domain_id="domain.knowledge",
         resource_id="resource.knowledge.document-governance",
         capability_class=capability_class,
+    )
+
+
+def embedding_model_lifecycle_scope(organization_id: str, environment: str) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.knowledge",
+        resource_id="resource.knowledge.embedding-model-lifecycle",
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
     )
 
 
@@ -2741,6 +2756,14 @@ def build_development_authorization_service(
             ),
         ),
         PermissionDefinition(
+            permission_id=RCA_REVIEW,
+            description="Record a human review decision on a provisional or inconclusive RCA case.",
+        ),
+        PermissionDefinition(
+            permission_id=RCA_CLOSE,
+            description="Close a reviewed RCA case.",
+        ),
+        PermissionDefinition(
             permission_id=RECOMMENDATION_CREATE,
             description="Create a governed recommendation from an exact authorized RCA case.",
         ),
@@ -2787,6 +2810,12 @@ def build_development_authorization_service(
         PermissionDefinition(
             permission_id=SECURITY_EXPORT_TEST_CREATE,
             description="Dispatch an explicit synthetic security event over TLS.",
+        ),
+        PermissionDefinition(
+            permission_id=SECURITY_EXPORT_DESTINATION_ADMINISTER,
+            description=(
+                "Register, validate, activate, and disable Syslog destination configurations."
+            ),
         ),
         PermissionDefinition(
             permission_id=RELEASE_PREFLIGHT_READ,
@@ -3283,6 +3312,12 @@ def build_development_authorization_service(
             description="Read minimized connector invocation evidence metadata.",
         ),
         PermissionDefinition(
+            permission_id=KNOWLEDGE_EMBEDDING_MODEL_LIFECYCLE_ADMINISTER,
+            description=(
+                "Register and transition an embedding model through its governed lifecycle."
+            ),
+        ),
+        PermissionDefinition(
             permission_id=KNOWLEDGE_EVIDENCE_DRAFT_CREATE,
             description="Create one governed non-retrievable operational evidence draft.",
         ),
@@ -3694,6 +3729,8 @@ def build_development_authorization_service(
                 WORKFLOW_PHYSICAL_TRANSPORT_ENDPOINT_MATERIALIZATION_READ,
                 INVESTIGATION_CREATE,
                 RCA_CREATE,
+                RCA_REVIEW,
+                RCA_CLOSE,
                 RECOMMENDATION_CREATE,
                 APPROVAL_REQUEST_CREATE,
                 APPROVAL_REQUEST_READ,
@@ -3706,6 +3743,7 @@ def build_development_authorization_service(
                 ITSM_HANDOFF_REVIEW_DECIDE,
                 SECURITY_EXPORT_OVERVIEW_READ,
                 SECURITY_EXPORT_TEST_CREATE,
+                SECURITY_EXPORT_DESTINATION_ADMINISTER,
                 RELEASE_PREFLIGHT_READ,
                 DEPLOYMENT_CONFIGURATION_PREVIEW,
                 BOOTSTRAP_PLAN_READ,
@@ -3828,6 +3866,7 @@ def build_development_authorization_service(
                 CONNECTOR_BOUNDED_INVOCATION_READ,
                 CONNECTOR_INVOCATION_EVIDENCE_CREATE,
                 CONNECTOR_INVOCATION_EVIDENCE_READ,
+                KNOWLEDGE_EMBEDDING_MODEL_LIFECYCLE_ADMINISTER,
                 KNOWLEDGE_EVIDENCE_DRAFT_CREATE,
                 KNOWLEDGE_EVIDENCE_DRAFT_READ,
                 KNOWLEDGE_DRAFT_REVIEW_REQUEST_CREATE,
@@ -6367,6 +6406,16 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=security_export_scope(
+                    settings.development_organization_id, settings.environment
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.embedding-model-lifecycle",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=embedding_model_lifecycle_scope(
                     settings.development_organization_id, settings.environment
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),
