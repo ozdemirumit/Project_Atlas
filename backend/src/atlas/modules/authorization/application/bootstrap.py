@@ -41,6 +41,12 @@ ITSM_SANDBOX_CONFORMANCE_CREATE = "itsm.integrations.sandbox-conformance.create"
 ITSM_SANDBOX_ONBOARDING_READ = "itsm.integrations.sandbox-onboarding.read"
 AI_GROUNDED_QUERY_CREATE = "ai.grounded-query.create"
 AI_MODEL_LIFECYCLE_ADMINISTER = "ai.model-lifecycle.administer"
+GUARDRAIL_HUMAN_REVIEW_ENQUEUE = "guardrails.human-review.enqueue"
+GUARDRAIL_HUMAN_REVIEW_RESOLVE = "guardrails.human-review.resolve"
+GUARDRAIL_SECURITY_INCIDENT_OPEN = "guardrails.security-incident.open"
+GUARDRAIL_SECURITY_INCIDENT_CONTAIN = "guardrails.security-incident.contain"
+GUARDRAIL_SECURITY_INCIDENT_RECOVER = "guardrails.security-incident.recover"
+GUARDRAIL_SECURITY_INCIDENT_CLOSE = "guardrails.security-incident.close"
 CONVERSATION_READ = "conversation.read"
 CONVERSATION_CREATE = "conversation.create"
 CONVERSATION_TURN_APPEND = "conversation.turn.append"
@@ -208,6 +214,9 @@ MCP_BUILDER_LAB_VALIDATION_READ = "mcp-builder.lab-validation.read"
 MCP_BUILDER_CANDIDATE_HANDOFF_CREATE = "mcp-builder.candidate-handoff.create"
 MCP_BUILDER_CANDIDATE_HANDOFF_READ = "mcp-builder.candidate-handoff.read"
 MCP_BUILDER_CANDIDATE_HANDOFF_DOWNLOAD = "mcp-builder.candidate-handoff.download"
+MCP_BUILDER_DRAFT_CREATE = "mcp-builder.draft.create"
+MCP_BUILDER_DRAFT_ANALYZE = "mcp-builder.draft.analyze"
+MCP_BUILDER_SUPERSESSION_CREATE = "mcp-builder.supersession.create"
 CONNECTOR_PACKAGE_ACQUIRE = "connectors.packages.acquire"
 CONNECTOR_PACKAGE_ACQUISITION_READ = "connectors.package-acquisitions.read"
 CONNECTOR_PACKAGE_VALIDATION_CREATE = "connectors.package-validations.create"
@@ -1274,6 +1283,39 @@ def ai_model_lifecycle_scope(organization_id: str, environment: str) -> Resource
         site_id="site.local",
         domain_id="domain.ai",
         resource_id="resource.ai.model-lifecycle",
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+def guardrail_human_review_scope(organization_id: str, environment: str) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.guardrails",
+        resource_id="resource.guardrails.human-review",
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+def guardrail_security_incident_scope(organization_id: str, environment: str) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.guardrails",
+        resource_id="resource.guardrails.security-incidents",
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+def mcp_builder_draft_scope(organization_id: str, environment: str) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.mcp-builder",
+        resource_id="resource.mcp-builder.drafts",
         capability_class=CapabilityClass.C2_DIAGNOSTIC,
     )
 
@@ -2502,6 +2544,30 @@ def build_development_authorization_service(
             description="Register and transition a model through its governed lifecycle.",
         ),
         PermissionDefinition(
+            permission_id=GUARDRAIL_HUMAN_REVIEW_ENQUEUE,
+            description="Enqueue one governed guardrail human review queue entry.",
+        ),
+        PermissionDefinition(
+            permission_id=GUARDRAIL_HUMAN_REVIEW_RESOLVE,
+            description="Record a reviewer's resolution of one guardrail human review entry.",
+        ),
+        PermissionDefinition(
+            permission_id=GUARDRAIL_SECURITY_INCIDENT_OPEN,
+            description="Open one governed security incident record.",
+        ),
+        PermissionDefinition(
+            permission_id=GUARDRAIL_SECURITY_INCIDENT_CONTAIN,
+            description="Record containment and evidence preservation for a security incident.",
+        ),
+        PermissionDefinition(
+            permission_id=GUARDRAIL_SECURITY_INCIDENT_RECOVER,
+            description="Record validated recovery for a security incident.",
+        ),
+        PermissionDefinition(
+            permission_id=GUARDRAIL_SECURITY_INCIDENT_CLOSE,
+            description="Close a security incident once a human has validated recovery.",
+        ),
+        PermissionDefinition(
             permission_id=CONVERSATION_READ,
             description="Read owned operational conversations in the exact authorized scope.",
         ),
@@ -2980,6 +3046,18 @@ def build_development_authorization_service(
         PermissionDefinition(
             permission_id=MCP_BUILDER_CANDIDATE_HANDOFF_DOWNLOAD,
             description="Download one integrity-verified quarantined candidate archive.",
+        ),
+        PermissionDefinition(
+            permission_id=MCP_BUILDER_DRAFT_CREATE,
+            description="Create one pre-analysis Builder project draft.",
+        ),
+        PermissionDefinition(
+            permission_id=MCP_BUILDER_DRAFT_ANALYZE,
+            description="Mark a Builder project draft as analyzed into a real project.",
+        ),
+        PermissionDefinition(
+            permission_id=MCP_BUILDER_SUPERSESSION_CREATE,
+            description="Record that a newer Builder project version supersedes an older one.",
         ),
         PermissionDefinition(
             permission_id=CONNECTOR_PACKAGE_ACQUIRE,
@@ -3698,6 +3776,12 @@ def build_development_authorization_service(
                 ITSM_SANDBOX_ONBOARDING_READ,
                 AI_GROUNDED_QUERY_CREATE,
                 AI_MODEL_LIFECYCLE_ADMINISTER,
+                GUARDRAIL_HUMAN_REVIEW_ENQUEUE,
+                GUARDRAIL_HUMAN_REVIEW_RESOLVE,
+                GUARDRAIL_SECURITY_INCIDENT_OPEN,
+                GUARDRAIL_SECURITY_INCIDENT_CONTAIN,
+                GUARDRAIL_SECURITY_INCIDENT_RECOVER,
+                GUARDRAIL_SECURITY_INCIDENT_CLOSE,
                 CONVERSATION_READ,
                 CONVERSATION_CREATE,
                 CONVERSATION_TURN_APPEND,
@@ -3798,6 +3882,9 @@ def build_development_authorization_service(
                 MCP_BUILDER_CANDIDATE_HANDOFF_CREATE,
                 MCP_BUILDER_CANDIDATE_HANDOFF_READ,
                 MCP_BUILDER_CANDIDATE_HANDOFF_DOWNLOAD,
+                MCP_BUILDER_DRAFT_CREATE,
+                MCP_BUILDER_DRAFT_ANALYZE,
+                MCP_BUILDER_SUPERSESSION_CREATE,
                 CONNECTOR_PACKAGE_ACQUIRE,
                 CONNECTOR_PACKAGE_ACQUISITION_READ,
                 CONNECTOR_PACKAGE_VALIDATION_CREATE,
@@ -6443,6 +6530,36 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=ai_model_lifecycle_scope(
+                    settings.development_organization_id, settings.environment
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.guardrail-human-review",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=guardrail_human_review_scope(
+                    settings.development_organization_id, settings.environment
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.guardrail-security-incident",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=guardrail_security_incident_scope(
+                    settings.development_organization_id, settings.environment
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.mcp-builder-draft",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=mcp_builder_draft_scope(
                     settings.development_organization_id, settings.environment
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),
