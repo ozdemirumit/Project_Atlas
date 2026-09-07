@@ -152,8 +152,12 @@ class LogSource:
 @dataclass(frozen=True, slots=True)
 class LogCorrelation:
     """SS7's correlation field group. SS10: "correlation identifiers contain no customer data
-    or secrets" is left to the caller minting them -- this type validates presence and shape,
-    not content, since a correlation ID is an opaque identifier this type has no way to classify."""
+    or secrets" is deliberately not enforced here with Guardrails' `detect_secret_patterns`, even
+    though every other secret-shaped rule in this session reuses it: `atlas.core` is the
+    foundation layer every `atlas.modules.*` package (Guardrails included) depends on, so `core`
+    importing from a module would invert that direction. `log_content.scan_for_secret_content`
+    (SS12) applies that same check at the point objects here actually get scanned -- centralized
+    ingestion, not construction -- which is where a real pipeline would run it anyway."""
 
     correlation_id: str
     request_id: str | None
