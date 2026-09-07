@@ -6009,6 +6009,7 @@ class WorkflowDefinitionInventoryData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     definitions: list[WorkflowDefinitionData]
+    truncated: bool = False
 
 
 class WorkflowPlanInventoryData(BaseModel):

@@ -69,6 +69,21 @@ def test_workflow_endpoints_require_login_and_create_only_a_non_executable_plan(
     assert reopened.json()["data"] == plan
 
 
+def test_workflow_definitions_are_bounded_and_report_truncation() -> None:
+    with TestClient(create_app(_settings())) as client:
+        _login(client)
+        default = client.get("/api/v1/workflows/definitions")
+        bounded = client.get("/api/v1/workflows/definitions", params={"limit": 1})
+        too_large = client.get("/api/v1/workflows/definitions", params={"limit": 1000})
+
+    assert default.status_code == 200
+    assert default.json()["data"]["truncated"] is False
+    assert bounded.status_code == 200
+    assert len(bounded.json()["data"]["definitions"]) == 1
+    assert bounded.json()["data"]["truncated"] is True
+    assert too_large.status_code == 422
+
+
 def test_workflow_plan_creation_requires_csrf_and_is_idempotent() -> None:
     with TestClient(create_app(_settings())) as client:
         csrf = _login(client)

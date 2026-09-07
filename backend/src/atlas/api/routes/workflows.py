@@ -2312,6 +2312,7 @@ async def list_workflow_definitions(
     response: Response,
     subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
     decision: Annotated[AuthorizationDecision, Depends(authorize_workflow_definition_read)],
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> WorkflowDefinitionInventoryResponse:
     service: WorkflowPlanningService = request.app.state.workflow_planning_service
     try:
@@ -2321,9 +2322,11 @@ async def list_workflow_definitions(
     except WorkflowPlanningError as error:
         _raise(error)
     _no_store(response)
+    truncated = len(definitions) > limit
     return WorkflowDefinitionInventoryResponse(
         data=WorkflowDefinitionInventoryData(
-            definitions=[WorkflowDefinitionData.from_domain(item) for item in definitions]
+            definitions=[WorkflowDefinitionData.from_domain(item) for item in definitions[:limit]],
+            truncated=truncated,
         ),
         meta=_meta(request),
     )
