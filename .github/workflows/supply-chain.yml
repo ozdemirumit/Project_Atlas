@@ -1,0 +1,95 @@
+name: Supply Chain Security
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  GITLEAKS_VERSION: "8.30.1"
+
+jobs:
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks
+        run: |
+          curl -sSL -o gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+          rm gitleaks.tar.gz gitleaks
+      - name: Scan for secrets and sensitive data
+        run: gitleaks detect --source . --redact -v
+
+  backend-dependency-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.12.1"
+          enable-cache: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        working-directory: backend
+        run: uv sync --frozen
+      - name: Audit dependencies for known vulnerabilities
+        working-directory: backend
+        run: uv run --with pip-audit==2.10.1 pip-audit --strict
+
+  frontend-dependency-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v5
+        with:
+          version: "11.7.0"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+      - name: Audit dependencies for known vulnerabilities
+        working-directory: frontend
+        run: pnpm audit --audit-level high
+
+  sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Generate backend SBOM
+        uses: anchore/sbom-action@v0.24.2
+        with:
+          path: backend
+          format: cyclonedx-json
+          output-file: backend-sbom.cyclonedx.json
+          upload-artifact: false
+      - name: Generate frontend SBOM
+        uses: anchore/sbom-action@v0.24.2
+        with:
+          path: frontend
+          format: cyclonedx-json
+          output-file: frontend-sbom.cyclonedx.json
+          upload-artifact: false
+      - name: Compute SBOM checksums
+        run: sha256sum backend-sbom.cyclonedx.json frontend-sbom.cyclonedx.json | tee sbom-checksums.sha256
+      - name: Upload SBOM and checksum evidence
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: sbom-and-checksums-${{ github.sha }}
+          path: |
+            backend-sbom.cyclonedx.json
+            frontend-sbom.cyclonedx.json
+            sbom-checksums.sha256
+          retention-days: 90

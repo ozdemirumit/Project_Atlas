@@ -1,0 +1,25 @@
+title = "Project Atlas gitleaks configuration"
+
+[extend]
+useDefault = true
+
+# Guardrails' secret-pattern detector (backend/src/atlas/modules/guardrails) and its consumers
+# across the workflow, release, connector, and observability test suites are tested against
+# deliberately fake, alphabet-sequence secret-shaped strings (never randomly generated, so they
+# can never coincidentally collide with a real credential) so the detector has real material to
+# find. Idempotency keys and digest fixtures elsewhere in the test suites are synthetic slugs and
+# SHA-256-shaped placeholders, not credentials. Any new secret-shaped test fixture must follow the
+# same obviously-fake convention and be added here rather than widening this allowlist's scope.
+[allowlist]
+description = "Synthetic secret-shaped test fixtures and non-secret identifier fields"
+regexTarget = "match"
+regexes = [
+  '''AKIA[A-Z]{16}''',
+  '''sk_live_[a-zA-Z0-9]+''',
+  '''(?i)idempotency[_-]key''',
+  '''credential_profile_digest''',
+  '''credential_policy_digest''',
+  '''_WF_RT\w*_AUTH_(POLICY|PROFILE)_DIGEST''',
+  '''key="final-tamper-001"''',
+  '''key="claim-foreign-0001"''',
+]
