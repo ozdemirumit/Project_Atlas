@@ -78,8 +78,12 @@ class ItsmCiReconciliationConflict:
     match_state: ItsmCiMatchState
 
     def __post_init__(self) -> None:
-        for value in (self.conflict_id, self.external_ci_id, self.mapped_atlas_entity_id):
+        for value in (self.conflict_id, self.mapped_atlas_entity_id):
             validate_stable_identifier(value, "ITSM CI reconciliation conflict identifier")
+        if not self.external_ci_id.strip():
+            raise ValueError(
+                "an ITSM CI reconciliation conflict requires the vendor's own CI identifier"
+            )
         if self.cmdb_observed_at.tzinfo is None or self.live_observed_at.tzinfo is None:
             raise ValueError("ITSM CI reconciliation observation times must be timezone-aware")
         if not 0.0 <= self.confidence <= 1.0:

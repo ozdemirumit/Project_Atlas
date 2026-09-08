@@ -71,14 +71,16 @@ class ItsmRecordCommonFields:
             self.profile_id,
             self.external_system,
             self.external_instance,
-            self.external_record_id,
             self.environment_id,
             self.site_id,
             self.access_policy_reference,
             self.retention_reference,
-            self.external_version,
         ):
             validate_stable_identifier(value, "ITSM record identifier")
+        if not self.external_record_id.strip() or not self.external_version.strip():
+            raise ValueError(
+                "an ITSM record requires the vendor's own record id and concurrency token"
+            )
         if not self.display_number.strip() or not self.title.strip():
             raise ValueError("an ITSM record requires a display number and title")
         if self.created_at.tzinfo is None or self.updated_at.tzinfo is None:

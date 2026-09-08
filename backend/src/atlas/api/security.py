@@ -155,10 +155,12 @@ from atlas.modules.authorization.application.bootstrap import (
     INVENTORY_DEVICE_READ,
     INVENTORY_DEVICE_RETIRE,
     INVESTIGATION_CREATE,
+    ITSM_CMDB_RECONCILIATION_MANAGE,
     ITSM_DISPATCH_AUTHORIZATION_CREATE,
     ITSM_HANDOFF_REVIEW_DECIDE,
     ITSM_HANDOFF_REVIEW_READ,
     ITSM_IDEMPOTENCY_CONFLICT_MANAGE,
+    ITSM_INCIDENT_RECORD_CACHE_MANAGE,
     ITSM_INTEGRATION_CREATE,
     ITSM_INTEGRATION_READ,
     ITSM_INTEGRATION_RETIRE,
@@ -2763,6 +2765,30 @@ async def authorize_itsm_idempotency_conflict_manage(
         request,
         subject,
         permission_id=ITSM_IDEMPOTENCY_CONFLICT_MANAGE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+async def authorize_itsm_cmdb_reconciliation_manage(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(itsm_integration_mutation_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_itsm_integration(
+        request,
+        subject,
+        permission_id=ITSM_CMDB_RECONCILIATION_MANAGE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+async def authorize_itsm_incident_record_cache_manage(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(itsm_integration_mutation_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_itsm_integration(
+        request,
+        subject,
+        permission_id=ITSM_INCIDENT_RECORD_CACHE_MANAGE,
         capability_class=CapabilityClass.C2_DIAGNOSTIC,
     )
 

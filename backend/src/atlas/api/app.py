@@ -72,7 +72,9 @@ from atlas.api.routes import (
     investigations,
     invocation_authorizations,
     invocation_evidence,
+    itsm_cmdb_reconciliation,
     itsm_idempotency_conflicts,
+    itsm_incident_records,
     itsm_integrations,
     knowledge_deletion_legal_hold,
     knowledge_feedback,
@@ -957,6 +959,10 @@ from atlas.modules.inventory.adapters.postgres import PostgreSQLInventoryDeviceR
 from atlas.modules.inventory.application.service import InventoryDeviceService
 from atlas.modules.investigations.adapters.synthetic import SyntheticInvestigationAssembler
 from atlas.modules.investigations.application.service import InvestigationService
+from atlas.modules.itsm.adapters.cmdb_reconciliation_memory import (
+    InMemoryItsmCiMappingRuleRepository,
+    InMemoryItsmCiReconciliationConflictRepository,
+)
 from atlas.modules.itsm.adapters.dispatch_authorization_memory import (
     InMemoryItsmDispatchAuthorizationRepository,
 )
@@ -976,14 +982,19 @@ from atlas.modules.itsm.adapters.onboarding import (
     build_development_itsm_sandbox_onboarding_policy_authenticity,
 )
 from atlas.modules.itsm.adapters.postgres import PostgreSQLItsmIntegrationProfileRepository
+from atlas.modules.itsm.adapters.record_cache_memory import (
+    InMemoryItsmIncidentRecordRepository,
+)
 from atlas.modules.itsm.adapters.sandbox import (
     DeterministicNoNetworkItsmSandboxConformanceAdapter,
     UnavailableItsmSandboxConformanceAdapter,
 )
+from atlas.modules.itsm.application.cmdb_reconciliation import ItsmCmdbReconciliationService
 from atlas.modules.itsm.application.dispatch_authorization import (
     ItsmDispatchAuthorizationService,
 )
 from atlas.modules.itsm.application.idempotency_conflict import ItsmIdempotencyConflictService
+from atlas.modules.itsm.application.record_cache import ItsmIncidentRecordCacheService
 from atlas.modules.itsm.application.service import ItsmIntegrationService
 from atlas.modules.knowledge.adapters.correction_resubmission_memory import (
     InMemoryOperationalKnowledgeCorrectionPolicySource,
@@ -3260,6 +3271,8 @@ def create_app(
     itsm_handoff_review_service: ItsmHandoffReviewService | None = None,
     itsm_dispatch_authorization_service: ItsmDispatchAuthorizationService | None = None,
     itsm_idempotency_conflict_service: ItsmIdempotencyConflictService | None = None,
+    itsm_cmdb_reconciliation_service: ItsmCmdbReconciliationService | None = None,
+    itsm_incident_record_cache_service: ItsmIncidentRecordCacheService | None = None,
     grounded_answer_service: GroundedAnswerService | None = None,
     conversation_service: ConversationService | None = None,
     conversation_target_access_source: ConversationTargetAccessSource | None = None,
@@ -7719,6 +7732,21 @@ def create_app(
             audit_sink=resolved_audit_sink,
         )
     )
+    resolved_itsm_cmdb_reconciliation_service = (
+        itsm_cmdb_reconciliation_service
+        or ItsmCmdbReconciliationService(
+            rule_repository=InMemoryItsmCiMappingRuleRepository(),
+            conflict_repository=InMemoryItsmCiReconciliationConflictRepository(),
+            audit_sink=resolved_audit_sink,
+        )
+    )
+    resolved_itsm_incident_record_cache_service = (
+        itsm_incident_record_cache_service
+        or ItsmIncidentRecordCacheService(
+            repository=InMemoryItsmIncidentRecordRepository(),
+            audit_sink=resolved_audit_sink,
+        )
+    )
     resolved_approval_service = approval_service or ApprovalService(
         recommendation_provider=resolved_recommendation_service,
         audit_sink=resolved_audit_sink,
@@ -10578,6 +10606,8 @@ def create_app(
         app.state.itsm_handoff_review_service = resolved_itsm_handoff_review_service
         app.state.itsm_dispatch_authorization_service = resolved_itsm_dispatch_authorization_service
         app.state.itsm_idempotency_conflict_service = resolved_itsm_idempotency_conflict_service
+        app.state.itsm_cmdb_reconciliation_service = resolved_itsm_cmdb_reconciliation_service
+        app.state.itsm_incident_record_cache_service = resolved_itsm_incident_record_cache_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         app.state.conversation_service = resolved_conversation_service
         app.state.conversation_target_access_source = resolved_conversation_target_access_source
@@ -10974,6 +11004,8 @@ def create_app(
         await resolved_itsm_handoff_review_service.close()
         await resolved_itsm_dispatch_authorization_service.close()
         await resolved_itsm_idempotency_conflict_service.close()
+        await resolved_itsm_cmdb_reconciliation_service.close()
+        await resolved_itsm_incident_record_cache_service.close()
         await resolved_report_service.close()
         await resolved_bootstrap_state_service.close()
         await database_probe.close()
@@ -11015,6 +11047,8 @@ def create_app(
     app.include_router(inventory_devices.router, prefix="/api/v1")
     app.include_router(itsm_integrations.router, prefix="/api/v1")
     app.include_router(itsm_idempotency_conflicts.router, prefix="/api/v1")
+    app.include_router(itsm_cmdb_reconciliation.router, prefix="/api/v1")
+    app.include_router(itsm_incident_records.router, prefix="/api/v1")
     app.include_router(platform.router, prefix="/api/v1")
     app.include_router(release_preflight.router, prefix="/api/v1")
     app.include_router(deployment_configuration.router, prefix="/api/v1")

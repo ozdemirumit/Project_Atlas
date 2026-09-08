@@ -41,6 +41,8 @@ ITSM_SANDBOX_CONFORMANCE_CREATE = "itsm.integrations.sandbox-conformance.create"
 ITSM_SANDBOX_ONBOARDING_READ = "itsm.integrations.sandbox-onboarding.read"
 ITSM_DISPATCH_AUTHORIZATION_CREATE = "itsm.integrations.dispatch-authorizations.create"
 ITSM_IDEMPOTENCY_CONFLICT_MANAGE = "itsm.integrations.idempotency-conflict.manage"
+ITSM_CMDB_RECONCILIATION_MANAGE = "itsm.integrations.cmdb-reconciliation.manage"
+ITSM_INCIDENT_RECORD_CACHE_MANAGE = "itsm.integrations.incident-record-cache.manage"
 AI_GROUNDED_QUERY_CREATE = "ai.grounded-query.create"
 AI_MODEL_LIFECYCLE_ADMINISTER = "ai.model-lifecycle.administer"
 GUARDRAIL_HUMAN_REVIEW_ENQUEUE = "guardrails.human-review.enqueue"
@@ -608,6 +610,16 @@ def itsm_integration_permission_definitions() -> tuple[PermissionDefinition, ...
         PermissionDefinition(
             permission_id=ITSM_IDEMPOTENCY_CONFLICT_MANAGE,
             description=("Record and resolve ITSM outbound creation intents and conflict records."),
+        ),
+        PermissionDefinition(
+            permission_id=ITSM_CMDB_RECONCILIATION_MANAGE,
+            description=(
+                "Register CI mapping rules and record or resolve CMDB reconciliation conflicts."
+            ),
+        ),
+        PermissionDefinition(
+            permission_id=ITSM_INCIDENT_RECORD_CACHE_MANAGE,
+            description="Cache and read one normalized ITSM incident record snapshot.",
         ),
     )
 
@@ -3942,6 +3954,8 @@ def build_development_authorization_service(
                 ITSM_SANDBOX_ONBOARDING_READ,
                 ITSM_DISPATCH_AUTHORIZATION_CREATE,
                 ITSM_IDEMPOTENCY_CONFLICT_MANAGE,
+                ITSM_CMDB_RECONCILIATION_MANAGE,
+                ITSM_INCIDENT_RECORD_CACHE_MANAGE,
                 AI_GROUNDED_QUERY_CREATE,
                 AI_MODEL_LIFECYCLE_ADMINISTER,
                 GUARDRAIL_HUMAN_REVIEW_ENQUEUE,
