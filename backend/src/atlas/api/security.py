@@ -158,6 +158,7 @@ from atlas.modules.authorization.application.bootstrap import (
     ITSM_DISPATCH_AUTHORIZATION_CREATE,
     ITSM_HANDOFF_REVIEW_DECIDE,
     ITSM_HANDOFF_REVIEW_READ,
+    ITSM_IDEMPOTENCY_CONFLICT_MANAGE,
     ITSM_INTEGRATION_CREATE,
     ITSM_INTEGRATION_READ,
     ITSM_INTEGRATION_RETIRE,
@@ -269,6 +270,9 @@ from atlas.modules.authorization.application.bootstrap import (
     REPORT_CREATE,
     REPORT_READ,
     SECURITY_EXPORT_DESTINATION_ADMINISTER,
+    SECURITY_EXPORT_DETECTION_HANDOFF_RECORD,
+    SECURITY_EXPORT_DETECTION_REGISTER,
+    SECURITY_EXPORT_DETECTION_TRANSITION,
     SECURITY_EXPORT_OVERVIEW_READ,
     SECURITY_EXPORT_TEST_CREATE,
     SESSION_ADMIN_REVOKE,
@@ -2747,6 +2751,18 @@ async def authorize_itsm_dispatch_authorization_create(
         request,
         subject,
         permission_id=ITSM_DISPATCH_AUTHORIZATION_CREATE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+async def authorize_itsm_idempotency_conflict_manage(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(itsm_integration_mutation_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_itsm_integration(
+        request,
+        subject,
+        permission_id=ITSM_IDEMPOTENCY_CONFLICT_MANAGE,
         capability_class=CapabilityClass.C2_DIAGNOSTIC,
     )
 
@@ -5798,6 +5814,33 @@ async def authorize_security_export_test_create(
 ) -> AuthorizationDecision:
     return await _authorize_security_export(
         request, subject, permission_id=SECURITY_EXPORT_TEST_CREATE
+    )
+
+
+async def authorize_security_export_detection_register(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_security_export(
+        request, subject, permission_id=SECURITY_EXPORT_DETECTION_REGISTER
+    )
+
+
+async def authorize_security_export_detection_transition(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_security_export(
+        request, subject, permission_id=SECURITY_EXPORT_DETECTION_TRANSITION
+    )
+
+
+async def authorize_security_export_detection_handoff_record(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_security_export(
+        request, subject, permission_id=SECURITY_EXPORT_DETECTION_HANDOFF_RECORD
     )
 
 

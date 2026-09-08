@@ -20,6 +20,15 @@ class ItsmCreationIntentState(StrEnum):
     RECONCILED_NOT_CREATED = "reconciled_not_created"
 
 
+_TERMINAL_INTENT_STATES = frozenset(
+    {
+        ItsmCreationIntentState.CONFIRMED_CREATED,
+        ItsmCreationIntentState.RECONCILED_DUPLICATE,
+        ItsmCreationIntentState.RECONCILED_NOT_CREATED,
+    }
+)
+
+
 @dataclass(frozen=True, slots=True)
 class ItsmCreationIntent:
     """SS15's stored intent, recorded before an outbound create is ever dispatched."""
@@ -35,20 +44,19 @@ class ItsmCreationIntent:
     external_record_id: str | None
 
     def __post_init__(self) -> None:
-        for value in (
-            self.intent_id,
-            self.idempotency_key,
-            self.profile_id,
-            self.deduplication_signature,
-        ):
+        for value in (self.intent_id, self.profile_id):
             validate_stable_identifier(value, "ITSM creation intent identifier")
+        if not self.idempotency_key.strip() or not self.deduplication_signature.strip():
+            raise ValueError(
+                "an ITSM creation intent requires an idempotency key and a deduplication signature"
+            )
         if not self.operation.strip():
             raise ValueError("an ITSM creation intent requires an operation")
         if self.created_at.tzinfo is None:
             raise ValueError("an ITSM creation intent time must be timezone-aware")
         if self.resolved_at is not None and self.resolved_at.tzinfo is None:
             raise ValueError("an ITSM creation intent resolution time must be timezone-aware")
-        resolved = self.state is not ItsmCreationIntentState.PENDING
+        resolved = self.state in _TERMINAL_INTENT_STATES
         if resolved != (self.resolved_at is not None):
             raise ValueError("an ITSM creation intent's resolution time tracks its state")
         confirmed = self.state is ItsmCreationIntentState.CONFIRMED_CREATED
@@ -103,14 +111,18 @@ class ItsmConflictRecord:
     resolved_at: datetime | None
 
     def __post_init__(self) -> None:
-        for value in (
-            self.conflict_id,
-            self.profile_id,
-            self.external_record_id,
-            self.last_known_source_version,
-            self.observed_source_version,
-        ):
+        for value in (self.conflict_id, self.profile_id):
             validate_stable_identifier(value, "ITSM conflict identifier")
+        if not all(
+            (
+                self.external_record_id.strip(),
+                self.last_known_source_version.strip(),
+                self.observed_source_version.strip(),
+            )
+        ):
+            raise ValueError(
+                "an ITSM conflict record requires an external record id and both source versions"
+            )
         if self.detected_at.tzinfo is None:
             raise ValueError("an ITSM conflict detection time must be timezone-aware")
         resolution_fields = (self.resolution_summary, self.resolved_by, self.resolved_at)

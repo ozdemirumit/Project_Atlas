@@ -40,6 +40,7 @@ ITSM_SANDBOX_CONFORMANCE_READ = "itsm.integrations.sandbox-conformance.read"
 ITSM_SANDBOX_CONFORMANCE_CREATE = "itsm.integrations.sandbox-conformance.create"
 ITSM_SANDBOX_ONBOARDING_READ = "itsm.integrations.sandbox-onboarding.read"
 ITSM_DISPATCH_AUTHORIZATION_CREATE = "itsm.integrations.dispatch-authorizations.create"
+ITSM_IDEMPOTENCY_CONFLICT_MANAGE = "itsm.integrations.idempotency-conflict.manage"
 AI_GROUNDED_QUERY_CREATE = "ai.grounded-query.create"
 AI_MODEL_LIFECYCLE_ADMINISTER = "ai.model-lifecycle.administer"
 GUARDRAIL_HUMAN_REVIEW_ENQUEUE = "guardrails.human-review.enqueue"
@@ -176,6 +177,9 @@ ITSM_HANDOFF_REVIEW_DECIDE = "report.itsm-handoff-review.decide"
 SECURITY_EXPORT_OVERVIEW_READ = "security-export.overview.read"
 SECURITY_EXPORT_TEST_CREATE = "security-export.test.create"
 SECURITY_EXPORT_DESTINATION_ADMINISTER = "security-export.destination.administer"
+SECURITY_EXPORT_DETECTION_REGISTER = "security-export.detection.register"
+SECURITY_EXPORT_DETECTION_TRANSITION = "security-export.detection.transition"
+SECURITY_EXPORT_DETECTION_HANDOFF_RECORD = "security-export.detection.handoff-record"
 AUDIT_READ = "audit.read"
 AUDIT_EXPORT = "audit.export"
 RELEASE_PREFLIGHT_READ = "platform.release-preflight.read"
@@ -600,6 +604,10 @@ def itsm_integration_permission_definitions() -> tuple[PermissionDefinition, ...
                 "Compose an exact profile, onboarding readiness, and accepted human handoff "
                 "review into one outbound dispatch authorization decision."
             ),
+        ),
+        PermissionDefinition(
+            permission_id=ITSM_IDEMPOTENCY_CONFLICT_MANAGE,
+            description=("Record and resolve ITSM outbound creation intents and conflict records."),
         ),
     )
 
@@ -2990,6 +2998,18 @@ def build_development_authorization_service(
             ),
         ),
         PermissionDefinition(
+            permission_id=SECURITY_EXPORT_DETECTION_REGISTER,
+            description="Register one baseline detection deployment against a SIEM destination.",
+        ),
+        PermissionDefinition(
+            permission_id=SECURITY_EXPORT_DETECTION_TRANSITION,
+            description="Transition a detection deployment through its nine-stage lifecycle.",
+        ),
+        PermissionDefinition(
+            permission_id=SECURITY_EXPORT_DETECTION_HANDOFF_RECORD,
+            description="Record one SIEM-originated incident handoff summary for a live detection.",
+        ),
+        PermissionDefinition(
             permission_id=RELEASE_PREFLIGHT_READ,
             description="Read one bounded release and host preflight report without mutation.",
         ),
@@ -3921,6 +3941,7 @@ def build_development_authorization_service(
                 ITSM_SANDBOX_CONFORMANCE_CREATE,
                 ITSM_SANDBOX_ONBOARDING_READ,
                 ITSM_DISPATCH_AUTHORIZATION_CREATE,
+                ITSM_IDEMPOTENCY_CONFLICT_MANAGE,
                 AI_GROUNDED_QUERY_CREATE,
                 AI_MODEL_LIFECYCLE_ADMINISTER,
                 GUARDRAIL_HUMAN_REVIEW_ENQUEUE,
@@ -3992,6 +4013,9 @@ def build_development_authorization_service(
                 SECURITY_EXPORT_OVERVIEW_READ,
                 SECURITY_EXPORT_TEST_CREATE,
                 SECURITY_EXPORT_DESTINATION_ADMINISTER,
+                SECURITY_EXPORT_DETECTION_REGISTER,
+                SECURITY_EXPORT_DETECTION_TRANSITION,
+                SECURITY_EXPORT_DETECTION_HANDOFF_RECORD,
                 RELEASE_PREFLIGHT_READ,
                 DEPLOYMENT_CONFIGURATION_PREVIEW,
                 BOOTSTRAP_PLAN_READ,

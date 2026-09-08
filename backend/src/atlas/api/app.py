@@ -72,6 +72,7 @@ from atlas.api.routes import (
     investigations,
     invocation_authorizations,
     invocation_evidence,
+    itsm_idempotency_conflicts,
     itsm_integrations,
     knowledge_deletion_legal_hold,
     knowledge_feedback,
@@ -129,6 +130,7 @@ from atlas.api.routes import (
     schema_semantics_validations,
     secret_brokerage_authorizations,
     security_export,
+    security_export_detections,
     sessions,
     source_materializations,
     static_dependency_analyses,
@@ -958,6 +960,10 @@ from atlas.modules.investigations.application.service import InvestigationServic
 from atlas.modules.itsm.adapters.dispatch_authorization_memory import (
     InMemoryItsmDispatchAuthorizationRepository,
 )
+from atlas.modules.itsm.adapters.idempotency_conflict_memory import (
+    InMemoryItsmConflictRecordRepository,
+    InMemoryItsmCreationIntentRepository,
+)
 from atlas.modules.itsm.adapters.memory import InMemoryItsmIntegrationProfileRepository
 from atlas.modules.itsm.adapters.onboarding import (
     DeterministicDevelopmentItsmSandboxOnboardingEvidenceSource,
@@ -977,6 +983,7 @@ from atlas.modules.itsm.adapters.sandbox import (
 from atlas.modules.itsm.application.dispatch_authorization import (
     ItsmDispatchAuthorizationService,
 )
+from atlas.modules.itsm.application.idempotency_conflict import ItsmIdempotencyConflictService
 from atlas.modules.itsm.application.service import ItsmIntegrationService
 from atlas.modules.knowledge.adapters.correction_resubmission_memory import (
     InMemoryOperationalKnowledgeCorrectionPolicySource,
@@ -1778,12 +1785,18 @@ from atlas.modules.reports.application.service import ReportService
 from atlas.modules.security_export.adapters.destination_administration_memory import (
     InMemorySyslogDestinationAdministrationRepository,
 )
+from atlas.modules.security_export.adapters.detection_lifecycle_memory import (
+    InMemorySiemDetectionDeploymentRepository,
+)
 from atlas.modules.security_export.adapters.synthetic import (
     SyntheticTlsSyslogTransport,
     build_synthetic_syslog_destinations,
 )
 from atlas.modules.security_export.application.destination_administration import (
     SyslogDestinationAdministrationService,
+)
+from atlas.modules.security_export.application.detection_lifecycle_service import (
+    SiemDetectionLifecycleService,
 )
 from atlas.modules.security_export.application.service import SecurityExportService
 from atlas.modules.storage.adapters.chained import ChainedStorageOverviewProvider
@@ -3246,6 +3259,7 @@ def create_app(
     report_service: ReportService | None = None,
     itsm_handoff_review_service: ItsmHandoffReviewService | None = None,
     itsm_dispatch_authorization_service: ItsmDispatchAuthorizationService | None = None,
+    itsm_idempotency_conflict_service: ItsmIdempotencyConflictService | None = None,
     grounded_answer_service: GroundedAnswerService | None = None,
     conversation_service: ConversationService | None = None,
     conversation_target_access_source: ConversationTargetAccessSource | None = None,
@@ -3441,6 +3455,7 @@ def create_app(
     syslog_destination_administration_service: (
         SyslogDestinationAdministrationService | None
     ) = None,
+    siem_detection_lifecycle_service: SiemDetectionLifecycleService | None = None,
     embedding_model_lifecycle_service: EmbeddingModelLifecycleService | None = None,
     model_lifecycle_service: ModelLifecycleService | None = None,
     knowledge_feedback_service: KnowledgeFeedbackService | None = None,
@@ -3634,6 +3649,13 @@ def create_app(
         syslog_destination_administration_service
         or SyslogDestinationAdministrationService(
             repository=InMemorySyslogDestinationAdministrationRepository(),
+            audit_sink=resolved_audit_sink,
+        )
+    )
+    resolved_siem_detection_lifecycle_service = (
+        siem_detection_lifecycle_service
+        or SiemDetectionLifecycleService(
+            repository=InMemorySiemDetectionDeploymentRepository(),
             audit_sink=resolved_audit_sink,
         )
     )
@@ -7689,6 +7711,14 @@ def create_app(
             audit_sink=resolved_audit_sink,
         )
     )
+    resolved_itsm_idempotency_conflict_service = (
+        itsm_idempotency_conflict_service
+        or ItsmIdempotencyConflictService(
+            intent_repository=InMemoryItsmCreationIntentRepository(),
+            conflict_repository=InMemoryItsmConflictRecordRepository(),
+            audit_sink=resolved_audit_sink,
+        )
+    )
     resolved_approval_service = approval_service or ApprovalService(
         recommendation_provider=resolved_recommendation_service,
         audit_sink=resolved_audit_sink,
@@ -10306,6 +10336,7 @@ def create_app(
         app.state.syslog_destination_administration_service = (
             resolved_syslog_destination_administration_service
         )
+        app.state.siem_detection_lifecycle_service = resolved_siem_detection_lifecycle_service
         app.state.embedding_model_lifecycle_service = resolved_embedding_model_lifecycle_service
         app.state.model_lifecycle_service = resolved_model_lifecycle_service
         app.state.knowledge_feedback_service = resolved_knowledge_feedback_service
@@ -10546,6 +10577,7 @@ def create_app(
         app.state.report_service = resolved_report_service
         app.state.itsm_handoff_review_service = resolved_itsm_handoff_review_service
         app.state.itsm_dispatch_authorization_service = resolved_itsm_dispatch_authorization_service
+        app.state.itsm_idempotency_conflict_service = resolved_itsm_idempotency_conflict_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         app.state.conversation_service = resolved_conversation_service
         app.state.conversation_target_access_source = resolved_conversation_target_access_source
@@ -10941,6 +10973,7 @@ def create_app(
         await resolved_itsm_integration_service.close()
         await resolved_itsm_handoff_review_service.close()
         await resolved_itsm_dispatch_authorization_service.close()
+        await resolved_itsm_idempotency_conflict_service.close()
         await resolved_report_service.close()
         await resolved_bootstrap_state_service.close()
         await database_probe.close()
@@ -10981,6 +11014,7 @@ def create_app(
     app.include_router(workload_identities.router, prefix="/api/v1")
     app.include_router(inventory_devices.router, prefix="/api/v1")
     app.include_router(itsm_integrations.router, prefix="/api/v1")
+    app.include_router(itsm_idempotency_conflicts.router, prefix="/api/v1")
     app.include_router(platform.router, prefix="/api/v1")
     app.include_router(release_preflight.router, prefix="/api/v1")
     app.include_router(deployment_configuration.router, prefix="/api/v1")
@@ -11097,5 +11131,6 @@ def create_app(
     app.include_router(reports.router, prefix="/api/v1")
     app.include_router(ai.router, prefix="/api/v1")
     app.include_router(security_export.router, prefix="/api/v1")
+    app.include_router(security_export_detections.router, prefix="/api/v1")
     app.include_router(audit_export.router, prefix="/api/v1")
     return app
