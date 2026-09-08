@@ -5,9 +5,11 @@ import json
 import re
 import tomllib
 from dataclasses import dataclass
+from datetime import datetime
 from hashlib import sha256
 from typing import Any
 
+from atlas.modules.connectors.domain.models import ConnectorValidationReport, ValidationFinding
 from atlas.modules.mcp_builder.application.generator import PythonScaffoldGenerator
 from atlas.modules.mcp_builder.domain.design_review import McpBuilderDesignCheckpoint
 from atlas.modules.mcp_builder.domain.generation import McpBuilderGeneration
@@ -18,9 +20,100 @@ from atlas.modules.mcp_builder.domain.validation import (
     BuilderValidationSeverity,
     BuilderValidationState,
 )
+from atlas.modules.mcp_plugin_sdk.domain.validator_package import (
+    ConnectorValidatorReport,
+    ValidatorCategoryResult,
+    ValidatorCheckCategory,
+)
 
 VALIDATION_PROFILE = "atlas.static-validation.python312.v1"
 VALIDATOR_VERSION = "mcp-builder-static-validator.v1"
+
+# ATLAS-022 SS32 / ATLAS-021 SS24: which of PythonScaffoldStaticValidator's own 15 specific
+# checks contribute to each of the SDK validator's nine report categories. This is a
+# classification of the *same* check outcomes Builder already computes -- it does not add,
+# remove, or change what causes a generated scaffold to pass or fail; it only re-projects the
+# existing result onto the SDK's report shape so the two validators are genuinely integrated
+# rather than two independently-invented schemes covering the same ground. Builder-generated
+# scaffolds declare zero runtime dependencies by design (pyproject.toml's `dependencies = []`,
+# asserted by `validation.python.project`), so there is no separate dependency-lock surface to
+# vet -- that check's outcome is reused for DEPENDENCY_LOCK_AND_VULNERABILITY_STATE too.
+_SDK_VALIDATOR_CATEGORY_CHECK_CODES: dict[ValidatorCheckCategory, tuple[str, ...]] = {
+    ValidatorCheckCategory.MANIFEST_AND_SCHEMA_VALIDITY: (
+        "validation.artifact.file-set",
+        "validation.manifest.contract",
+        "validation.schemas.contract",
+    ),
+    ValidatorCheckCategory.SDK_AND_ATLAS_COMPATIBILITY: (
+        "validation.python.project",
+        "validation.traceability.complete",
+    ),
+    ValidatorCheckCategory.DEPENDENCY_LOCK_AND_VULNERABILITY_STATE: ("validation.python.project",),
+    ValidatorCheckCategory.PROHIBITED_FILE_AND_SECRET_SCAN: (
+        "validation.artifact.file-set",
+        "validation.python.ast-safety",
+        "validation.security.secret-scan",
+    ),
+    ValidatorCheckCategory.CAPABILITY_RISK_AND_PERMISSION_COMPLETENESS: (
+        "validation.permissions.complete",
+        "validation.network.boundary",
+        "validation.entities.complete",
+    ),
+    ValidatorCheckCategory.TEST_COVERAGE_AND_REQUIRED_SCENARIO_RESULTS: (
+        "validation.tests.fail-closed",
+    ),
+    ValidatorCheckCategory.DOCUMENTATION_COMPLETENESS: ("validation.documentation.complete",),
+    ValidatorCheckCategory.PACKAGE_REPRODUCIBILITY_AND_INTEGRITY: (
+        "validation.artifact.integrity",
+        "validation.artifact.reproducible",
+    ),
+    ValidatorCheckCategory.RUNTIME_SELF_TEST_AND_RESOURCE_BEHAVIOR: (
+        "validation.isolation.authority",
+        "validation.traceability.complete",
+    ),
+}
+
+
+def build_connector_validator_report(
+    checks: tuple[BuilderValidationCheck, ...],
+    *,
+    report_id: str,
+    package_reference: str,
+    validated_at: datetime,
+) -> ConnectorValidatorReport:
+    """Projects Builder's own 15-check result onto ATLAS-021 SS24's nine-category
+    `ConnectorValidatorReport` shape -- the SDK validator integration ATLAS-022 SS32 lists as
+    MVP-included scope. A check that did not run for this report (e.g. skipped after an
+    artifact-integrity failure) is absent from its category's findings the same way a check that
+    passed is: only a `FAILED` check becomes a `ValidationFinding`."""
+    checks_by_code = {check.code: check for check in checks}
+    category_results: list[ValidatorCategoryResult] = []
+    all_findings: list[ValidationFinding] = []
+    for category, codes in _SDK_VALIDATOR_CATEGORY_CHECK_CODES.items():
+        findings = tuple(
+            ValidationFinding(
+                code=check.code,
+                path=check.evidence_paths[0] if check.evidence_paths else "",
+                message=check.summary,
+            )
+            for code in codes
+            if (check := checks_by_code.get(code)) is not None
+            and check.state is BuilderValidationCheckState.FAILED
+        )
+        all_findings.extend(findings)
+        category_results.append(
+            ValidatorCategoryResult(category=category, passed=not findings, findings=findings)
+        )
+    base_report = ConnectorValidationReport(
+        report_id=report_id,
+        package_reference=package_reference,
+        validated_at=validated_at,
+        findings=tuple(all_findings),
+    )
+    return ConnectorValidatorReport(
+        base_report=base_report, category_results=tuple(category_results)
+    )
+
 
 _PROHIBITED_IMPORT_ROOTS = frozenset(
     {

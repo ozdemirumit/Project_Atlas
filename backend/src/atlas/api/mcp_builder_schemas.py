@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from atlas.api.schemas import ResponseMeta
 from atlas.core.capabilities import CapabilityClass
 from atlas.core.classification import DataClassification
+from atlas.modules.mcp_builder.application.validator import build_connector_validator_report
 from atlas.modules.mcp_builder.domain.candidate_handoff import (
     CandidateCapabilityEvidence,
     McpBuilderCandidateHandoff,
@@ -492,6 +493,30 @@ class BuilderValidationCheckData(BaseModel):
         )
 
 
+class SdkValidatorFindingData(BaseModel):
+    code: str
+    path: str
+    message: str
+
+
+class SdkValidatorCategoryResultData(BaseModel):
+    category: str
+    passed: bool
+    findings: list[SdkValidatorFindingData]
+
+
+class SdkValidatorReportData(BaseModel):
+    """ATLAS-021 SS24's nine-category connector validator report -- a re-projection of the same
+    check outcomes `checks` already carries, not a second independent judgment (ATLAS-022 SS32's
+    "SDK validator integration")."""
+
+    report_id: str
+    package_reference: str
+    validated_at: datetime
+    passed: bool
+    categories: list[SdkValidatorCategoryResultData]
+
+
 class McpBuilderValidationData(BaseModel):
     validation_id: str
     schema_version: str
@@ -539,18 +564,44 @@ class McpBuilderValidationData(BaseModel):
     execution_authorized: bool
     infrastructure_mutation_performed: bool
     reused: bool
+    sdk_validator_report: SdkValidatorReportData
 
     @classmethod
     def from_domain(cls, validation: McpBuilderValidation) -> McpBuilderValidationData:
+        sdk_report = build_connector_validator_report(
+            validation.checks,
+            report_id=f"connector-validator-report.{validation.validation_id.rsplit('.', 1)[-1]}",
+            package_reference=validation.generation_id,
+            validated_at=validation.completed_at,
+        )
         return cls(
             **{
                 field: getattr(validation, field)
                 for field in cls.model_fields
-                if field not in {"state", "checks", "limitations"}
+                if field not in {"state", "checks", "limitations", "sdk_validator_report"}
             },
             state=validation.state.value,
             checks=[BuilderValidationCheckData.from_domain(item) for item in validation.checks],
             limitations=list(validation.limitations),
+            sdk_validator_report=SdkValidatorReportData(
+                report_id=sdk_report.base_report.report_id,
+                package_reference=sdk_report.base_report.package_reference,
+                validated_at=sdk_report.base_report.validated_at,
+                passed=sdk_report.passed,
+                categories=[
+                    SdkValidatorCategoryResultData(
+                        category=result.category.value,
+                        passed=result.passed,
+                        findings=[
+                            SdkValidatorFindingData(
+                                code=finding.code, path=finding.path, message=finding.message
+                            )
+                            for finding in result.findings
+                        ],
+                    )
+                    for result in sdk_report.category_results
+                ],
+            ),
         )
 
 
