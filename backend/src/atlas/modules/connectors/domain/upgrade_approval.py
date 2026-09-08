@@ -841,10 +841,13 @@ class ConnectorUpgradeItsmChangeEvidence:
             self.adapter_id,
             self.adapter_version,
             self.authoritative_instance_id,
-            self.external_record_id,
-            self.external_record_version,
         ):
             validate_stable_identifier(value, "connector upgrade ITSM change identifier")
+        if not self.external_record_id.strip() or not self.external_record_version.strip():
+            raise ValueError(
+                "connector upgrade ITSM change evidence requires the vendor's own record id "
+                "and concurrency token"
+            )
         for value in (
             self.request_digest,
             self.revalidation_digest,
@@ -918,10 +921,13 @@ class ConnectorUpgradeMaintenanceWindowEvidence:
             self.revalidation_id,
             self.plan_id,
             self.itsm_change_evidence_id,
-            self.external_record_version,
-            self.window_version,
         ):
             validate_stable_identifier(value, "connector upgrade maintenance window identifier")
+        if not self.external_record_version.strip() or not self.window_version.strip():
+            raise ValueError(
+                "connector upgrade maintenance window evidence requires the vendor's own "
+                "record and window version tokens"
+            )
         for value in (
             self.request_digest,
             self.revalidation_digest,
