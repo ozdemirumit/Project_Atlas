@@ -47,9 +47,12 @@ class ItsmOutboundDispatchAuthorization:
             self.authorization_id,
             self.profile_id,
             self.draft_id,
-            self.draft_idempotency_key,
         ):
             validate_stable_identifier(value, "ITSM outbound dispatch authorization identifier")
+        if not self.draft_idempotency_key.strip():
+            raise ValueError(
+                "ITSM outbound dispatch authorization requires a draft idempotency key"
+            )
         if self.human_reviewer_id is not None:
             validate_stable_identifier(self.human_reviewer_id, "ITSM dispatch human reviewer")
         if (

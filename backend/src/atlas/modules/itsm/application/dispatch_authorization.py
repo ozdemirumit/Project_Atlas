@@ -208,16 +208,21 @@ class ItsmDispatchAuthorizationService:
                 "decided_at": decided_at.isoformat(),
             }
         )
-        authorization = authorize_outbound_dispatch(
-            authorization_id=f"itsm-dispatch-authorization.{digest[:24]}",
-            profile=profile,
-            onboarding_readiness=readiness,
-            operation=operation,
-            draft=handoff,
-            human_reviewer_id=review.reviewer_id,
-            human_review_completed_at=review.decided_at,
-            decided_at=decided_at,
-        )
+        try:
+            authorization = authorize_outbound_dispatch(
+                authorization_id=f"itsm-dispatch-authorization.{digest[:24]}",
+                profile=profile,
+                onboarding_readiness=readiness,
+                operation=operation,
+                draft=handoff,
+                human_reviewer_id=review.reviewer_id,
+                human_review_completed_at=review.decided_at,
+                decided_at=decided_at,
+            )
+        except ValueError as error:
+            raise ItsmDispatchAuthorizationError(
+                "itsm_dispatch_authorization_request_invalid"
+            ) from error
 
         stored = StoredItsmDispatchAuthorization(
             authorization=authorization,
