@@ -1,5 +1,27 @@
 """ATLAS-047 SS13: retrieval guardrails.
 
+**Status (2026-09-08, ATLAS-IMP-280 pass 20): superseded as a live mechanism, kept as reference.**
+The one real, HTTP-reachable knowledge-retrieval pipeline
+(`knowledge/application/protected_retrieval.py`'s `OperationalKnowledgeProtectedRetrievalService`,
+feeding `ai/application/protected_model_invocation.py`) implements SS13's underlying intent
+through its own mechanism instead of this module: `OperationalKnowledgeEvidenceResult` carries its
+own `lifecycle_state`/`safety_state`/`conflict_state` string fields, and the retrieval receipt
+carries `authorization_filtered_before_scoring`/`citations_validated` attestation flags verified
+structurally by the service. Neither reuses `SourceLifecycleState`/`filter_authorized_sources`/
+`invalid_citations` below, and the one retriever that exists today
+(`SyntheticOperationalKnowledgeTrustedRetriever`) always returns a single, already-safe synthetic
+result, so those attestation flags are currently hardcoded rather than computed from a real check
+-- a structural gap, not a live one, since no unsafe source has anywhere to come from yet. The user
+was asked (pass 20) whether to wire this module's functions into that pipeline now or defer until
+a real external retriever exists; the explicit answer was to defer, the same treatment as
+`authorization/domain/baseline_roles.py`'s RBAC divergence (pass 19). This module remains real,
+tested code, kept as a record of SS13's literal reading -- **when a real (non-synthetic) retriever
+is eventually built, closing this gap for real (making `authorization_filtered_before_scoring`/
+`citations_validated` reflect an actual check, whether via this module's functions or the live
+pipeline's own field-based mechanism extended to do real work) is a must, not optional** -- but
+nothing here should be silently wired in without confirming which mechanism is meant to be
+authoritative.
+
 `filter_authorized_sources` is the load-bearing function here: it runs before any candidate ever
 becomes a visible result, so an unauthorized or excluded-lifecycle document's title, count,
 snippet, or mere existence never reaches a downstream caller (SS13: "hidden documents cannot leak
