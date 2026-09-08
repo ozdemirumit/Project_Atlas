@@ -1,5 +1,19 @@
 """ATLAS-031 SS9/SS10: the eleven baseline roles and the baseline permission matrix.
 
+**Status (2026-09-08, ATLAS-IMP-280 pass 19): superseded as a live catalog, kept as reference.**
+This module represents SS9/SS10 as originally read (a coarse eleven-role, fourteen-area sketch),
+built in this session's early pass 3. Every pass since has instead wired real routes to a
+fine-grained, per-vertical permission catalog (`authorization/application/bootstrap.py`'s
+`build_development_authorization_service()`) that grew far more granular than this sketch as each
+real capability was actually built -- roughly 150 atomic permissions across every wired module by
+pass 18, none of them derived from or reconciled against `BASELINE_PERMISSION_MATRIX` below. The
+user was asked (pass 19) whether to migrate the live system onto this baseline catalog or keep the
+fine-grained system that already secures every built endpoint; the explicit answer was to keep the
+live system and treat this module as a superseded initial design, not a live source of truth. It
+remains real, tested code -- deliberately left in place as a record of SS9/SS10's original literal
+reading, not deleted -- but `build_development_authorization_service()` does not construct any
+`RoleDefinition` from it, and nothing here should be wired in without a fresh product decision.
+
 The generic RBAC engine (`domain/models.py`'s `PermissionDefinition`/`RoleDefinition`/
 `RoleAssignment`/`AuthorizationRequest`/`AuthorizationDecision`) was already real and well-tested
 before this module -- what was missing was SS9's own eleven-role catalog and SS10's fourteen-area
@@ -38,17 +52,22 @@ from atlas.modules.authorization.domain.models import RoleDefinition
 class BaselineRoleId(StrEnum):
     """SS9's eleven baseline composite roles."""
 
-    PLATFORM_ADMINISTRATOR = "role.platform-administrator"
-    SECURITY_ADMINISTRATOR = "role.security-administrator"
-    CONNECTOR_ADMINISTRATOR = "role.connector-administrator"
-    KNOWLEDGE_MANAGER = "role.knowledge-manager"
-    WORKFLOW_DESIGNER = "role.workflow-designer"
-    INFRASTRUCTURE_ARCHITECT = "role.infrastructure-architect"
-    INFRASTRUCTURE_ENGINEER = "role.infrastructure-engineer"
-    OPERATIONS_ANALYST = "role.operations-analyst"
-    APPROVER = "role.approver"
-    AUDITOR = "role.auditor"
-    READ_ONLY_VIEWER = "role.read-only-viewer"
+    PLATFORM_ADMINISTRATOR = "role.baseline.platform-administrator"
+    # Deliberately distinct from the live, wired SECURITY_ADMINISTRATOR_ROLE_ID
+    # ("role.security-administrator" in application/bootstrap.py) -- both once shared the same
+    # id with independently-derived permission sets, which this module's superseded status (see
+    # the module docstring) makes silently ambiguous rather than a real conflict, but the
+    # collision itself was worth removing regardless.
+    SECURITY_ADMINISTRATOR = "role.baseline.security-administrator"
+    CONNECTOR_ADMINISTRATOR = "role.baseline.connector-administrator"
+    KNOWLEDGE_MANAGER = "role.baseline.knowledge-manager"
+    WORKFLOW_DESIGNER = "role.baseline.workflow-designer"
+    INFRASTRUCTURE_ARCHITECT = "role.baseline.infrastructure-architect"
+    INFRASTRUCTURE_ENGINEER = "role.baseline.infrastructure-engineer"
+    OPERATIONS_ANALYST = "role.baseline.operations-analyst"
+    APPROVER = "role.baseline.approver"
+    AUDITOR = "role.baseline.auditor"
+    READ_ONLY_VIEWER = "role.baseline.read-only-viewer"
 
 
 class BaselinePermissionArea(StrEnum):
