@@ -19,6 +19,7 @@ from test_registry_publication import (
 
 from atlas.api.app import create_app
 from atlas.core.audit import AuditRecord
+from atlas.core.config import Settings
 from atlas.modules.connectors.adapters.package_registration_inspector import (
     BoundedConnectorPackageManifestInspector,
 )
@@ -356,3 +357,82 @@ def test_package_registration_api_requires_csrf_and_minimizes_response(tmp_path:
         "lab-api.example.invalid",
     ):
         assert forbidden not in rendered
+
+
+def _settings(**overrides: object) -> Settings:
+    values: dict[str, object] = {
+        "environment": "test",
+        "development_identity_enabled": True,
+    }
+    values.update(overrides)
+    return Settings(**values)  # type: ignore[arg-type]
+
+
+def _login(client: TestClient) -> str:
+    response = client.post(
+        "/api/v1/authentication/sessions",
+        json={"username": "atlas-demo", "password": "local-demo"},
+    )
+    assert response.status_code == 201
+    return str(response.headers["X-CSRF-Token"])
+
+
+def test_package_registration_api_requires_authentication() -> None:
+    """No session cookie and no development identity: both the create and read routes must
+    fail closed at authentication, not merely at authorization -- proving `browser_session_subject`
+    really runs on each endpoint, not just a faked dependency override.
+    """
+    with TestClient(create_app(Settings(environment="test"))) as client:
+        created = client.post(
+            "/api/v1/connectors/package-registration-records",
+            json={
+                "source_publication_receipt_id": "registry-publication.wiring-denied-0001",
+                "source_publication_receipt_digest": "f" * 64,
+                "package_digest": "f" * 64,
+                "registration_policy_id": "policy.wiring-denied-0001",
+                "registration_policy_digest": "f" * 64,
+                "purpose": ("Prove that a real unprivileged identity is denied, not faked."),
+                "acknowledged_registration_grants_no_installation_or_runtime_authority": True,
+            },
+            headers={"Idempotency-Key": "package-registration-denied-0001"},
+        )
+        read = client.get(
+            "/api/v1/connectors/package-registration-records/registration.wiring-denied-0001"
+        )
+
+    for response in (created, read):
+        assert response.status_code == 401
+        assert response.json()["code"] == "authentication_required"
+
+
+def test_package_registration_api_requires_permission() -> None:
+    """A real, logged-in human subject with zero granted role permissions must still be denied
+    by the real `AuthorizationService` at both the create and read permission checks, not by a
+    faked dependency override.
+    """
+    with TestClient(create_app(_settings(development_role_ids=()))) as client:
+        csrf = _login(client)
+        created = client.post(
+            "/api/v1/connectors/package-registration-records",
+            json={
+                "source_publication_receipt_id": "registry-publication.wiring-denied-0001",
+                "source_publication_receipt_digest": "f" * 64,
+                "package_digest": "f" * 64,
+                "registration_policy_id": "policy.wiring-denied-0001",
+                "registration_policy_digest": "f" * 64,
+                "purpose": ("Prove that a real unprivileged identity is denied, not faked."),
+                "acknowledged_registration_grants_no_installation_or_runtime_authority": True,
+            },
+            headers={
+                "X-CSRF-Token": csrf,
+                "Idempotency-Key": "package-registration-denied-0002",
+            },
+        )
+        read = client.get(
+            "/api/v1/connectors/package-registration-records/registration.wiring-denied-0001",
+            headers={"X-CSRF-Token": csrf},
+        )
+
+    for response in (created, read):
+        assert response.status_code == 403
+        assert response.json()["code"] == "authorization_denied"
