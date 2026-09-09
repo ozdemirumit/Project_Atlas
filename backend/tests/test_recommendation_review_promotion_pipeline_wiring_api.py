@@ -27,50 +27,44 @@ chain in ``test_recommendation_protected_adjudication_pipeline_wiring_api.py``:
 ``adjudication_source=resolved_protected_recommendation_adjudication_service`` -- the exact
 service that module's tests already drive to a real, HTTP-created adjudication. This module reuses
 that module's (transitively, ``test_ai_protected_invocation_pipeline_wiring_api.py``'s) real HTTP
-sequence to reach one real adjudication, then attempts to continue into this pass's own five
-routes.
+sequence to reach one real adjudication, then continues into this pass's own five routes.
 
-That attempt surfaced a genuine, confirmed authorization-wiring gap, not an ambiguity: none of the
-five scope-builder functions these routes' ``authorize_*`` dependencies and permission-authorizer
+That attempt originally surfaced a genuine, confirmed authorization-wiring gap: none of the five
+scope-builder functions these routes' ``authorize_*`` dependencies and permission-authorizer
 adapters call -- ``ai_protected_recommendation_presentation_scope``,
 ``recommendation_promotion_scope``, ``recommendation_readiness_scope``,
 ``recommendation_review_request_scope``, and ``recommendation_reviewer_assignment_scope``, all
-defined in ``atlas/modules/authorization/application/bootstrap.py`` -- is ever invoked by any
-``RoleAssignment`` in that file (each has exactly one occurrence in the whole file: its own
-``def``, confirmed by grep). ``AI_PROTECTED_RECOMMENDATION_PRESENTATION_CREATE/READ``,
+defined in ``atlas/modules/authorization/application/bootstrap.py`` -- was ever invoked by any
+``RoleAssignment`` in that file. ``AI_PROTECTED_RECOMMENDATION_PRESENTATION_CREATE/READ``,
 ``RECOMMENDATION_PROMOTION_CREATE/READ``, ``RECOMMENDATION_READINESS_CREATE/READ``,
 ``RECOMMENDATION_REVIEW_REQUEST_CREATE/READ``, and
-``RECOMMENDATION_REVIEWER_ASSIGNMENT_CREATE/READ`` are all defined as permissions and are all
-included in ``DEVELOPMENT_ROLE_ID``'s permission set --
-but with no ``RoleAssignment`` binding any of them to a scope, ``AuthorizationService.evaluate``
-(which requires an *active, scope-matching* assignment, not merely a role that lists the
-permission) can never return ``allowed`` for any of these ten permissions, for any identity,
-including the "atlas-demo" development identity every other wiring test in this repo relies on.
-This was confirmed empirically, not just by reading: a fully logged-in, fully-privileged
-development identity receives a real ``403 authorization_denied`` on every one of these ten
-routes, identical to what an explicitly zero-permission identity receives.
+``RECOMMENDATION_REVIEWER_ASSIGNMENT_CREATE/READ`` were all defined as permissions and were all
+included in ``DEVELOPMENT_ROLE_ID``'s permission set -- but with no ``RoleAssignment`` binding any
+of them to a scope, ``AuthorizationService.evaluate`` (which requires an *active, scope-matching*
+assignment, not merely a role that lists the permission) could never return ``allowed`` for any of
+these ten permissions, for any identity, including the "atlas-demo" development identity every
+other wiring test in this repo relies on. A fully logged-in, fully-privileged development identity
+received a real ``403 authorization_denied`` on every one of these ten routes, identical to what an
+explicitly zero-permission identity receives.
 
-This is the exact same missing-``RoleAssignment`` bug class
-``test_recommendation_protected_adjudication_pipeline_wiring_api.py``'s own docstring already
-documents for ``final_recommendation_dispositions.py`` and
-``recommendation_correction_resubmissions.py`` two stages further downstream in this same overall
-human-review pipeline -- except this pass's audit found it also blocks these five *earlier*
-stages, not just those two later ones. Consistent with that module's precedent (and outside a
-test-writing pass's scope), this module does not add or repair the missing ``RoleAssignment``
-entries. Instead, since a genuine happy path is not achievable through these five routes today,
-every test below proves each route is really registered, requires real authentication, and reaches
-the real, wired ``AuthorizationService`` -- receiving the current, real ``403 authorization_denied``
-on a fully valid, schema-passing request (including, for the first stage, a request built from a
-*real* upstream adjudication obtained by driving the real protected-adjudication chain over HTTP)
--- so each denial is provably not a validation error, a 404, or a CSRF-missing 403. See the
-accompanying report for a suggested follow-up to add the missing ``RoleAssignment`` entries for
-all ten permissions.
+**This bug is now fixed.** ``build_development_authorization_service()`` in
+``atlas/modules/authorization/application/bootstrap.py`` now includes 24 additional
+``RoleAssignment`` entries (12 create/read permission pairs, including the ten this module covers)
+binding ``DEVELOPMENT_ROLE_ID`` to the matching scope for each of these permissions -- see the
+``RoleAssignment`` block starting at
+``assignment.development.ai-protected-recommendation-presentation-create``. Every test below now
+drives its stage's route with a fully valid, schema-passing request built from real upstream data
+(the first stage from a real upstream adjudication obtained by driving the real
+protected-adjudication chain over HTTP; every later stage from the real, HTTP-created output of the
+stage directly before it) and asserts the real ``2xx`` success this produces, with meaningful
+response fields -- proving genuine end-to-end reachability through the real, wired
+``AuthorizationService``, not merely that a denial is reached. The two tests at the bottom of this
+module (authentication/permission boundary checks, unaffected by this fix) are unchanged.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from hashlib import sha256
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -123,10 +117,6 @@ def _login(client: TestClient) -> str:
     return str(response.headers["X-CSRF-Token"])
 
 
-def _digest(label: str) -> str:
-    return sha256(label.encode()).hexdigest()
-
-
 @dataclass(frozen=True)
 class _RealAdjudicationOutcome:
     """The fields this module needs to attempt a real, schema-valid protected recommendation
@@ -145,7 +135,7 @@ def _build_real_adjudication_via_http(
     risk-recovery-completion -> adjudication chain over HTTP -- the same real sequence
     ``test_recommendation_protected_adjudication_pipeline_wiring_api.py`` already proves --
     purely to obtain one real, schema-valid ``adjudication_id``/``adjudication_digest`` pair for
-    this module's own presentation-create reachability test below.
+    this module's own presentation-create test below.
     """
     settings = _settings()
     organization_id = settings.development_organization_id
@@ -262,15 +252,226 @@ def _build_real_adjudication_via_http(
     )
 
 
+@dataclass(frozen=True)
+class _RealPresentationOutcome:
+    """The fields this module needs to attempt a real, schema-valid recommendation promotion
+    create -- obtained from a real HTTP-created protected recommendation presentation."""
+
+    presentation_id: str
+    presentation_digest: str
+    purpose: str
+
+
+def _build_real_presentation_via_http(
+    app: FastAPI, client: TestClient, csrf: str
+) -> _RealPresentationOutcome:
+    """Drives ``_build_real_adjudication_via_http`` and then creates one real protected
+    recommendation presentation over HTTP, the same way
+    ``test_protected_recommendation_presentation_route_is_wired_to_real_authorization`` below
+    proves that route -- reused by every later stage's own builder."""
+    adjudication = _build_real_adjudication_via_http(app, client, csrf)
+    settings = _settings()
+    presentation_policy = build_development_protected_recommendation_presentation_policy(
+        organization_id=settings.development_organization_id,
+        environment_id=f"environment.{settings.environment}",
+        issued_at=POLICY_ISSUED_AT,
+        expires_at=POLICY_EXPIRES_AT,
+    )
+    response = client.post(
+        f"/api/v1/ai/recommendation-adjudications/{adjudication.adjudication_id}/presentations",
+        json={
+            "adjudication_digest": adjudication.adjudication_digest,
+            "presentation_policy_id": presentation_policy.policy_id,
+            "presentation_policy_digest": presentation_policy.canonical_digest,
+            "purpose": adjudication.purpose,
+            "acknowledged_decision_support_only": True,
+            "acknowledged_tie_or_no_support_is_valid": True,
+            "acknowledged_no_operational_authority": True,
+        },
+        headers={
+            "X-CSRF-Token": csrf,
+            "Idempotency-Key": "review-promo-pipeline-presentation-0001",
+        },
+    )
+    assert response.status_code == 201, response.text
+    presentation = response.json()["data"]["presentation"]
+    return _RealPresentationOutcome(
+        presentation_id=presentation["presentation_id"],
+        presentation_digest=presentation["canonical_digest"],
+        purpose=presentation["purpose"],
+    )
+
+
+@dataclass(frozen=True)
+class _RealPromotionOutcome:
+    """The fields this module needs to attempt a real, schema-valid recommendation
+    review-readiness create -- obtained from a real HTTP-created recommendation promotion."""
+
+    recommendation_id: str
+    recommendation_digest: str
+    purpose: str
+
+
+def _build_real_promotion_via_http(
+    app: FastAPI, client: TestClient, csrf: str
+) -> _RealPromotionOutcome:
+    """Drives ``_build_real_presentation_via_http`` and then creates one real recommendation
+    promotion over HTTP, the same way
+    ``test_recommendation_promotion_route_is_wired_to_real_authorization`` below proves that
+    route -- reused by every later stage's own builder."""
+    presentation = _build_real_presentation_via_http(app, client, csrf)
+    settings = _settings()
+    promotion_policy = build_development_recommendation_promotion_policy(
+        organization_id=settings.development_organization_id,
+        environment_id=f"environment.{settings.environment}",
+        issued_at=POLICY_ISSUED_AT,
+        expires_at=POLICY_EXPIRES_AT,
+    )
+    response = client.post(
+        f"/api/v1/recommendation-presentations/{presentation.presentation_id}/promotions",
+        json={
+            "presentation_digest": presentation.presentation_digest,
+            "promotion_policy_id": promotion_policy.policy_id,
+            "promotion_policy_digest": promotion_policy.canonical_digest,
+            "purpose": presentation.purpose,
+            "acknowledged_draft_only": True,
+            "acknowledged_no_review_or_approval": True,
+            "acknowledged_no_operational_authority": True,
+        },
+        headers={
+            "X-CSRF-Token": csrf,
+            "Idempotency-Key": "review-promo-pipeline-promotion-0001",
+        },
+    )
+    assert response.status_code == 201, response.text
+    recommendation = response.json()["data"]["recommendation"]
+    return _RealPromotionOutcome(
+        recommendation_id=recommendation["recommendation_id"],
+        recommendation_digest=recommendation["canonical_digest"],
+        purpose=recommendation["purpose"],
+    )
+
+
+@dataclass(frozen=True)
+class _RealReadinessOutcome:
+    """The fields this module needs to attempt a real, schema-valid recommendation human-review
+    request create -- obtained from a real HTTP-created recommendation review-readiness
+    assessment."""
+
+    recommendation_id: str
+    recommendation_digest: str
+    assessment_id: str
+    assessment_digest: str
+    purpose: str
+
+
+def _build_real_readiness_via_http(
+    app: FastAPI, client: TestClient, csrf: str
+) -> _RealReadinessOutcome:
+    """Drives ``_build_real_promotion_via_http`` and then creates one real recommendation
+    review-readiness assessment over HTTP, the same way
+    ``test_recommendation_readiness_route_is_wired_to_real_authorization`` below proves that
+    route -- reused by every later stage's own builder."""
+    promotion = _build_real_promotion_via_http(app, client, csrf)
+    settings = _settings()
+    readiness_policy = build_development_recommendation_readiness_policy(
+        organization_id=settings.development_organization_id,
+        environment_id=f"environment.{settings.environment}",
+        issued_at=POLICY_ISSUED_AT,
+        expires_at=POLICY_EXPIRES_AT,
+    )
+    response = client.post(
+        f"/api/v1/recommendations/{promotion.recommendation_id}/review-readiness-assessments",
+        json={
+            "recommendation_digest": promotion.recommendation_digest,
+            "readiness_policy_id": readiness_policy.policy_id,
+            "readiness_policy_digest": readiness_policy.canonical_digest,
+            "purpose": promotion.purpose,
+            "acknowledged_readiness_is_not_review": True,
+            "acknowledged_blocked_requires_new_version": True,
+            "acknowledged_no_operational_authority": True,
+        },
+        headers={
+            "X-CSRF-Token": csrf,
+            "Idempotency-Key": "review-promo-pipeline-readiness-0001",
+        },
+    )
+    assert response.status_code == 201, response.text
+    assessment = response.json()["data"]["assessment"]
+    return _RealReadinessOutcome(
+        recommendation_id=promotion.recommendation_id,
+        recommendation_digest=promotion.recommendation_digest,
+        assessment_id=assessment["assessment_id"],
+        assessment_digest=assessment["canonical_digest"],
+        purpose=assessment["purpose"],
+    )
+
+
+@dataclass(frozen=True)
+class _RealReviewRequestOutcome:
+    """The fields this module needs to attempt a real, schema-valid recommendation reviewer
+    assignment create -- obtained from a real HTTP-created recommendation human-review
+    request."""
+
+    recommendation_id: str
+    review_request_id: str
+    review_request_digest: str
+    purpose: str
+
+
+def _build_real_review_request_via_http(
+    app: FastAPI, client: TestClient, csrf: str
+) -> _RealReviewRequestOutcome:
+    """Drives ``_build_real_readiness_via_http`` and then creates one real recommendation
+    human-review request over HTTP, the same way
+    ``test_recommendation_review_request_route_is_wired_to_real_authorization`` below proves that
+    route -- reused by
+    ``test_recommendation_reviewer_assignment_route_is_wired_to_real_authorization`` below."""
+    readiness = _build_real_readiness_via_http(app, client, csrf)
+    settings = _settings()
+    review_request_policy = build_development_recommendation_review_request_policy(
+        organization_id=settings.development_organization_id,
+        environment_id=f"environment.{settings.environment}",
+        issued_at=POLICY_ISSUED_AT,
+        expires_at=POLICY_EXPIRES_AT,
+    )
+    response = client.post(
+        f"/api/v1/recommendations/{readiness.recommendation_id}/human-review-requests",
+        json={
+            "recommendation_digest": readiness.recommendation_digest,
+            "readiness_assessment_id": readiness.assessment_id,
+            "readiness_assessment_digest": readiness.assessment_digest,
+            "review_request_policy_id": review_request_policy.policy_id,
+            "review_request_policy_digest": review_request_policy.canonical_digest,
+            "purpose": readiness.purpose,
+            "acknowledged_request_is_not_assignment_or_review": True,
+            "acknowledged_routing_is_policy_owned": True,
+            "acknowledged_no_approval_or_operational_authority": True,
+        },
+        headers={
+            "X-CSRF-Token": csrf,
+            "Idempotency-Key": "review-promo-pipeline-review-request-0001",
+        },
+    )
+    assert response.status_code == 201, response.text
+    request_record = response.json()["data"]["request"]
+    return _RealReviewRequestOutcome(
+        recommendation_id=readiness.recommendation_id,
+        review_request_id=request_record["review_request_id"],
+        review_request_digest=request_record["canonical_digest"],
+        purpose=request_record["purpose"],
+    )
+
+
 def test_protected_recommendation_presentation_route_is_wired_to_real_authorization() -> None:
     """``protected_recommendation_presentations.py``'s create and read routes are registered,
     require a real authenticated session, and reach the real
     ``authorize_protected_recommendation_presentation_create``/``_read`` dependencies against
     ``app.state.authorization_service`` -- confirmed here with a fully valid, schema-passing
     request built from a REAL upstream adjudication (obtained by driving the real
-    protected-adjudication chain over HTTP), receiving the real, current ``403
-    authorization_denied`` documented in this module's docstring, not a validation error and not
-    a 404.
+    protected-adjudication chain over HTTP), now genuinely creating and reading back a real
+    protected recommendation presentation now that the missing ``RoleAssignment`` documented in
+    this module's docstring has been fixed.
     """
     app = create_app(_settings())
     with TestClient(app) as client:
@@ -301,27 +502,44 @@ def test_protected_recommendation_presentation_route_is_wired_to_real_authorizat
                 "Idempotency-Key": "review-promo-pipeline-presentation-0001",
             },
         )
-        assert created.status_code == 403, created.text
-        assert created.json()["code"] == "authorization_denied"
+        assert created.status_code == 201, created.text
+        presentation = created.json()["data"]["presentation"]
+        assert presentation["adjudication_id"] == adjudication.adjudication_id
+        assert presentation["purpose"] == adjudication.purpose
+        assert presentation["recommendation_presented"] is True
+        assert presentation["recommendation_ready_for_review"] is False
+        assert presentation["recommendation_approved"] is False
+        assert presentation["workflow_created"] is False
+        assert presentation["infrastructure_mutated"] is False
+        assert presentation["option_count"] == 3
+        assert presentation["preferred_count"] == 1
+        assert created.json()["data"]["recommendation"]["outcome"] == "preferred"
 
         fetched = client.get(
             f"/api/v1/ai/recommendation-adjudications/{adjudication.adjudication_id}/"
-            f"presentations/presentation.{_DENIED}",
+            f"presentations/{presentation['presentation_id']}",
             headers={"X-CSRF-Token": csrf},
         )
-        assert fetched.status_code == 403, fetched.text
-        assert fetched.json()["code"] == "authorization_denied"
+        assert fetched.status_code == 200, fetched.text
+        assert (
+            fetched.json()["data"]["presentation"]["presentation_id"]
+            == presentation["presentation_id"]
+        )
 
 
 def test_recommendation_promotion_route_is_wired_to_real_authorization() -> None:
     """``recommendation_promotions.py``'s create and read routes are registered, require a real
     authenticated session, and reach the real ``authorize_recommendation_promotion_create``/
-    ``_read`` dependencies -- confirmed with a fully valid, schema-passing request receiving the
-    real, current ``403 authorization_denied``.
+    ``_read`` dependencies -- confirmed with a fully valid, schema-passing request built from a
+    real, HTTP-created protected recommendation presentation, now genuinely creating and reading
+    back a real draft recommendation now that the missing ``RoleAssignment`` documented in this
+    module's docstring has been fixed.
     """
-    settings = _settings()
-    with TestClient(create_app(settings)) as client:
+    app = create_app(_settings())
+    with TestClient(app) as client:
         csrf = _login(client)
+        presentation = _build_real_presentation_via_http(app, client, csrf)
+        settings = _settings()
         policy = build_development_recommendation_promotion_policy(
             organization_id=settings.development_organization_id,
             environment_id=f"environment.{settings.environment}",
@@ -330,15 +548,12 @@ def test_recommendation_promotion_route_is_wired_to_real_authorization() -> None
         )
 
         created = client.post(
-            f"/api/v1/recommendation-presentations/presentation.{_DENIED}/promotions",
+            f"/api/v1/recommendation-presentations/{presentation.presentation_id}/promotions",
             json={
-                "presentation_digest": _digest("review-promo-pipeline-presentation"),
+                "presentation_digest": presentation.presentation_digest,
                 "promotion_policy_id": policy.policy_id,
                 "promotion_policy_digest": policy.canonical_digest,
-                "purpose": (
-                    "Promote a protected presentation into a draft recommendation as a real "
-                    "wiring proof."
-                ),
+                "purpose": presentation.purpose,
                 "acknowledged_draft_only": True,
                 "acknowledged_no_review_or_approval": True,
                 "acknowledged_no_operational_authority": True,
@@ -348,27 +563,42 @@ def test_recommendation_promotion_route_is_wired_to_real_authorization() -> None
                 "Idempotency-Key": "review-promo-pipeline-promotion-0001",
             },
         )
-        assert created.status_code == 403, created.text
-        assert created.json()["code"] == "authorization_denied"
+        assert created.status_code == 201, created.text
+        recommendation = created.json()["data"]["recommendation"]
+        assert recommendation["presentation_id"] == presentation.presentation_id
+        assert recommendation["purpose"] == presentation.purpose
+        assert recommendation["state"] == "draft"
+        assert recommendation["outcome"] == "preferred"
+        assert recommendation["recommendation_promoted"] is True
+        assert recommendation["recommendation_ready_for_review"] is False
+        assert recommendation["human_review_completed"] is False
+        assert recommendation["infrastructure_mutated"] is False
 
         fetched = client.get(
-            f"/api/v1/recommendation-presentations/presentation.{_DENIED}/"
-            f"promotions/recommendation.{_DENIED}",
+            f"/api/v1/recommendation-presentations/{presentation.presentation_id}/"
+            f"promotions/{recommendation['recommendation_id']}",
             headers={"X-CSRF-Token": csrf},
         )
-        assert fetched.status_code == 403, fetched.text
-        assert fetched.json()["code"] == "authorization_denied"
+        assert fetched.status_code == 200, fetched.text
+        assert (
+            fetched.json()["data"]["recommendation"]["recommendation_id"]
+            == recommendation["recommendation_id"]
+        )
 
 
 def test_recommendation_readiness_route_is_wired_to_real_authorization() -> None:
     """``recommendation_readiness.py``'s create and read routes are registered, require a real
     authenticated session, and reach the real ``authorize_recommendation_readiness_create``/
-    ``_read`` dependencies -- confirmed with a fully valid, schema-passing request receiving the
-    real, current ``403 authorization_denied``.
+    ``_read`` dependencies -- confirmed with a fully valid, schema-passing request built from a
+    real, HTTP-created recommendation promotion, now genuinely creating and reading back a real
+    review-readiness assessment now that the missing ``RoleAssignment`` documented in this
+    module's docstring has been fixed.
     """
-    settings = _settings()
-    with TestClient(create_app(settings)) as client:
+    app = create_app(_settings())
+    with TestClient(app) as client:
         csrf = _login(client)
+        promotion = _build_real_promotion_via_http(app, client, csrf)
+        settings = _settings()
         policy = build_development_recommendation_readiness_policy(
             organization_id=settings.development_organization_id,
             environment_id=f"environment.{settings.environment}",
@@ -377,15 +607,12 @@ def test_recommendation_readiness_route_is_wired_to_real_authorization() -> None
         )
 
         created = client.post(
-            f"/api/v1/recommendations/recommendation.{_DENIED}/review-readiness-assessments",
+            f"/api/v1/recommendations/{promotion.recommendation_id}/review-readiness-assessments",
             json={
-                "recommendation_digest": _digest("review-promo-pipeline-recommendation"),
+                "recommendation_digest": promotion.recommendation_digest,
                 "readiness_policy_id": policy.policy_id,
                 "readiness_policy_digest": policy.canonical_digest,
-                "purpose": (
-                    "Assess a draft recommendation for human-review readiness as a real wiring "
-                    "proof."
-                ),
+                "purpose": promotion.purpose,
                 "acknowledged_readiness_is_not_review": True,
                 "acknowledged_blocked_requires_new_version": True,
                 "acknowledged_no_operational_authority": True,
@@ -395,27 +622,39 @@ def test_recommendation_readiness_route_is_wired_to_real_authorization() -> None
                 "Idempotency-Key": "review-promo-pipeline-readiness-0001",
             },
         )
-        assert created.status_code == 403, created.text
-        assert created.json()["code"] == "authorization_denied"
+        assert created.status_code == 201, created.text
+        assessment = created.json()["data"]["assessment"]
+        assert assessment["recommendation_id"] == promotion.recommendation_id
+        assert assessment["purpose"] == promotion.purpose
+        assert assessment["evaluation_outcome"] == "ready"
+        assert assessment["state"] == "ready_for_review"
+        assert assessment["recommendation_ready_for_review"] is True
+        assert assessment["passed_check_count"] == assessment["check_count"]
+        assert assessment["human_review_completed"] is False
+        assert assessment["infrastructure_mutated"] is False
 
         fetched = client.get(
-            f"/api/v1/recommendations/recommendation.{_DENIED}/"
-            f"review-readiness-assessments/assessment.{_DENIED}",
+            f"/api/v1/recommendations/{promotion.recommendation_id}/"
+            f"review-readiness-assessments/{assessment['assessment_id']}",
             headers={"X-CSRF-Token": csrf},
         )
-        assert fetched.status_code == 403, fetched.text
-        assert fetched.json()["code"] == "authorization_denied"
+        assert fetched.status_code == 200, fetched.text
+        assert fetched.json()["data"]["assessment"]["assessment_id"] == assessment["assessment_id"]
 
 
 def test_recommendation_review_request_route_is_wired_to_real_authorization() -> None:
     """``recommendation_review_requests.py``'s create and read routes are registered, require a
     real authenticated session, and reach the real
     ``authorize_recommendation_review_request_create``/``_read`` dependencies -- confirmed with a
-    fully valid, schema-passing request receiving the real, current ``403 authorization_denied``.
+    fully valid, schema-passing request built from a real, HTTP-created review-readiness
+    assessment, now genuinely creating and reading back a real human-review request now that the
+    missing ``RoleAssignment`` documented in this module's docstring has been fixed.
     """
-    settings = _settings()
-    with TestClient(create_app(settings)) as client:
+    app = create_app(_settings())
+    with TestClient(app) as client:
         csrf = _login(client)
+        readiness = _build_real_readiness_via_http(app, client, csrf)
+        settings = _settings()
         policy = build_development_recommendation_review_request_policy(
             organization_id=settings.development_organization_id,
             environment_id=f"environment.{settings.environment}",
@@ -424,17 +663,14 @@ def test_recommendation_review_request_route_is_wired_to_real_authorization() ->
         )
 
         created = client.post(
-            f"/api/v1/recommendations/recommendation.{_DENIED}/human-review-requests",
+            f"/api/v1/recommendations/{readiness.recommendation_id}/human-review-requests",
             json={
-                "recommendation_digest": _digest("review-promo-pipeline-recommendation"),
-                "readiness_assessment_id": f"assessment.{_DENIED}",
-                "readiness_assessment_digest": _digest("review-promo-pipeline-assessment"),
+                "recommendation_digest": readiness.recommendation_digest,
+                "readiness_assessment_id": readiness.assessment_id,
+                "readiness_assessment_digest": readiness.assessment_digest,
                 "review_request_policy_id": policy.policy_id,
                 "review_request_policy_digest": policy.canonical_digest,
-                "purpose": (
-                    "Request policy-owned human review for a ready recommendation as a real "
-                    "wiring proof."
-                ),
+                "purpose": readiness.purpose,
                 "acknowledged_request_is_not_assignment_or_review": True,
                 "acknowledged_routing_is_policy_owned": True,
                 "acknowledged_no_approval_or_operational_authority": True,
@@ -444,28 +680,45 @@ def test_recommendation_review_request_route_is_wired_to_real_authorization() ->
                 "Idempotency-Key": "review-promo-pipeline-review-request-0001",
             },
         )
-        assert created.status_code == 403, created.text
-        assert created.json()["code"] == "authorization_denied"
+        assert created.status_code == 201, created.text
+        request_record = created.json()["data"]["request"]
+        assert request_record["recommendation_id"] == readiness.recommendation_id
+        assert request_record["readiness_assessment_id"] == readiness.assessment_id
+        assert request_record["purpose"] == readiness.purpose
+        assert request_record["state"] == "review_requested"
+        assert request_record["review_requested"] is True
+        assert request_record["reviewer_assigned"] is False
+        assert request_record["track_codes"] == [
+            "review-track.technical",
+            "review-track.service-impact",
+        ]
+        assert request_record["infrastructure_mutated"] is False
 
         fetched = client.get(
-            f"/api/v1/recommendations/recommendation.{_DENIED}/"
-            f"human-review-requests/review-request.{_DENIED}",
+            f"/api/v1/recommendations/{readiness.recommendation_id}/"
+            f"human-review-requests/{request_record['review_request_id']}",
             headers={"X-CSRF-Token": csrf},
         )
-        assert fetched.status_code == 403, fetched.text
-        assert fetched.json()["code"] == "authorization_denied"
+        assert fetched.status_code == 200, fetched.text
+        assert (
+            fetched.json()["data"]["request"]["review_request_id"]
+            == request_record["review_request_id"]
+        )
 
 
 def test_recommendation_reviewer_assignment_route_is_wired_to_real_authorization() -> None:
     """``recommendation_reviewer_assignments.py``'s create and read routes are registered,
     require a real authenticated session, and reach the real
     ``authorize_recommendation_reviewer_assignment_create``/``_read`` dependencies -- confirmed
-    with a fully valid, schema-passing request receiving the real, current ``403
-    authorization_denied``.
+    with a fully valid, schema-passing request built from a real, HTTP-created human-review
+    request, now genuinely creating and reading back a real reviewer assignment now that the
+    missing ``RoleAssignment`` documented in this module's docstring has been fixed.
     """
-    settings = _settings()
-    with TestClient(create_app(settings)) as client:
+    app = create_app(_settings())
+    with TestClient(app) as client:
         csrf = _login(client)
+        review_request = _build_real_review_request_via_http(app, client, csrf)
+        settings = _settings()
         policy = build_development_recommendation_reviewer_assignment_policy(
             organization_id=settings.development_organization_id,
             environment_id=f"environment.{settings.environment}",
@@ -474,16 +727,13 @@ def test_recommendation_reviewer_assignment_route_is_wired_to_real_authorization
         )
 
         created = client.post(
-            f"/api/v1/recommendations/recommendation.{_DENIED}/reviewer-assignments",
+            f"/api/v1/recommendations/{review_request.recommendation_id}/reviewer-assignments",
             json={
-                "review_request_id": f"review-request.{_DENIED}",
-                "review_request_digest": _digest("review-promo-pipeline-review-request"),
+                "review_request_id": review_request.review_request_id,
+                "review_request_digest": review_request.review_request_digest,
                 "assignment_policy_id": policy.policy_id,
                 "assignment_policy_digest": policy.canonical_digest,
-                "purpose": (
-                    "Request policy-controlled reviewer assignment for a review request as a "
-                    "real wiring proof."
-                ),
+                "purpose": review_request.purpose,
                 "acknowledged_caller_cannot_select_reviewers": True,
                 "acknowledged_distinct_reviewers_required": True,
                 "acknowledged_no_inspection_decision_or_operational_authority": True,
@@ -493,16 +743,29 @@ def test_recommendation_reviewer_assignment_route_is_wired_to_real_authorization
                 "Idempotency-Key": "review-promo-pipeline-reviewer-assignment-0001",
             },
         )
-        assert created.status_code == 403, created.text
-        assert created.json()["code"] == "authorization_denied"
+        assert created.status_code == 201, created.text
+        assignment = created.json()["data"]["assignment"]
+        assert assignment["recommendation_id"] == review_request.recommendation_id
+        assert assignment["review_request_id"] == review_request.review_request_id
+        assert assignment["purpose"] == review_request.purpose
+        assert assignment["state"] == "reviewers_assigned"
+        assert assignment["review_requested"] is True
+        assert assignment["reviewer_assigned"] is True
+        assert assignment["content_inspection_opened"] is False
+        assert len(assignment["track_assignments"]) == 2
+        assigned_reviewers = {track[3] for track in assignment["track_assignments"]}
+        assert len(assigned_reviewers) == 2, "reviewers across tracks must be distinct"
 
         fetched = client.get(
-            f"/api/v1/recommendations/recommendation.{_DENIED}/"
-            f"reviewer-assignments/assignment-set.{_DENIED}",
+            f"/api/v1/recommendations/{review_request.recommendation_id}/"
+            f"reviewer-assignments/{assignment['assignment_set_id']}",
             headers={"X-CSRF-Token": csrf},
         )
-        assert fetched.status_code == 403, fetched.text
-        assert fetched.json()["code"] == "authorization_denied"
+        assert fetched.status_code == 200, fetched.text
+        assert (
+            fetched.json()["data"]["assignment"]["assignment_set_id"]
+            == assignment["assignment_set_id"]
+        )
 
 
 def test_recommendation_review_promotion_pipeline_wiring_requires_authentication() -> None:
@@ -534,12 +797,6 @@ def test_recommendation_review_promotion_pipeline_wiring_requires_permission() -
     on ``browser_session_subject``) before parsing the request body, so an empty body deliberately
     proves the denial fires before any of these placeholder, intentionally-nonexistent path
     identifiers would ever reach real service logic.
-
-    Note this denial is presently indistinguishable in status/code from what the FULLY privileged
-    "atlas-demo" development identity also receives on these same ten routes -- see this module's
-    docstring for the confirmed missing-``RoleAssignment`` gap that makes that true today. This
-    test still independently proves the explicitly-zero-permission case is denied by the real
-    authorization service.
     """
     with TestClient(create_app(_settings(development_role_ids=()))) as client:
         csrf = _login(client)

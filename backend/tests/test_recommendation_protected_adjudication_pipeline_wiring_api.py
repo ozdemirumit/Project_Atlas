@@ -31,25 +31,68 @@ app.py's construction order (grep for `presentation_source=`, `candidate_source=
    test_ai_protected_invocation_pipeline_wiring_api.py reuses for its own retrieval) -- this module
    reuses that same real, synthetic-backed pair of fixtures.
 
-   Driving either route's create endpoint over real HTTP surfaced a second, independent gap this
-   pass did not introduce and does not fix: `RECOMMENDATION_FINAL_DISPOSITION_CREATE`/`_READ` and
-   `RECOMMENDATION_CORRECTION_RESUBMISSION_CREATE`/`_READ` are defined as permissions and are
+   Driving either route's create endpoint over real HTTP originally surfaced a second, independent
+   gap: `RECOMMENDATION_FINAL_DISPOSITION_CREATE`/`_READ` and
+   `RECOMMENDATION_CORRECTION_RESUBMISSION_CREATE`/`_READ` were defined as permissions and were
    included in `DEVELOPMENT_ROLE_ID`'s permission set in
    backend/src/atlas/modules/authorization/application/bootstrap.py, but -- unlike every sibling
-   permission in this pipeline -- neither is ever bound to a scope by any `RoleAssignment` in that
-   file (`recommendation_final_disposition_scope` and `recommendation_correction_resubmission_scope`
-   each have exactly one occurrence in bootstrap.py: their own `def`). So no identity, including
-   the "atlas-demo" development identity every other wiring test in this repo relies on, can ever
-   pass authorization for these two routes today. The two tests below document this precisely: they
-   build fully valid, schema-passing requests (proving the route and its Pydantic input model are
-   correctly wired) and assert the real, current `403 authorization_denied` this produces, rather
-   than guessing at a permission fix outside a test-writing pass's scope. See the accompanying
-   report for a suggested follow-up to add the missing `RoleAssignment` entries.
+   permission in this pipeline -- neither was ever bound to a scope by any `RoleAssignment` in that
+   file. So no identity, including the "atlas-demo" development identity every other wiring test in
+   this repo relies on, could ever pass authorization for these two routes.
+
+   **This bug is now fixed.** `build_development_authorization_service()` now includes
+   `RoleAssignment` entries binding `DEVELOPMENT_ROLE_ID` to
+   `recommendation_final_disposition_scope`/`recommendation_correction_resubmission_scope` for both
+   permissions -- see `assignment.development.recommendation-final-disposition-create`/`-read` and
+   `assignment.development.recommendation-correction-resubmission-create`/`-read` in bootstrap.py.
+   The two tests below now drive each route to a genuine `201 Created`, proving real end-to-end
+   reachability, not just that the authorization layer is reached:
+
+   - `test_final_recommendation_disposition_route_is_wired_to_real_authorization` reuses
+     `final_disposition_fixture()`'s real decisions/request/readiness/artifact chain unchanged
+     (its baked-in "who consumed this recommendation" identity is only checked for *separation*
+     here -- the disposition approver must NOT be that consumer -- which the real "atlas-demo"
+     development identity naturally satisfies) and only re-dates each object's fixed,
+     already-expired `expires_at` to the future and recomputes each object's `canonical_digest`
+     with the same digest functions its own owning service uses, mirroring
+     `test_ai_protected_invocation_pipeline_wiring_api.py`'s `_build_retrieval()` re-dating of a
+     similarly fixed-clock fixture. It also fixes `disposition_code` to the real
+     `FINAL_ACCEPTED` domain constant (`"recommendation-disposition.accepted"`, not the
+     unrelated-looking string this test used before the fix was confirmed empirically -- disposition
+     codes are validated against a fixed set once the route is actually reached).
+
+   - `test_recommendation_correction_resubmission_route_is_wired_to_real_authorization` reuses
+     `correction_fixture()`'s real chain the same way, but that chain's
+     `PromotedRecommendationArtifact` carries a `consumer_subject_digest` baked in against one
+     fixed fixture identity (`"subject.knowledge-retrieval-consumer"`), and
+     `RecommendationCorrectionService._verify_source` requires the *creating* actor's subject id
+     to match that consumer digest (the correction author must be the original consumer, not
+     merely separated from them, unlike final disposition's approver-separation check above).
+     Confirmed by direct experiment: the real "atlas-demo" development identity's subject id does
+     not match, and hand-editing the fixture's `consumer_subject_digest` to force a match would
+     defeat the exact identity-continuity invariant this check exists to enforce, so this test
+     instead builds its own app with
+     `development_subject_id="subject.knowledge-retrieval-consumer"` -- the same
+     settings-override mechanism
+     `test_recommendation_review_promotion_pipeline_wiring_requires_permission` already uses for
+     `development_role_ids` -- so the real, live-authenticated "atlas-demo" HTTP session resolves
+     to that exact subject id (`development.py`'s dev identity provider sets
+     `subject_id=self._settings.development_subject_id` directly), making the match genuine
+     rather than fabricated. This test also fixes a second, independent gap this pass's audit
+     found: the route under test was never pointed at `correction_fixture()`'s populated
+     `RecommendationTrackReviewDecisionService`
+     (`app.state.recommendation_correction_service._source` was left as the app's real, empty
+     production source), so even after both identity and authorization line up, the route used to
+     return `404 recommendation_correction_source_not_found` instead of reaching the fixture data
+     at all; this test now sets that source override, the same way
+     `test_final_recommendation_disposition_route_is_wired_to_real_authorization` already did.
 """
 
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
 from test_ai_protected_invocation_pipeline_wiring_api import (
@@ -84,6 +127,19 @@ from atlas.modules.recommendations.application.correction_resubmission import (
 from atlas.modules.recommendations.application.final_disposition import (
     build_development_final_recommendation_disposition_policy,
 )
+from atlas.modules.recommendations.application.promotion import (
+    GovernedRecommendationPromotionService,
+)
+from atlas.modules.recommendations.application.readiness import (
+    GovernedRecommendationReadinessService,
+)
+from atlas.modules.recommendations.application.review_decision import (
+    RecommendationTrackReviewDecisionService,
+)
+from atlas.modules.recommendations.application.review_request import (
+    GovernedRecommendationReviewRequestService,
+)
+from atlas.modules.recommendations.domain.final_disposition import FINAL_ACCEPTED
 
 
 def _login(client: TestClient) -> str:
@@ -264,14 +320,15 @@ def test_protected_recommendation_adjudication_pipeline_is_reachable_through_the
 
 
 def test_final_recommendation_disposition_route_is_wired_to_real_authorization() -> None:
-    """final_recommendation_dispositions.py's create route is registered, requires a real
-    authenticated session, and reaches the real `authorize_recommendation_final_disposition_create`
-    dependency against `app.state.authorization_service` -- confirmed here by a fully valid,
-    schema-passing request (built from a real `final_disposition_fixture()`) receiving a real
-    `403 authorization_denied`, not a validation error or a 404. It cannot currently reach
-    `FinalRecommendationDispositionService.create()` at all: see this module's docstring for the
-    confirmed, separate `RoleAssignment` gap in bootstrap.py that blocks every identity, not
-    something introduced or worked around by this test.
+    """final_recommendation_dispositions.py's create and read routes are registered, require a
+    real authenticated session, and reach the real
+    `authorize_recommendation_final_disposition_create`/`_read` dependencies against
+    `app.state.authorization_service` -- confirmed here by a fully valid, schema-passing request
+    (built from a real `final_disposition_fixture()`, re-dated to a future `expires_at` the same
+    way `test_ai_protected_invocation_pipeline_wiring_api.py`'s `_build_retrieval()` re-dates its
+    own fixed-clock fixture) now genuinely creating and reading back a real final recommendation
+    disposition now that the missing `RoleAssignment` documented in this module's docstring has
+    been fixed.
     """
     app = create_app(_settings())
     with TestClient(app) as client:
@@ -288,6 +345,52 @@ def test_final_recommendation_disposition_route_is_wired_to_real_authorization()
             _actor,
             *_rest,
         ) = asyncio.run(final_disposition_fixture())
+
+        future_expiry = datetime.now(UTC) + timedelta(days=1)
+
+        artifact = replace(artifact, expires_at=future_expiry, canonical_digest="0" * 64)
+        artifact = replace(
+            artifact,
+            canonical_digest=GovernedRecommendationPromotionService._artifact_digest(artifact),
+        )
+
+        readiness = replace(
+            readiness,
+            expires_at=future_expiry,
+            source_artifact_digest=artifact.canonical_digest,
+            canonical_digest="0" * 64,
+        )
+        readiness = replace(
+            readiness,
+            canonical_digest=GovernedRecommendationReadinessService._assessment_digest(readiness),
+        )
+
+        request_record = replace(
+            request_record, expires_at=future_expiry, canonical_digest="0" * 64
+        )
+        request_record = replace(
+            request_record,
+            canonical_digest=GovernedRecommendationReviewRequestService._record_digest(
+                request_record
+            ),
+        )
+
+        redated_decisions = []
+        for decision in decisions:
+            redated = replace(
+                decision,
+                expires_at=future_expiry,
+                recommendation_artifact_digest=artifact.canonical_digest,
+                canonical_digest="0" * 64,
+            )
+            redated = replace(
+                redated,
+                canonical_digest=RecommendationTrackReviewDecisionService._digest(
+                    RecommendationTrackReviewDecisionService._record_payload(redated)
+                ),
+            )
+            redated_decisions.append(redated)
+        decisions = tuple(redated_decisions)
 
         app.state.final_recommendation_disposition_service._source = StaticFinalDispositionSource(
             decisions=decisions,
@@ -310,7 +413,7 @@ def test_final_recommendation_disposition_route_is_wired_to_real_authorization()
                 "recommendation_digest": artifact.canonical_digest,
                 "decision_ids": [decisions[0].decision_id, decisions[1].decision_id],
                 "decision_digests": [decisions[0].canonical_digest, decisions[1].canonical_digest],
-                "disposition_code": "recommendation-final-disposition.accepted",
+                "disposition_code": FINAL_ACCEPTED,
                 "basis_codes": ["recommendation-final-basis.review-evidence-sufficient"],
                 "disposition_policy_id": policy.policy_id,
                 "disposition_policy_digest": policy.canonical_digest,
@@ -326,26 +429,55 @@ def test_final_recommendation_disposition_route_is_wired_to_real_authorization()
             headers={"X-CSRF-Token": csrf, "Idempotency-Key": "wiring-final-disposition-0001"},
         )
 
-        assert response.status_code == 403
-        body = response.json()
-        assert body["code"] == "authorization_denied"
+        assert response.status_code == 201, response.text
+        body = response.json()["data"]
+        assert body["review_request_id"] == request_record.review_request_id
+        assert body["recommendation_id"] == artifact.recommendation_id
+        assert body["disposition_code"] == FINAL_ACCEPTED
+        assert body["state"] == "recommendation_final_accepted"
+        assert body["final_disposition_recorded"] is True
+        assert body["technical_review_passed"] is True
+        assert body["service_impact_review_passed"] is True
+        assert body["recommendation_approved"] is True
+        assert body["workflow_handoff_eligible"] is True
+        assert body["workflow_created"] is False
+        assert body["infrastructure_mutated"] is False
+
+        fetched = client.get(
+            f"/api/v1/recommendations/review-requests/{request_record.review_request_id}/"
+            f"final-dispositions/{body['disposition_id']}",
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert fetched.status_code == 200, fetched.text
+        assert fetched.json()["data"]["disposition_id"] == body["disposition_id"]
 
 
 def test_recommendation_correction_resubmission_route_is_wired_to_real_authorization() -> None:
-    """recommendation_correction_resubmissions.py's create route is registered, requires a real
-    authenticated session, and reaches the real
-    `authorize_recommendation_correction_resubmission_create` dependency against
+    """recommendation_correction_resubmissions.py's create and read routes are registered,
+    require a real authenticated session, and reach the real
+    `authorize_recommendation_correction_resubmission_create`/`_read` dependencies against
     `app.state.authorization_service` -- confirmed here by a fully valid, schema-passing request
-    (built from a real `correction_fixture()`) receiving a real `403 authorization_denied`, not a
-    validation error or a 404. See this module's docstring for the confirmed, separate
-    `RoleAssignment` gap in bootstrap.py that blocks every identity from reaching
-    `RecommendationCorrectionService.create()` here today.
+    (built from a real `correction_fixture()`) now genuinely creating and reading back a real
+    recommendation correction now that the missing `RoleAssignment` documented in this module's
+    docstring has been fixed.
+
+    `correction_fixture()`'s source artifact carries a `consumer_subject_digest` baked in against
+    the fixed fixture identity "subject.knowledge-retrieval-consumer", and
+    `RecommendationCorrectionService._verify_source` requires the real, live-authenticated actor's
+    subject id to match it exactly (the correction author must be the original consumer). This app
+    is therefore built with `development_subject_id="subject.knowledge-retrieval-consumer"` so the
+    real "atlas-demo" HTTP session resolves to that exact subject -- see this module's docstring
+    for why this is a genuine match, not a fabricated one, and why `app.state.
+    recommendation_correction_service._source` must also be pointed at the fixture's populated
+    decision service (a second, independent gap this pass's audit found).
     """
-    with TestClient(create_app(_settings())) as client:
+    settings = _settings(development_subject_id="subject.knowledge-retrieval-consumer")
+    app = create_app(settings)
+    with TestClient(app) as client:
         csrf = _login(client)
 
         (
-            _service,
+            service,
             _repository,
             decisions,
             artifact,
@@ -354,6 +486,8 @@ def test_recommendation_correction_resubmission_route_is_wired_to_real_authoriza
             _adapter,
             *_rest,
         ) = asyncio.run(correction_fixture())
+
+        app.state.recommendation_correction_service._source = service._source
 
         source = decisions[0]
         policy = build_development_recommendation_correction_policy(
@@ -395,6 +529,24 @@ def test_recommendation_correction_resubmission_route_is_wired_to_real_authoriza
             },
         )
 
-        assert response.status_code == 403
-        body = response.json()
-        assert body["code"] == "authorization_denied"
+        assert response.status_code == 201, response.text
+        body = response.json()["data"]
+        assert body["source_review_request_id"] == source.review_request_id
+        assert body["source_recommendation_id"] == artifact.recommendation_id
+        assert body["state"] == "recommendation_correction_resubmitted"
+        assert body["correction_created"] is True
+        assert body["recommendation_promoted"] is True
+        assert body["readiness_assessed"] is False
+        assert body["review_requested"] is False
+        assert body["final_disposition_recorded"] is False
+        assert body["workflow_created"] is False
+        assert body["infrastructure_mutated"] is False
+        assert body["new_recommendation_id"] != artifact.recommendation_id
+
+        fetched = client.get(
+            f"/api/v1/recommendations/review-requests/{source.review_request_id}/"
+            f"corrections/{body['correction_id']}",
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert fetched.status_code == 200, fetched.text
+        assert fetched.json()["data"]["correction_id"] == body["correction_id"]
