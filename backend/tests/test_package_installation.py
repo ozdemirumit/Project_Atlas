@@ -429,3 +429,72 @@ def test_package_installation_api_requires_csrf_and_minimizes_response(tmp_path:
         "idempotency_key",
     ):
         assert hidden not in rendered
+
+
+def test_package_installation_api_requires_authentication() -> None:
+    """No session cookie and no development identity: both the create and read routes must fail
+    closed at authentication, not merely at authorization -- proving `browser_session_subject`
+    really runs on each endpoint. This file's only prior "denied" test only checked a missing
+    CSRF header, a different control from authentication/authorization.
+    """
+    with TestClient(create_app(settings(development_identity_enabled=False))) as client:
+        created = client.post(
+            "/api/v1/connectors/package-installation-receipts",
+            json={
+                "schema_version": "atlas.connector-package-installation-input.v1",
+                "source_registration_record_id": "package-registration.wiring-denied-0001",
+                "source_registration_record_digest": "f" * 64,
+                "package_digest": "f" * 64,
+                "installation_policy_id": "policy.wiring-denied-0001",
+                "installation_policy_digest": "f" * 64,
+                "purpose": "Prove that a real unprivileged identity is denied, not faked.",
+                "acknowledged_installation_grants_no_instance_or_runtime_authority": True,
+            },
+            headers={"Idempotency-Key": "package-installation-denied-0001"},
+        )
+        read = client.get(
+            "/api/v1/connectors/package-installation-receipts/receipt.wiring-denied-0001"
+        )
+
+    for response in (created, read):
+        assert response.status_code == 401
+        assert response.json()["code"] == "authentication_required"
+
+
+def test_package_installation_api_requires_permission() -> None:
+    """A real, logged-in human subject with zero granted role permissions must still be denied
+    by the real `AuthorizationService` at both the create and read permission checks, not by a
+    faked dependency override.
+    """
+    with TestClient(create_app(settings(development_role_ids=()))) as client:
+        csrf_response = client.post(
+            "/api/v1/authentication/sessions",
+            json={"username": "atlas-demo", "password": "local-demo"},
+        )
+        assert csrf_response.status_code == 201
+        csrf = csrf_response.headers["X-CSRF-Token"]
+        created = client.post(
+            "/api/v1/connectors/package-installation-receipts",
+            json={
+                "schema_version": "atlas.connector-package-installation-input.v1",
+                "source_registration_record_id": "package-registration.wiring-denied-0001",
+                "source_registration_record_digest": "f" * 64,
+                "package_digest": "f" * 64,
+                "installation_policy_id": "policy.wiring-denied-0001",
+                "installation_policy_digest": "f" * 64,
+                "purpose": "Prove that a real unprivileged identity is denied, not faked.",
+                "acknowledged_installation_grants_no_instance_or_runtime_authority": True,
+            },
+            headers={
+                "X-CSRF-Token": csrf,
+                "Idempotency-Key": "package-installation-denied-0002",
+            },
+        )
+        read = client.get(
+            "/api/v1/connectors/package-installation-receipts/receipt.wiring-denied-0001",
+            headers={"X-CSRF-Token": csrf},
+        )
+
+    for response in (created, read):
+        assert response.status_code == 403
+        assert response.json()["code"] == "authorization_denied"
