@@ -77,6 +77,42 @@ def _incident_payload() -> dict[str, object]:
     }
 
 
+def test_itsm_incident_record_cache_requires_authentication() -> None:
+    """No session cookie and no development identity: the route must fail closed at
+    authentication, not merely at authorization -- proving `authenticated_subject` really runs.
+    """
+    with TestClient(create_app(Settings(environment="test"))) as client:
+        response = client.get(
+            "/api/v1/itsm/incident-records/integration-reference.wiring-test-auth",
+        )
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "authentication_required"
+
+
+def test_itsm_incident_record_cache_requires_permission() -> None:
+    """A real, logged-in human subject with zero granted role permissions must still be denied
+    by the real `AuthorizationService`, not by a faked dependency override. Covers both routes in
+    this file, which share `authorize_itsm_incident_record_cache_manage`.
+    """
+    with TestClient(create_app(_settings(development_role_ids=()))) as client:
+        csrf = _login(client)
+
+        upserted = client.post(
+            "/api/v1/itsm/incident-records/integration-reference.wiring-test-denied",
+            json=_incident_payload(),
+            headers={"X-CSRF-Token": csrf},
+        )
+        fetched = client.get(
+            "/api/v1/itsm/incident-records/integration-reference.wiring-test-denied",
+        )
+
+    assert upserted.status_code == 403
+    assert upserted.json()["code"] == "authorization_denied"
+    assert fetched.status_code == 403
+    assert fetched.json()["code"] == "authorization_denied"
+
+
 def test_itsm_incident_record_upsert_and_get_are_reachable_through_the_api() -> None:
     with TestClient(create_app(_settings())) as client:
         csrf = _login(client)

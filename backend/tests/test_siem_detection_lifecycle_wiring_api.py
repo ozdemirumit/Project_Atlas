@@ -33,6 +33,74 @@ def _login(client: TestClient) -> str:
     return str(response.headers["X-CSRF-Token"])
 
 
+def test_siem_detection_lifecycle_requires_authentication() -> None:
+    """No session cookie and no development identity: the route must fail closed at
+    authentication, not merely at authorization -- proving `authenticated_subject` really runs.
+    """
+    with TestClient(create_app(Settings(environment="test"))) as client:
+        response = client.post(
+            "/api/v1/security-export/detections/deployment.siem-uc-auth.wiring-test",
+            json={
+                "detection_id": "SIEM-UC-001",
+                "destination_id": "destination.siem-collector.wiring-test",
+                "owner": "team.security-operations",
+            },
+        )
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "authentication_required"
+
+
+def test_siem_detection_lifecycle_requires_permission() -> None:
+    """A real, logged-in human subject with zero granted role permissions must still be denied
+    by the real `AuthorizationService`, not by a faked dependency override. Covers all three
+    distinct permissions used across this file's routes: `authorize_security_export_detection_
+    register`, `_transition`, and `_handoff_record`.
+    """
+    with TestClient(create_app(_settings(development_role_ids=()))) as client:
+        csrf = _login(client)
+
+        registered = client.post(
+            "/api/v1/security-export/detections/deployment.siem-uc-denied.wiring-test",
+            json={
+                "detection_id": "SIEM-UC-001",
+                "destination_id": "destination.siem-collector.wiring-test",
+                "owner": "team.security-operations",
+            },
+            headers={"X-CSRF-Token": csrf},
+        )
+        transitioned = client.post(
+            "/api/v1/security-export/detections/deployment.siem-uc-denied.wiring-test/transitions",
+            json={"target_stage": "configured_inactive"},
+            headers={"X-CSRF-Token": csrf},
+        )
+        handoff = client.post(
+            "/api/v1/security-export/detections/"
+            "deployment.siem-uc-denied.wiring-test/incident-handoffs",
+            json={
+                "alert_reference": "alert.wiring-test.denied",
+                "event_references": ["event.wiring-test.denied"],
+                "confidence": "high",
+                "triage_status": "new",
+                "affected_deployment": "environment.test",
+                "affected_services": [],
+                "affected_targets": [],
+                "investigation_summary": "Denied before reaching the service layer.",
+                "evidence_link_kinds": ["audit_ledger_reference"],
+                "ownership": "team.security-operations",
+                "synchronization_state": "synced",
+            },
+            headers={"X-CSRF-Token": csrf},
+        )
+
+    assert registered.status_code == 403
+    assert registered.json()["code"] == "authorization_denied"
+    assert transitioned.status_code == 403
+    assert transitioned.json()["code"] == "authorization_denied"
+    assert handoff.status_code == 403
+    assert handoff.json()["code"] == "authorization_denied"
+
+
 def test_siem_detection_lifecycle_full_lifecycle_is_reachable_through_the_api() -> None:
     with TestClient(create_app(_settings())) as client:
         csrf = _login(client)

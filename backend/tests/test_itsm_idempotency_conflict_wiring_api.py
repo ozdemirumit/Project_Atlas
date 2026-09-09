@@ -32,6 +32,81 @@ def _login(client: TestClient) -> str:
     return str(response.headers["X-CSRF-Token"])
 
 
+def test_itsm_idempotency_conflict_requires_authentication() -> None:
+    """No session cookie and no development identity: the route must fail closed at
+    authentication, not merely at authorization -- proving `authenticated_subject` really runs.
+    """
+    with TestClient(create_app(Settings(environment="test"))) as client:
+        response = client.post(
+            "/api/v1/itsm/idempotency-conflicts/intents/intent.wiring-test-auth",
+            json={
+                "idempotency_key": "idem-key-wiring-test-auth",
+                "profile_id": "itsm-integration.wiring-test",
+                "operation": "create_incident_draft",
+                "deduplication_signature": "dedup-sig-wiring-test-auth",
+            },
+        )
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "authentication_required"
+
+
+def test_itsm_idempotency_conflict_requires_permission() -> None:
+    """A real, logged-in human subject with zero granted role permissions must still be denied
+    by the real `AuthorizationService`, not by a faked dependency override. Covers every route in
+    this file, all of which share `authorize_itsm_idempotency_conflict_manage`.
+    """
+    with TestClient(create_app(_settings(development_role_ids=()))) as client:
+        csrf = _login(client)
+
+        intent_recorded = client.post(
+            "/api/v1/itsm/idempotency-conflicts/intents/intent.wiring-test-denied",
+            json={
+                "idempotency_key": "idem-key-wiring-test-denied",
+                "profile_id": "itsm-integration.wiring-test",
+                "operation": "create_incident_draft",
+                "deduplication_signature": "dedup-sig-wiring-test-denied",
+            },
+            headers={"X-CSRF-Token": csrf},
+        )
+        intent_dispatched = client.post(
+            "/api/v1/itsm/idempotency-conflicts/intents/intent.wiring-test-denied/dispatch",
+            headers={"X-CSRF-Token": csrf},
+        )
+        intent_resolved = client.post(
+            "/api/v1/itsm/idempotency-conflicts/intents/intent.wiring-test-denied/resolution",
+            json={"resolution": "confirmed_created", "external_record_id": "INC0000002"},
+            headers={"X-CSRF-Token": csrf},
+        )
+        conflict_recorded = client.post(
+            "/api/v1/itsm/idempotency-conflicts/conflicts/conflict.wiring-test-denied",
+            json={
+                "profile_id": "itsm-integration.wiring-test",
+                "external_record_id": "INC0099998",
+                "kind": "concurrent_edit",
+                "last_known_source_version": "7",
+                "observed_source_version": "9",
+                "field_ownership": "human_owned",
+            },
+            headers={"X-CSRF-Token": csrf},
+        )
+        conflict_resolved = client.post(
+            "/api/v1/itsm/idempotency-conflicts/conflicts/conflict.wiring-test-denied/resolution",
+            json={"resolution_summary": "Denied before reaching the service layer."},
+            headers={"X-CSRF-Token": csrf},
+        )
+
+    for response in (
+        intent_recorded,
+        intent_dispatched,
+        intent_resolved,
+        conflict_recorded,
+        conflict_resolved,
+    ):
+        assert response.status_code == 403
+        assert response.json()["code"] == "authorization_denied"
+
+
 def test_itsm_creation_intent_full_lifecycle_is_reachable_through_the_api() -> None:
     with TestClient(create_app(_settings())) as client:
         csrf = _login(client)
