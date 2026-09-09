@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import cast
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from test_browser_sessions import BasicTestIdentityProvider, login, settings
 from test_package_acquisition import CollectingAuditSink, FailingAuditSink
@@ -298,3 +299,97 @@ def test_package_approval_api_requires_csrf_and_minimizes_record(tmp_path: Path)
         "response_payload",
     ):
         assert forbidden not in data and forbidden not in data["request"]
+
+
+def test_package_approval_decision_endpoint_is_reachable_through_the_api(tmp_path: Path) -> None:
+    """``POST /connectors/package-approval-requests/{request_id}/decisions`` -- the actual
+    approve/reject action, gated by the real ``authorize_connector_package_approval_decide``
+    dependency -- had zero HTTP coverage; every other test in this file only exercises request
+    *creation* over HTTP (``test_package_approval_api_requires_csrf_and_minimizes_record`` above)
+    and decides through direct service calls. This drives a real decision through the HTTP API,
+    including the real separation-of-duties rule enforced by
+    ``PackageApprovalService.decide`` (the requester cannot also decide their own request).
+    """
+    service, final_service, final, policy = asyncio.run(approval_fixture())
+    requester = final_operator()
+    decider = approval_operator()
+
+    def _app(subject: AuthenticatedSubject) -> FastAPI:
+        return create_app(
+            settings(
+                development_subject_id=subject.subject_id,
+                mcp_builder_generation_root=tmp_path / "mcp-builder-generations",
+            ),
+            identity_provider=BasicTestIdentityProvider(subject),
+            package_final_validation_service=final_service,
+            package_approval_service=service,
+        )
+
+    request_payload = {
+        "schema_version": "atlas.connector-package-approval-request-input.v1",
+        "source_final_validation_id": final.validation_id,
+        "source_final_validation_digest": final.canonical_digest,
+        "package_digest": final.package_digest,
+        "approval_policy_id": policy.policy_id,
+        "approval_policy_digest": policy.canonical_digest,
+        "purpose": "Approve this exact validated package for publisher governance review.",
+        "acknowledged_request_is_not_approval": True,
+    }
+
+    with TestClient(_app(requester)) as requester_client:
+        requester_login = login(requester_client)
+        created = requester_client.post(
+            "/api/v1/connectors/package-approval-requests",
+            json=request_payload,
+            headers={
+                "Idempotency-Key": "package-approval-decide-http-request-001",
+                "X-CSRF-Token": requester_login.headers["X-CSRF-Token"],
+            },
+        )
+        assert created.status_code == 201, created.text
+        request_data = created.json()["data"]["request"]
+        request_id = request_data["request_id"]
+
+        decision_payload = {
+            "schema_version": "atlas.connector-package-approval-decision-input.v1",
+            "expected_request_version": request_data["version"],
+            "request_digest": request_data["canonical_digest"],
+            "outcome": "approve",
+            "rationale": ("The exact evidence is complete and independently reviewed as required."),
+            "acknowledged_decision_grants_no_runtime_authority": True,
+        }
+
+        self_decided = requester_client.post(
+            f"/api/v1/connectors/package-approval-requests/{request_id}/decisions",
+            json=decision_payload,
+            headers={
+                "Idempotency-Key": "package-approval-decide-http-self-001",
+                "X-CSRF-Token": requester_login.headers["X-CSRF-Token"],
+            },
+        )
+    assert self_decided.status_code == 403, self_decided.text
+    assert self_decided.json()["code"] == "package_approval_separation_required"
+
+    with TestClient(_app(decider)) as decider_client:
+        decider_login = login(decider_client)
+        decided = decider_client.post(
+            f"/api/v1/connectors/package-approval-requests/{request_id}/decisions",
+            json=decision_payload,
+            headers={
+                "Idempotency-Key": "package-approval-decide-http-001",
+                "X-CSRF-Token": decider_login.headers["X-CSRF-Token"],
+            },
+        )
+
+    assert decided.status_code == 200, decided.text
+    assert decided.headers["Cache-Control"] == "no-store"
+    data = decided.json()["data"]
+    assert data["state"] == "approved"
+    assert data["decision"] is not None
+    assert data["decision"]["outcome"] == "approve"
+    assert data["decision"]["decided_by"] == decider.subject_id
+    assert data["decision"]["request_id"] == request_id
+    assert data["approval_valid"] is True
+    assert data["connector_approved"] is True
+    assert data["eligible_for_publisher_governance"] is True
+    assert data["promotion_blocked"] is False
