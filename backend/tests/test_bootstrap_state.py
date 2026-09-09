@@ -712,3 +712,76 @@ def test_api_rebase_requires_csrf_strict_input_and_returns_safe_metadata() -> No
     assert data["infrastructure_mutation_authorized"] is False
     assert "lease_holder" not in rebased.text and "justification" not in rebased.text
     assert current.json()["data"]["run"]["version"] == 2
+
+
+def test_api_current_claims_and_rebase_require_authentication() -> None:
+    """No session cookie and no development identity: bootstrap-state's `current`, `claims`,
+    and `rebase` endpoints must fail closed at authentication -- proving `authenticated_subject`/
+    `browser_session_subject` really run on every one of these three routes. `claims`/`rebase`
+    previously only had a missing-CSRF-header denial test (see
+    `test_api_empty_state_csrf_mutation_and_owner_redaction`/
+    `test_api_rebase_requires_csrf_strict_input_and_returns_safe_metadata` above), which is a
+    different security control from authentication; `current` is a GET with no CSRF check at
+    all, so it previously had no denial coverage of any kind. The target run never needs to
+    exist: authentication is resolved before the request body or any run lookup, so an empty
+    payload against a made-up run id is enough to prove the real dependency runs and fails
+    closed.
+    """
+    run_id = "run.state-wiring-denied-0001"
+    with TestClient(create_app(Settings(environment="test"))) as client:
+        current = client.get("/api/v1/platform/bootstrap-state/current")
+        claims = client.post(
+            "/api/v1/platform/bootstrap-state/claims",
+            json={},
+            headers={"Idempotency-Key": "state-wiring-denied-claims-0001"},
+        )
+        rebase = client.post(
+            f"/api/v1/platform/bootstrap-state/{run_id}/rebase",
+            json={},
+            headers={"Idempotency-Key": "state-wiring-denied-rebase-0001"},
+        )
+
+    for response in (current, claims, rebase):
+        assert response.status_code == 401
+        assert response.json()["code"] == "authentication_required"
+
+
+def test_api_current_claims_and_rebase_require_permission() -> None:
+    """A real, logged-in human subject with zero granted role permissions must still be denied
+    by the real `AuthorizationService` at `current`, `claims`, and `rebase`, not by a faked
+    dependency override or the custom `IdentityProvider` double this file's other tests use to
+    reach a fixed LDAP-style actor with a role that already carries the needed permissions.
+    """
+    run_id = "run.state-wiring-denied-0002"
+    with TestClient(
+        create_app(
+            Settings(
+                environment="test",
+                development_identity_enabled=True,
+                development_role_ids=(),
+            )
+        )
+    ) as client:
+        login = client.post(
+            "/api/v1/authentication/sessions",
+            json={"username": "atlas-demo", "password": "local-demo"},
+        )
+        assert login.status_code == 201
+        csrf = login.headers["X-CSRF-Token"]
+        headers = {"X-CSRF-Token": csrf}
+
+        current = client.get("/api/v1/platform/bootstrap-state/current", headers=headers)
+        claims = client.post(
+            "/api/v1/platform/bootstrap-state/claims",
+            json={},
+            headers={**headers, "Idempotency-Key": "state-wiring-denied-claims-0002"},
+        )
+        rebase = client.post(
+            f"/api/v1/platform/bootstrap-state/{run_id}/rebase",
+            json={},
+            headers={**headers, "Idempotency-Key": "state-wiring-denied-rebase-0002"},
+        )
+
+    for response in (current, claims, rebase):
+        assert response.status_code == 403
+        assert response.json()["code"] == "authorization_denied"

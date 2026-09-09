@@ -29,6 +29,17 @@ ORGANIZATION_ID = "organization.development"
 ENVIRONMENT_ID = "environment.test"
 SITE_ID = "site.local"
 PLAN_DIGEST = "a" * 64
+PHASE_NAMES = (
+    "acquire",
+    "configure",
+    "trust",
+    "data",
+    "services",
+    "identity",
+    "integrations",
+    "verify",
+    "handoff",
+)
 
 
 def _settings(tmp_path: Path, **overrides: object) -> Settings:
@@ -810,3 +821,87 @@ def test_bootstrap_checkpoint_endpoint_is_reachable_through_the_api(tmp_path: Pa
         assert release.status_code == 200, release.text
         assert release.json()["data"]["run"]["version"] == 3
         assert release.json()["data"]["run"]["lease_expires_at"] is None
+
+
+def test_bootstrap_phase_execution_and_state_mutation_endpoints_require_authentication(
+    tmp_path: Path,
+) -> None:
+    """No session cookie and no development identity: every one of the nine real
+    phase-execution endpoints (acquire, configure, trust, data, services, identity,
+    integrations, verify, handoff) plus the sibling ``bootstrap_state.py`` checkpoint and
+    release endpoints must fail closed at authentication, not merely at the CSRF check the
+    happy-path tests above already exercise for phase.data/checkpoints/release -- proving
+    ``authenticated_subject``/``browser_session_subject`` really run on every one of these
+    routes, not just the ones with existing CSRF-only coverage. The target run never needs to
+    exist: authentication is resolved before the request body or the run lookup, so an empty
+    payload against a made-up run id is enough to prove the real dependency runs and fails
+    closed.
+    """
+    run_id = "run.phase-wiring-denied-0001"
+    with TestClient(create_app(Settings(environment="test"))) as client:
+        responses = [
+            client.post(
+                f"/api/v1/platform/bootstrap-state/{run_id}/phases/{phase}",
+                json={},
+                headers={"Idempotency-Key": f"phase-wiring-denied-{phase}-0001"},
+            )
+            for phase in PHASE_NAMES
+        ]
+        responses.append(
+            client.post(
+                f"/api/v1/platform/bootstrap-state/{run_id}/checkpoints",
+                json={},
+                headers={"Idempotency-Key": "phase-wiring-denied-checkpoints-0001"},
+            )
+        )
+        responses.append(
+            client.post(
+                f"/api/v1/platform/bootstrap-state/{run_id}/release",
+                json={},
+                headers={"Idempotency-Key": "phase-wiring-denied-release-0001"},
+            )
+        )
+
+    for response in responses:
+        assert response.status_code == 401
+        assert response.json()["code"] == "authentication_required"
+
+
+def test_bootstrap_phase_execution_and_state_mutation_endpoints_require_permission(
+    tmp_path: Path,
+) -> None:
+    """A real, logged-in human subject with zero granted role permissions must still be
+    denied by the real ``AuthorizationService`` at every one of the nine phase-execution
+    endpoints plus the checkpoint/release endpoints, not by a faked dependency override.
+    Every request carries a real CSRF token so the failure is genuinely about authorization,
+    not the CSRF check the happy-path tests above already cover.
+    """
+    run_id = "run.phase-wiring-denied-0002"
+    with TestClient(create_app(_settings(tmp_path, development_role_ids=()))) as client:
+        csrf = _login(client)
+        responses = [
+            client.post(
+                f"/api/v1/platform/bootstrap-state/{run_id}/phases/{phase}",
+                json={},
+                headers=_headers(csrf, f"phase-wiring-denied-{phase}-0002"),
+            )
+            for phase in PHASE_NAMES
+        ]
+        responses.append(
+            client.post(
+                f"/api/v1/platform/bootstrap-state/{run_id}/checkpoints",
+                json={},
+                headers=_headers(csrf, "phase-wiring-denied-checkpoints-0002"),
+            )
+        )
+        responses.append(
+            client.post(
+                f"/api/v1/platform/bootstrap-state/{run_id}/release",
+                json={},
+                headers=_headers(csrf, "phase-wiring-denied-release-0002"),
+            )
+        )
+
+    for response in responses:
+        assert response.status_code == 403
+        assert response.json()["code"] == "authorization_denied"

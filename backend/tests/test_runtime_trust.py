@@ -655,3 +655,37 @@ def test_runtime_trust_api_rejects_caller_controls_and_minimizes_response(
         "runner_pool_id",
     ):
         assert hidden not in rendered
+
+
+def test_runtime_trust_api_requires_permission_for_every_endpoint() -> None:
+    """`test_runtime_trust_api_rejects_caller_controls_and_minimizes_response` above already
+    proves a genuinely unauthenticated caller is denied (401) and that a missing CSRF header is
+    denied (403 csrf_validation_failed). Neither proves that a real, logged-in, but unprivileged
+    subject is denied by the real `AuthorizationService` -- this test drives that case at every
+    runtime-trust-grant endpoint (list, options, create, read-by-id), each carrying a real CSRF
+    token so the failure is genuinely about authorization, not CSRF or authentication.
+    """
+    with TestClient(create_app(settings(development_role_ids=()))) as client:
+        login_response = client.post(
+            "/api/v1/authentication/sessions",
+            json={"username": "atlas-demo", "password": "local-demo"},
+        )
+        assert login_response.status_code == 201
+        csrf = login_response.headers["X-CSRF-Token"]
+        endpoint = "/api/v1/connectors/runtime-trust-grants"
+
+        listed = client.get(endpoint)
+        options = client.get(
+            f"{endpoint}/options",
+            params={"source_enablement_id": "connector-capability-enablement.denied"},
+        )
+        created = client.post(
+            endpoint,
+            json={},
+            headers={"Idempotency-Key": "runtime-trust-api-denied-0001", "X-CSRF-Token": csrf},
+        )
+        read = client.get(f"{endpoint}/connector-runtime-trust.denied")
+
+    for response in (listed, options, created, read):
+        assert response.status_code == 403
+        assert response.json()["code"] == "authorization_denied"
