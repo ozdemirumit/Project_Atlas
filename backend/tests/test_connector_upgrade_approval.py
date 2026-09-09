@@ -2779,3 +2779,371 @@ def test_upgrade_approval_revalidation_api_is_no_store_and_hides_custody_metadat
         "retention_policy_digest",
     ):
         assert hidden not in rendered
+
+
+def test_signed_evidence_receipt_creation_endpoint_is_reachable_through_the_api(
+    tmp_path: Path,
+) -> None:
+    """``POST .../upgrade-approval-requests/{request_id}/signed-evidence-receipts`` -- the base
+    creation endpoint, gated by the real
+    ``authorize_connector_upgrade_signed_evidence_receipt_create`` dependency -- had zero HTTP
+    coverage. ``test_upgrade_approval_revalidation_api_is_no_store_and_hides_custody_metadata``
+    above only reaches a *blocked* handoff-readiness state over HTTP (the evidence sources are
+    empty), so its ``uploaded_signed_receipt`` fixture is a literal Python dict rather than a
+    receipt obtained from a real POST to this endpoint. This test instead reaches the same
+    "evidence_complete" handoff-readiness state that
+    ``test_upgrade_approval_revalidation_requires_three_people_and_remains_non_executable``
+    proves is reachable (reusing the same audit/ITSM/maintenance-window evidence construction, at
+    the service layer, purely to get past that multi-source readiness gate cheaply -- the
+    readiness pipeline itself is not the gap under test here) and then drives both the real
+    (unsigned) evidence-receipt creation and the real signed-evidence-receipt creation through the
+    actual HTTP API, plus a real negative case: signing a receipt whose echoed ``canonical_digest``
+    has been tampered with is rejected by the service's own integrity check.
+    """
+    current_time: list[datetime] = []
+
+    def clock() -> datetime:
+        return current_time[0]
+
+    bootstrap = asyncio.run(instance_fixture())
+    current_time.append(bootstrap[4].installed_at + timedelta(hours=2))
+    audit_readiness_source = InMemoryConnectorUpgradeAuditReadinessSource()
+    itsm_change_evidence_source = InMemoryConnectorUpgradeItsmChangeEvidenceSource()
+    maintenance_window_evidence_source = InMemoryConnectorUpgradeMaintenanceWindowEvidenceSource()
+    (
+        service,
+        upgrade_service,
+        instance_service,
+        package_service,
+        registration_service,
+        publication_service,
+        sources,
+        _,
+    ) = asyncio.run(
+        approval_fixture(
+            clock=clock,
+            audit_readiness_source=audit_readiness_source,
+            itsm_change_evidence_source=itsm_change_evidence_source,
+            maintenance_window_evidence_source=maintenance_window_evidence_source,
+        )
+    )
+    instance, candidate_receipt = sources
+    requester = instance_operator("subject.connector-upgrade-signed-receipt-requester")
+    approver = instance_operator("subject.connector-upgrade-signed-receipt-approver")
+    verifier = instance_operator("subject.connector-upgrade-signed-receipt-verifier")
+
+    async def _reach_evidence_complete_readiness() -> tuple[Any, Any]:
+        plan = await upgrade_service.plan(
+            actor=requester,
+            record_id=instance.record_id,
+            candidate_receipt_id=candidate_receipt.receipt_id,
+            correlation_id="correlation.connector-upgrade-signed-receipt-plan",
+        )
+        request = await service.create(
+            actor=requester,
+            record_id=instance.record_id,
+            candidate_receipt_id=candidate_receipt.receipt_id,
+            source_plan_digest=plan.canonical_digest,
+            purpose="Submit this exact connector upgrade plan for independent human review.",
+            acknowledged_request_is_not_approval_and_grants_no_execution_authority=True,
+            idempotency_key="connector-upgrade-signed-receipt-request",
+            correlation_id="correlation.connector-upgrade-signed-receipt-request",
+        )
+        current_time[0] += timedelta(minutes=5)
+        record = await service.decide(
+            actor=approver,
+            record_id=instance.record_id,
+            request_id=request.request_id,
+            expected_request_version=request.version,
+            expected_request_digest=request.canonical_digest,
+            outcome=ConnectorUpgradeApprovalOutcome.APPROVE,
+            rationale="Approve the unchanged plan after independent evidence review.",
+            acknowledged_decision_grants_no_execution_authority=True,
+            idempotency_key="connector-upgrade-signed-receipt-decision",
+            correlation_id="correlation.connector-upgrade-signed-receipt-decision",
+        )
+        assert record.decision is not None
+        current_time[0] += timedelta(minutes=5)
+        revalidation = await service.revalidate(
+            actor=verifier,
+            record_id=instance.record_id,
+            request_id=request.request_id,
+            expected_request_digest=request.canonical_digest,
+            expected_decision_digest=record.decision.canonical_digest,
+            purpose="Revalidate the exact approved plan without granting handoff authority.",
+            acknowledged_revalidation_grants_no_handoff_or_execution_authority=True,
+            idempotency_key="connector-upgrade-signed-receipt-revalidation",
+            correlation_id="correlation.connector-upgrade-signed-receipt-revalidation",
+        )
+
+        audit_evidence_payload = {
+            "schema_version": "atlas.connector-upgrade-audit-readiness-evidence.v1",
+            "organization_id": instance.organization_id,
+            "environment_id": instance.environment_id,
+            "request_id": request.request_id,
+            "request_digest": request.canonical_digest,
+            "revalidation_id": revalidation.revalidation_id,
+            "revalidation_digest": revalidation.canonical_digest,
+            "ledger_id": "audit-ledger.primary",
+            "ledger_generation": "generation.2026-08-12",
+            "producer_coverage_digest": "1" * 64,
+            "integrity_verification_digest": "2" * 64,
+            "redaction_policy_digest": "3" * 64,
+            "retention_policy_digest": "4" * 64,
+            "verified_at": current_time[0].isoformat(),
+            "valid_until": (current_time[0] + timedelta(minutes=10)).isoformat(),
+            "durable_acceptance": True,
+            "append_only": True,
+            "integrity_verified": True,
+            "gap_free": True,
+            "redaction_current": True,
+            "retention_current": True,
+            "producer_coverage_complete": True,
+            "consequential_blocking_enabled": True,
+            "infrastructure_mutation_performed": False,
+        }
+        audit_evidence_digest = ConnectorUpgradeApprovalService._digest(audit_evidence_payload)
+        audit_evidence = ConnectorUpgradeAuditReadinessEvidence(
+            evidence_id=(
+                f"connector-upgrade-audit-readiness-evidence.{audit_evidence_digest[:24]}"
+            ),
+            schema_version="atlas.connector-upgrade-audit-readiness-evidence.v1",
+            organization_id=instance.organization_id,
+            environment_id=instance.environment_id,
+            request_id=request.request_id,
+            request_digest=request.canonical_digest,
+            revalidation_id=revalidation.revalidation_id,
+            revalidation_digest=revalidation.canonical_digest,
+            ledger_id="audit-ledger.primary",
+            ledger_generation="generation.2026-08-12",
+            producer_coverage_digest="1" * 64,
+            integrity_verification_digest="2" * 64,
+            redaction_policy_digest="3" * 64,
+            retention_policy_digest="4" * 64,
+            verified_at=current_time[0],
+            valid_until=current_time[0] + timedelta(minutes=10),
+            canonical_digest=audit_evidence_digest,
+            durable_acceptance=True,
+            append_only=True,
+            integrity_verified=True,
+            gap_free=True,
+            redaction_current=True,
+            retention_current=True,
+            producer_coverage_complete=True,
+            consequential_blocking_enabled=True,
+        )
+        audit_readiness_source.replace((audit_evidence,))
+
+        itsm_evidence_payload = {
+            "schema_version": "atlas.connector-upgrade-itsm-change-evidence.v1",
+            "organization_id": instance.organization_id,
+            "environment_id": instance.environment_id,
+            "request_id": request.request_id,
+            "request_digest": request.canonical_digest,
+            "revalidation_id": revalidation.revalidation_id,
+            "revalidation_digest": revalidation.canonical_digest,
+            "plan_id": plan.plan_id,
+            "plan_digest": plan.canonical_digest,
+            "adapter_id": "itsm-adapter.validated",
+            "adapter_version": "version.1.0.0",
+            "authoritative_instance_id": "itsm-instance.enterprise",
+            "external_record_id": "change-record.chg000155",
+            "external_record_version": "version.42",
+            "observed_at": current_time[0].isoformat(),
+            "valid_until": (current_time[0] + timedelta(minutes=8)).isoformat(),
+            "adapter_validated": True,
+            "authoritative_source": True,
+            "record_accessible": True,
+            "source_version_current": True,
+            "exact_plan_binding_verified": True,
+            "record_active": True,
+            "conflict_free": True,
+            "revocation_absent": True,
+            "external_record_modified": False,
+            "infrastructure_mutation_performed": False,
+        }
+        itsm_evidence_digest = ConnectorUpgradeApprovalService._digest(itsm_evidence_payload)
+        itsm_evidence = ConnectorUpgradeItsmChangeEvidence(
+            evidence_id=f"connector-upgrade-itsm-change-evidence.{itsm_evidence_digest[:24]}",
+            schema_version="atlas.connector-upgrade-itsm-change-evidence.v1",
+            organization_id=instance.organization_id,
+            environment_id=instance.environment_id,
+            request_id=request.request_id,
+            request_digest=request.canonical_digest,
+            revalidation_id=revalidation.revalidation_id,
+            revalidation_digest=revalidation.canonical_digest,
+            plan_id=plan.plan_id,
+            plan_digest=plan.canonical_digest,
+            adapter_id="itsm-adapter.validated",
+            adapter_version="version.1.0.0",
+            authoritative_instance_id="itsm-instance.enterprise",
+            external_record_id="change-record.chg000155",
+            external_record_version="version.42",
+            observed_at=current_time[0],
+            valid_until=current_time[0] + timedelta(minutes=8),
+            canonical_digest=itsm_evidence_digest,
+            adapter_validated=True,
+            authoritative_source=True,
+            record_accessible=True,
+            source_version_current=True,
+            exact_plan_binding_verified=True,
+            record_active=True,
+            conflict_free=True,
+            revocation_absent=True,
+        )
+        itsm_change_evidence_source.replace((itsm_evidence,))
+
+        window_evidence_payload = {
+            "schema_version": "atlas.connector-upgrade-maintenance-window-evidence.v1",
+            "organization_id": instance.organization_id,
+            "environment_id": instance.environment_id,
+            "request_id": request.request_id,
+            "request_digest": request.canonical_digest,
+            "revalidation_id": revalidation.revalidation_id,
+            "revalidation_digest": revalidation.canonical_digest,
+            "plan_id": plan.plan_id,
+            "plan_digest": plan.canonical_digest,
+            "itsm_change_evidence_id": itsm_evidence.evidence_id,
+            "itsm_change_evidence_digest": itsm_evidence.canonical_digest,
+            "external_record_version": itsm_evidence.external_record_version,
+            "window_version": "window-version.7",
+            "approved_start": (current_time[0] - timedelta(minutes=5)).isoformat(),
+            "approved_end": (current_time[0] + timedelta(minutes=6)).isoformat(),
+            "observed_at": current_time[0].isoformat(),
+            "valid_until": (current_time[0] + timedelta(minutes=5)).isoformat(),
+            "authoritative_source": True,
+            "window_approved": True,
+            "source_version_current": True,
+            "exact_change_binding_verified": True,
+            "exact_plan_binding_verified": True,
+            "inside_approved_window": True,
+            "freeze_clear": True,
+            "conflict_free": True,
+            "revocation_absent": True,
+            "external_record_modified": False,
+            "infrastructure_mutation_performed": False,
+        }
+        window_evidence_digest = ConnectorUpgradeApprovalService._digest(window_evidence_payload)
+        window_evidence = ConnectorUpgradeMaintenanceWindowEvidence(
+            evidence_id=(
+                f"connector-upgrade-maintenance-window-evidence.{window_evidence_digest[:24]}"
+            ),
+            schema_version="atlas.connector-upgrade-maintenance-window-evidence.v1",
+            organization_id=instance.organization_id,
+            environment_id=instance.environment_id,
+            request_id=request.request_id,
+            request_digest=request.canonical_digest,
+            revalidation_id=revalidation.revalidation_id,
+            revalidation_digest=revalidation.canonical_digest,
+            plan_id=plan.plan_id,
+            plan_digest=plan.canonical_digest,
+            itsm_change_evidence_id=itsm_evidence.evidence_id,
+            itsm_change_evidence_digest=itsm_evidence.canonical_digest,
+            external_record_version=itsm_evidence.external_record_version,
+            window_version="window-version.7",
+            approved_start=current_time[0] - timedelta(minutes=5),
+            approved_end=current_time[0] + timedelta(minutes=6),
+            observed_at=current_time[0],
+            valid_until=current_time[0] + timedelta(minutes=5),
+            canonical_digest=window_evidence_digest,
+            authoritative_source=True,
+            window_approved=True,
+            source_version_current=True,
+            exact_change_binding_verified=True,
+            exact_plan_binding_verified=True,
+            inside_approved_window=True,
+            freeze_clear=True,
+            conflict_free=True,
+            revocation_absent=True,
+        )
+        maintenance_window_evidence_source.replace((window_evidence,))
+
+        complete_readiness = await service.assess_handoff_readiness(
+            actor=verifier,
+            record_id=instance.record_id,
+            request_id=request.request_id,
+            correlation_id="correlation.connector-upgrade-signed-receipt-readiness-complete",
+        )
+        return request, complete_readiness
+
+    request, complete_readiness = asyncio.run(_reach_evidence_complete_readiness())
+    assert complete_readiness.assessment_state == "evidence_complete"
+    assert complete_readiness.blocker_ids == ()
+
+    app = create_app(
+        settings(
+            development_subject_id=verifier.subject_id,
+            mcp_builder_generation_root=tmp_path / "mcp-builder-generations",
+        ),
+        identity_provider=BasicTestIdentityProvider(verifier),
+        registry_publication_service=publication_service,
+        package_registration_service=registration_service,
+        package_installation_service=package_service,
+        connector_instance_creation_service=instance_service,
+        connector_upgrade_approval_service=service,
+    )
+    with TestClient(app) as client:
+        app.state.connector_upgrade_readiness_service = upgrade_service
+        login_response = login(client)
+        csrf = login_response.headers["X-CSRF-Token"]
+
+        receipt_response = client.post(
+            f"/api/v1/connectors/instances/{instance.record_id}/upgrade-approval-requests/"
+            f"{request.request_id}/evidence-receipts",
+            headers={"X-CSRF-Token": csrf},
+            json={
+                "schema_version": "atlas.connector-upgrade-evidence-receipt-input.v1",
+                "expected_readiness_digest": complete_readiness.canonical_digest,
+                "acknowledged_receipt_is_non_executable_and_grants_no_handoff_authority": True,
+            },
+        )
+        assert receipt_response.status_code == 201, receipt_response.text
+        receipt_data = receipt_response.json()["data"]
+
+        signed_response = client.post(
+            f"/api/v1/connectors/instances/{instance.record_id}/upgrade-approval-requests/"
+            f"{request.request_id}/signed-evidence-receipts",
+            headers={"X-CSRF-Token": csrf},
+            json={
+                "schema_version": "atlas.connector-upgrade-signed-evidence-receipt-input.v1",
+                "receipt": receipt_data,
+                "acknowledged_signature_authenticates_origin_but_grants_no_authority": True,
+            },
+        )
+        assert signed_response.status_code == 201, signed_response.text
+        signed_data = signed_response.json()["data"]
+
+        tampered_response = client.post(
+            f"/api/v1/connectors/instances/{instance.record_id}/upgrade-approval-requests/"
+            f"{request.request_id}/signed-evidence-receipts",
+            headers={"X-CSRF-Token": csrf},
+            json={
+                "schema_version": "atlas.connector-upgrade-signed-evidence-receipt-input.v1",
+                "receipt": {**receipt_data, "canonical_digest": "9" * 64},
+                "acknowledged_signature_authenticates_origin_but_grants_no_authority": True,
+            },
+        )
+
+    assert receipt_response.headers["Cache-Control"] == "no-store"
+    assert receipt_data["assessment_digest"] == complete_readiness.canonical_digest
+    assert receipt_data["request_id"] == request.request_id
+    assert receipt_data["required_check_ids"] == receipt_data["satisfied_check_ids"]
+    assert receipt_data["evidence_receipt_only"] is True
+    assert receipt_data["runtime_acceptable"] is False
+    assert receipt_data["created_by"] == verifier.subject_id
+
+    assert signed_response.headers["Cache-Control"] == "no-store"
+    assert signed_data["receipt"]["receipt_id"] == receipt_data["receipt_id"]
+    assert signed_data["request_id"] == request.request_id
+    assert signed_data["organization_id"] == instance.organization_id
+    assert signed_data["environment_id"] == instance.environment_id
+    assert signed_data["signature"]["key_id"] == "key.connector-upgrade-evidence.test"
+    assert signed_data["signature"]["algorithm"] == "algorithm.hmac-sha256-nonproduction"
+    assert signed_data["evidence_receipt_only"] is True
+    assert signed_data["authenticity_claimed"] is True
+    assert signed_data["runtime_acceptable"] is False
+
+    assert tampered_response.status_code == 422, tampered_response.text
+    assert (
+        tampered_response.json()["code"] == "connector_upgrade_evidence_receipt_integrity_invalid"
+    )

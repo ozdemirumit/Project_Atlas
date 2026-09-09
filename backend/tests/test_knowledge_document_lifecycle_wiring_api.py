@@ -55,8 +55,15 @@ from atlas.api.app import create_app
 from atlas.core.config import Settings
 from atlas.core.protected_content import InMemoryProtectedContentStore
 from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.knowledge.adapters.document_chunking import ParagraphBoundedChunker
+from atlas.modules.knowledge.adapters.document_embedding_fastembed import (
+    FastEmbedDocumentEmbedder,
+)
 from atlas.modules.knowledge.adapters.document_knowledge_memory import (
     InMemoryDocumentKnowledgeRepository,
+)
+from atlas.modules.knowledge.adapters.document_vector_index_memory import (
+    InMemoryDocumentVectorIndex,
 )
 from atlas.modules.knowledge.adapters.final_resolution_memory import (
     InMemoryOperationalKnowledgeFinalResolutionPolicySource,
@@ -70,6 +77,9 @@ from atlas.modules.knowledge.application.deterministic_chunking import (
     build_development_operational_knowledge_chunking_policy,
 )
 from atlas.modules.knowledge.application.document_knowledge import DocumentKnowledgeService
+from atlas.modules.knowledge.application.document_retrieval import (
+    DocumentKnowledgeRetrievalService,
+)
 from atlas.modules.knowledge.application.embedding_generation import (
     OperationalKnowledgeEmbeddingGenerationService,
     build_development_operational_knowledge_embedding_policy,
@@ -640,3 +650,169 @@ def test_document_knowledge_lifecycle_is_reachable_through_the_api() -> None:
         assert preparation["instance_state"] == "document_knowledge_publication_prepared"
         assert preparation["approval_id"] == approval["approval_id"]
         assert preparation["draft_id"] == draft["draft_id"]
+
+
+def test_document_knowledge_indexing_and_search_is_reachable_through_the_api() -> None:
+    """``document_knowledge.py`` also registers ``POST /knowledge/documents/index`` (gated by
+    the real ``authorize_document_knowledge_indexing_create`` dependency) and
+    ``POST /knowledge/documents/search`` (gated by the real
+    ``authorize_document_knowledge_retrieval_create`` dependency), backed by the real
+    ``DocumentKnowledgeRetrievalService`` -- chunking, embedding (real fastembed model, not a
+    stub), and vector search over an already-approved document. Neither endpoint had any HTTP
+    coverage anywhere in the suite. This test curates and approves a document through the same
+    HTTP pipeline as ``test_document_knowledge_lifecycle_is_reachable_through_the_api`` above,
+    then indexes and searches it through the real HTTP API, sharing one repository and one
+    protected-content store between the ``DocumentKnowledgeService`` and the
+    ``DocumentKnowledgeRetrievalService`` so the retrieval service can see the approved,
+    prepared document that the knowledge service produced.
+    """
+    repository = InMemoryDocumentKnowledgeRepository()
+    protected_content = InMemoryProtectedContentStore()
+    knowledge_service = DocumentKnowledgeService(
+        repository=repository,
+        protected_content=protected_content,
+        permission_authorizer=_AlwaysAllowDocumentKnowledgePermissionAuthorizer(),
+        audit_sink=CollectingAuditSink(),
+        subject_salt="document-knowledge-retrieval-subject-salt.wiring-test",
+    )
+    retrieval_service = DocumentKnowledgeRetrievalService(
+        repository=repository,
+        protected_content=protected_content,
+        chunker=ParagraphBoundedChunker(maximum_chunk_characters=200),
+        embedder=FastEmbedDocumentEmbedder(),
+        vector_index=InMemoryDocumentVectorIndex(),
+        permission_authorizer=_AlwaysAllowDocumentKnowledgePermissionAuthorizer(),
+        audit_sink=CollectingAuditSink(),
+    )
+    content_base64 = base64.b64encode(
+        b"# Storage Controller Runbook\n\n"
+        b"When a storage controller reports a warning status, engineers should first confirm "
+        b"the condition persists across two consecutive read-only health checks before taking "
+        b"any action.\n\n"
+        b"# Escalation Procedure\n\n"
+        b"If the warning persists, open a change record and notify the on-call storage "
+        b"engineer. Do not restart the controller without an approved change window."
+    ).decode()
+
+    with TestClient(
+        create_app(
+            _settings(development_subject_id="subject.document-knowledge-retrieval-curator"),
+            document_knowledge_service=knowledge_service,
+        )
+    ) as curator_client:
+        csrf = _login(curator_client)
+        drafted = curator_client.post(
+            "/api/v1/knowledge/documents/drafts",
+            json={
+                "content_base64": content_base64,
+                "title": "Storage Controller Runbook",
+                "draft_domain": "domain.storage-operations",
+                "content_type": "text/markdown",
+                "classification": "classification.internal",
+                "access_policy_id": "access-policy.default",
+                "retention_policy_id": "retention-policy.default",
+                "purpose": "Curate a runbook draft for the document knowledge retrieval test.",
+            },
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert drafted.status_code == 201
+        draft = drafted.json()["data"]
+
+    with TestClient(
+        create_app(
+            _settings(development_subject_id="subject.document-knowledge-retrieval-reviewer"),
+            document_knowledge_service=knowledge_service,
+        )
+    ) as reviewer_client:
+        csrf = _login(reviewer_client)
+        reviewed = reviewer_client.post(
+            "/api/v1/knowledge/documents/reviews",
+            json={
+                "draft_id": draft["draft_id"],
+                "decision": "passed",
+                "findings": ["The restart sequence matches the vendor-approved procedure."],
+            },
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert reviewed.status_code == 201
+        review = reviewed.json()["data"]
+
+    with TestClient(
+        create_app(
+            _settings(development_subject_id="subject.document-knowledge-retrieval-approver"),
+            document_knowledge_service=knowledge_service,
+        )
+    ) as approver_client:
+        csrf = _login(approver_client)
+        approved = approver_client.post(
+            "/api/v1/knowledge/documents/approvals",
+            json={
+                "review_id": review["review_id"],
+                "decision": "approved",
+                "rationale": "Independent final approval after a passed domain review.",
+            },
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert approved.status_code == 201
+        approval = approved.json()["data"]
+
+        prepared = approver_client.post(
+            "/api/v1/knowledge/documents/publication-preparations",
+            json={
+                "approval_id": approval["approval_id"],
+                "chunking_profile_digest": sha256(
+                    b"knowledge-chunking-profile.retrieval-wiring-test"
+                ).hexdigest(),
+            },
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert prepared.status_code == 201
+        preparation = prepared.json()["data"]
+
+    with TestClient(
+        create_app(
+            _settings(development_subject_id="subject.document-knowledge-retrieval-indexer"),
+            document_knowledge_service=knowledge_service,
+            document_knowledge_retrieval_service=retrieval_service,
+        )
+    ) as retrieval_client:
+        csrf = _login(retrieval_client)
+
+        indexed_unknown_preparation = retrieval_client.post(
+            "/api/v1/knowledge/documents/index",
+            json={"preparation_id": "document-knowledge-preparation.does-not-exist"},
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert indexed_unknown_preparation.status_code == 404
+        assert (
+            indexed_unknown_preparation.json()["code"] == "document_knowledge_preparation_not_found"
+        )
+
+        indexed = retrieval_client.post(
+            "/api/v1/knowledge/documents/index",
+            json={"preparation_id": preparation["preparation_id"]},
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert indexed.status_code == 201
+        assert indexed.headers["Cache-Control"] == "no-store"
+        index_data = indexed.json()["data"]
+        assert index_data["preparation_id"] == preparation["preparation_id"]
+        assert index_data["chunk_count"] >= 1
+
+        searched = retrieval_client.post(
+            "/api/v1/knowledge/documents/search",
+            json={
+                "query": "storage controller warning status escalation",
+                "top_k": 3,
+            },
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert searched.status_code == 200
+        assert searched.headers["Cache-Control"] == "no-store"
+        results = searched.json()["data"]
+        assert results
+        assert results[0]["knowledge_item_id"] == draft["knowledge_item_id"]
+        assert (
+            "controller" in results[0]["excerpt"].lower()
+            or "escalation" in results[0]["excerpt"].lower()
+        )

@@ -932,3 +932,121 @@ async def test_approval_publishes_approval_granted_event_but_rejection_does_not(
         event for event in bus.published if event.event_type == "ApprovalGranted"
     ]
     assert len(granted_events_after_rejection) == 1
+
+
+class GovernanceApprovalIdentityProvider:
+    async def authenticate(
+        self, authentication_input: AuthenticationInput
+    ) -> AuthenticatedSubject | None:
+        if authentication_input.authorization_scheme != "basic":
+            return None
+        credential = authentication_input.credential
+        if credential is None:
+            return None
+        try:
+            decoded = base64.b64decode(credential, validate=True).decode()
+        except ValueError:
+            return None
+        if decoded != "operator:correct-password":
+            return None
+        return subject(subject_id="subject.approval-governance-reviewer")
+
+
+def test_revoke_endpoint_is_reachable_over_http() -> None:
+    """``POST /approvals/{request_id}/revoke`` had zero HTTP coverage --
+    ``test_governance_identity_can_revoke_an_approved_request`` and
+    ``test_requester_cannot_revoke_their_own_approval`` above exercise ``ApprovalService.revoke``
+    only through a direct ``await approval.revoke(...)`` service call, never through the actual
+    route, even though the sibling ``/decisions`` endpoint is HTTP-tested right next to it
+    (``test_cookie_decision_requires_csrf_then_enforces_separation``) and the sibling ``/cancel``
+    endpoint has its own dedicated HTTP test (``test_cancel_endpoint_is_reachable_over_http``
+    above). This drives a decision and a revocation through the real HTTP API using a governance
+    identity distinct from the implicit default requester identity, and confirms both that the
+    requester cannot revoke their own approval and that an already-revoked request cannot be
+    revoked again -- both real ``ApprovalService.revoke`` rules, exercised here over HTTP.
+    """
+    sink = CollectingAuditSink()
+    rca, recommendation, approval = build_services(sink)
+    with TestClient(
+        create_app(
+            settings(),
+            audit_sink=sink,
+            rca_service=rca,
+            recommendation_service=recommendation,
+            approval_service=approval,
+        )
+    ) as client:
+        data = create_approval(client)
+
+        self_revoke_denied = client.post(
+            f"/api/v1/approvals/{data['request_id']}/revoke",
+            json={
+                "rationale": "The original requester tries to revoke via the HTTP API.",
+                "expected_version": data["version"],
+            },
+            headers={"Idempotency-Key": "approval-revoke-http-self-0001"},
+        )
+    assert self_revoke_denied.status_code == 403, self_revoke_denied.text
+    assert self_revoke_denied.json()["code"] == "approval_separation_required"
+
+    with TestClient(
+        create_app(
+            settings(development_subject_id="subject.approval-governance-reviewer"),
+            audit_sink=sink,
+            identity_provider=GovernanceApprovalIdentityProvider(),
+            rca_service=rca,
+            recommendation_service=recommendation,
+            approval_service=approval,
+        )
+    ) as client:
+        login_response = client.post(
+            "/api/v1/authentication/sessions",
+            json={"username": "operator", "password": "correct-password"},
+        )
+        assert login_response.status_code == 201
+        csrf = login_response.headers["X-CSRF-Token"]
+
+        decided = client.post(
+            f"/api/v1/approvals/{data['request_id']}/decisions",
+            json={
+                "outcome": "approve",
+                "rationale": "The evidence supports this bounded read-only diagnostic plan.",
+                "expected_version": data["version"],
+            },
+            headers={
+                "Idempotency-Key": "approval-revoke-http-decide-0001",
+                "X-CSRF-Token": csrf,
+            },
+        )
+        assert decided.status_code == 200, decided.text
+        approved = decided.json()["data"]
+        assert approved["state"] == "approved"
+
+        revoked = client.post(
+            f"/api/v1/approvals/{data['request_id']}/revoke",
+            json={
+                "rationale": "New information invalidates this approval before handoff.",
+                "expected_version": approved["version"],
+            },
+            headers={"Idempotency-Key": "approval-revoke-http-0001", "X-CSRF-Token": csrf},
+        )
+        assert revoked.status_code == 200, revoked.text
+        assert revoked.headers["Cache-Control"] == "no-store"
+        revoked_data = revoked.json()["data"]
+        assert revoked_data["state"] == "revoked"
+        assert revoked_data["decisions"][-1]["outcome"] == "revoke"
+        assert (
+            revoked_data["decisions"][-1]["reviewer_id"] == "subject.approval-governance-reviewer"
+        )
+
+        already_revoked = client.post(
+            f"/api/v1/approvals/{data['request_id']}/revoke",
+            json={
+                "rationale": "A second, distinct revocation attempt after the first succeeded.",
+                "expected_version": approved["version"],
+            },
+            headers={"Idempotency-Key": "approval-revoke-http-0002", "X-CSRF-Token": csrf},
+        )
+
+    assert already_revoked.status_code == 409, already_revoked.text
+    assert already_revoked.json()["code"] == "approval_state_conflict"
