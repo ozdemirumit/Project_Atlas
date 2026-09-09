@@ -28,6 +28,7 @@ from test_target_session import (
 )
 
 from atlas.api.app import create_app
+from atlas.core.config import Settings
 from atlas.core.persistence.models import (
     ConnectorBoundedInvocationModel,
     ConnectorInvocationConsumptionClaimModel,
@@ -1221,3 +1222,84 @@ def test_bounded_invocation_api_is_csrf_protected_forbids_controls_and_is_minimi
         "target_selector",
     ):
         assert hidden not in rendered
+
+
+def _wiring_settings(**overrides: object) -> Settings:
+    values: dict[str, object] = {
+        "environment": "test",
+        "development_identity_enabled": True,
+    }
+    values.update(overrides)
+    return Settings(**values)  # type: ignore[arg-type]
+
+
+def _wiring_login(client: TestClient) -> str:
+    response = client.post(
+        "/api/v1/authentication/sessions",
+        json={"username": "atlas-demo", "password": "local-demo"},
+    )
+    assert response.status_code == 201
+    return str(response.headers["X-CSRF-Token"])
+
+
+def test_bounded_invocation_requires_authentication() -> None:
+    """Pass 25's audit found that this file's only HTTP-level denial coverage
+    (`test_bounded_invocation_api_is_csrf_protected_forbids_controls_and_is_minimized`) only
+    proves the CSRF-missing control, not that the real `authorize_connector_bounded_invocation_*`
+    permission dependencies fail closed for a genuinely unauthenticated or unprivileged caller.
+    This drives the list (read) and create routes with no session cookie and no development
+    identity at all -- proving `browser_session_subject` really runs on both.
+    """
+    with TestClient(create_app(Settings(environment="test"))) as client:
+        listed = client.get("/api/v1/connectors/bounded-invocations")
+        created = client.post(
+            "/api/v1/connectors/bounded-invocations",
+            json={
+                "schema_version": "atlas.connector-bounded-invocation-input.v1",
+                "source_authorization_id": "authorization.wiring-denied-0001",
+                "source_authorization_digest": "f" * 64,
+                "package_digest": "f" * 64,
+                "invocation_policy_id": "policy.wiring-denied-0001",
+                "invocation_policy_digest": "f" * 64,
+                "purpose": "Prove that a real unprivileged identity is denied, not faked.",
+                ACKNOWLEDGEMENT_FIELD: True,
+            },
+            headers={"Idempotency-Key": "bounded-invocation-wiring-denied-0001"},
+        )
+
+    for response in (listed, created):
+        assert response.status_code == 401
+        assert response.json()["code"] == "authentication_required"
+
+
+def test_bounded_invocation_requires_permission() -> None:
+    """A real, logged-in human subject with zero granted role permissions must still be denied
+    by the real `AuthorizationService` at both the list (read) and create routes, not by a faked
+    dependency override -- distinct from the CSRF-missing check the pre-existing test covers.
+    """
+    with TestClient(create_app(_wiring_settings(development_role_ids=()))) as client:
+        csrf = _wiring_login(client)
+        listed = client.get(
+            "/api/v1/connectors/bounded-invocations", headers={"X-CSRF-Token": csrf}
+        )
+        created = client.post(
+            "/api/v1/connectors/bounded-invocations",
+            json={
+                "schema_version": "atlas.connector-bounded-invocation-input.v1",
+                "source_authorization_id": "authorization.wiring-denied-0002",
+                "source_authorization_digest": "f" * 64,
+                "package_digest": "f" * 64,
+                "invocation_policy_id": "policy.wiring-denied-0002",
+                "invocation_policy_digest": "f" * 64,
+                "purpose": "Prove that a real unprivileged identity is denied, not faked.",
+                ACKNOWLEDGEMENT_FIELD: True,
+            },
+            headers={
+                "X-CSRF-Token": csrf,
+                "Idempotency-Key": "bounded-invocation-wiring-denied-0002",
+            },
+        )
+
+    for response in (listed, created):
+        assert response.status_code == 403
+        assert response.json()["code"] == "authorization_denied"

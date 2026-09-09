@@ -16,6 +16,7 @@ from test_package_acquisition import CollectingAuditSink
 from test_target_configuration import bind_target, target_configuration_fixture
 
 from atlas.api.app import create_app
+from atlas.core.config import Settings
 from atlas.modules.connectors.adapters.target_configuration_memory import (
     InMemoryConnectorTargetConfigurationRepository,
 )
@@ -220,3 +221,71 @@ def test_installed_mcp_api_lists_adds_and_retires_without_hard_delete(tmp_path: 
         "password",
     ):
         assert hidden not in rendered
+
+
+def _wiring_settings(**overrides: object) -> Settings:
+    values: dict[str, object] = {
+        "environment": "test",
+        "development_identity_enabled": True,
+    }
+    values.update(overrides)
+    return Settings(**values)  # type: ignore[arg-type]
+
+
+def _wiring_login(client: TestClient) -> str:
+    response = client.post(
+        "/api/v1/authentication/sessions",
+        json={"username": "atlas-demo", "password": "local-demo"},
+    )
+    assert response.status_code == 201
+    return str(response.headers["X-CSRF-Token"])
+
+
+def test_connector_instance_retirement_requires_authentication() -> None:
+    """Pass 25's audit found instance_creation.py's retirement endpoint, gated by the real
+    `authorize_connector_instance_retire` permission dependency, had no genuine 401/403 coverage
+    anywhere -- only this file's own happy-path test
+    (`test_installed_mcp_api_lists_adds_and_retires_without_hard_delete`) reaches it over real
+    HTTP. This proves `browser_session_subject` really runs on it with no session cookie and no
+    development identity at all.
+    """
+    with TestClient(create_app(Settings(environment="test"))) as client:
+        retired = client.post(
+            "/api/v1/connectors/instances/instance.wiring-denied-0001/retirements",
+            json={
+                "schema_version": "atlas.connector-instance-retirement-input.v1",
+                "expected_version": 1,
+                "reason": "Prove that a real unprivileged identity is denied, not faked.",
+                "acknowledged_retirement_preserves_history_and_performs_no_runtime_action": True,
+            },
+            headers={"Idempotency-Key": "instance-retirement-wiring-denied-0001"},
+        )
+
+    assert retired.status_code == 401
+    assert retired.json()["code"] == "authentication_required"
+
+
+def test_connector_instance_retirement_requires_permission() -> None:
+    """A real, logged-in human subject with zero granted role permissions must still be denied
+    by the real `AuthorizationService` at the retirement route, not by a faked dependency
+    override -- distinct from the CSRF-missing check this route's other coverage never even
+    exercises directly.
+    """
+    with TestClient(create_app(_wiring_settings(development_role_ids=()))) as client:
+        csrf = _wiring_login(client)
+        retired = client.post(
+            "/api/v1/connectors/instances/instance.wiring-denied-0002/retirements",
+            json={
+                "schema_version": "atlas.connector-instance-retirement-input.v1",
+                "expected_version": 1,
+                "reason": "Prove that a real unprivileged identity is denied, not faked.",
+                "acknowledged_retirement_preserves_history_and_performs_no_runtime_action": True,
+            },
+            headers={
+                "X-CSRF-Token": csrf,
+                "Idempotency-Key": "instance-retirement-wiring-denied-0002",
+            },
+        )
+
+    assert retired.status_code == 403
+    assert retired.json()["code"] == "authorization_denied"

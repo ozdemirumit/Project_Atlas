@@ -17,6 +17,7 @@ from test_package_installation import (
 
 from atlas.api.app import create_app
 from atlas.core.audit import AuditRecord
+from atlas.core.config import Settings
 from atlas.modules.connectors.adapters.instance_creation_memory import (
     InMemoryConnectorInstanceCreationPolicySource,
     InMemoryConnectorInstanceRepository,
@@ -395,3 +396,88 @@ def test_connector_instance_api_requires_csrf_and_minimizes_response(tmp_path: P
         "secret_reference",
     ):
         assert hidden not in rendered
+
+
+def _wiring_settings(**overrides: object) -> Settings:
+    values: dict[str, object] = {
+        "environment": "test",
+        "development_identity_enabled": True,
+    }
+    values.update(overrides)
+    return Settings(**values)  # type: ignore[arg-type]
+
+
+def _wiring_login(client: TestClient) -> str:
+    response = client.post(
+        "/api/v1/authentication/sessions",
+        json={"username": "atlas-demo", "password": "local-demo"},
+    )
+    assert response.status_code == 201
+    return str(response.headers["X-CSRF-Token"])
+
+
+def test_connector_instance_requires_authentication() -> None:
+    """Pass 25's audit found instance_creation.py's 25 endpoints (24 distinct `authorize_*`
+    permission dependencies, spread across 4 test files) had only CSRF-missing-only denial
+    coverage, never a genuine 401/403. This file already carries the real create-instance
+    happy-path HTTP test, so it takes `authorize_connector_instance_read` (list) and
+    `authorize_connector_instance_create` (create) -- the two permissions whose endpoints this
+    file's own happy-path coverage already exercises -- proving `browser_session_subject` really
+    runs on both when there is no session cookie and no development identity at all.
+    """
+    with TestClient(create_app(Settings(environment="test"))) as client:
+        listed = client.get("/api/v1/connectors/instances")
+        created = client.post(
+            "/api/v1/connectors/instances",
+            json={
+                "schema_version": "atlas.connector-instance-creation-input.v1",
+                "source_installation_receipt_id": "receipt.wiring-denied-0001",
+                "source_installation_receipt_digest": "f" * 64,
+                "package_digest": "f" * 64,
+                "instance_key": "wiring-denied-0001",
+                "display_name": "Wiring Denied Instance",
+                "instance_policy_id": "policy.wiring-denied-0001",
+                "instance_policy_digest": "f" * 64,
+                "purpose": "Prove that a real unprivileged identity is denied, not faked.",
+                "acknowledged_instance_is_disabled_and_grants_no_target_or_runtime_authority": True,
+            },
+            headers={"Idempotency-Key": "instance-wiring-denied-0001"},
+        )
+
+    for response in (listed, created):
+        assert response.status_code == 401
+        assert response.json()["code"] == "authentication_required"
+
+
+def test_connector_instance_requires_permission() -> None:
+    """A real, logged-in human subject with zero granted role permissions must still be denied
+    by the real `AuthorizationService` for both `authorize_connector_instance_read` (list) and
+    `authorize_connector_instance_create` (create), not by a faked dependency override --
+    distinct from the CSRF-missing check the pre-existing test covers.
+    """
+    with TestClient(create_app(_wiring_settings(development_role_ids=()))) as client:
+        csrf = _wiring_login(client)
+        listed = client.get("/api/v1/connectors/instances", headers={"X-CSRF-Token": csrf})
+        created = client.post(
+            "/api/v1/connectors/instances",
+            json={
+                "schema_version": "atlas.connector-instance-creation-input.v1",
+                "source_installation_receipt_id": "receipt.wiring-denied-0002",
+                "source_installation_receipt_digest": "f" * 64,
+                "package_digest": "f" * 64,
+                "instance_key": "wiring-denied-0002",
+                "display_name": "Wiring Denied Instance",
+                "instance_policy_id": "policy.wiring-denied-0002",
+                "instance_policy_digest": "f" * 64,
+                "purpose": "Prove that a real unprivileged identity is denied, not faked.",
+                "acknowledged_instance_is_disabled_and_grants_no_target_or_runtime_authority": True,
+            },
+            headers={
+                "X-CSRF-Token": csrf,
+                "Idempotency-Key": "instance-wiring-denied-0002",
+            },
+        )
+
+    for response in (listed, created):
+        assert response.status_code == 403
+        assert response.json()["code"] == "authorization_denied"

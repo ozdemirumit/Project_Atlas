@@ -22,6 +22,7 @@ from test_target_session import (
 )
 
 from atlas.api.app import create_app
+from atlas.core.config import Settings
 from atlas.core.persistence.models import (
     ConnectorInvocationEvidenceClaimModel,
     ConnectorInvocationEvidenceModel,
@@ -1104,3 +1105,82 @@ def test_invocation_evidence_api_forbids_content_and_returns_minimized_metadata(
         "signature",
     ):
         assert hidden not in option
+
+
+def _wiring_settings(**overrides: object) -> Settings:
+    values: dict[str, object] = {
+        "environment": "test",
+        "development_identity_enabled": True,
+    }
+    values.update(overrides)
+    return Settings(**values)  # type: ignore[arg-type]
+
+
+def _wiring_login(client: TestClient) -> str:
+    response = client.post(
+        "/api/v1/authentication/sessions",
+        json={"username": "atlas-demo", "password": "local-demo"},
+    )
+    assert response.status_code == 201
+    return str(response.headers["X-CSRF-Token"])
+
+
+def test_invocation_evidence_requires_authentication() -> None:
+    """Pass 25's audit found that this file's only HTTP-level denial coverage
+    (`test_invocation_evidence_api_forbids_content_and_returns_minimized_metadata`) only proves
+    the CSRF-missing control, not that the real `authorize_connector_invocation_evidence_*`
+    permission dependencies fail closed for a genuinely unauthenticated or unprivileged caller.
+    This drives the list (read) and create routes with no session cookie and no development
+    identity at all -- proving `browser_session_subject` really runs on both.
+    """
+    with TestClient(create_app(Settings(environment="test"))) as client:
+        listed = client.get("/api/v1/connectors/invocation-evidence")
+        created = client.post(
+            "/api/v1/connectors/invocation-evidence",
+            json={
+                "schema_version": "atlas.connector-invocation-evidence-input.v1",
+                "source_invocation_id": "invocation.wiring-denied-0001",
+                "source_invocation_digest": "f" * 64,
+                "ingestion_policy_id": "policy.wiring-denied-0001",
+                "ingestion_policy_digest": "f" * 64,
+                "purpose": "Prove that a real unprivileged identity is denied, not faked.",
+                ACKNOWLEDGEMENT_FIELD: True,
+            },
+            headers={"Idempotency-Key": "invocation-evidence-wiring-denied-0001"},
+        )
+
+    for response in (listed, created):
+        assert response.status_code == 401
+        assert response.json()["code"] == "authentication_required"
+
+
+def test_invocation_evidence_requires_permission() -> None:
+    """A real, logged-in human subject with zero granted role permissions must still be denied
+    by the real `AuthorizationService` at both the list (read) and create routes, not by a faked
+    dependency override -- distinct from the CSRF-missing check the pre-existing test covers.
+    """
+    with TestClient(create_app(_wiring_settings(development_role_ids=()))) as client:
+        csrf = _wiring_login(client)
+        listed = client.get(
+            "/api/v1/connectors/invocation-evidence", headers={"X-CSRF-Token": csrf}
+        )
+        created = client.post(
+            "/api/v1/connectors/invocation-evidence",
+            json={
+                "schema_version": "atlas.connector-invocation-evidence-input.v1",
+                "source_invocation_id": "invocation.wiring-denied-0002",
+                "source_invocation_digest": "f" * 64,
+                "ingestion_policy_id": "policy.wiring-denied-0002",
+                "ingestion_policy_digest": "f" * 64,
+                "purpose": "Prove that a real unprivileged identity is denied, not faked.",
+                ACKNOWLEDGEMENT_FIELD: True,
+            },
+            headers={
+                "X-CSRF-Token": csrf,
+                "Idempotency-Key": "invocation-evidence-wiring-denied-0002",
+            },
+        )
+
+    for response in (listed, created):
+        assert response.status_code == 403
+        assert response.json()["code"] == "authorization_denied"
