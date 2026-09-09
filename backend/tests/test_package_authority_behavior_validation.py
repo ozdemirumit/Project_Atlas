@@ -18,6 +18,7 @@ from test_package_schema_semantics_validation import (
 )
 
 from atlas.api.app import create_app
+from atlas.core.config import Settings
 from atlas.core.persistence.models import ConnectorPackageAuthorityBehaviorValidationModel
 from atlas.modules.connectors.adapters.authority_behavior_validation_memory import (
     InMemoryPackageAuthorityBehaviorValidationRepository,
@@ -347,3 +348,78 @@ def test_authority_behavior_api_requires_csrf_and_returns_minimized_report(
         key not in data
         for key in ("source", "source_code", "source_snippet", "destinations", "arguments")
     )
+
+
+def _settings(**overrides: object) -> Settings:
+    values: dict[str, object] = {
+        "environment": "test",
+        "development_identity_enabled": True,
+    }
+    values.update(overrides)
+    return Settings(**values)  # type: ignore[arg-type]
+
+
+def _login(client: TestClient) -> str:
+    response = client.post(
+        "/api/v1/authentication/sessions",
+        json={"username": "atlas-demo", "password": "local-demo"},
+    )
+    assert response.status_code == 201
+    return str(response.headers["X-CSRF-Token"])
+
+
+def test_authority_behavior_api_requires_authentication() -> None:
+    """No session cookie and no development identity: both the create and read routes must
+    fail closed at authentication, not merely at authorization -- proving `browser_session_subject`
+    really runs on each endpoint, not just a faked dependency override.
+    """
+    with TestClient(create_app(Settings(environment="test"))) as client:
+        created = client.post(
+            "/api/v1/connectors/package-authority-behavior-validations",
+            json={
+                "source_schema_semantics_validation_id": "validation.wiring-denied-0001",
+                "source_schema_semantics_validation_digest": "f" * 64,
+                "package_digest": "f" * 64,
+                "acknowledged_static_analysis_limitations": True,
+            },
+            headers={"Idempotency-Key": "authority-behavior-denied-0001"},
+        )
+        read = client.get(
+            "/api/v1/connectors/package-authority-behavior-validations/"
+            "authority-behavior-validation.wiring-denied-0001"
+        )
+
+    for response in (created, read):
+        assert response.status_code == 401
+        assert response.json()["code"] == "authentication_required"
+
+
+def test_authority_behavior_api_requires_permission() -> None:
+    """A real, logged-in human subject with zero granted role permissions must still be denied
+    by the real `AuthorizationService` at both the create and read permission checks, not by a
+    faked dependency override.
+    """
+    with TestClient(create_app(_settings(development_role_ids=()))) as client:
+        csrf = _login(client)
+        created = client.post(
+            "/api/v1/connectors/package-authority-behavior-validations",
+            json={
+                "source_schema_semantics_validation_id": "validation.wiring-denied-0001",
+                "source_schema_semantics_validation_digest": "f" * 64,
+                "package_digest": "f" * 64,
+                "acknowledged_static_analysis_limitations": True,
+            },
+            headers={
+                "X-CSRF-Token": csrf,
+                "Idempotency-Key": "authority-behavior-denied-0002",
+            },
+        )
+        read = client.get(
+            "/api/v1/connectors/package-authority-behavior-validations/"
+            "authority-behavior-validation.wiring-denied-0001",
+            headers={"X-CSRF-Token": csrf},
+        )
+
+    for response in (created, read):
+        assert response.status_code == 403
+        assert response.json()["code"] == "authorization_denied"
