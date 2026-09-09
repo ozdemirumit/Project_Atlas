@@ -176,3 +176,38 @@ def test_ai_model_lifecycle_is_reachable_through_the_api() -> None:
             )
             assert transitioned.status_code == 200
             assert transitioned.json()["data"]["stage"] == target_stage
+
+
+def test_pass11_wiring_requires_authentication() -> None:
+    """No session cookie and no development identity: the route must fail closed at
+    authentication, not merely at authorization -- proving `browser_session_subject` really runs
+    ahead of every permission dependency exercised below.
+    """
+    with TestClient(create_app(Settings(environment="test"))) as client:
+        response = client.post("/api/v1/ai/models/model.denied", json={})
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "authentication_required"
+
+
+def test_pass11_wiring_requires_permission() -> None:
+    """A real, logged-in human subject with zero granted role permissions must be denied by the
+    real `AuthorizationService`, not by a faked dependency override, for
+    `authorize_ai_model_lifecycle_administer` (``model_lifecycle.py``),
+    `authorize_knowledge_embedding_model_lifecycle_administer`
+    (``embedding_model_lifecycle.py``), and `authorize_rca_close` (``rca.py``). An empty body is
+    deliberately used throughout: FastAPI resolves each route's `Depends(authorize_...)`
+    sub-dependency before parsing the request body, so the denial fires before any placeholder,
+    intentionally-nonexistent path identifier or empty body would ever reach real service logic.
+    """
+    with TestClient(create_app(_settings(development_role_ids=()))) as client:
+        csrf = _login(client)
+        paths = (
+            "/api/v1/ai/models/model.denied",
+            "/api/v1/knowledge/embedding-models/model.denied",
+            "/api/v1/rca/cases/case.denied/close",
+        )
+        for path in paths:
+            response = client.post(path, json={}, headers={"X-CSRF-Token": csrf})
+            assert response.status_code == 403, f"POST {path}: {response.text}"
+            assert response.json()["code"] == "authorization_denied", path

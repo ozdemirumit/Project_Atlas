@@ -150,3 +150,44 @@ def test_knowledge_deletion_and_legal_hold_lifecycle_is_reachable_through_the_ap
         assert completed_data["state"] == "completed"
         assert completed_data["derived_artifacts_removed"] is True
         assert completed_data["tombstone_id"] == "tombstone.wiring-test-0001"
+
+
+def test_knowledge_feedback_review_expiry_and_deletion_wiring_requires_authentication() -> None:
+    """No session cookie and no development identity: the route must fail closed at
+    authentication, not merely at authorization -- proving `browser_session_subject` really runs
+    ahead of every permission dependency in this file's coverage.
+    """
+    with TestClient(create_app(Settings(environment="test"))) as client:
+        response = client.post("/api/v1/knowledge/feedback", json={})
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "authentication_required"
+
+
+def test_knowledge_feedback_review_expiry_and_deletion_wiring_requires_permission() -> None:
+    """A real, logged-in human subject with zero granted role permissions must be denied by the
+    real `AuthorizationService`, not by a faked dependency override, for every permission gating
+    this file's coverage across ``knowledge_feedback.py``, ``knowledge_review_expiry.py``, and
+    ``knowledge_deletion_legal_hold.py``. An empty body is deliberately used throughout: FastAPI
+    resolves each route's `Depends(authorize_...)` sub-dependency before parsing the request body,
+    so the denial fires before any placeholder, intentionally-nonexistent path identifier or empty
+    body would ever reach real service logic.
+    """
+    with TestClient(create_app(_settings(development_role_ids=()))) as client:
+        csrf = _login(client)
+        paths = (
+            "/api/v1/knowledge/feedback",
+            "/api/v1/knowledge/feedback/feedback.denied/triage",
+            "/api/v1/knowledge/feedback/feedback.denied/resolve",
+            "/api/v1/knowledge/review-expiry/item.denied",
+            "/api/v1/knowledge/review-expiry/item.denied/renew",
+            "/api/v1/knowledge/review-expiry/item.denied/owner-absence-resolution",
+            "/api/v1/knowledge/deletion/legal-holds",
+            "/api/v1/knowledge/deletion/legal-holds/hold.denied/release",
+            "/api/v1/knowledge/deletion/requests",
+            "/api/v1/knowledge/deletion/requests/deletion.denied/complete",
+        )
+        for path in paths:
+            response = client.post(path, json={}, headers={"X-CSRF-Token": csrf})
+            assert response.status_code == 403, f"POST {path}: {response.text}"
+            assert response.json()["code"] == "authorization_denied", path

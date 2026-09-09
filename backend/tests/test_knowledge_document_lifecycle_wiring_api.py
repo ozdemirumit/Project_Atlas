@@ -816,3 +816,54 @@ def test_document_knowledge_indexing_and_search_is_reachable_through_the_api() -
             "controller" in results[0]["excerpt"].lower()
             or "escalation" in results[0]["excerpt"].lower()
         )
+
+
+def test_knowledge_document_lifecycle_wiring_requires_authentication() -> None:
+    """No session cookie and no development identity: the route must fail closed at
+    authentication, not merely at authorization -- proving `browser_session_subject` really runs
+    ahead of every permission dependency in this file's coverage.
+    """
+    with TestClient(create_app(Settings(environment="test"))) as client:
+        response = client.post("/api/v1/knowledge/documents/drafts", json={})
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "authentication_required"
+
+
+def test_knowledge_document_lifecycle_wiring_requires_permission() -> None:
+    """A real, logged-in human subject with zero granted role permissions must be denied by the
+    real `AuthorizationService`, not by a faked dependency override, for every permission gating
+    this file's coverage: the six ``document_knowledge.py`` permissions and one representative
+    (create) endpoint for each of the eight ``operational_knowledge_*`` stage-chain route files.
+
+    FastAPI resolves each route's `Depends(authorize_...)` sub-dependency (which itself depends on
+    `browser_session_subject`) before parsing the request body -- see
+    `fastapi.dependencies.utils.solve_dependencies`, which walks `dependant.dependencies` and
+    calls each sub-dependency directly, well before `request_body_to_args` runs for the endpoint's
+    own body. So the denial below fires, and is asserted, before any of these placeholder,
+    intentionally-nonexistent path identifiers or empty bodies would ever reach real service
+    logic -- an empty body is deliberately used throughout to prove that.
+    """
+    with TestClient(create_app(_settings(development_role_ids=()))) as client:
+        csrf = _login(client)
+        paths = (
+            "/api/v1/knowledge/documents/drafts",
+            "/api/v1/knowledge/documents/reviews",
+            "/api/v1/knowledge/documents/approvals",
+            "/api/v1/knowledge/documents/publication-preparations",
+            "/api/v1/knowledge/documents/index",
+            "/api/v1/knowledge/documents/search",
+            "/api/v1/knowledge/review-requests/review-request.denied/final-resolutions",
+            "/api/v1/knowledge/final-resolutions/final-resolution.denied/publication-preparations",
+            "/api/v1/knowledge/publication-preparations/publication-preparation.denied/"
+            "source-materializations",
+            "/api/v1/knowledge/source-materializations/source-materialization.denied/chunk-sets",
+            "/api/v1/knowledge/chunk-sets/chunk-set.denied/embedding-sets",
+            "/api/v1/knowledge/embedding-sets/embedding-set.denied/index-stages",
+            "/api/v1/knowledge/index-stages/index-staging.denied/publications",
+            "/api/v1/knowledge/retrieval-publications/retrieval-publication.denied/retrievals",
+        )
+        for path in paths:
+            response = client.post(path, json={}, headers={"X-CSRF-Token": csrf})
+            assert response.status_code == 403, f"POST {path}: {response.text}"
+            assert response.json()["code"] == "authorization_denied", path
