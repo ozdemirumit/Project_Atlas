@@ -327,6 +327,171 @@ def test_protected_invocation_pipeline_is_reachable_through_the_api() -> None:
         assert outcome.presentation_id.startswith("protected-answer-presentation.")
 
 
+def test_protected_invocation_pipeline_requires_authentication() -> None:
+    """No session cookie and no development identity: each of the four protected-invocation
+    routes (model context, model invocation, draft adjudication, answer presentation) must fail
+    closed at authentication, not merely at authorization -- proving `browser_session_subject`
+    really runs on every stage, not just the first.
+    """
+    with TestClient(create_app(Settings(environment="test"))) as client:
+        context_response = client.post(
+            "/api/v1/ai/retrievals/retrieval.wiring-denied-0001/model-contexts",
+            json={
+                "retrieval_digest": "f" * 64,
+                "context_policy_id": "policy.wiring-denied-0001",
+                "context_policy_digest": "f" * 64,
+                "objective": "Prove denial for the protected model context stage.",
+                "purpose": "Prove that a real unprivileged identity is denied, not faked.",
+                "acknowledged_untrusted_intent": True,
+                "acknowledged_citation_boundaries": True,
+                "acknowledged_no_model_or_operational_authority": True,
+            },
+            headers={"Idempotency-Key": "wiring-denied-context-0001"},
+        )
+        invocation_response = client.post(
+            "/api/v1/ai/model-contexts/context.wiring-denied-0001/invocations",
+            json={
+                "context_digest": "f" * 64,
+                "invocation_policy_id": "policy.wiring-denied-0002",
+                "invocation_policy_digest": "f" * 64,
+                "purpose": "Prove that a real unprivileged identity is denied, not faked.",
+                "acknowledged_draft_is_untrusted": True,
+                "acknowledged_citations_and_unknowns_require_validation": True,
+                "acknowledged_no_answer_or_operational_authority": True,
+            },
+            headers={"Idempotency-Key": "wiring-denied-invocation-0001"},
+        )
+        adjudication_response = client.post(
+            "/api/v1/ai/model-invocations/invocation.wiring-denied-0001/adjudications",
+            json={
+                "invocation_digest": "f" * 64,
+                "adjudication_policy_id": "policy.wiring-denied-0003",
+                "adjudication_policy_digest": "f" * 64,
+                "purpose": "Prove that a real unprivileged identity is denied, not faked.",
+                "acknowledged_draft_is_untrusted": True,
+                "acknowledged_no_content_presentation": True,
+                "acknowledged_no_answer_or_operational_authority": True,
+            },
+            headers={"Idempotency-Key": "wiring-denied-adjudication-0001"},
+        )
+        presentation_response = client.post(
+            "/api/v1/ai/draft-adjudications/adjudication.wiring-denied-0001/presentations",
+            json={
+                "adjudication_digest": "f" * 64,
+                "presentation_policy_id": "policy.wiring-denied-0004",
+                "presentation_policy_digest": "f" * 64,
+                "purpose": "Prove that a real unprivileged identity is denied, not faked.",
+                "acknowledged_bounded_decision_support": True,
+                "acknowledged_citations_and_unknowns_are_material": True,
+                "acknowledged_no_recommendation_or_operational_authority": True,
+            },
+            headers={"Idempotency-Key": "wiring-denied-presentation-0001"},
+        )
+
+    for response in (
+        context_response,
+        invocation_response,
+        adjudication_response,
+        presentation_response,
+    ):
+        assert response.status_code == 401
+        assert response.json()["code"] == "authentication_required"
+
+
+def test_protected_invocation_pipeline_requires_permission() -> None:
+    """A real, logged-in human subject with zero granted role permissions must still be denied
+    by the real `AuthorizationService` at each of the eight protected-invocation create/read
+    permission checks (model context, model invocation, draft adjudication, answer
+    presentation), not by a faked dependency override.
+    """
+    with TestClient(create_app(_settings(development_role_ids=()))) as client:
+        csrf = _login(client)
+        headers = {"X-CSRF-Token": csrf}
+
+        context_created = client.post(
+            "/api/v1/ai/retrievals/retrieval.wiring-denied-0001/model-contexts",
+            json={
+                "retrieval_digest": "f" * 64,
+                "context_policy_id": "policy.wiring-denied-0001",
+                "context_policy_digest": "f" * 64,
+                "objective": "Prove denial for the protected model context stage.",
+                "purpose": "Prove that a real unprivileged identity is denied, not faked.",
+                "acknowledged_untrusted_intent": True,
+                "acknowledged_citation_boundaries": True,
+                "acknowledged_no_model_or_operational_authority": True,
+            },
+            headers={**headers, "Idempotency-Key": "wiring-denied-context-0002"},
+        )
+        context_read = client.get(
+            "/api/v1/ai/retrievals/retrieval.wiring-denied-0001/model-contexts/context.wiring-denied-0001",
+            headers=headers,
+        )
+        invocation_created = client.post(
+            "/api/v1/ai/model-contexts/context.wiring-denied-0001/invocations",
+            json={
+                "context_digest": "f" * 64,
+                "invocation_policy_id": "policy.wiring-denied-0002",
+                "invocation_policy_digest": "f" * 64,
+                "purpose": "Prove that a real unprivileged identity is denied, not faked.",
+                "acknowledged_draft_is_untrusted": True,
+                "acknowledged_citations_and_unknowns_require_validation": True,
+                "acknowledged_no_answer_or_operational_authority": True,
+            },
+            headers={**headers, "Idempotency-Key": "wiring-denied-invocation-0002"},
+        )
+        invocation_read = client.get(
+            "/api/v1/ai/model-contexts/context.wiring-denied-0001/invocations/invocation.wiring-denied-0001",
+            headers=headers,
+        )
+        adjudication_created = client.post(
+            "/api/v1/ai/model-invocations/invocation.wiring-denied-0001/adjudications",
+            json={
+                "invocation_digest": "f" * 64,
+                "adjudication_policy_id": "policy.wiring-denied-0003",
+                "adjudication_policy_digest": "f" * 64,
+                "purpose": "Prove that a real unprivileged identity is denied, not faked.",
+                "acknowledged_draft_is_untrusted": True,
+                "acknowledged_no_content_presentation": True,
+                "acknowledged_no_answer_or_operational_authority": True,
+            },
+            headers={**headers, "Idempotency-Key": "wiring-denied-adjudication-0002"},
+        )
+        adjudication_read = client.get(
+            "/api/v1/ai/model-invocations/invocation.wiring-denied-0001/adjudications/adjudication.wiring-denied-0001",
+            headers=headers,
+        )
+        presentation_created = client.post(
+            "/api/v1/ai/draft-adjudications/adjudication.wiring-denied-0001/presentations",
+            json={
+                "adjudication_digest": "f" * 64,
+                "presentation_policy_id": "policy.wiring-denied-0004",
+                "presentation_policy_digest": "f" * 64,
+                "purpose": "Prove that a real unprivileged identity is denied, not faked.",
+                "acknowledged_bounded_decision_support": True,
+                "acknowledged_citations_and_unknowns_are_material": True,
+                "acknowledged_no_recommendation_or_operational_authority": True,
+            },
+            headers={**headers, "Idempotency-Key": "wiring-denied-presentation-0002"},
+        )
+        presentation_read = client.get(
+            "/api/v1/ai/draft-adjudications/adjudication.wiring-denied-0001/presentations/presentation.wiring-denied-0001",
+            headers=headers,
+        )
+
+    for response in (
+        context_created,
+        context_read,
+        invocation_created,
+        invocation_read,
+        adjudication_created,
+        adjudication_read,
+        presentation_created,
+        presentation_read,
+    ):
+        assert response.status_code == 403
+        assert response.json()["code"] == "authorization_denied"
+
+
 def test_protected_model_context_creation_is_idempotent_through_the_api() -> None:
     """ATLAS-047's protected-invocation chain claims idempotency by (subject, idempotency key)
     before ever assembling anything (see GovernedProtectedModelContextService.create()'s claim
