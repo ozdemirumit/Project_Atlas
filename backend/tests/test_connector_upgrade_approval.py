@@ -16,6 +16,7 @@ from test_package_acquisition import CollectingAuditSink, FailingAuditSink
 from test_target_configuration import bind_target, target_configuration_fixture
 
 from atlas.api.app import create_app
+from atlas.core.config import Settings
 from atlas.modules.connectors.adapters.target_configuration_memory import (
     InMemoryConnectorTargetConfigurationRepository,
 )
@@ -3147,3 +3148,256 @@ def test_signed_evidence_receipt_creation_endpoint_is_reachable_through_the_api(
     assert (
         tampered_response.json()["code"] == "connector_upgrade_evidence_receipt_integrity_invalid"
     )
+
+
+def _wiring_settings(**overrides: object) -> Settings:
+    values: dict[str, object] = {
+        "environment": "test",
+        "development_identity_enabled": True,
+    }
+    values.update(overrides)
+    return Settings(**values)  # type: ignore[arg-type]
+
+
+def _wiring_login(client: TestClient) -> str:
+    response = client.post(
+        "/api/v1/authentication/sessions",
+        json={"username": "atlas-demo", "password": "local-demo"},
+    )
+    assert response.status_code == 201
+    return str(response.headers["X-CSRF-Token"])
+
+
+def _connector_upgrade_governance_requests() -> tuple[
+    tuple[str, str, str, dict[str, object] | None, bool], ...
+]:
+    """One representative request per distinct `authorize_connector_upgrade_*` permission that
+    lives in this file (17 of instance_creation.py's 20 distinct permissions -- the remaining
+    3, instance read/create/retire, are covered in test_instance_creation.py and
+    test_instance_lifecycle.py instead). Pass 25's audit found instance_creation.py had zero
+    genuine 401/403 coverage anywhere -- every prior denial test here only proved the
+    CSRF-missing control. Each of these 17 endpoints already has real happy-path HTTP coverage in
+    this file: see `test_upgrade_approval_api_is_no_store_and_hides_custody_metadata`,
+    `test_upgrade_approval_decision_api_restores_plan_record_and_hides_authority`,
+    `test_upgrade_approval_revalidation_api_is_no_store_and_hides_custody_metadata`,
+    `test_signed_evidence_receipt_creation_endpoint_is_reachable_through_the_api`,
+    `test_signing_provider_conformance_api_requires_csrf_and_exposes_no_signature`, and
+    `test_signing_provider_onboarding_readiness_api_is_no_store_and_exact_schema`.
+
+    Each tuple is ``(permission_name, method, path, json_body, needs_idempotency_key)``. Bodies
+    are structurally plausible placeholders only -- the record/candidate/request ids never
+    resolve to anything real, since the permission dependency denies before any handler looks
+    them up.
+    """
+    base = "/api/v1/connectors/instances"
+    record_id = "instance.wiring-denied-0001"
+    candidate_receipt_id = "receipt.wiring-denied-0001"
+    request_id = "request.wiring-denied-0001"
+    request_prefix = f"{base}/{record_id}/upgrade-approval-requests/{request_id}"
+    return (
+        (
+            "upgrade_approval_create",
+            "POST",
+            f"{base}/{record_id}/upgrade-plans/{candidate_receipt_id}/approval-requests",
+            {
+                "schema_version": "atlas.connector-upgrade-approval-create-input.v1",
+                "source_plan_digest": "f" * 64,
+                "purpose": "Prove that a real unprivileged identity is denied, not faked.",
+                "acknowledged_request_is_not_approval_and_grants_no_execution_authority": True,
+            },
+            True,
+        ),
+        (
+            "upgrade_approval_read",
+            "GET",
+            request_prefix,
+            None,
+            False,
+        ),
+        (
+            "upgrade_approval_decide",
+            "POST",
+            f"{request_prefix}/decisions",
+            {
+                "schema_version": "atlas.connector-upgrade-approval-decision-input.v1",
+                "expected_request_version": 1,
+                "expected_request_digest": "f" * 64,
+                "outcome": "approve",
+                "rationale": "Prove that a real unprivileged identity is denied, not faked.",
+                "acknowledged_decision_grants_no_execution_authority": True,
+            },
+            True,
+        ),
+        (
+            "upgrade_approval_revalidation_create",
+            "POST",
+            f"{request_prefix}/revalidations",
+            {
+                "schema_version": "atlas.connector-upgrade-approval-revalidation-input.v1",
+                "expected_request_digest": "f" * 64,
+                "expected_decision_digest": "f" * 64,
+                "purpose": "Prove that a real unprivileged identity is denied, not faked.",
+                "acknowledged_revalidation_grants_no_handoff_or_execution_authority": True,
+            },
+            True,
+        ),
+        (
+            "upgrade_approval_revalidation_read",
+            "GET",
+            f"{request_prefix}/revalidations/latest",
+            None,
+            False,
+        ),
+        (
+            "upgrade_change_context_create",
+            "POST",
+            f"{request_prefix}/change-context-drafts",
+            {
+                "schema_version": "atlas.connector-upgrade-change-context-draft-input.v1",
+                "expected_readiness_digest": "f" * 64,
+                "proposed_window_start": "2026-09-09T00:00:00Z",
+                "proposed_window_end": "2026-09-09T01:00:00Z",
+                "justification": "Prove that a real unprivileged identity is denied, not faked.",
+                (
+                    "acknowledged_draft_grants_no_dispatch_approval_handoff_or_execution_authority"
+                ): True,
+            },
+            True,
+        ),
+        (
+            "upgrade_change_context_read",
+            "GET",
+            f"{request_prefix}/change-context-drafts/latest",
+            None,
+            False,
+        ),
+        (
+            "upgrade_evidence_receipt_create",
+            "POST",
+            f"{request_prefix}/evidence-receipts",
+            {
+                "schema_version": "atlas.connector-upgrade-evidence-receipt-input.v1",
+                "expected_readiness_digest": "f" * 64,
+                "acknowledged_receipt_is_non_executable_and_grants_no_handoff_authority": True,
+            },
+            False,
+        ),
+        (
+            "upgrade_evidence_receipt_verify",
+            "POST",
+            f"{request_prefix}/evidence-receipts/verify",
+            {},
+            False,
+        ),
+        (
+            "upgrade_handoff_readiness_read",
+            "GET",
+            f"{request_prefix}/handoff-readiness",
+            None,
+            False,
+        ),
+        (
+            "upgrade_signed_evidence_receipt_create",
+            "POST",
+            f"{request_prefix}/signed-evidence-receipts",
+            {},
+            False,
+        ),
+        (
+            "upgrade_signed_evidence_receipt_verify",
+            "POST",
+            f"{request_prefix}/signed-evidence-receipts/verify",
+            {},
+            False,
+        ),
+        (
+            "upgrade_signing_key_trust_inventory_read",
+            "GET",
+            f"{base}/upgrade-evidence-signing-key-trust",
+            None,
+            False,
+        ),
+        (
+            "upgrade_signing_provider_conformance_create",
+            "POST",
+            f"{base}/upgrade-evidence-signing-provider-conformance-assessments",
+            {
+                "schema_version": ("atlas.connector-upgrade-signing-provider-conformance-input.v1"),
+                "acknowledged_diagnostic_grants_no_key_receipt_or_execution_authority": True,
+            },
+            True,
+        ),
+        (
+            "upgrade_signing_provider_conformance_read",
+            "GET",
+            f"{base}/upgrade-evidence-signing-provider-conformance-assessments/latest",
+            None,
+            False,
+        ),
+        (
+            "upgrade_signing_provider_onboarding_policy_provenance_diagnostic_read",
+            "GET",
+            f"{base}/upgrade-evidence-signing-provider-onboarding-policy-provenance-diagnostic",
+            None,
+            False,
+        ),
+        (
+            "upgrade_signing_provider_onboarding_readiness_read",
+            "GET",
+            f"{base}/upgrade-evidence-signing-provider-onboarding-readiness",
+            None,
+            False,
+        ),
+    )
+
+
+def test_connector_upgrade_governance_endpoints_require_authentication() -> None:
+    """No session cookie and no development identity: each of the 17 distinct
+    `authorize_connector_upgrade_*` permission dependencies that live in this file must fail
+    closed at authentication, not merely at authorization -- proving `browser_session_subject`
+    really runs on every one of them, not just the ones this file's CSRF-missing-only denial
+    checks happened to touch.
+    """
+    with TestClient(create_app(Settings(environment="test"))) as client:
+        responses: dict[str, Any] = {}
+        for index, (name, method, path, body, needs_idempotency) in enumerate(
+            _connector_upgrade_governance_requests()
+        ):
+            headers: dict[str, str] = {}
+            if needs_idempotency:
+                headers["Idempotency-Key"] = f"upgrade-governance-auth-{index:04d}"
+            responses[name] = (
+                client.get(path, headers=headers)
+                if method == "GET"
+                else client.post(path, json=body, headers=headers)
+            )
+
+    for name, response in responses.items():
+        assert response.status_code == 401, f"{name}: {response.text}"
+        assert response.json()["code"] == "authentication_required", name
+
+
+def test_connector_upgrade_governance_endpoints_require_permission() -> None:
+    """A real, logged-in human subject with zero granted role permissions must still be denied
+    by the real `AuthorizationService` at each of the 17 distinct `authorize_connector_upgrade_*`
+    permission dependencies that live in this file, not by a faked dependency override -- distinct
+    from the CSRF-missing checks this file's pre-existing denial tests cover.
+    """
+    with TestClient(create_app(_wiring_settings(development_role_ids=()))) as client:
+        csrf = _wiring_login(client)
+        responses: dict[str, Any] = {}
+        for index, (name, method, path, body, needs_idempotency) in enumerate(
+            _connector_upgrade_governance_requests()
+        ):
+            headers: dict[str, str] = {"X-CSRF-Token": csrf}
+            if needs_idempotency:
+                headers["Idempotency-Key"] = f"upgrade-governance-perm-{index:04d}"
+            responses[name] = (
+                client.get(path, headers=headers)
+                if method == "GET"
+                else client.post(path, json=body, headers=headers)
+            )
+
+    for name, response in responses.items():
+        assert response.status_code == 403, f"{name}: {response.text}"
+        assert response.json()["code"] == "authorization_denied", name
