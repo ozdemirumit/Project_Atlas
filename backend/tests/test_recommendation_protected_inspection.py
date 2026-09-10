@@ -396,6 +396,125 @@ async def test_http_boundary_places_secret_only_in_strict_httponly_cookie() -> N
     assert response.json()["data"]["protected_content_bytes_returned"] == 0
 
 
+async def test_recommendation_protected_inspection_requires_authentication() -> None:
+    """Pass 27 of this session's standing audit loop found this route's only real HTTP test
+    drives the allowed path; nothing proves the real `authorize_*` dependency actually rejects an
+    unauthenticated request. No session cookie: the lease-creation route must fail closed at
+    authentication, not merely at authorization.
+    """
+    service, _, assignment, policy, actor, _, _ = await inspection_fixture()
+    track, _queue, assignment_id, _reviewer, _status = assignment.track_assignments[0]
+    authorization = AuthorizationService(
+        permissions=(
+            PermissionDefinition(
+                permission_id=RECOMMENDATION_PROTECTED_INSPECTION_LEASE_CREATE,
+                description="Open exact assigned recommendation inspection lease.",
+            ),
+        ),
+        roles=(
+            RoleDefinition(
+                role_id=actor.role_ids[0],
+                version=1,
+                permissions=frozenset({RECOMMENDATION_PROTECTED_INSPECTION_LEASE_CREATE}),
+            ),
+        ),
+        assignments=(
+            RoleAssignment(
+                assignment_id="assignment.recommendation-inspection-denied-authn",
+                version=1,
+                subject_id=actor.subject_id,
+                role_id=actor.role_ids[0],
+                scope=recommendation_protected_inspection_scope(
+                    assignment.organization_id,
+                    "test",
+                    CapabilityClass.C2_DIAGNOSTIC,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+        ),
+        audit_sink=CollectingAuditSink(),
+    )
+    with TestClient(
+        create_app(
+            settings(),
+            identity_provider=BasicTestIdentityProvider(actor),
+            authorization_service=authorization,
+            recommendation_protected_inspection_service=service,
+        )
+    ) as client:
+        response = client.post(
+            f"/api/v1/recommendations/{assignment.recommendation_id}/protected-inspections/leases",
+            headers={"Idempotency-Key": "recommendation-protected-inspection-http-denied-0001"},
+            json={
+                "source_assignment_set_id": assignment.assignment_set_id,
+                "source_assignment_set_digest": assignment.canonical_digest,
+                "track_code": track,
+                "opaque_assignment_id": assignment_id,
+                "inspection_policy_id": policy.policy_id,
+                "inspection_policy_digest": policy.canonical_digest,
+                "purpose": "Prove that an unauthenticated request is denied, not faked.",
+                "acknowledged_exact_assignee_and_track_required": True,
+                "acknowledged_lease_returns_no_content_or_secret_in_json": True,
+                "acknowledged_no_decision_approval_or_operational_authority": True,
+            },
+        )
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "authentication_required"
+
+
+async def test_recommendation_protected_inspection_requires_permission() -> None:
+    """A real, logged-in human subject with zero granted role permissions must still be denied
+    by the real `AuthorizationService`, not by a faked dependency override.
+    """
+    service, _, assignment, policy, actor, _, _ = await inspection_fixture()
+    track, _queue, assignment_id, _reviewer, _status = assignment.track_assignments[0]
+    authorization = AuthorizationService(
+        permissions=(
+            PermissionDefinition(
+                permission_id=RECOMMENDATION_PROTECTED_INSPECTION_LEASE_CREATE,
+                description="Open exact assigned recommendation inspection lease.",
+            ),
+        ),
+        roles=(RoleDefinition(role_id=actor.role_ids[0], version=1, permissions=frozenset()),),
+        assignments=(),
+        audit_sink=CollectingAuditSink(),
+    )
+    with TestClient(
+        create_app(
+            settings(),
+            identity_provider=BasicTestIdentityProvider(actor),
+            authorization_service=authorization,
+            recommendation_protected_inspection_service=service,
+        )
+    ) as client:
+        login_response = login(client)
+        assert login_response.status_code == 201
+        csrf = client.cookies.get("atlas_csrf")
+        response = client.post(
+            f"/api/v1/recommendations/{assignment.recommendation_id}/protected-inspections/leases",
+            headers={
+                "Idempotency-Key": "recommendation-protected-inspection-http-denied-0002",
+                "X-CSRF-Token": str(csrf),
+            },
+            json={
+                "source_assignment_set_id": assignment.assignment_set_id,
+                "source_assignment_set_digest": assignment.canonical_digest,
+                "track_code": track,
+                "opaque_assignment_id": assignment_id,
+                "inspection_policy_id": policy.policy_id,
+                "inspection_policy_digest": policy.canonical_digest,
+                "purpose": "Prove that a real unprivileged identity is denied, not faked.",
+                "acknowledged_exact_assignee_and_track_required": True,
+                "acknowledged_lease_returns_no_content_or_secret_in_json": True,
+                "acknowledged_no_decision_approval_or_operational_authority": True,
+            },
+        )
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "authorization_denied"
+
+
 def test_openapi_registers_recommendation_protected_inspection_routes() -> None:
     with TestClient(create_app(Settings(environment="test"))) as client:
         paths = client.get("/openapi.json").json()["paths"]

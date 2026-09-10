@@ -24,6 +24,13 @@ from atlas.modules.approvals.domain.models import (
     ApprovalRecord,
     ApprovalState,
 )
+from atlas.modules.approvals.domain.stages import (
+    ApprovalStagePlan,
+    ApprovalStageRequirement,
+    StageDecisionRecord,
+    evaluate_plan_state,
+)
+from atlas.modules.itsm.domain.approval_sync import ItsmExternalApprovalBinding
 from atlas.modules.recommendations.domain.models import OptionState, RecommendationArtifact
 
 EVENT_PRODUCER = "approvals"
@@ -46,6 +53,7 @@ class ApprovalAccessContext:
     correlation_id: str
     decision_id: str
     requested_at: datetime
+    role_ids: tuple[str, ...] = ()
 
 
 class ApprovalOperationsError(Exception):
@@ -75,6 +83,7 @@ class ApprovalService:
         request: ApprovalCreateRequest,
         *,
         context: ApprovalAccessContext,
+        stage_requirements: tuple[ApprovalStageRequirement, ...] | None = None,
     ) -> ApprovalRecord:
         self._validate_context(context)
         recommendation = await self._load_recommendation(request)
@@ -108,6 +117,15 @@ class ApprovalService:
         )
         digest = self._digest_values(values)
         packet = ApprovalPacket(canonical_digest=digest, **values)
+        stage_plan: ApprovalStagePlan | None = None
+        if stage_requirements:
+            try:
+                stage_plan = ApprovalStagePlan(request_id=request_id, stages=stage_requirements)
+            except ValueError as exc:
+                raise ApprovalOperationsError(
+                    "approval_stage_plan_invalid",
+                    "The requested approval stage plan is invalid.",
+                ) from exc
         record = ApprovalRecord(
             request_id=request_id,
             version=1,
@@ -117,6 +135,7 @@ class ApprovalService:
             updated_at=context.requested_at,
             decisions=(),
             execution_authorized=False,
+            stage_plan=stage_plan,
         )
         await self._audit(
             context,
@@ -178,6 +197,7 @@ class ApprovalService:
         expected_version: int,
         idempotency_key: str,
         context: ApprovalAccessContext,
+        stage_id: str | None = None,
     ) -> ApprovalRecord:
         self._validate_context(context)
         if outcome is ApprovalOutcome.CANCEL:
@@ -196,6 +216,7 @@ class ApprovalService:
             rationale=rationale,
             expected_version=expected_version,
             reviewer_id=context.subject_id,
+            stage_id=stage_id,
         )
         async with self._lock:
             record = self._records.get(request_id)
@@ -209,6 +230,45 @@ class ApprovalService:
             record = await self._expire_if_needed(record, context)
             await self._revalidate(record, context)
             await self._validate_reviewer(record, context)
+            stage: ApprovalStageRequirement | None = None
+            if record.stage_plan is None:
+                if stage_id is not None:
+                    await self._deny(context, "approval_wrong_operation", request_id=request_id)
+                    raise ApprovalOperationsError(
+                        "approval_wrong_operation",
+                        "This request has no stage plan; stage_id must not be supplied.",
+                    )
+            else:
+                if outcome not in (ApprovalOutcome.APPROVE, ApprovalOutcome.REJECT):
+                    await self._deny(context, "approval_wrong_operation", request_id=request_id)
+                    raise ApprovalOperationsError(
+                        "approval_wrong_operation",
+                        "Staged approval requests only support approve or reject decisions"
+                        " at a stage.",
+                    )
+                if stage_id is None:
+                    await self._deny(context, "approval_stage_required", request_id=request_id)
+                    raise ApprovalOperationsError(
+                        "approval_stage_required",
+                        "A stage_id is required to decide a staged approval request.",
+                    )
+                stage = next(
+                    (item for item in record.stage_plan.stages if item.stage_id == stage_id),
+                    None,
+                )
+                if stage is None:
+                    await self._deny(context, "approval_stage_unknown", request_id=request_id)
+                    raise ApprovalOperationsError(
+                        "approval_stage_unknown",
+                        "The specified stage does not exist in this request's stage plan.",
+                    )
+                if stage.required_role not in context.role_ids:
+                    await self._deny(context, "approval_stage_role_mismatch", request_id=request_id)
+                    raise ApprovalOperationsError(
+                        "approval_stage_role_mismatch",
+                        "The current identity does not hold the role required for this"
+                        " approval stage.",
+                    )
             replay = self._idempotency.get((request_id, idempotency_key))
             if replay is not None:
                 if replay[0] != fingerprint:
@@ -228,18 +288,17 @@ class ApprovalService:
                     permission_id="approval.request.decide",
                 )
                 return record
-            if record.state is not ApprovalState.PENDING or record.version != expected_version:
+            valid_states = (
+                {ApprovalState.PENDING}
+                if record.stage_plan is None
+                else {ApprovalState.PENDING, ApprovalState.PARTIALLY_APPROVED}
+            )
+            if record.state not in valid_states or record.version != expected_version:
                 await self._deny(context, "approval_state_conflict", request_id=request_id)
                 raise ApprovalOperationsError(
                     "approval_state_conflict",
                     "The approval request changed before this decision.",
                 )
-            next_state = {
-                ApprovalOutcome.APPROVE: ApprovalState.APPROVED,
-                ApprovalOutcome.REJECT: ApprovalState.REJECTED,
-                ApprovalOutcome.NEEDS_EVIDENCE: ApprovalState.NEEDS_EVIDENCE,
-                ApprovalOutcome.DEFER: ApprovalState.DEFERRED,
-            }[outcome]
             decision = ApprovalDecision(
                 decision_id=f"approval_decision_{uuid4().hex}",
                 request_version=record.version,
@@ -248,13 +307,36 @@ class ApprovalService:
                 decided_at=context.requested_at,
                 rationale=rationale,
             )
-            updated = replace(
-                record,
-                version=record.version + 1,
-                state=next_state,
-                updated_at=context.requested_at,
-                decisions=(*record.decisions, decision),
-            )
+            if record.stage_plan is None or stage is None:
+                next_state = {
+                    ApprovalOutcome.APPROVE: ApprovalState.APPROVED,
+                    ApprovalOutcome.REJECT: ApprovalState.REJECTED,
+                    ApprovalOutcome.NEEDS_EVIDENCE: ApprovalState.NEEDS_EVIDENCE,
+                    ApprovalOutcome.DEFER: ApprovalState.DEFERRED,
+                }[outcome]
+                updated = replace(
+                    record,
+                    version=record.version + 1,
+                    state=next_state,
+                    updated_at=context.requested_at,
+                    decisions=(*record.decisions, decision),
+                )
+            else:
+                stage_decision = StageDecisionRecord(
+                    stage_id=stage.stage_id,
+                    reviewer_role=stage.required_role,
+                    decision=decision,
+                )
+                updated_stage_decisions = (*record.stage_decisions, stage_decision)
+                next_state = evaluate_plan_state(record.stage_plan, updated_stage_decisions)
+                updated = replace(
+                    record,
+                    version=record.version + 1,
+                    state=next_state,
+                    updated_at=context.requested_at,
+                    decisions=(*record.decisions, decision),
+                    stage_decisions=updated_stage_decisions,
+                )
             await self._audit(
                 context,
                 event_type="atlas.approval.decision.recorded",
@@ -265,7 +347,7 @@ class ApprovalService:
             )
             self._records[request_id] = updated
             self._idempotency[(request_id, idempotency_key)] = (fingerprint, updated)
-        if outcome is ApprovalOutcome.APPROVE:
+        if updated.state is ApprovalState.APPROVED:
             await self._publish_domain_event(
                 context,
                 event_type="ApprovalGranted",
@@ -458,6 +540,75 @@ class ApprovalService:
                     "expected_version": expected_version,
                 }
             )
+            self._idempotency[(request_id, idempotency_key)] = (fingerprint, updated)
+            return updated
+
+    async def attach_itsm_binding(
+        self,
+        request_id: str,
+        binding: ItsmExternalApprovalBinding,
+        *,
+        idempotency_key: str,
+        context: ApprovalAccessContext,
+    ) -> ApprovalRecord:
+        """ATLAS-036 SS12: admits one validated external ITSM approval as an input to this
+        request's own approval contract -- never a substitute for it. Only attachable while the
+        request is still `PENDING`, since an ITSM binding informs a not-yet-made decision."""
+        self._validate_context(context)
+        if binding.exact_plan_reference != request_id or binding.atlas_approval_reference not in (
+            None,
+            request_id,
+        ):
+            await self._deny(context, "approval_itsm_binding_mismatch", request_id=request_id)
+            raise ApprovalOperationsError(
+                "approval_itsm_binding_mismatch",
+                "The ITSM approval binding does not match this approval request.",
+            )
+        fingerprint = self._digest_values(
+            {
+                "operation": "attach_itsm_binding",
+                "binding_id": binding.binding_id,
+                "external_approval_record_id": binding.external_approval_record_id,
+                "external_record_version": binding.external_record_version,
+            }
+        )
+        async with self._lock:
+            record = self._records.get(request_id)
+            if not self._visible(record, context):
+                await self._deny(context, "approval_not_found", request_id=request_id)
+                raise ApprovalOperationsError(
+                    "approval_not_found",
+                    "The requested approval is unavailable.",
+                )
+            assert record is not None
+            record = await self._expire_if_needed(record, context)
+            replay = self._idempotency.get((request_id, idempotency_key))
+            if replay is not None:
+                if replay[0] != fingerprint:
+                    await self._deny(
+                        context, "approval_idempotency_conflict", request_id=request_id
+                    )
+                    raise ApprovalOperationsError(
+                        "approval_idempotency_conflict",
+                        "The ITSM binding attachment conflicts with an earlier request.",
+                    )
+                return replay[1]
+            if record.state is not ApprovalState.PENDING:
+                await self._deny(context, "approval_state_conflict", request_id=request_id)
+                raise ApprovalOperationsError(
+                    "approval_state_conflict",
+                    "The approval request changed before this ITSM binding could attach.",
+                )
+            updated = replace(record, itsm_binding=binding)
+            await self._audit(
+                context,
+                event_type="atlas.approval.itsm_binding.attached",
+                outcome="succeeded",
+                result_code="approval_itsm_binding_attached",
+                request_id=request_id,
+                permission_id="approval.request.decide",
+            )
+            self._records[request_id] = updated
             self._idempotency[(request_id, idempotency_key)] = (fingerprint, updated)
             return updated
 
@@ -760,6 +911,7 @@ class ApprovalService:
         rationale: str,
         expected_version: int,
         reviewer_id: str,
+        stage_id: str | None = None,
     ) -> str:
         return cls._digest_values(
             {
@@ -767,6 +919,7 @@ class ApprovalService:
                 "rationale": rationale,
                 "expected_version": expected_version,
                 "reviewer_id": reviewer_id,
+                "stage_id": stage_id,
             }
         )
 

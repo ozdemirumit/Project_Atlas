@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from atlas.api.app import create_app
 from atlas.core.audit import AuditRecord
+from atlas.core.capabilities import CapabilityClass
 from atlas.core.config import Settings
 from atlas.core.event_catalog import (
     AIRecommendationGenerated,
@@ -23,6 +24,16 @@ from atlas.modules.approvals.application.service import (
     ApprovalService,
 )
 from atlas.modules.approvals.domain.models import ApprovalOutcome, ApprovalState
+from atlas.modules.authorization.application.bootstrap import (
+    APPROVAL_REQUEST_DECIDE,
+    approval_scope,
+)
+from atlas.modules.authorization.application.service import AuthorizationService
+from atlas.modules.authorization.domain.models import (
+    PermissionDefinition,
+    RoleAssignment,
+    RoleDefinition,
+)
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
     AuthenticatedSubject,
@@ -1050,3 +1061,431 @@ def test_revoke_endpoint_is_reachable_over_http() -> None:
 
     assert already_revoked.status_code == 409, already_revoked.text
     assert already_revoked.json()["code"] == "approval_state_conflict"
+
+
+# --- Pass 27: multi-stage approval and ITSM external-approval binding wiring ----------------
+#
+# docs/037_Approval_Workflow.md's MVP-included scope lists "single and multi-stage human
+# approval states" and "ITSM change and window references" as included. The multi-stage
+# evaluator (`approvals/domain/stages.py`) and the ITSM approval-sync binding
+# (`itsm/domain/approval_sync.py`) were both real, independently tested domain code with zero
+# callers anywhere outside their own tests -- `ApprovalService` only ever did single-stage
+# approval, and no approval request could reference an external ITSM authority. Per the user's
+# explicit decision (pass 27 of this session's standing audit loop), both are now wired into the
+# real, live `ApprovalService`/`/api/v1/approvals` routes. These tests drive that wiring through
+# real HTTP calls, proving the staged decision flow and the ITSM binding are genuinely reachable
+# -- not just that the underlying domain functions work in isolation (that coverage already
+# existed and is unchanged).
+
+
+class MultiRoleIdentityProvider:
+    """Authenticates any of several named reviewers, each with their own role_ids -- used to
+    prove a multi-stage plan's per-stage role requirement is enforced by the real identity
+    presented over HTTP, not by test-only bookkeeping."""
+
+    def __init__(self, subjects: dict[str, AuthenticatedSubject]) -> None:
+        self._subjects = subjects
+
+    async def authenticate(
+        self, authentication_input: AuthenticationInput
+    ) -> AuthenticatedSubject | None:
+        if authentication_input.authorization_scheme != "basic":
+            return None
+        credential = authentication_input.credential
+        if credential is None:
+            return None
+        try:
+            decoded = base64.b64decode(credential, validate=True).decode()
+        except ValueError:
+            return None
+        username, separator, password = decoded.partition(":")
+        if separator != ":" or password != "correct-password":
+            return None
+        return self._subjects.get(username)
+
+
+def stage_reviewer(username: str, role_id: str) -> AuthenticatedSubject:
+    return replace(
+        subject(subject_id=f"subject.stage-reviewer.{username}"),
+        role_ids=(role_id,),
+    )
+
+
+def _reviewer_authorization(reviewer: AuthenticatedSubject, role_id: str) -> AuthorizationService:
+    """The real `authorize_approval_decide` route dependency is a separate RBAC permission
+    check the stage-role check in `ApprovalService.decide()` sits *behind*, not in place of --
+    the standard dev `RoleAssignment` is bound to one fixed subject_id, so a distinct stage
+    reviewer identity needs its own real `AuthorizationService` grant, the same pattern already
+    used by this session's `test_recommendation_protected_content.py`/
+    `test_recommendation_protected_inspection.py`. Only `APPROVAL_REQUEST_DECIDE` is needed --
+    these reviewers only ever call `POST /decisions` through their own client."""
+    return AuthorizationService(
+        permissions=(
+            PermissionDefinition(
+                permission_id=APPROVAL_REQUEST_DECIDE, description=APPROVAL_REQUEST_DECIDE
+            ),
+        ),
+        roles=(
+            RoleDefinition(
+                role_id=role_id, version=1, permissions=frozenset({APPROVAL_REQUEST_DECIDE})
+            ),
+        ),
+        assignments=(
+            RoleAssignment(
+                assignment_id="assignment.stage-reviewer-decide",
+                version=1,
+                subject_id=reviewer.subject_id,
+                role_id=role_id,
+                scope=approval_scope(
+                    reviewer.organization_id, "test", CapabilityClass.C2_DIAGNOSTIC
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+        ),
+        audit_sink=CollectingAuditSink(),
+    )
+
+
+def two_stage_requirements() -> list[dict[str, object]]:
+    return [
+        {
+            "stage_id": "stage.technical-review",
+            "required_role": "role.stage.technical-reviewer",
+            "required_scope_reference": "resource.approval.storage.synthetic",
+            "sequence": 1,
+            "quorum": 1,
+            "expiry_minutes": 60,
+        },
+        {
+            "stage_id": "stage.governance-review",
+            "required_role": "role.stage.governance-reviewer",
+            "required_scope_reference": "resource.approval.storage.synthetic",
+            "sequence": 2,
+            "quorum": 1,
+            "expiry_minutes": 60,
+        },
+    ]
+
+
+def create_staged_approval(
+    client: TestClient, stage_requirements: list[dict[str, object]]
+) -> dict[str, Any]:
+    recommendation = create_recommendation(client)
+    response = client.post(
+        f"/api/v1/approvals/storage/{TARGET}",
+        json={
+            "recommendation_id": recommendation["recommendation_id"],
+            "recommendation_version": recommendation["version"],
+            "option_id": recommendation["preferred_option_id"],
+            "purpose": "Review the bounded read-only diagnostic plan through a staged process.",
+            "expires_in_minutes": 45,
+            "stage_requirements": stage_requirements,
+        },
+    )
+    assert response.status_code == 201, response.text
+    return response.json()["data"]  # type: ignore[no-any-return]
+
+
+def _reviewer_client(
+    sink: CollectingAuditSink,
+    rca: RcaService,
+    recommendation: RecommendationService,
+    approval: ApprovalService,
+    reviewer: AuthenticatedSubject,
+) -> TestClient:
+    """A client authenticated as one specific stage reviewer -- creation of the underlying
+    recommendation/approval must NOT go through this client, since `MultiRoleIdentityProvider`
+    (unlike the default dev-identity provider) requires real basic-auth credentials on every
+    request and has no credential-less fallback."""
+    return TestClient(
+        create_app(
+            settings(),
+            audit_sink=sink,
+            identity_provider=MultiRoleIdentityProvider({"reviewer": reviewer}),
+            authorization_service=_reviewer_authorization(reviewer, reviewer.role_ids[0]),
+            rca_service=rca,
+            recommendation_service=recommendation,
+            approval_service=approval,
+        )
+    )
+
+
+def _login_as_reviewer(client: TestClient) -> str:
+    response = client.post(
+        "/api/v1/authentication/sessions",
+        json={"username": "reviewer", "password": "correct-password"},
+    )
+    assert response.status_code == 201, response.text
+    return str(response.headers["X-CSRF-Token"])
+
+
+def test_two_stage_sequential_approval_reaches_approved_only_after_both_stages() -> None:
+    sink = CollectingAuditSink()
+    rca, recommendation, approval = build_services(sink)
+    technical = stage_reviewer("technical", "role.stage.technical-reviewer")
+    governance = stage_reviewer("governance", "role.stage.governance-reviewer")
+
+    with TestClient(
+        create_app(
+            settings(),
+            audit_sink=sink,
+            rca_service=rca,
+            recommendation_service=recommendation,
+            approval_service=approval,
+        )
+    ) as client:
+        data = create_staged_approval(client, two_stage_requirements())
+    assert data["stage_plan"]["stages"][0]["stage_id"] == "stage.technical-review"
+    assert data["stage_decisions"] == []
+
+    with _reviewer_client(sink, rca, recommendation, approval, technical) as client:
+        csrf = _login_as_reviewer(client)
+        first = client.post(
+            f"/api/v1/approvals/{data['request_id']}/decisions",
+            json={
+                "outcome": "approve",
+                "rationale": "The technical review confirms this bounded plan is sound.",
+                "expected_version": data["version"],
+                "stage_id": "stage.technical-review",
+            },
+            headers={"Idempotency-Key": "approval-stage-decide-0001", "X-CSRF-Token": csrf},
+        )
+    assert first.status_code == 200, first.text
+    after_first = first.json()["data"]
+    assert after_first["state"] == "partially_approved"
+    assert len(after_first["stage_decisions"]) == 1
+    assert after_first["stage_decisions"][0]["stage_id"] == "stage.technical-review"
+
+    with _reviewer_client(sink, rca, recommendation, approval, governance) as client:
+        csrf = _login_as_reviewer(client)
+        second = client.post(
+            f"/api/v1/approvals/{data['request_id']}/decisions",
+            json={
+                "outcome": "approve",
+                "rationale": "Governance review confirms this bounded plan may proceed.",
+                "expected_version": after_first["version"],
+                "stage_id": "stage.governance-review",
+            },
+            headers={"Idempotency-Key": "approval-stage-decide-0002", "X-CSRF-Token": csrf},
+        )
+    assert second.status_code == 200, second.text
+    after_second = second.json()["data"]
+    assert after_second["state"] == "approved"
+    assert len(after_second["stage_decisions"]) == 2
+
+
+def test_rejection_at_a_reached_stage_stops_the_whole_plan() -> None:
+    sink = CollectingAuditSink()
+    rca, recommendation, approval = build_services(sink)
+    technical = stage_reviewer("technical", "role.stage.technical-reviewer")
+
+    with TestClient(
+        create_app(
+            settings(),
+            audit_sink=sink,
+            rca_service=rca,
+            recommendation_service=recommendation,
+            approval_service=approval,
+        )
+    ) as client:
+        data = create_staged_approval(client, two_stage_requirements())
+
+    with _reviewer_client(sink, rca, recommendation, approval, technical) as client:
+        csrf = _login_as_reviewer(client)
+        response = client.post(
+            f"/api/v1/approvals/{data['request_id']}/decisions",
+            json={
+                "outcome": "reject",
+                "rationale": "The technical review finds this bounded plan unsafe.",
+                "expected_version": data["version"],
+                "stage_id": "stage.technical-review",
+            },
+            headers={"Idempotency-Key": "approval-stage-reject-0001", "X-CSRF-Token": csrf},
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["state"] == "rejected"
+
+
+def test_stage_role_mismatch_is_denied_by_the_real_authorization_service() -> None:
+    sink = CollectingAuditSink()
+    rca, recommendation, approval = build_services(sink)
+    wrong_role_reviewer = stage_reviewer("outsider", "role.stage.governance-reviewer")
+
+    with TestClient(
+        create_app(
+            settings(),
+            audit_sink=sink,
+            rca_service=rca,
+            recommendation_service=recommendation,
+            approval_service=approval,
+        )
+    ) as client:
+        data = create_staged_approval(client, two_stage_requirements())
+
+    with _reviewer_client(sink, rca, recommendation, approval, wrong_role_reviewer) as client:
+        csrf = _login_as_reviewer(client)
+        response = client.post(
+            f"/api/v1/approvals/{data['request_id']}/decisions",
+            json={
+                "outcome": "approve",
+                "rationale": "An identity without the technical-reviewer role attempts this.",
+                "expected_version": data["version"],
+                "stage_id": "stage.technical-review",
+            },
+            headers={"Idempotency-Key": "approval-stage-wrong-role-0001", "X-CSRF-Token": csrf},
+        )
+
+    assert response.status_code == 403, response.text
+    assert response.json()["code"] == "approval_stage_role_mismatch"
+
+
+def test_missing_or_unknown_stage_id_is_rejected() -> None:
+    sink = CollectingAuditSink()
+    rca, recommendation, approval = build_services(sink)
+    technical = stage_reviewer("technical", "role.stage.technical-reviewer")
+
+    with TestClient(
+        create_app(
+            settings(),
+            audit_sink=sink,
+            rca_service=rca,
+            recommendation_service=recommendation,
+            approval_service=approval,
+        )
+    ) as client:
+        data = create_staged_approval(client, two_stage_requirements())
+
+    with _reviewer_client(sink, rca, recommendation, approval, technical) as client:
+        csrf = _login_as_reviewer(client)
+        missing = client.post(
+            f"/api/v1/approvals/{data['request_id']}/decisions",
+            json={
+                "outcome": "approve",
+                "rationale": "No stage_id is supplied for a staged request.",
+                "expected_version": data["version"],
+            },
+            headers={"Idempotency-Key": "approval-stage-missing-0001", "X-CSRF-Token": csrf},
+        )
+        unknown = client.post(
+            f"/api/v1/approvals/{data['request_id']}/decisions",
+            json={
+                "outcome": "approve",
+                "rationale": "An unknown stage_id is supplied.",
+                "expected_version": data["version"],
+                "stage_id": "stage.does-not-exist",
+            },
+            headers={"Idempotency-Key": "approval-stage-unknown-0001", "X-CSRF-Token": csrf},
+        )
+
+    assert missing.status_code == 422, missing.text
+    assert missing.json()["code"] == "approval_stage_required"
+    assert unknown.status_code == 422, unknown.text
+    assert unknown.json()["code"] == "approval_stage_unknown"
+
+
+def test_needs_evidence_and_defer_are_rejected_on_a_staged_request() -> None:
+    sink = CollectingAuditSink()
+    rca, recommendation, approval = build_services(sink)
+    technical = stage_reviewer("technical", "role.stage.technical-reviewer")
+
+    with TestClient(
+        create_app(
+            settings(),
+            audit_sink=sink,
+            rca_service=rca,
+            recommendation_service=recommendation,
+            approval_service=approval,
+        )
+    ) as client:
+        data = create_staged_approval(client, two_stage_requirements())
+
+    with _reviewer_client(sink, rca, recommendation, approval, technical) as client:
+        csrf = _login_as_reviewer(client)
+        for outcome in ("needs_evidence", "defer"):
+            response = client.post(
+                f"/api/v1/approvals/{data['request_id']}/decisions",
+                json={
+                    "outcome": outcome,
+                    "rationale": "Staged requests do not model this outcome at a stage.",
+                    "expected_version": data["version"],
+                    "stage_id": "stage.technical-review",
+                },
+                headers={
+                    "Idempotency-Key": f"approval-stage-{outcome}-0001",
+                    "X-CSRF-Token": csrf,
+                },
+            )
+            assert response.status_code == 422, response.text
+            assert response.json()["code"] == "approval_wrong_operation"
+
+
+def test_itsm_binding_attaches_to_a_pending_request_and_is_visible_on_read() -> None:
+    sink = CollectingAuditSink()
+    rca, recommendation, approval = build_services(sink)
+    with TestClient(
+        create_app(
+            settings(),
+            audit_sink=sink,
+            rca_service=rca,
+            recommendation_service=recommendation,
+            approval_service=approval,
+        )
+    ) as client:
+        data = create_approval(client)
+        attached = client.post(
+            f"/api/v1/approvals/{data['request_id']}/itsm-binding",
+            json={
+                "binding_id": "binding.itsm-change-0001",
+                "profile_id": "profile.itsm-change-default",
+                "external_approval_record_id": "change.CHG0012345",
+                "external_record_version": "version.3",
+                "eligible_approver_reference": "subject.itsm.change-manager",
+                "approving_subject_reference": "subject.itsm.change-manager",
+                "exact_plan_reference": data["request_id"],
+                "exact_plan_version": "version.1",
+            },
+            headers={"Idempotency-Key": "approval-itsm-binding-0001"},
+        )
+        assert attached.status_code == 200, attached.text
+        binding = attached.json()["data"]["itsm_binding"]
+        assert binding is not None
+        assert binding["binding_id"] == "binding.itsm-change-0001"
+        assert binding["atlas_approval_reference"] == data["request_id"]
+
+        read = client.get(f"/api/v1/approvals/{data['request_id']}")
+
+    assert read.status_code == 200
+    assert read.json()["data"]["itsm_binding"]["binding_id"] == "binding.itsm-change-0001"
+
+
+def test_itsm_binding_with_mismatched_plan_reference_is_rejected() -> None:
+    sink = CollectingAuditSink()
+    rca, recommendation, approval = build_services(sink)
+    with TestClient(
+        create_app(
+            settings(),
+            audit_sink=sink,
+            rca_service=rca,
+            recommendation_service=recommendation,
+            approval_service=approval,
+        )
+    ) as client:
+        data = create_approval(client)
+        mismatched = client.post(
+            f"/api/v1/approvals/{data['request_id']}/itsm-binding",
+            json={
+                "binding_id": "binding.itsm-change-0002",
+                "profile_id": "profile.itsm-change-default",
+                "external_approval_record_id": "change.CHG0012346",
+                "external_record_version": "version.1",
+                "eligible_approver_reference": "subject.itsm.change-manager",
+                "approving_subject_reference": "subject.itsm.change-manager",
+                "exact_plan_reference": "approval_some-other-request",
+                "exact_plan_version": "version.1",
+            },
+            headers={"Idempotency-Key": "approval-itsm-binding-0002"},
+        )
+
+    assert mismatched.status_code == 422, mismatched.text
+    assert mismatched.json()["code"] == "approval_itsm_binding_mismatch"

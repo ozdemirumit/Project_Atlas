@@ -42,14 +42,18 @@ class ItsmExternalApprovalBinding:
         for value in (
             self.binding_id,
             self.profile_id,
-            self.external_approval_record_id,
-            self.external_record_version,
             self.eligible_approver_reference,
             self.approving_subject_reference,
             self.exact_plan_reference,
             self.exact_plan_version,
         ):
             validate_stable_identifier(value, "ITSM external approval binding identifier")
+        # `external_approval_record_id`/`external_record_version` are the *external* ITSM
+        # system's own record identifiers (e.g. a ServiceNow change number like "CHG0012345"),
+        # not Atlas-internal identifiers -- they are not guaranteed to match Atlas's own
+        # lowercase-dotted identifier grammar, so only non-emptiness is required here.
+        if not self.external_approval_record_id.strip() or not self.external_record_version.strip():
+            raise ValueError("an ITSM external approval binding requires the external record id")
         if self.validated_at.tzinfo is None:
             raise ValueError("an ITSM external approval validation time must be timezone-aware")
         if self.approving_subject_reference != self.eligible_approver_reference:

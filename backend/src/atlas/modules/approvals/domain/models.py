@@ -3,6 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from atlas.modules.approvals.domain.stages import ApprovalStagePlan, StageDecisionRecord
+    from atlas.modules.itsm.domain.approval_sync import ItsmExternalApprovalBinding
 
 
 class ApprovalState(StrEnum):
@@ -160,6 +165,9 @@ class ApprovalRecord:
     updated_at: datetime
     decisions: tuple[ApprovalDecision, ...]
     execution_authorized: bool
+    stage_plan: ApprovalStagePlan | None = None
+    stage_decisions: tuple[StageDecisionRecord, ...] = ()
+    itsm_binding: ItsmExternalApprovalBinding | None = None
 
     def __post_init__(self) -> None:
         if self.version < 1:

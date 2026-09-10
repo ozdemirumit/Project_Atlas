@@ -11,6 +11,7 @@ from atlas.api.approval_schemas import (
     ApprovalRecordData,
     ApprovalResponse,
     ApprovalWithdrawalPayload,
+    ItsmExternalApprovalBindingInput,
 )
 from atlas.api.errors import AtlasError
 from atlas.api.schemas import ResponseMeta
@@ -29,9 +30,11 @@ from atlas.modules.approvals.application.service import (
     ApprovalService,
 )
 from atlas.modules.approvals.domain.models import ApprovalCreateRequest, ApprovalOutcome
+from atlas.modules.approvals.domain.stages import ApprovalStageRequirement
 from atlas.modules.authorization.application.bootstrap import approval_scope
 from atlas.modules.authorization.domain.models import AuthorizationDecision
 from atlas.modules.identity.domain.models import AuthenticatedSubject
+from atlas.modules.itsm.domain.approval_sync import ItsmExternalApprovalBinding
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
 
@@ -60,6 +63,7 @@ def _context(
         correlation_id=str(request.state.correlation_id),
         decision_id=decision.decision_id,
         requested_at=now,
+        role_ids=subject.role_ids,
     )
 
 
@@ -71,9 +75,17 @@ def _error(exc: ApprovalOperationsError) -> AtlasError:
         "approval_assurance_insufficient",
         "approval_separation_required",
         "approval_cancel_not_requester",
+        "approval_stage_role_mismatch",
     }:
         status = 403
-    elif exc.code in {"approval_rationale_required", "approval_wrong_operation"}:
+    elif exc.code in {
+        "approval_rationale_required",
+        "approval_wrong_operation",
+        "approval_itsm_binding_mismatch",
+        "approval_stage_required",
+        "approval_stage_unknown",
+        "approval_stage_plan_invalid",
+    }:
         status = 422
     else:
         status = 409
@@ -96,6 +108,27 @@ async def create_approval(
 ) -> ApprovalResponse:
     now = datetime.now(UTC)
     service: ApprovalService = request.app.state.approval_service
+    stage_requirements: tuple[ApprovalStageRequirement, ...] | None = None
+    if payload.stage_requirements is not None:
+        try:
+            stage_requirements = tuple(
+                ApprovalStageRequirement(
+                    stage_id=item.stage_id,
+                    required_role=item.required_role,
+                    required_scope_reference=item.required_scope_reference,
+                    sequence=item.sequence,
+                    quorum=item.quorum,
+                    expiry_minutes=item.expiry_minutes,
+                )
+                for item in payload.stage_requirements
+            )
+        except ValueError as exc:
+            raise AtlasError(
+                status=422,
+                code="approval_stage_plan_invalid",
+                title="Approval unavailable",
+                detail="The requested approval stage plan is invalid.",
+            ) from exc
     try:
         record = await service.create(
             ApprovalCreateRequest(
@@ -107,6 +140,7 @@ async def create_approval(
                 expires_in_minutes=payload.expires_in_minutes,
             ),
             context=_context(request, subject, decision, now, CapabilityClass.C2_DIAGNOSTIC),
+            stage_requirements=stage_requirements,
         )
     except ApprovalOperationsError as exc:
         raise _error(exc) from exc
@@ -164,6 +198,7 @@ async def decide_approval(
             expected_version=payload.expected_version,
             idempotency_key=idempotency_key,
             context=_context(request, subject, decision, now, CapabilityClass.C2_DIAGNOSTIC),
+            stage_id=payload.stage_id,
         )
     except ApprovalOperationsError as exc:
         raise _error(exc) from exc
@@ -226,6 +261,60 @@ async def revoke_approval(
             request_id,
             rationale=payload.rationale,
             expected_version=payload.expected_version,
+            idempotency_key=idempotency_key,
+            context=_context(request, subject, decision, now, CapabilityClass.C2_DIAGNOSTIC),
+        )
+    except ApprovalOperationsError as exc:
+        raise _error(exc) from exc
+    response.headers["Cache-Control"] = "no-store"
+    return ApprovalResponse(
+        data=ApprovalRecordData.from_domain(record),
+        meta=ResponseMeta(correlation_id=str(request.state.correlation_id), generated_at=now),
+    )
+
+
+@router.post("/{request_id}/itsm-binding", response_model=ApprovalResponse)
+async def attach_itsm_binding(
+    request_id: str,
+    payload: ItsmExternalApprovalBindingInput,
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+    decision: Annotated[AuthorizationDecision, Depends(authorize_approval_decide)],
+    idempotency_key: Annotated[
+        str,
+        Header(alias="Idempotency-Key", min_length=16, max_length=128),
+    ],
+) -> ApprovalResponse:
+    """ATLAS-036 SS12: admits one validated external ITSM approval as an input to this
+    request's own approval contract -- never a substitute for it (ATLAS-037 remains
+    authoritative). Only attachable while the request is still pending."""
+    now = datetime.now(UTC)
+    service: ApprovalService = request.app.state.approval_service
+    try:
+        binding = ItsmExternalApprovalBinding(
+            binding_id=payload.binding_id,
+            profile_id=payload.profile_id,
+            external_approval_record_id=payload.external_approval_record_id,
+            external_record_version=payload.external_record_version,
+            eligible_approver_reference=payload.eligible_approver_reference,
+            approving_subject_reference=payload.approving_subject_reference,
+            exact_plan_reference=payload.exact_plan_reference,
+            exact_plan_version=payload.exact_plan_version,
+            validated_at=now,
+            atlas_approval_reference=request_id,
+        )
+    except ValueError as exc:
+        raise AtlasError(
+            status=422,
+            code="approval_itsm_binding_invalid",
+            title="Approval unavailable",
+            detail="The requested ITSM approval binding is invalid.",
+        ) from exc
+    try:
+        record = await service.attach_itsm_binding(
+            request_id,
+            binding,
             idempotency_key=idempotency_key,
             context=_context(request, subject, decision, now, CapabilityClass.C2_DIAGNOSTIC),
         )
