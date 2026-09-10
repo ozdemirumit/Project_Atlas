@@ -253,3 +253,20 @@ def test_api_strict_empty_preview_authorization_and_non_executing_contract() -> 
             "/api/v1/platform/bootstrap-invalidation-preview", json=payload()
         )
     assert denied_response.status_code == 403 and "downstream_phase_ids" not in denied_response.text
+
+
+def test_api_requires_authentication() -> None:
+    """Pass 31 of this session's standing audit loop found this route's RBAC-403 denial was
+    already proven (`denied_response` above, via `development_role_ids=()`), but nothing proved a
+    genuinely unauthenticated request is rejected: the existing happy-path test above uses
+    `development_identity_enabled=True`, which auto-authenticates any credential-less request as
+    the development operator and never actually exercises real authentication failure. A fresh
+    client with no login at all, against an app with development identity disabled, must reach a
+    genuine 401, not the dev-identity fallback.
+    """
+    app = create_app(Settings(environment="test"))
+    with TestClient(app) as client:
+        response = client.post("/api/v1/platform/bootstrap-invalidation-preview", json=payload())
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "authentication_required"

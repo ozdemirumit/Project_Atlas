@@ -895,3 +895,137 @@ def test_protected_inspection_api_sets_http_only_cookie_and_returns_minimized_me
         "idempotency_digest",
     ):
         assert hidden not in content_data
+
+
+def _protected_review_chain_requests(
+    client: TestClient, *, key_suffix: str, csrf_token: str | None = None
+) -> tuple[Any, ...]:
+    """Issue one create+read request against every `authorize_*`-gated endpoint across the
+    protected-inspection lease chain (protected inspections, review findings, finding
+    presentations, and track review decisions) using dummy but validly-shaped identifiers. The
+    resources never exist, so every response is decided at authentication/authorization, before
+    any route body or service lookup runs.
+    """
+    purpose = "Prove that this request is denied by a real dependency, not faked."
+    headers: dict[str, str] = {}
+    if csrf_token is not None:
+        headers["X-CSRF-Token"] = csrf_token
+    lease_endpoint = "/api/v1/knowledge/protected-inspections/leases"
+    findings_prefix = (
+        f"{lease_endpoint}/lease.chain-denied-0001/presentations/presentation.chain-denied-0001"
+    )
+    finding_presentations_prefix = (
+        f"{findings_prefix}/findings/finding-packet.chain-denied-0001/presentations"
+    )
+    decisions_prefix = (
+        f"{finding_presentations_prefix}/finding-presentation.chain-denied-0001/decisions"
+    )
+    return (
+        client.post(
+            lease_endpoint,
+            json={
+                "schema_version": "atlas.operational-knowledge-protected-inspection-input.v1",
+                "source_assignment_set_id": "assignment-set.chain-denied-0001",
+                "source_assignment_set_digest": "f" * 64,
+                "track_code": "review-track.domain",
+                "inspection_policy_id": "policy.chain-denied-0001",
+                "inspection_policy_digest": "f" * 64,
+                "purpose": purpose,
+                ACKNOWLEDGEMENT_FIELD: True,
+            },
+            headers={**headers, "Idempotency-Key": f"protected-inspection-{key_suffix}"},
+        ),
+        client.get(f"{lease_endpoint}/lease.chain-denied-0001"),
+        client.post(
+            f"{findings_prefix}/findings",
+            json={
+                "schema_version": "atlas.operational-knowledge-review-finding-input.v1",
+                "source_presentation_digest": "f" * 64,
+                "finding_policy_id": "policy.chain-denied-0001",
+                "finding_policy_digest": "f" * 64,
+                "findings": [
+                    {
+                        "category_code": "finding-category.accuracy",
+                        "severity_code": "finding-severity.material",
+                        "summary": "Denial coverage summary.",
+                        "detail": "Denial coverage detail text for this finding item.",
+                    }
+                ],
+                "purpose": purpose,
+                "acknowledged_evidence_was_reviewed": True,
+                "acknowledged_finding_is_not_a_review_decision": True,
+            },
+            headers={**headers, "Idempotency-Key": f"review-finding-{key_suffix}"},
+        ),
+        client.get(f"{findings_prefix}/findings/finding-packet.chain-denied-0001"),
+        client.post(
+            finding_presentations_prefix,
+            json={
+                "schema_version": "atlas.operational-knowledge-finding-presentation-input.v1",
+                "source_finding_digest": "f" * 64,
+                "presentation_policy_id": "policy.chain-denied-0001",
+                "presentation_policy_digest": "f" * 64,
+                "purpose": purpose,
+                "acknowledged_findings_are_sensitive": True,
+                "acknowledged_finding_presentation_is_not_a_review_decision": True,
+            },
+            headers={**headers, "Idempotency-Key": f"finding-presentation-{key_suffix}"},
+        ),
+        client.get(f"{finding_presentations_prefix}/finding-presentation.chain-denied-0001"),
+        client.post(
+            decisions_prefix,
+            json={
+                "schema_version": "atlas.operational-knowledge-track-review-decision-input.v1",
+                "source_finding_presentation_digest": "f" * 64,
+                "decision_policy_id": "policy.chain-denied-0001",
+                "decision_policy_digest": "f" * 64,
+                "disposition_code": "review-disposition.changes-required",
+                "basis_codes": ["review-basis.technical-accuracy"],
+                "purpose": purpose,
+                "acknowledged_exact_findings_reviewed": True,
+                "acknowledged_human_track_decision": True,
+                "acknowledged_no_approval_or_operational_authority": True,
+            },
+            headers={**headers, "Idempotency-Key": f"review-decision-{key_suffix}"},
+        ),
+        client.get(f"{decisions_prefix}/decision.chain-denied-0001"),
+    )
+
+
+def test_protected_review_chain_apis_require_authentication() -> None:
+    """Pass 31 of this session's standing audit loop found `finding_presentations.py`,
+    `protected_inspections.py`, `review_decisions.py`, and `review_findings.py` each had only one
+    real HTTP test proving the allowed path (`test_protected_inspection_api_sets_http_only_...`);
+    nothing proved the real `browser_session_subject`/`authorize_*` dependencies actually reject a
+    genuinely unauthenticated request. No session cookie and development identity disabled: every
+    create/read endpoint across the whole lease -> review-finding -> finding-presentation ->
+    review-decision chain must fail closed at authentication, not merely at authorization.
+    """
+    with TestClient(create_app(settings(development_identity_enabled=False))) as client:
+        responses = _protected_review_chain_requests(client, key_suffix="chain-denied-0001")
+
+    for response in responses:
+        assert response.status_code == 401, response.text
+        assert response.json()["code"] == "authentication_required"
+
+
+def test_protected_review_chain_apis_require_permission() -> None:
+    """A real, logged-in human subject with zero granted role permissions must still be denied by
+    the real `AuthorizationService` at every create/read permission check across the whole lease ->
+    review-finding -> finding-presentation -> review-decision chain, not by a faked dependency
+    override.
+    """
+    with TestClient(create_app(settings(development_role_ids=()))) as client:
+        login_response = client.post(
+            "/api/v1/authentication/sessions",
+            json={"username": "atlas-demo", "password": "local-demo"},
+        )
+        assert login_response.status_code == 201, login_response.text
+        csrf_token = login_response.headers["X-CSRF-Token"]
+        responses = _protected_review_chain_requests(
+            client, key_suffix="chain-denied-0002", csrf_token=csrf_token
+        )
+
+    for response in responses:
+        assert response.status_code == 403, response.text
+        assert response.json()["code"] == "authorization_denied"

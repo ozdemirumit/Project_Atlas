@@ -11,6 +11,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from httpx import Response
 from sqlalchemy import Table, UniqueConstraint, delete
 from sqlalchemy.ext.asyncio import create_async_engine
 from test_browser_sessions import BasicTestIdentityProvider, login, settings
@@ -949,6 +950,78 @@ def test_runtime_activation_api_is_csrf_protected_and_minimized(tmp_path: Path) 
         "egress_policy",
     ):
         assert hidden not in rendered and hidden not in options.text.lower()
+
+
+def _runtime_activation_create_and_read_requests(
+    client: TestClient, *, key_suffix: str, csrf_token: str | None = None
+) -> tuple[Response, Response]:
+    """Issue one create and one read request against `runtime_activations.py`'s create/read
+    `authorize_*`-gated endpoints using a dummy but validly-shaped activation. The resource never
+    exists, so both responses are decided at authentication/authorization, before any route body
+    or service lookup runs.
+    """
+    headers: dict[str, str] = {}
+    if csrf_token is not None:
+        headers["X-CSRF-Token"] = csrf_token
+    endpoint = "/api/v1/connectors/runtime-activations"
+    return (
+        client.post(
+            endpoint,
+            json={
+                "schema_version": "atlas.connector-runtime-activation-input.v1",
+                "source_brokerage_authorization_id": "brokerage.chain-denied-0001",
+                "source_brokerage_authorization_digest": "f" * 64,
+                "package_digest": "f" * 64,
+                "activation_profile_id": "profile.chain-denied-0001",
+                "activation_profile_digest": "f" * 64,
+                "activation_policy_id": "policy.chain-denied-0001",
+                "activation_policy_digest": "f" * 64,
+                "purpose": "Prove that this request is denied by a real dependency, not faked.",
+                ACKNOWLEDGEMENT_FIELD: True,
+            },
+            headers={**headers, "Idempotency-Key": f"runtime-activation-{key_suffix}"},
+        ),
+        client.get(f"{endpoint}/activation.chain-denied-0001"),
+    )
+
+
+def test_runtime_activation_create_and_read_apis_require_authentication() -> None:
+    """Pass 31 of this session's standing audit loop found this route's only real HTTP tests
+    (`test_runtime_activation_api_is_csrf_protected_and_minimized`) drive the allowed path plus a
+    CSRF-403 and a forbidden-field 422 check; nothing proved the real `browser_session_subject`/
+    `authorize_connector_runtime_activation_create`/`_read` dependencies actually reject a
+    genuinely unauthenticated request. No session cookie and development identity disabled: both
+    the create and read routes must fail closed at authentication, not merely at authorization.
+    """
+    with TestClient(create_app(settings(development_identity_enabled=False))) as client:
+        responses = _runtime_activation_create_and_read_requests(
+            client, key_suffix="chain-denied-0001"
+        )
+
+    for response in responses:
+        assert response.status_code == 401, response.text
+        assert response.json()["code"] == "authentication_required"
+
+
+def test_runtime_activation_create_and_read_apis_require_permission() -> None:
+    """A real, logged-in human subject with zero granted role permissions must still be denied by
+    the real `AuthorizationService` at both the create and read permission checks, not by a faked
+    dependency override.
+    """
+    with TestClient(create_app(settings(development_role_ids=()))) as client:
+        login_response = client.post(
+            "/api/v1/authentication/sessions",
+            json={"username": "atlas-demo", "password": "local-demo"},
+        )
+        assert login_response.status_code == 201, login_response.text
+        csrf_token = login_response.headers["X-CSRF-Token"]
+        responses = _runtime_activation_create_and_read_requests(
+            client, key_suffix="chain-denied-0002", csrf_token=csrf_token
+        )
+
+    for response in responses:
+        assert response.status_code == 403, response.text
+        assert response.json()["code"] == "authorization_denied"
 
 
 @pytest.mark.asyncio

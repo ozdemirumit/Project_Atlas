@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import create_async_engine
-from test_browser_sessions import BasicTestIdentityProvider, login, settings
+from test_browser_sessions import BasicTestIdentityProvider, login, settings, subject
 from test_package_acquisition import CollectingAuditSink
 from test_runtime_activation import FailSecondAuditSink
 from test_secret_brokerage import RuntimeFixture
@@ -22,6 +22,7 @@ from test_target_session import (
 )
 
 from atlas.api.app import create_app
+from atlas.core.config import Settings
 from atlas.core.persistence.models import ConnectorInvocationAuthorizationModel
 from atlas.modules.connectors.adapters.invocation_authorization_memory import (
     DevelopmentConnectorInvocationEvidenceStore,
@@ -779,3 +780,55 @@ def test_invocation_authorization_api_is_csrf_protected_and_minimized(tmp_path: 
         "authorization_policy_id",
     ):
         assert hidden not in rendered
+
+
+def test_invocation_authorization_api_requires_authentication_and_permission() -> None:
+    """Pass 31 of this session's standing audit loop found this file's only denial coverage was
+    a missing-CSRF check on create and a forbidden-field 422 -- a real unauthenticated request
+    and a real, logged-in identity with zero granted permissions were never proven denied on any
+    of the four routes (list, options, create, read).
+    """
+    endpoint = "/api/v1/connectors/invocation-authorizations"
+    with TestClient(create_app(Settings(environment="test"))) as client:
+        unauthenticated_list = client.get(endpoint)
+        unauthenticated_options = client.get(
+            f"{endpoint}/options",
+            params={"source_target_session_verification_id": "verification.wiring-denied"},
+        )
+        unauthenticated_create = client.post(
+            endpoint,
+            json={"schema_version": "atlas.connector-invocation-authorization-input.v1"},
+            headers={"Idempotency-Key": "invocation-auth-unauth-0001"},
+        )
+        unauthenticated_read = client.get(f"{endpoint}/authorization.wiring-denied")
+    for response in (
+        unauthenticated_list,
+        unauthenticated_options,
+        unauthenticated_create,
+        unauthenticated_read,
+    ):
+        assert response.status_code == 401, response.text
+        assert response.json()["code"] == "authentication_required"
+
+    with TestClient(
+        create_app(
+            settings(),
+            identity_provider=BasicTestIdentityProvider(replace(subject(), role_ids=())),
+        )
+    ) as client:
+        csrf = login(client).headers["X-CSRF-Token"]
+        list_denied = client.get(endpoint)
+        options_denied = client.get(
+            f"{endpoint}/options",
+            params={"source_target_session_verification_id": "verification.wiring-denied"},
+        )
+        create_denied = client.post(
+            endpoint,
+            json={"schema_version": "atlas.connector-invocation-authorization-input.v1"},
+            headers={"X-CSRF-Token": csrf, "Idempotency-Key": "invocation-auth-denied-0001"},
+        )
+        read_denied = client.get(f"{endpoint}/authorization.wiring-denied")
+
+    for response in (list_denied, options_denied, create_denied, read_denied):
+        assert response.status_code == 403, response.text
+        assert response.json()["code"] == "authorization_denied"

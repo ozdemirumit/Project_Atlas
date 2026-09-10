@@ -7,7 +7,7 @@ from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
-from test_browser_sessions import BasicTestIdentityProvider, login, settings
+from test_browser_sessions import BasicTestIdentityProvider, login, settings, subject
 from test_package_acquisition import CollectingAuditSink, FailingAuditSink
 from test_package_supply_chain_inventory import (
     inventory,
@@ -16,6 +16,7 @@ from test_package_supply_chain_inventory import (
 )
 
 from atlas.api.app import create_app
+from atlas.core.config import Settings
 from atlas.core.persistence.models import ConnectorPackageContentPolicyScanModel
 from atlas.modules.connectors.adapters.acquisition_archive_memory import (
     InMemoryAcquiredPackagePublisher,
@@ -408,3 +409,40 @@ def test_failed_content_policy_api_never_returns_matched_value(tmp_path: Path) -
     assert created.json()["data"]["outcome"] == "failed"
     assert created.json()["data"]["promotion_blocked"] is True
     assert matched_value not in created.text
+
+
+def test_content_policy_api_requires_authentication_and_permission() -> None:
+    """Pass 31 of this session's standing audit loop found this file's only denial coverage was
+    a missing-CSRF check on create -- a real unauthenticated request and a real, logged-in
+    identity with zero granted permissions were never proven denied on either the create or the
+    read endpoint.
+    """
+    endpoint = "/api/v1/connectors/package-content-policy-scans"
+    with TestClient(create_app(Settings(environment="test"))) as client:
+        unauthenticated_create = client.post(
+            endpoint,
+            json={"schema_version": "atlas.connector-package-content-policy-scan-request.v1"},
+            headers={"Idempotency-Key": "content-policy-unauth-0001"},
+        )
+        unauthenticated_read = client.get(f"{endpoint}/scan.wiring-denied")
+    for response in (unauthenticated_create, unauthenticated_read):
+        assert response.status_code == 401, response.text
+        assert response.json()["code"] == "authentication_required"
+
+    with TestClient(
+        create_app(
+            settings(),
+            identity_provider=BasicTestIdentityProvider(replace(subject(), role_ids=())),
+        )
+    ) as client:
+        csrf = login(client).headers["X-CSRF-Token"]
+        create_denied = client.post(
+            endpoint,
+            json={"schema_version": "atlas.connector-package-content-policy-scan-request.v1"},
+            headers={"X-CSRF-Token": csrf, "Idempotency-Key": "content-policy-denied-0001"},
+        )
+        read_denied = client.get(f"{endpoint}/scan.wiring-denied")
+
+    for response in (create_denied, read_denied):
+        assert response.status_code == 403, response.text
+        assert response.json()["code"] == "authorization_denied"

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import timedelta
 from pathlib import Path
 from typing import cast
@@ -9,7 +9,7 @@ from typing import cast
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from test_browser_sessions import BasicTestIdentityProvider, login, settings
+from test_browser_sessions import BasicTestIdentityProvider, login, settings, subject
 from test_package_acquisition import CollectingAuditSink, FailingAuditSink
 from test_package_final_validation import (
     final_fixture,
@@ -18,6 +18,7 @@ from test_package_final_validation import (
 )
 
 from atlas.api.app import create_app
+from atlas.core.config import Settings
 from atlas.modules.connectors.adapters.package_approval_memory import (
     InMemoryPackageApprovalPolicySource,
     InMemoryPackageApprovalRepository,
@@ -393,3 +394,55 @@ def test_package_approval_decision_endpoint_is_reachable_through_the_api(tmp_pat
     assert data["connector_approved"] is True
     assert data["eligible_for_publisher_governance"] is True
     assert data["promotion_blocked"] is False
+
+
+def test_package_approval_api_requires_authentication_and_permission() -> None:
+    """Pass 31 of this session's standing audit loop found this file's only denial coverage was
+    a missing-CSRF check on create and a separation-of-duties 403 on decide -- a real
+    unauthenticated request and a real, logged-in identity with zero granted permissions were
+    never proven denied on any of the three routes (create, read, decide). The decide case here
+    is distinct from ``test_package_approval_decision_endpoint_is_reachable_through_the_api``
+    above: that test proves the *business rule* (a requester cannot decide their own request,
+    ``package_approval_separation_required``); this test proves the *RBAC* check
+    (``authorize_connector_package_approval_decide``) denies an identity with no granted
+    permissions at all, via ``authorization_denied``.
+    """
+    endpoint = "/api/v1/connectors/package-approval-requests"
+    with TestClient(create_app(Settings(environment="test"))) as client:
+        unauthenticated_create = client.post(
+            endpoint,
+            json={"schema_version": "atlas.connector-package-approval-request-input.v1"},
+            headers={"Idempotency-Key": "package-approval-unauth-0001"},
+        )
+        unauthenticated_read = client.get(f"{endpoint}/request.wiring-denied")
+        unauthenticated_decide = client.post(
+            f"{endpoint}/request.wiring-denied/decisions",
+            json={"schema_version": "atlas.connector-package-approval-decision-input.v1"},
+            headers={"Idempotency-Key": "package-approval-unauth-0002"},
+        )
+    for response in (unauthenticated_create, unauthenticated_read, unauthenticated_decide):
+        assert response.status_code == 401, response.text
+        assert response.json()["code"] == "authentication_required"
+
+    with TestClient(
+        create_app(
+            settings(),
+            identity_provider=BasicTestIdentityProvider(replace(subject(), role_ids=())),
+        )
+    ) as client:
+        csrf = login(client).headers["X-CSRF-Token"]
+        create_denied = client.post(
+            endpoint,
+            json={"schema_version": "atlas.connector-package-approval-request-input.v1"},
+            headers={"X-CSRF-Token": csrf, "Idempotency-Key": "package-approval-denied-0001"},
+        )
+        read_denied = client.get(f"{endpoint}/request.wiring-denied")
+        decide_denied = client.post(
+            f"{endpoint}/request.wiring-denied/decisions",
+            json={"schema_version": "atlas.connector-package-approval-decision-input.v1"},
+            headers={"X-CSRF-Token": csrf, "Idempotency-Key": "package-approval-denied-0002"},
+        )
+
+    for response in (create_denied, read_denied, decide_denied):
+        assert response.status_code == 403, response.text
+        assert response.json()["code"] == "authorization_denied"

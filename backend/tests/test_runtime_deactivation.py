@@ -7,6 +7,7 @@ from typing import TypedDict, cast
 
 import pytest
 from fastapi.testclient import TestClient
+from httpx import Response
 from test_browser_sessions import BasicTestIdentityProvider, login, settings
 from test_package_acquisition import CollectingAuditSink
 from test_runtime_activation import (
@@ -266,3 +267,64 @@ def test_runtime_deactivation_api_is_csrf_protected_scoped_and_minimized(
         "access_token",
     ):
         assert hidden not in rendered
+
+
+def _runtime_deactivation_request(
+    client: TestClient, *, key_suffix: str, csrf_token: str | None = None
+) -> Response:
+    """Issue one deactivate request against `runtime_activations.py`'s
+    `authorize_connector_runtime_activation_deactivate`-gated endpoint using a dummy but validly-
+    shaped activation. The resource never exists, so the response is decided at authentication/
+    authorization, before any route body or service lookup runs.
+    """
+    headers: dict[str, str] = {}
+    if csrf_token is not None:
+        headers["X-CSRF-Token"] = csrf_token
+    return cast(
+        Response,
+        client.post(
+            "/api/v1/connectors/runtime-activations/activation.chain-denied-0001/deactivations",
+            json={
+                "schema_version": "atlas.connector-runtime-deactivation-input.v1",
+                "expected_activation_digest": "f" * 64,
+                "reason": "Prove that this request is denied by a real dependency, not faked.",
+                ACKNOWLEDGEMENT_FIELD: True,
+            },
+            headers={**headers, "Idempotency-Key": f"runtime-deactivation-{key_suffix}"},
+        ),
+    )
+
+
+def test_runtime_deactivation_api_requires_authentication() -> None:
+    """Pass 31 of this session's standing audit loop found this route's only real HTTP test
+    (`test_runtime_deactivation_api_is_csrf_protected_scoped_and_minimized`) drives the allowed
+    path plus a CSRF-403 check; nothing proved the real `browser_session_subject`/
+    `authorize_connector_runtime_activation_deactivate` dependencies actually reject a genuinely
+    unauthenticated request. No session cookie and development identity disabled: the deactivate
+    route must fail closed at authentication, not merely at authorization.
+    """
+    with TestClient(create_app(settings(development_identity_enabled=False))) as client:
+        response = _runtime_deactivation_request(client, key_suffix="chain-denied-0001")
+
+    assert response.status_code == 401, response.text
+    assert response.json()["code"] == "authentication_required"
+
+
+def test_runtime_deactivation_api_requires_permission() -> None:
+    """A real, logged-in human subject with zero granted role permissions must still be denied by
+    the real `AuthorizationService` at the deactivate permission check, not by a faked dependency
+    override.
+    """
+    with TestClient(create_app(settings(development_role_ids=()))) as client:
+        login_response = client.post(
+            "/api/v1/authentication/sessions",
+            json={"username": "atlas-demo", "password": "local-demo"},
+        )
+        assert login_response.status_code == 201, login_response.text
+        csrf_token = login_response.headers["X-CSRF-Token"]
+        response = _runtime_deactivation_request(
+            client, key_suffix="chain-denied-0002", csrf_token=csrf_token
+        )
+
+    assert response.status_code == 403, response.text
+    assert response.json()["code"] == "authorization_denied"

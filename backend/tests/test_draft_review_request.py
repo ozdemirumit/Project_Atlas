@@ -15,13 +15,14 @@ from alembic.config import Config
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, delete, inspect, text
 from sqlalchemy.ext.asyncio import create_async_engine
-from test_browser_sessions import BasicTestIdentityProvider, login, settings
+from test_browser_sessions import BasicTestIdentityProvider, login, settings, subject
 from test_evidence_draft import create_draft, draft_fixture
 from test_package_acquisition import CollectingAuditSink
 from test_runtime_activation import FailSecondAuditSink
 from test_target_session import development_target_session_operator, target_session_operator
 
 from atlas.api.app import create_app
+from atlas.core.config import Settings
 from atlas.core.persistence.models import (
     OperationalKnowledgeReviewRequestClaimModel,
     OperationalKnowledgeReviewRequestModel,
@@ -1040,3 +1041,53 @@ def test_review_request_api_forbids_routing_and_returns_minimized_metadata(
         "environment_id",
     ):
         assert hidden not in data
+
+
+def test_review_request_api_requires_authentication_and_permission() -> None:
+    """Pass 31 of this session's standing audit loop found this file's only denial coverage was
+    a missing-CSRF check on create and a self-review business-rule 422 -- a real unauthenticated
+    request and a real, logged-in identity with zero granted permissions were never proven
+    denied on any of the four routes (list, options, create, read).
+    """
+    endpoint = "/api/v1/knowledge/operational-review-requests"
+    with TestClient(create_app(Settings(environment="test"))) as client:
+        unauthenticated_list = client.get(endpoint)
+        unauthenticated_options = client.get(
+            f"{endpoint}/options", params={"source_draft_id": "draft.wiring-denied"}
+        )
+        unauthenticated_create = client.post(
+            endpoint,
+            json={"schema_version": "atlas.operational-knowledge-review-request-input.v1"},
+            headers={"Idempotency-Key": "review-request-unauth-0001"},
+        )
+        unauthenticated_read = client.get(f"{endpoint}/review.wiring-denied")
+    for response in (
+        unauthenticated_list,
+        unauthenticated_options,
+        unauthenticated_create,
+        unauthenticated_read,
+    ):
+        assert response.status_code == 401, response.text
+        assert response.json()["code"] == "authentication_required"
+
+    with TestClient(
+        create_app(
+            settings(),
+            identity_provider=BasicTestIdentityProvider(replace(subject(), role_ids=())),
+        )
+    ) as client:
+        csrf = login(client).headers["X-CSRF-Token"]
+        list_denied = client.get(endpoint)
+        options_denied = client.get(
+            f"{endpoint}/options", params={"source_draft_id": "draft.wiring-denied"}
+        )
+        create_denied = client.post(
+            endpoint,
+            json={"schema_version": "atlas.operational-knowledge-review-request-input.v1"},
+            headers={"X-CSRF-Token": csrf, "Idempotency-Key": "review-request-denied-0001"},
+        )
+        read_denied = client.get(f"{endpoint}/review.wiring-denied")
+
+    for response in (list_denied, options_denied, create_denied, read_denied):
+        assert response.status_code == 403, response.text
+        assert response.json()["code"] == "authorization_denied"
