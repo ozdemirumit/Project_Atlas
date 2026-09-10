@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from atlas.core.classification import DataClassification
 from atlas.core.protected_content import InMemoryProtectedContentStore
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
@@ -38,6 +39,9 @@ class AllowAllAuthorizer:
         correlation_id: str,
     ) -> None:
         return None
+
+    async def classification_ceiling(self, **_kwargs: object) -> DataClassification:
+        return DataClassification.RESTRICTED
 
 
 def _subject(subject_id: str) -> AuthenticatedSubject:

@@ -124,6 +124,18 @@ def actor() -> AuthenticatedSubject:
     )
 
 
+class UnprivilegedIdentityProvider:
+    """A real, logged-in human identity with zero granted role permissions -- proving the real
+    `AuthorizationService` denies it, not a faked dependency override."""
+
+    async def authenticate(
+        self, authentication_input: AuthenticationInput
+    ) -> AuthenticatedSubject | None:
+        if authentication_input.authorization_scheme != "basic":
+            return None
+        return replace(actor(), role_ids=())
+
+
 def build_services(
     root: Path,
 ) -> tuple[
@@ -494,3 +506,50 @@ def test_identity_plan_api_is_strict_and_redacted(tmp_path: Path) -> None:
     assert payload["session_or_token_mutation_authorized"] is False
     assert "password" not in json.dumps(payload).lower()
     assert malformed.status_code == 422
+
+
+def test_identity_plan_preview_requires_authentication_and_permission(tmp_path: Path) -> None:
+    """Pass 29 of this session's standing audit loop found this route's only coverage was the
+    allowed path -- nothing proved the real `authorize_deployment_configuration_preview`
+    dependency actually rejects an unauthenticated or under-privileged request. This shares the
+    phase-execution suite's `authorize_bootstrap_state_manage` gate, not the preview-specific
+    permission -- so unlike that suite's denial test, this one targets the preview endpoint
+    itself directly, which no other test in this session's wiring sweep reached.
+    """
+    request = {
+        "schema_version": "atlas.bootstrap-identity-plan-request.v1",
+        "release_id": "release.atlas.lab-0.1.0",
+        "profile": "linux_lab",
+        "organization_id": "organization.development",
+        "environment_id": "environment.test",
+        "site_id": "site.local",
+        "configuration_digest": "f" * 64,
+        "overlay": {},
+        "trust_plan_digest": "f" * 64,
+        "data_plan_digest": "f" * 64,
+        "migration_artifact_digest": "f" * 64,
+        "service_plan_digest": "f" * 64,
+    }
+    settings = Settings(environment="test")
+    with TestClient(create_app(settings, identity_provider=IdentityProvider())) as client:
+        unauthenticated = client.post(
+            "/api/v1/platform/bootstrap-identity-plan/preview", json=request
+        )
+
+    unprivileged_authorization = "Basic " + base64.b64encode(b"identity:anything").decode()
+    with TestClient(
+        create_app(
+            settings,
+            identity_provider=UnprivilegedIdentityProvider(),
+        )
+    ) as client:
+        unprivileged = client.post(
+            "/api/v1/platform/bootstrap-identity-plan/preview",
+            headers={"Authorization": unprivileged_authorization},
+            json=request,
+        )
+
+    assert unauthenticated.status_code == 401
+    assert unauthenticated.json()["code"] == "authentication_required"
+    assert unprivileged.status_code == 403, unprivileged.text
+    assert unprivileged.json()["code"] == "authorization_denied"

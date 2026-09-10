@@ -389,3 +389,52 @@ def test_support_bundle_api_requires_session_csrf_and_strict_schema(tmp_path: Pa
     assert export_response.status_code == 200
     assert export_response.json()["data"]["state"] == "completed"
     assert export_response.json()["data"]["external_transfer_performed"] is False
+
+
+def test_support_bundle_api_requires_permission(tmp_path: Path) -> None:
+    """Pass 29 of this session's standing audit loop found this file's only denial coverage was
+    unauthenticated (401) and missing-CSRF (403) -- a real, logged-in identity with zero granted
+    permissions was never proven denied. `support_bundle_root` is stubbed off entirely (no
+    `support_bundle_service` override) since the real `AuthorizationService` must deny the
+    request before the service is ever reached.
+    """
+    with TestClient(
+        create_app(
+            settings(support_bundle_root=tmp_path / "denied-support"),
+            identity_provider=BasicTestIdentityProvider(replace(subject(), role_ids=())),
+        )
+    ) as client:
+        csrf = login(client).headers["X-CSRF-Token"]
+        preview_denied = client.post(
+            "/api/v1/platform/support-bundles/preview",
+            headers={"X-CSRF-Token": csrf},
+            json={
+                "schema_version": "atlas.support-bundle-preview-request.v1",
+                "source_run_id": "run.wiring-denied-0001",
+                "component_ids": list(ALL_COMPONENTS),
+                "lookback_hours": 24,
+            },
+        )
+        export_denied = client.post(
+            "/api/v1/platform/support-bundles/run.wiring-denied-0001/exports",
+            headers={
+                "X-CSRF-Token": csrf,
+                "Idempotency-Key": "support-api-export-denied-0001",
+            },
+            json={
+                "schema_version": "atlas.support-bundle-export-request.v1",
+                "source_run_version": 1,
+                "component_ids": list(ALL_COMPONENTS),
+                "lookback_hours": 24,
+                "preview_digest": "f" * 64,
+                "archive_sha256": "f" * 64,
+                "target_id": "target.wiring-denied",
+                "expected_target_state": "active",
+                "justification": "Prove that a real unprivileged identity is denied, not faked.",
+                "confirmed": True,
+            },
+        )
+
+    for response in (preview_denied, export_denied):
+        assert response.status_code == 403, response.text
+        assert response.json()["code"] == "authorization_denied"

@@ -300,3 +300,40 @@ def test_recovery_api_requires_session_csrf_and_strict_payload(tmp_path: Path) -
     assert backup_response.status_code == 200
     assert validation_response.status_code == 200
     assert validation_response.json()["data"]["operational_recovery_performed"] is False
+
+
+def test_recovery_api_requires_permission(tmp_path: Path) -> None:
+    """Pass 29 of this session's standing audit loop found this file's only denial coverage was
+    unauthenticated (401, `/preview` only) and missing-CSRF (403) -- a real, logged-in identity
+    with zero granted permissions was never proven denied on any of the three endpoints.
+    """
+    with TestClient(
+        create_app(
+            settings(logical_backup_root=tmp_path / "denied-backups"),
+            identity_provider=BasicTestIdentityProvider(replace(subject(), role_ids=())),
+        )
+    ) as client:
+        csrf = login(client).headers["X-CSRF-Token"]
+        preview_denied = client.post(
+            "/api/v1/platform/backups/preview",
+            headers={"X-CSRF-Token": csrf},
+            json={
+                "schema_version": "atlas.logical-backup-preview-request.v1",
+                "source_run_id": "run.wiring-denied-0001",
+                "component_ids": list(ALL_COMPONENTS),
+            },
+        )
+        backup_denied = client.post(
+            "/api/v1/platform/backups/run.wiring-denied-0001",
+            headers={"X-CSRF-Token": csrf, "Idempotency-Key": "backup-api-denied-0001"},
+            json={"schema_version": "atlas.logical-backup-create-request.v1"},
+        )
+        validation_denied = client.post(
+            "/api/v1/platform/backups/backup.wiring-denied-0001/restore-validations",
+            headers={"X-CSRF-Token": csrf, "Idempotency-Key": "restore-api-denied-0001"},
+            json={"schema_version": "atlas.isolated-restore-validation-request.v1"},
+        )
+
+    for response in (preview_denied, backup_denied, validation_denied):
+        assert response.status_code == 403, response.text
+        assert response.json()["code"] == "authorization_denied"

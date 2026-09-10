@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from atlas.core.classification import DataClassification
 from atlas.core.protected_content import ProtectedContentStore
 from atlas.modules.identity.domain.models import AuthenticatedSubject
 from atlas.modules.knowledge.domain.document_knowledge import (
@@ -70,6 +71,15 @@ class DocumentKnowledgePermissionAuthorizer(Protocol):
         permission_id: str,
         correlation_id: str,
     ) -> None: ...
+
+    async def classification_ceiling(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        organization_id: str,
+        environment_id: str,
+        correlation_id: str,
+    ) -> DataClassification: ...
 
 
 __all__ = [

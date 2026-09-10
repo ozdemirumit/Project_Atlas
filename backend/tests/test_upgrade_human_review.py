@@ -16,6 +16,7 @@ from test_upgrade_change_review import (
 
 from atlas.api.app import create_app
 from atlas.core.capabilities import CapabilityClass
+from atlas.core.config import Settings
 from atlas.core.persistence.models import UpgradeChangeHumanReviewModel
 from atlas.modules.authorization.application.bootstrap import (
     UPGRADE_HUMAN_REVIEW_DECIDE,
@@ -500,6 +501,50 @@ def test_human_review_api_requires_csrf_and_keeps_requester_ineligible(tmp_path:
     assert data["execution_authorized"] is False
     assert self_decision.status_code == 409
     assert self_decision.json()["code"] == "human_review_separation_required"
+
+
+def test_human_review_api_requires_authentication_and_permission() -> None:
+    """Pass 29 of this session's standing audit loop found this file's only denial coverage was
+    a missing-CSRF check -- a real unauthenticated request (on the GET routes, which don't sit
+    behind CSRF) and a real, logged-in identity with zero granted permissions were never proven
+    denied on any of these four endpoints. The POST routes' unauthenticated case is already
+    covered by the existing CSRF-missing test above -- CSRF is enforced before authentication
+    for unsafe methods, so an unauthenticated POST fails closed at CSRF, not at 401.
+    """
+    with TestClient(create_app(Settings(environment="test"))) as client:
+        unauthenticated_read = client.get(
+            "/api/v1/platform/upgrade-change-reviews/human-reviews/review.wiring-denied"
+        )
+        unauthenticated_inbox = client.get("/api/v1/platform/upgrade-change-reviews/human-reviews")
+    for response in (unauthenticated_read, unauthenticated_inbox):
+        assert response.status_code == 401, response.text
+        assert response.json()["code"] == "authentication_required"
+
+    with TestClient(
+        create_app(
+            settings(),
+            identity_provider=BasicTestIdentityProvider(replace(subject(), role_ids=())),
+        )
+    ) as client:
+        csrf = login(client).headers["X-CSRF-Token"]
+        create_denied = client.post(
+            "/api/v1/platform/upgrade-change-reviews/packet.wiring-denied/human-reviews",
+            headers={"X-CSRF-Token": csrf, "Idempotency-Key": "human-review-denied-0002"},
+            json={"schema_version": "atlas.upgrade-change-human-review-create-request.v1"},
+        )
+        read_denied = client.get(
+            "/api/v1/platform/upgrade-change-reviews/human-reviews/review.wiring-denied"
+        )
+        inbox_denied = client.get("/api/v1/platform/upgrade-change-reviews/human-reviews")
+        decide_denied = client.post(
+            "/api/v1/platform/upgrade-change-reviews/human-reviews/review.wiring-denied/decisions",
+            headers={"X-CSRF-Token": csrf, "Idempotency-Key": "human-review-denied-0003"},
+            json={"schema_version": "atlas.upgrade-change-human-review-decision-request.v1"},
+        )
+
+    for response in (create_denied, read_denied, inbox_denied, decide_denied):
+        assert response.status_code == 403, response.text
+        assert response.json()["code"] == "authorization_denied"
 
 
 def test_reviewer_inbox_api_lists_and_decides_only_current_assigned_stage(tmp_path: Path) -> None:

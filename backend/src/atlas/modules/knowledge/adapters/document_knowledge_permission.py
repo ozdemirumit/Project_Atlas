@@ -3,7 +3,11 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from atlas.core.capabilities import CapabilityClass
-from atlas.modules.authorization.application.bootstrap import document_knowledge_scope
+from atlas.core.classification import DataClassification
+from atlas.modules.authorization.application.bootstrap import (
+    KNOWLEDGE_DOCUMENT_RETRIEVAL_ELEVATED_READ,
+    document_knowledge_scope,
+)
 from atlas.modules.authorization.application.service import AuthorizationService
 from atlas.modules.authorization.domain.models import AuthorizationRequest
 from atlas.modules.identity.domain.models import AuthenticatedSubject
@@ -53,3 +57,30 @@ class AuthorizationDocumentKnowledgePermissionAuthorizer:
             raise DocumentKnowledgeError(
                 "document_knowledge_permission_denied", "Authorization was denied."
             )
+
+    async def classification_ceiling(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        organization_id: str,
+        environment_id: str,
+        correlation_id: str,
+    ) -> DataClassification:
+        if environment_id != f"environment.{self._environment}":
+            raise DocumentKnowledgeError(
+                "document_knowledge_permission_denied", "Environment scope mismatch."
+            )
+        request = AuthorizationRequest(
+            subject=actor,
+            permission_id=KNOWLEDGE_DOCUMENT_RETRIEVAL_ELEVATED_READ,
+            resource_type="resource.knowledge.document-governance",
+            scope=document_knowledge_scope(
+                organization_id, self._environment, CapabilityClass.C1_READ_ONLY
+            ),
+            correlation_id=correlation_id,
+            requested_at=datetime.now(UTC),
+        )
+        decision = await self._service.evaluate(request)
+        if decision.allowed:
+            return DataClassification.RESTRICTED
+        return DataClassification.INTERNAL

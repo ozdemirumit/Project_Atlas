@@ -22,6 +22,24 @@ pipeline's own field-based mechanism extended to do real work) is a must, not op
 nothing here should be silently wired in without confirming which mechanism is meant to be
 authoritative.
 
+**Update (2026-09-10, pass 29): the "real (non-synthetic) retriever" trigger condition above has
+now been met, and closed, for one pipeline.** `knowledge/application/document_retrieval.py`'s
+`DocumentKnowledgeRetrievalService` is a real, non-synthetic retriever (real fastembed embeddings,
+real pgvector/in-memory cosine search) that is distinct from the `protected_retrieval.py` pipeline
+described above -- it indexes chunks with a real `classification` field but, before pass 29, never
+filtered retrieval by it. That gap is now closed via a new RBAC-permission-derived classification
+ceiling (`knowledge.document-retrieval-elevated.read`, evaluated by
+`AuthorizationDocumentKnowledgePermissionAuthorizer.classification_ceiling`) enforced as a real
+pre-scoring filter in both `InMemoryDocumentVectorIndex.search` and
+`PgVectorDocumentVectorIndex.search`. This closure does **not** reuse this module's own
+`filter_authorized_sources`/`SourceLifecycleState`
+mechanism -- that mechanism addresses a different concern (org/lifecycle-based source exclusion),
+not classification -- so it remains unwired and superseded exactly as described above. The
+`protected_retrieval.py` pipeline referenced above still has no real external retriever backing it
+(`SyntheticOperationalKnowledgeTrustedRetriever` is still synthetic), so its own trigger condition
+remains unmet and its `authorization_filtered_before_scoring`/`citations_validated` flags remain
+hardcoded rather than computed -- that part of this status note is unchanged.
+
 `filter_authorized_sources` is the load-bearing function here: it runs before any candidate ever
 becomes a visible result, so an unauthorized or excluded-lifecycle document's title, count,
 snippet, or mere existence never reaches a downstream caller (SS13: "hidden documents cannot leak

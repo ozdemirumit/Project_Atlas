@@ -12,6 +12,7 @@ from test_upgrade_human_review import create_request, human_review_context, revi
 
 from atlas.api.app import create_app
 from atlas.core.capabilities import CapabilityClass
+from atlas.core.config import Settings
 from atlas.core.persistence.models import HumanReviewCompletionReceiptModel
 from atlas.modules.authorization.application.bootstrap import (
     UPGRADE_COMPLETION_RECEIPT_CREATE,
@@ -391,3 +392,62 @@ def test_completion_receipt_api_requires_csrf_and_exact_permission(tmp_path: Pat
     assert data["completion_evidence_only"] is True
     assert data["approval_granted"] is False
     assert data["execution_authorized"] is False
+
+
+def test_completion_receipt_api_requires_authentication_and_permission(tmp_path: Path) -> None:
+    """Pass 29 of this session's standing audit loop found this file's only denial coverage was
+    a missing-CSRF check -- a real unauthenticated request (on the GET route, which doesn't sit
+    behind CSRF) and a real, logged-in identity with zero granted permissions were never proven
+    denied. The POST route's unauthenticated case is already covered by the existing
+    CSRF-missing test above -- CSRF is enforced before authentication for unsafe methods, so an
+    unauthenticated POST fails closed at CSRF, not at 401.
+    """
+    with TestClient(create_app(Settings(environment="test"))) as client:
+        unauthenticated_read = client.get(
+            "/api/v1/platform/upgrade-change-reviews/completion-receipts/receipt.wiring-denied"
+        )
+    assert unauthenticated_read.status_code == 401
+    assert unauthenticated_read.json()["code"] == "authentication_required"
+
+    class _NoOpAuditSink:
+        async def record(self, event: object) -> None:
+            return None
+
+    authorization = AuthorizationService(
+        permissions=(
+            PermissionDefinition(
+                permission_id=UPGRADE_COMPLETION_RECEIPT_CREATE,
+                description="Create exact completion evidence.",
+            ),
+            PermissionDefinition(
+                permission_id=UPGRADE_COMPLETION_RECEIPT_READ,
+                description="Read exact completion evidence.",
+            ),
+        ),
+        roles=(),
+        assignments=(),
+        audit_sink=_NoOpAuditSink(),
+    )
+    with TestClient(
+        create_app(
+            settings(logical_backup_root=tmp_path / "denied-backups-2"),
+            identity_provider=BasicTestIdentityProvider(),
+            authorization_service=authorization,
+        )
+    ) as client:
+        csrf = login(client).headers["X-CSRF-Token"]
+        create_denied = client.post(
+            (
+                "/api/v1/platform/upgrade-change-reviews/human-reviews/"
+                "review.wiring-denied/completion-receipts"
+            ),
+            headers={"X-CSRF-Token": csrf, "Idempotency-Key": "completion-api-denied-0002"},
+            json={"schema_version": "atlas.upgrade-human-review-completion-receipt-request.v1"},
+        )
+        read_denied = client.get(
+            "/api/v1/platform/upgrade-change-reviews/completion-receipts/receipt.wiring-denied"
+        )
+
+    for response in (create_denied, read_denied):
+        assert response.status_code == 403, response.text
+        assert response.json()["code"] == "authorization_denied"

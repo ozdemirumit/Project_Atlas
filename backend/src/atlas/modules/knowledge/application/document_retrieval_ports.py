@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Protocol
 
+from atlas.core.classification import DataClassification
 from atlas.modules.knowledge.domain.document_retrieval import (
     DocumentKnowledgeSearchResult,
     DocumentKnowledgeVectorRecord,
@@ -40,4 +41,5 @@ class DocumentKnowledgeVectorIndex(Protocol):
         organization_id: str,
         environment_id: str,
         top_k: int,
+        max_classification: DataClassification,
     ) -> list[DocumentKnowledgeSearchResult]: ...

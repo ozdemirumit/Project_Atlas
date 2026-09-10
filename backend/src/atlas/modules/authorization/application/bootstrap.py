@@ -383,6 +383,7 @@ KNOWLEDGE_DOCUMENT_PUBLICATION_PREPARATION_CREATE = (
 KNOWLEDGE_DOCUMENT_PUBLICATION_PREPARATION_READ = "knowledge.document-publication-preparation.read"
 KNOWLEDGE_DOCUMENT_INDEXING_CREATE = "knowledge.document-indexing.create"
 KNOWLEDGE_DOCUMENT_RETRIEVAL_CREATE = "knowledge.document-retrieval.create"
+KNOWLEDGE_DOCUMENT_RETRIEVAL_ELEVATED_READ = "knowledge.document-retrieval-elevated.read"
 KNOWLEDGE_PROTECTED_RETRIEVAL_CREATE = "knowledge.protected-retrieval.create"
 KNOWLEDGE_PROTECTED_RETRIEVAL_READ = "knowledge.protected-retrieval.read"
 AI_PROTECTED_MODEL_CONTEXT_CREATE = "ai.protected-model-context.create"
@@ -3694,6 +3695,12 @@ def build_development_authorization_service(
             description="Run one governed semantic retrieval query over indexed document knowledge",
         ),
         PermissionDefinition(
+            permission_id=KNOWLEDGE_DOCUMENT_RETRIEVAL_ELEVATED_READ,
+            description=(
+                "Read document-retrieval results up to and including restricted classification."
+            ),
+        ),
+        PermissionDefinition(
             permission_id=KNOWLEDGE_INDEX_STAGING_CREATE,
             description="Stage and validate one governed protected knowledge index projection.",
         ),
@@ -4196,6 +4203,7 @@ def build_development_authorization_service(
                 KNOWLEDGE_DOCUMENT_PUBLICATION_PREPARATION_READ,
                 KNOWLEDGE_DOCUMENT_INDEXING_CREATE,
                 KNOWLEDGE_DOCUMENT_RETRIEVAL_CREATE,
+                KNOWLEDGE_DOCUMENT_RETRIEVAL_ELEVATED_READ,
                 KNOWLEDGE_INDEX_STAGING_CREATE,
                 KNOWLEDGE_INDEX_STAGING_READ,
                 KNOWLEDGE_RETRIEVAL_PUBLICATION_CREATE,
@@ -5782,6 +5790,18 @@ def build_development_authorization_service(
             ),
             RoleAssignment(
                 assignment_id="assignment.development.knowledge-document-governance-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=document_knowledge_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.knowledge-document-retrieval-elevated-read",
                 version=1,
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,

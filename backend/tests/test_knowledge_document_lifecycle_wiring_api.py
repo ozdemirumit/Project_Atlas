@@ -52,8 +52,22 @@ from test_final_resolution import (
 from test_package_acquisition import CollectingAuditSink
 
 from atlas.api.app import create_app
+from atlas.core.capabilities import CapabilityClass
+from atlas.core.classification import DataClassification
 from atlas.core.config import Settings
 from atlas.core.protected_content import InMemoryProtectedContentStore
+from atlas.modules.authorization.application.bootstrap import (
+    KNOWLEDGE_DOCUMENT_INDEXING_CREATE,
+    KNOWLEDGE_DOCUMENT_RETRIEVAL_CREATE,
+    KNOWLEDGE_DOCUMENT_RETRIEVAL_ELEVATED_READ,
+    document_knowledge_scope,
+)
+from atlas.modules.authorization.application.service import AuthorizationService
+from atlas.modules.authorization.domain.models import (
+    PermissionDefinition,
+    RoleAssignment,
+    RoleDefinition,
+)
 from atlas.modules.identity.domain.models import AuthenticatedSubject
 from atlas.modules.knowledge.adapters.document_chunking import ParagraphBoundedChunker
 from atlas.modules.knowledge.adapters.document_embedding_fastembed import (
@@ -61,6 +75,9 @@ from atlas.modules.knowledge.adapters.document_embedding_fastembed import (
 )
 from atlas.modules.knowledge.adapters.document_knowledge_memory import (
     InMemoryDocumentKnowledgeRepository,
+)
+from atlas.modules.knowledge.adapters.document_knowledge_permission import (
+    AuthorizationDocumentKnowledgePermissionAuthorizer,
 )
 from atlas.modules.knowledge.adapters.document_vector_index_memory import (
     InMemoryDocumentVectorIndex,
@@ -541,6 +558,17 @@ class _AlwaysAllowDocumentKnowledgePermissionAuthorizer:
     ) -> None:
         del actor, organization_id, environment_id, permission_id, correlation_id
 
+    async def classification_ceiling(
+        self,
+        *,
+        actor: AuthenticatedSubject,
+        organization_id: str,
+        environment_id: str,
+        correlation_id: str,
+    ) -> DataClassification:
+        del actor, organization_id, environment_id, correlation_id
+        return DataClassification.RESTRICTED
+
 
 def _build_shared_document_knowledge_service() -> DocumentKnowledgeService:
     return DocumentKnowledgeService(
@@ -816,6 +844,362 @@ def test_document_knowledge_indexing_and_search_is_reachable_through_the_api() -
             "controller" in results[0]["excerpt"].lower()
             or "escalation" in results[0]["excerpt"].lower()
         )
+
+
+def _build_classification_retrieval_authorization_service(
+    *, indexer_subject_id: str, base_subject_id: str, elevated_subject_id: str
+) -> tuple[AuthorizationService, str, str]:
+    """A real, bespoke ``AuthorizationService`` covering only the document-retrieval family of
+    permissions, used both as the app's own ``authorization_service`` (so the real
+    ``authorize_document_knowledge_indexing_create``/``authorize_document_knowledge_retrieval_create``
+    HTTP dependencies evaluate it honestly) and to build a real
+    ``AuthorizationDocumentKnowledgePermissionAuthorizer`` for the retrieval service's own
+    internal permission and classification-ceiling checks. ``indexer_subject_id`` and
+    ``base_subject_id`` hold only the base permissions; ``elevated_subject_id`` additionally holds
+    ``KNOWLEDGE_DOCUMENT_RETRIEVAL_ELEVATED_READ``. Returns the service plus the base and elevated
+    role ids so callers can put the matching ``development_role_ids`` on each dev identity.
+    """
+    permissions = (
+        KNOWLEDGE_DOCUMENT_INDEXING_CREATE,
+        KNOWLEDGE_DOCUMENT_RETRIEVAL_CREATE,
+        KNOWLEDGE_DOCUMENT_RETRIEVAL_ELEVATED_READ,
+    )
+    base_role_id = "role.knowledge-retrieval-classification-base"
+    elevated_role_id = "role.knowledge-retrieval-classification-elevated"
+    create_scope = document_knowledge_scope(_ORGANIZATION_ID, "test", CapabilityClass.C2_DIAGNOSTIC)
+    read_scope = document_knowledge_scope(_ORGANIZATION_ID, "test", CapabilityClass.C1_READ_ONLY)
+    service = AuthorizationService(
+        permissions=tuple(
+            PermissionDefinition(permission_id=permission, description=permission)
+            for permission in permissions
+        ),
+        roles=(
+            RoleDefinition(
+                role_id=base_role_id,
+                version=1,
+                permissions=frozenset(
+                    {KNOWLEDGE_DOCUMENT_INDEXING_CREATE, KNOWLEDGE_DOCUMENT_RETRIEVAL_CREATE}
+                ),
+            ),
+            RoleDefinition(
+                role_id=elevated_role_id,
+                version=1,
+                permissions=frozenset(permissions),
+            ),
+        ),
+        assignments=(
+            RoleAssignment(
+                assignment_id="assignment.knowledge-retrieval-classification-indexer",
+                version=1,
+                subject_id=indexer_subject_id,
+                role_id=base_role_id,
+                scope=create_scope,
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.knowledge-retrieval-classification-base-searcher",
+                version=1,
+                subject_id=base_subject_id,
+                role_id=base_role_id,
+                scope=create_scope,
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id=(
+                    "assignment.knowledge-retrieval-classification-elevated-searcher-create"
+                ),
+                version=1,
+                subject_id=elevated_subject_id,
+                role_id=elevated_role_id,
+                scope=create_scope,
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id=(
+                    "assignment.knowledge-retrieval-classification-elevated-searcher-read"
+                ),
+                version=1,
+                subject_id=elevated_subject_id,
+                role_id=elevated_role_id,
+                scope=read_scope,
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+        ),
+        audit_sink=CollectingAuditSink(),
+    )
+    return service, base_role_id, elevated_role_id
+
+
+def test_document_knowledge_retrieval_filters_by_classification_ceiling_through_the_api() -> None:
+    """Pass 29: the real (non-synthetic) document-retrieval pipeline indexes chunks with a real
+    ``classification`` field but, before this pass, never filtered retrieval by it -- any subject
+    merely authorized for the coarse ``knowledge.document-retrieval.create`` permission could
+    retrieve a ``classification.restricted`` chunk alongside ``classification.internal`` ones.
+    ``DocumentKnowledgeRetrievalService.retrieve()`` now derives a per-subject classification
+    ceiling from the real RBAC permission system (``knowledge.document-retrieval-elevated.read``)
+    and the real vector index enforces it before scoring. This drives that enforcement through the
+    real HTTP API end to end: one ``classification.internal`` chunk and one
+    ``classification.restricted`` chunk are indexed for the same organization/environment, then
+    searched by (a) a subject holding only the base retrieval permission -- must see the internal
+    chunk but never the restricted one -- and (b) a subject that also holds the elevated
+    permission -- must see both.
+    """
+    repository = InMemoryDocumentKnowledgeRepository()
+    protected_content = InMemoryProtectedContentStore()
+    knowledge_service = DocumentKnowledgeService(
+        repository=repository,
+        protected_content=protected_content,
+        permission_authorizer=_AlwaysAllowDocumentKnowledgePermissionAuthorizer(),
+        audit_sink=CollectingAuditSink(),
+        subject_salt="document-knowledge-classification-subject-salt.wiring-test",
+    )
+
+    internal_content_base64 = base64.b64encode(
+        b"# Storage Controller Runbook\n\n"
+        b"When a storage controller reports a warning status, engineers should first confirm "
+        b"the condition persists across two consecutive read-only health checks before taking "
+        b"any action.\n\n"
+        b"# Escalation Procedure\n\n"
+        b"If the warning persists, open a change record and notify the on-call storage "
+        b"engineer."
+    ).decode()
+    restricted_content_base64 = base64.b64encode(
+        b"# Restricted Storage Controller Incident Notes\n\n"
+        b"When a storage controller reports a warning status, the restricted incident response "
+        b"track escalates through the confidential channel and files a restricted disclosure "
+        b"record."
+    ).decode()
+
+    with TestClient(
+        create_app(
+            _settings(development_subject_id="subject.document-knowledge-classification-curator"),
+            document_knowledge_service=knowledge_service,
+        )
+    ) as curator_client:
+        csrf = _login(curator_client)
+        internal_drafted = curator_client.post(
+            "/api/v1/knowledge/documents/drafts",
+            json={
+                "content_base64": internal_content_base64,
+                "title": "Storage Controller Runbook",
+                "draft_domain": "domain.storage-operations",
+                "content_type": "text/markdown",
+                "classification": "classification.internal",
+                "access_policy_id": "access-policy.default",
+                "retention_policy_id": "retention-policy.default",
+                "purpose": "Curate an internal-classification draft for the classification "
+                "ceiling wiring test.",
+            },
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert internal_drafted.status_code == 201
+        internal_draft = internal_drafted.json()["data"]
+
+        restricted_drafted = curator_client.post(
+            "/api/v1/knowledge/documents/drafts",
+            json={
+                "content_base64": restricted_content_base64,
+                "title": "Restricted Storage Controller Incident Notes",
+                "draft_domain": "domain.storage-operations",
+                "content_type": "text/markdown",
+                "classification": "classification.restricted",
+                "access_policy_id": "access-policy.default",
+                "retention_policy_id": "retention-policy.default",
+                "purpose": "Curate a restricted-classification draft for the classification "
+                "ceiling wiring test.",
+            },
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert restricted_drafted.status_code == 201
+        restricted_draft = restricted_drafted.json()["data"]
+
+    with TestClient(
+        create_app(
+            _settings(development_subject_id="subject.document-knowledge-classification-reviewer"),
+            document_knowledge_service=knowledge_service,
+        )
+    ) as reviewer_client:
+        csrf = _login(reviewer_client)
+        internal_reviewed = reviewer_client.post(
+            "/api/v1/knowledge/documents/reviews",
+            json={
+                "draft_id": internal_draft["draft_id"],
+                "decision": "passed",
+                "findings": ["The runbook matches the vendor-approved procedure."],
+            },
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert internal_reviewed.status_code == 201
+        internal_review = internal_reviewed.json()["data"]
+
+        restricted_reviewed = reviewer_client.post(
+            "/api/v1/knowledge/documents/reviews",
+            json={
+                "draft_id": restricted_draft["draft_id"],
+                "decision": "passed",
+                "findings": ["The incident notes match the vendor-approved procedure."],
+            },
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert restricted_reviewed.status_code == 201
+        restricted_review = restricted_reviewed.json()["data"]
+
+    with TestClient(
+        create_app(
+            _settings(development_subject_id="subject.document-knowledge-classification-approver"),
+            document_knowledge_service=knowledge_service,
+        )
+    ) as approver_client:
+        csrf = _login(approver_client)
+        internal_approved = approver_client.post(
+            "/api/v1/knowledge/documents/approvals",
+            json={
+                "review_id": internal_review["review_id"],
+                "decision": "approved",
+                "rationale": "Independent final approval after a passed domain review.",
+            },
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert internal_approved.status_code == 201
+        internal_approval = internal_approved.json()["data"]
+        internal_prepared = approver_client.post(
+            "/api/v1/knowledge/documents/publication-preparations",
+            json={
+                "approval_id": internal_approval["approval_id"],
+                "chunking_profile_digest": sha256(
+                    b"knowledge-chunking-profile.classification-wiring-test-internal"
+                ).hexdigest(),
+            },
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert internal_prepared.status_code == 201
+        internal_preparation = internal_prepared.json()["data"]
+
+        restricted_approved = approver_client.post(
+            "/api/v1/knowledge/documents/approvals",
+            json={
+                "review_id": restricted_review["review_id"],
+                "decision": "approved",
+                "rationale": "Independent final approval after a passed domain review.",
+            },
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert restricted_approved.status_code == 201
+        restricted_approval = restricted_approved.json()["data"]
+        restricted_prepared = approver_client.post(
+            "/api/v1/knowledge/documents/publication-preparations",
+            json={
+                "approval_id": restricted_approval["approval_id"],
+                "chunking_profile_digest": sha256(
+                    b"knowledge-chunking-profile.classification-wiring-test-restricted"
+                ).hexdigest(),
+            },
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert restricted_prepared.status_code == 201
+        restricted_preparation = restricted_prepared.json()["data"]
+
+    (
+        retrieval_authorization_service,
+        base_role_id,
+        elevated_role_id,
+    ) = _build_classification_retrieval_authorization_service(
+        indexer_subject_id="subject.knowledge-retrieval-classification-indexer",
+        base_subject_id="subject.knowledge-retrieval-classification-base-searcher",
+        elevated_subject_id="subject.knowledge-retrieval-classification-elevated-searcher",
+    )
+    retrieval_service = DocumentKnowledgeRetrievalService(
+        repository=repository,
+        protected_content=protected_content,
+        chunker=ParagraphBoundedChunker(maximum_chunk_characters=200),
+        embedder=FastEmbedDocumentEmbedder(),
+        vector_index=InMemoryDocumentVectorIndex(),
+        permission_authorizer=AuthorizationDocumentKnowledgePermissionAuthorizer(
+            service=retrieval_authorization_service, environment="test"
+        ),
+        audit_sink=CollectingAuditSink(),
+    )
+
+    with TestClient(
+        create_app(
+            _settings(
+                development_subject_id="subject.knowledge-retrieval-classification-indexer",
+                development_role_ids=(base_role_id,),
+            ),
+            authorization_service=retrieval_authorization_service,
+            document_knowledge_retrieval_service=retrieval_service,
+        )
+    ) as indexer_client:
+        csrf = _login(indexer_client)
+        internal_indexed = indexer_client.post(
+            "/api/v1/knowledge/documents/index",
+            json={"preparation_id": internal_preparation["preparation_id"]},
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert internal_indexed.status_code == 201
+        assert internal_indexed.json()["data"]["chunk_count"] >= 1
+
+        restricted_indexed = indexer_client.post(
+            "/api/v1/knowledge/documents/index",
+            json={"preparation_id": restricted_preparation["preparation_id"]},
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert restricted_indexed.status_code == 201
+        assert restricted_indexed.json()["data"]["chunk_count"] >= 1
+
+    with TestClient(
+        create_app(
+            _settings(
+                development_subject_id="subject.knowledge-retrieval-classification-base-searcher",
+                development_role_ids=(base_role_id,),
+            ),
+            authorization_service=retrieval_authorization_service,
+            document_knowledge_retrieval_service=retrieval_service,
+        )
+    ) as base_searcher_client:
+        csrf = _login(base_searcher_client)
+        base_searched = base_searcher_client.post(
+            "/api/v1/knowledge/documents/search",
+            json={
+                "query": "storage controller warning status escalation",
+                "top_k": 5,
+            },
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert base_searched.status_code == 200
+        base_knowledge_item_ids = {
+            item["knowledge_item_id"] for item in base_searched.json()["data"]
+        }
+        assert internal_draft["knowledge_item_id"] in base_knowledge_item_ids
+        assert restricted_draft["knowledge_item_id"] not in base_knowledge_item_ids
+
+    with TestClient(
+        create_app(
+            _settings(
+                development_subject_id=(
+                    "subject.knowledge-retrieval-classification-elevated-searcher"
+                ),
+                development_role_ids=(elevated_role_id,),
+            ),
+            authorization_service=retrieval_authorization_service,
+            document_knowledge_retrieval_service=retrieval_service,
+        )
+    ) as elevated_searcher_client:
+        csrf = _login(elevated_searcher_client)
+        elevated_searched = elevated_searcher_client.post(
+            "/api/v1/knowledge/documents/search",
+            json={
+                "query": "storage controller warning status escalation",
+                "top_k": 5,
+            },
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert elevated_searched.status_code == 200
+        elevated_knowledge_item_ids = {
+            item["knowledge_item_id"] for item in elevated_searched.json()["data"]
+        }
+        assert internal_draft["knowledge_item_id"] in elevated_knowledge_item_ids
+        assert restricted_draft["knowledge_item_id"] in elevated_knowledge_item_ids
 
 
 def test_knowledge_document_lifecycle_wiring_requires_authentication() -> None:

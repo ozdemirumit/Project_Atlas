@@ -216,12 +216,19 @@ class DocumentKnowledgeRetrievalService:
             permission_id=_KNOWLEDGE_DOCUMENT_RETRIEVAL_CREATE,
             correlation_id=correlation_id,
         )
+        ceiling = await self._permission_authorizer.classification_ceiling(
+            actor=actor,
+            organization_id=organization_id,
+            environment_id=environment_id,
+            correlation_id=correlation_id,
+        )
         query_vector = self._embedder.embed_query(query.strip())
         raw_results = await self._vector_index.search(
             query_vector=query_vector,
             organization_id=organization_id,
             environment_id=environment_id,
             top_k=top_k,
+            max_classification=ceiling,
         )
         results: list[DocumentKnowledgeSearchResult] = []
         for result in raw_results:

@@ -4,6 +4,7 @@ from collections.abc import Sequence
 
 import numpy as np
 
+from atlas.core.classification import DataClassification
 from atlas.modules.knowledge.domain.document_retrieval import (
     DocumentKnowledgeSearchResult,
     DocumentKnowledgeVectorRecord,
@@ -29,6 +30,7 @@ class InMemoryDocumentVectorIndex:
         organization_id: str,
         environment_id: str,
         top_k: int,
+        max_classification: DataClassification,
     ) -> list[DocumentKnowledgeSearchResult]:
         if top_k < 1:
             raise ValueError("top_k must be positive")
@@ -37,6 +39,14 @@ class InMemoryDocumentVectorIndex:
         scored: list[tuple[float, DocumentKnowledgeVectorRecord]] = []
         for (org, env, _chunk_id), record in self._records.items():
             if org != organization_id or env != environment_id:
+                continue
+            try:
+                classification = DataClassification(
+                    record.classification.removeprefix("classification.")
+                )
+            except ValueError:
+                continue
+            if not max_classification.permits(classification):
                 continue
             vector = np.asarray(record.embedding, dtype=np.float64)
             denom = query_norm * float(np.linalg.norm(vector))

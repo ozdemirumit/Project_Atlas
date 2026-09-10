@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from atlas.core.classification import DataClassification
 from atlas.core.protected_content import InMemoryProtectedContentStore
 from atlas.modules.identity.domain.models import (
     AssuranceLevel,
@@ -60,6 +61,9 @@ and 12 months for monthly backups.
 class AllowAllAuthorizer:
     async def authorize(self, **_kwargs: object) -> None:
         return None
+
+    async def classification_ceiling(self, **_kwargs: object) -> DataClassification:
+        return DataClassification.RESTRICTED
 
 
 class _NullAuditSink:
@@ -159,7 +163,11 @@ async def test_in_memory_vector_index_ranks_by_cosine_similarity() -> None:
     )
 
     results = await index.search(
-        query_vector=(1.0, 0.01, 0.0), organization_id=ORG, environment_id=ENV, top_k=2
+        query_vector=(1.0, 0.01, 0.0),
+        organization_id=ORG,
+        environment_id=ENV,
+        top_k=2,
+        max_classification=DataClassification.INTERNAL,
     )
 
     assert [item.chunk_id for item in results] == [
@@ -191,7 +199,98 @@ async def test_in_memory_vector_index_isolates_by_scope() -> None:
     )
 
     results = await index.search(
-        query_vector=(1.0, 0.0, 0.0), organization_id=ORG, environment_id=ENV, top_k=5
+        query_vector=(1.0, 0.0, 0.0),
+        organization_id=ORG,
+        environment_id=ENV,
+        top_k=5,
+        max_classification=DataClassification.INTERNAL,
+    )
+    assert results == []
+
+
+@pytest.mark.asyncio
+async def test_in_memory_vector_index_excludes_restricted_records_below_ceiling() -> None:
+    from atlas.modules.knowledge.domain.document_retrieval import DocumentKnowledgeVectorRecord
+
+    index = InMemoryDocumentVectorIndex()
+    await index.upsert(
+        [
+            DocumentKnowledgeVectorRecord(
+                chunk_id="document-knowledge-chunk.internal",
+                knowledge_item_id="knowledge-item.a",
+                organization_id=ORG,
+                environment_id=ENV,
+                classification="classification.internal",
+                content_digest="a" * 64,
+                model_profile_id="fastembed.bge-small-en-v1.5",
+                embedding=(1.0, 0.0, 0.0),
+                created_at=NOW,
+            ),
+            DocumentKnowledgeVectorRecord(
+                chunk_id="document-knowledge-chunk.restricted",
+                knowledge_item_id="knowledge-item.a",
+                organization_id=ORG,
+                environment_id=ENV,
+                classification="classification.restricted",
+                content_digest="b" * 64,
+                model_profile_id="fastembed.bge-small-en-v1.5",
+                embedding=(1.0, 0.0, 0.0),
+                created_at=NOW,
+            ),
+        ]
+    )
+
+    internal_ceiling_results = await index.search(
+        query_vector=(1.0, 0.0, 0.0),
+        organization_id=ORG,
+        environment_id=ENV,
+        top_k=5,
+        max_classification=DataClassification.INTERNAL,
+    )
+    assert [item.chunk_id for item in internal_ceiling_results] == [
+        "document-knowledge-chunk.internal"
+    ]
+
+    restricted_ceiling_results = await index.search(
+        query_vector=(1.0, 0.0, 0.0),
+        organization_id=ORG,
+        environment_id=ENV,
+        top_k=5,
+        max_classification=DataClassification.RESTRICTED,
+    )
+    assert {item.chunk_id for item in restricted_ceiling_results} == {
+        "document-knowledge-chunk.internal",
+        "document-knowledge-chunk.restricted",
+    }
+
+
+@pytest.mark.asyncio
+async def test_in_memory_vector_index_excludes_unparseable_classification() -> None:
+    from atlas.modules.knowledge.domain.document_retrieval import DocumentKnowledgeVectorRecord
+
+    index = InMemoryDocumentVectorIndex()
+    await index.upsert(
+        [
+            DocumentKnowledgeVectorRecord(
+                chunk_id="document-knowledge-chunk.unparseable",
+                knowledge_item_id="knowledge-item.a",
+                organization_id=ORG,
+                environment_id=ENV,
+                classification="classification.not-a-real-level",
+                content_digest="a" * 64,
+                model_profile_id="fastembed.bge-small-en-v1.5",
+                embedding=(1.0, 0.0, 0.0),
+                created_at=NOW,
+            )
+        ]
+    )
+
+    results = await index.search(
+        query_vector=(1.0, 0.0, 0.0),
+        organization_id=ORG,
+        environment_id=ENV,
+        top_k=5,
+        max_classification=DataClassification.RESTRICTED,
     )
     assert results == []
 

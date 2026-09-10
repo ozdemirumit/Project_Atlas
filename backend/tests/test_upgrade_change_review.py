@@ -278,3 +278,31 @@ def test_change_review_api_requires_session_csrf_and_exact_payload(tmp_path: Pat
     assert packet_response.status_code == 200, packet_response.text
     assert packet_response.json()["data"]["approval_granted"] is False
     assert packet_response.json()["data"]["itsm_dispatched"] is False
+
+
+def test_change_review_api_requires_permission() -> None:
+    """Pass 29 of this session's standing audit loop found this file's only denial coverage was
+    unauthenticated (401) and missing-CSRF (422 malformed) -- a real, logged-in identity with
+    zero granted permissions was never proven denied for either endpoint in this file.
+    """
+    with TestClient(
+        create_app(
+            settings(),
+            identity_provider=BasicTestIdentityProvider(replace(subject(), role_ids=())),
+        )
+    ) as client:
+        csrf = login(client).headers["X-CSRF-Token"]
+        preview_denied = client.post(
+            "/api/v1/platform/upgrade-change-reviews/preview",
+            headers={"X-CSRF-Token": csrf},
+            json={"schema_version": "atlas.upgrade-change-review-preview-request.v1"},
+        )
+        packet_denied = client.post(
+            "/api/v1/platform/upgrade-change-reviews/run.wiring-denied-0001/packets",
+            headers={"X-CSRF-Token": csrf, "Idempotency-Key": "change-review-denied-0001"},
+            json={"schema_version": "atlas.upgrade-change-review-create-request.v1"},
+        )
+
+    for response in (preview_denied, packet_denied):
+        assert response.status_code == 403, response.text
+        assert response.json()["code"] == "authorization_denied"

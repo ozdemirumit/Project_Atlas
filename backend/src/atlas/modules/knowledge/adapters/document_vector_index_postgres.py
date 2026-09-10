@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from atlas.core.classification import DataClassification
 from atlas.core.persistence.models import DocumentKnowledgeVectorModel
 from atlas.modules.knowledge.domain.document_retrieval import (
     DocumentKnowledgeSearchResult,
@@ -70,16 +71,23 @@ class PgVectorDocumentVectorIndex:
         organization_id: str,
         environment_id: str,
         top_k: int,
+        max_classification: DataClassification,
     ) -> list[DocumentKnowledgeSearchResult]:
         if top_k < 1:
             raise ValueError("top_k must be positive")
         vector = list(query_vector)
         distance = DocumentKnowledgeVectorModel.embedding.cosine_distance(vector)
+        allowed_classifications = [
+            f"classification.{member.value}"
+            for member in DataClassification
+            if max_classification.permits(member)
+        ]
         stmt = (
             select(DocumentKnowledgeVectorModel, distance.label("distance"))
             .where(
                 DocumentKnowledgeVectorModel.organization_id == organization_id,
                 DocumentKnowledgeVectorModel.environment_id == environment_id,
+                DocumentKnowledgeVectorModel.classification.in_(allowed_classifications),
             )
             .order_by(distance)
             .limit(top_k)
