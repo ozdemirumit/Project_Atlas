@@ -108,6 +108,7 @@ from test_final_recommendation_disposition import (
 from test_recommendation_correction_resubmission import correction_fixture
 
 from atlas.api.app import create_app
+from atlas.core.config import Settings
 from atlas.modules.ai.application.protected_candidate_impact_enrichment import (
     build_development_protected_candidate_impact_policy,
 )
@@ -550,3 +551,87 @@ def test_recommendation_correction_resubmission_route_is_wired_to_real_authoriza
         )
         assert fetched.status_code == 200, fetched.text
         assert fetched.json()["data"]["correction_id"] == body["correction_id"]
+
+
+def test_final_recommendation_disposition_route_requires_authentication_and_permission() -> None:
+    """Pass 30 of this session's standing audit loop found that, unlike every sibling route file
+    fixed in passes 22-29, `final_recommendation_dispositions.py` had only ever been proven to
+    *work* for a fully privileged identity (the test above) -- never proven to *deny* an
+    unauthenticated request or a real, logged-in identity with zero granted permissions.
+    """
+    with TestClient(create_app(Settings(environment="test"))) as client:
+        unauthenticated_created = client.post(
+            "/api/v1/recommendations/review-requests/review-request.wiring-denied-0001/"
+            "final-dispositions",
+            json={},
+            headers={"Idempotency-Key": "wiring-denied-final-disposition-0001"},
+        )
+        unauthenticated_read = client.get(
+            "/api/v1/recommendations/review-requests/review-request.wiring-denied-0001/"
+            "final-dispositions/final-disposition.wiring-denied-0001",
+        )
+    for response in (unauthenticated_created, unauthenticated_read):
+        assert response.status_code == 401, response.text
+        assert response.json()["code"] == "authentication_required"
+
+    with TestClient(create_app(_settings(development_role_ids=()))) as client:
+        csrf = _login(client)
+        denied_created = client.post(
+            "/api/v1/recommendations/review-requests/review-request.wiring-denied-0001/"
+            "final-dispositions",
+            json={},
+            headers={
+                "X-CSRF-Token": csrf,
+                "Idempotency-Key": "wiring-denied-final-disposition-0002",
+            },
+        )
+        denied_read = client.get(
+            "/api/v1/recommendations/review-requests/review-request.wiring-denied-0001/"
+            "final-dispositions/final-disposition.wiring-denied-0001",
+            headers={"X-CSRF-Token": csrf},
+        )
+    for response in (denied_created, denied_read):
+        assert response.status_code == 403, response.text
+        assert response.json()["code"] == "authorization_denied"
+
+
+def test_recommendation_correction_resubmission_route_requires_authentication_and_permission() -> (
+    None
+):
+    """Pass 30: same gap as the final-disposition test above, for
+    `recommendation_correction_resubmissions.py` -- its only existing test proved a fully
+    privileged identity could reach the route, never that an unauthenticated or unprivileged one
+    is denied.
+    """
+    with TestClient(create_app(Settings(environment="test"))) as client:
+        unauthenticated_created = client.post(
+            "/api/v1/recommendations/review-requests/review-request.wiring-denied-0001/corrections",
+            json={},
+            headers={"Idempotency-Key": "wiring-denied-correction-0001"},
+        )
+        unauthenticated_read = client.get(
+            "/api/v1/recommendations/review-requests/review-request.wiring-denied-0001/"
+            "corrections/correction.wiring-denied-0001",
+        )
+    for response in (unauthenticated_created, unauthenticated_read):
+        assert response.status_code == 401, response.text
+        assert response.json()["code"] == "authentication_required"
+
+    with TestClient(create_app(_settings(development_role_ids=()))) as client:
+        csrf = _login(client)
+        denied_created = client.post(
+            "/api/v1/recommendations/review-requests/review-request.wiring-denied-0001/corrections",
+            json={},
+            headers={
+                "X-CSRF-Token": csrf,
+                "Idempotency-Key": "wiring-denied-correction-0002",
+            },
+        )
+        denied_read = client.get(
+            "/api/v1/recommendations/review-requests/review-request.wiring-denied-0001/"
+            "corrections/correction.wiring-denied-0001",
+            headers={"X-CSRF-Token": csrf},
+        )
+    for response in (denied_created, denied_read):
+        assert response.status_code == 403, response.text
+        assert response.json()["code"] == "authorization_denied"
