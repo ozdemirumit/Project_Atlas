@@ -5,6 +5,7 @@ from datetime import datetime
 from enum import StrEnum
 
 from atlas.core.classification import DataClassification
+from atlas.modules.identity.domain.models import validate_stable_identifier
 
 
 class EntityType(StrEnum):
@@ -107,6 +108,14 @@ class GraphEntity:
     lifecycle_state: str = "active"
 
     def __post_init__(self) -> None:
+        for value, field_name in (
+            (self.entity_id, "graph entity identifier"),
+            (self.organization_id, "graph entity organization identifier"),
+            (self.environment_id, "graph entity environment identifier"),
+            (self.site_id, "graph entity site identifier"),
+            (self.domain_id, "graph entity domain identifier"),
+        ):
+            validate_stable_identifier(value, field_name)
         if self.observed_at.tzinfo is None or self.valid_from.tzinfo is None:
             raise ValueError("graph entity timestamps must be timezone-aware")
         if self.valid_to is not None and self.valid_to.tzinfo is None:
@@ -134,6 +143,12 @@ class GraphRelationship:
     allowed_principals: frozenset[str]
 
     def __post_init__(self) -> None:
+        for value, field_name in (
+            (self.relationship_id, "graph relationship identifier"),
+            (self.source_entity_id, "graph relationship source entity identifier"),
+            (self.target_entity_id, "graph relationship target entity identifier"),
+        ):
+            validate_stable_identifier(value, field_name)
         if self.source_entity_id == self.target_entity_id:
             raise ValueError("self-referencing graph relationships are not supported")
         if self.observed_at.tzinfo is None or self.valid_from.tzinfo is None:
@@ -162,6 +177,13 @@ class GraphSnapshot:
     data_profile: str
 
     def __post_init__(self) -> None:
+        for value, field_name in (
+            (self.snapshot_id, "graph snapshot identifier"),
+            (self.organization_id, "graph snapshot organization identifier"),
+            (self.environment_id, "graph snapshot environment identifier"),
+            (self.site_id, "graph snapshot site identifier"),
+        ):
+            validate_stable_identifier(value, field_name)
         if self.generated_at.tzinfo is None:
             raise ValueError("generated_at must be timezone-aware")
         entity_ids = {entity.entity_id for entity in self.entities}
