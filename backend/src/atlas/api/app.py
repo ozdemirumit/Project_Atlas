@@ -72,6 +72,7 @@ from atlas.api.routes import (
     investigations,
     invocation_authorizations,
     invocation_evidence,
+    itsm_attachments,
     itsm_cmdb_reconciliation,
     itsm_idempotency_conflicts,
     itsm_incident_records,
@@ -959,6 +960,10 @@ from atlas.modules.inventory.adapters.postgres import PostgreSQLInventoryDeviceR
 from atlas.modules.inventory.application.service import InventoryDeviceService
 from atlas.modules.investigations.adapters.synthetic import SyntheticInvestigationAssembler
 from atlas.modules.investigations.application.service import InvestigationService
+from atlas.modules.itsm.adapters.attachments_memory import InMemoryItsmAttachmentRepository
+from atlas.modules.itsm.adapters.attachments_permission import (
+    AuthorizationItsmAttachmentPermissionAuthorizer,
+)
 from atlas.modules.itsm.adapters.cmdb_reconciliation_memory import (
     InMemoryItsmCiMappingRuleRepository,
     InMemoryItsmCiReconciliationConflictRepository,
@@ -989,6 +994,7 @@ from atlas.modules.itsm.adapters.sandbox import (
     DeterministicNoNetworkItsmSandboxConformanceAdapter,
     UnavailableItsmSandboxConformanceAdapter,
 )
+from atlas.modules.itsm.application.attachments import ItsmAttachmentService
 from atlas.modules.itsm.application.cmdb_reconciliation import ItsmCmdbReconciliationService
 from atlas.modules.itsm.application.dispatch_authorization import (
     ItsmDispatchAuthorizationService,
@@ -3273,6 +3279,7 @@ def create_app(
     itsm_idempotency_conflict_service: ItsmIdempotencyConflictService | None = None,
     itsm_cmdb_reconciliation_service: ItsmCmdbReconciliationService | None = None,
     itsm_incident_record_cache_service: ItsmIncidentRecordCacheService | None = None,
+    itsm_attachment_service: ItsmAttachmentService | None = None,
     grounded_answer_service: GroundedAnswerService | None = None,
     conversation_service: ConversationService | None = None,
     conversation_target_access_source: ConversationTargetAccessSource | None = None,
@@ -7747,6 +7754,14 @@ def create_app(
             audit_sink=resolved_audit_sink,
         )
     )
+    resolved_itsm_attachment_service = itsm_attachment_service or ItsmAttachmentService(
+        repository=InMemoryItsmAttachmentRepository(),
+        permission_authorizer=AuthorizationItsmAttachmentPermissionAuthorizer(
+            service=resolved_authorization_service,
+            environment=resolved_settings.environment,
+        ),
+        audit_sink=resolved_audit_sink,
+    )
     resolved_approval_service = approval_service or ApprovalService(
         recommendation_provider=resolved_recommendation_service,
         audit_sink=resolved_audit_sink,
@@ -10608,6 +10623,7 @@ def create_app(
         app.state.itsm_idempotency_conflict_service = resolved_itsm_idempotency_conflict_service
         app.state.itsm_cmdb_reconciliation_service = resolved_itsm_cmdb_reconciliation_service
         app.state.itsm_incident_record_cache_service = resolved_itsm_incident_record_cache_service
+        app.state.itsm_attachment_service = resolved_itsm_attachment_service
         app.state.grounded_answer_service = resolved_grounded_answer_service
         app.state.conversation_service = resolved_conversation_service
         app.state.conversation_target_access_source = resolved_conversation_target_access_source
@@ -11006,6 +11022,7 @@ def create_app(
         await resolved_itsm_idempotency_conflict_service.close()
         await resolved_itsm_cmdb_reconciliation_service.close()
         await resolved_itsm_incident_record_cache_service.close()
+        await resolved_itsm_attachment_service.close()
         await resolved_report_service.close()
         await resolved_bootstrap_state_service.close()
         await database_probe.close()
@@ -11049,6 +11066,7 @@ def create_app(
     app.include_router(itsm_idempotency_conflicts.router, prefix="/api/v1")
     app.include_router(itsm_cmdb_reconciliation.router, prefix="/api/v1")
     app.include_router(itsm_incident_records.router, prefix="/api/v1")
+    app.include_router(itsm_attachments.router, prefix="/api/v1")
     app.include_router(platform.router, prefix="/api/v1")
     app.include_router(release_preflight.router, prefix="/api/v1")
     app.include_router(deployment_configuration.router, prefix="/api/v1")

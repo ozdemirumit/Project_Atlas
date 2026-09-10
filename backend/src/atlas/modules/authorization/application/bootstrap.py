@@ -43,6 +43,11 @@ ITSM_DISPATCH_AUTHORIZATION_CREATE = "itsm.integrations.dispatch-authorizations.
 ITSM_IDEMPOTENCY_CONFLICT_MANAGE = "itsm.integrations.idempotency-conflict.manage"
 ITSM_CMDB_RECONCILIATION_MANAGE = "itsm.integrations.cmdb-reconciliation.manage"
 ITSM_INCIDENT_RECORD_CACHE_MANAGE = "itsm.integrations.incident-record-cache.manage"
+ITSM_ATTACHMENT_READ = "itsm.attachments.read"
+ITSM_ATTACHMENT_CREATE = "itsm.attachments.create"
+ITSM_ATTACHMENT_DELETE = "itsm.attachments.delete"
+ITSM_ATTACHMENT_DOWNLOAD = "itsm.attachments.download"
+ITSM_ATTACHMENT_ELEVATED_READ = "itsm.attachments-elevated.read"
 AI_GROUNDED_QUERY_CREATE = "ai.grounded-query.create"
 AI_MODEL_LIFECYCLE_ADMINISTER = "ai.model-lifecycle.administer"
 GUARDRAIL_HUMAN_REVIEW_ENQUEUE = "guardrails.human-review.enqueue"
@@ -625,6 +630,39 @@ def itsm_integration_permission_definitions() -> tuple[PermissionDefinition, ...
     )
 
 
+def itsm_attachment_permission_definitions() -> tuple[PermissionDefinition, ...]:
+    return (
+        PermissionDefinition(
+            permission_id=ITSM_ATTACHMENT_READ,
+            description="Read one ITSM attachment or evidence package's secret-free metadata.",
+        ),
+        PermissionDefinition(
+            permission_id=ITSM_ATTACHMENT_CREATE,
+            description=(
+                "Upload, replace, or package one allowlisted, scanned ITSM attachment or "
+                "evidence package."
+            ),
+        ),
+        PermissionDefinition(
+            permission_id=ITSM_ATTACHMENT_DELETE,
+            description="Delete one ITSM attachment.",
+        ),
+        PermissionDefinition(
+            permission_id=ITSM_ATTACHMENT_DOWNLOAD,
+            description=(
+                "Issue or consume one expiring, re-authorized ITSM attachment download link."
+            ),
+        ),
+        PermissionDefinition(
+            permission_id=ITSM_ATTACHMENT_ELEVATED_READ,
+            description=(
+                "Raise the classification ceiling applied to ITSM attachment downloads beyond "
+                "internal."
+            ),
+        ),
+    )
+
+
 def security_administrator_role_definition(
     *, include_workload_identity: bool = False
 ) -> RoleDefinition:
@@ -701,6 +739,19 @@ def itsm_integration_scope(
         site_id="site.local",
         domain_id="domain.itsm",
         resource_id="resource.itsm.integrations",
+        capability_class=capability_class,
+    )
+
+
+def itsm_attachment_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.itsm",
+        resource_id="resource.itsm.attachments",
         capability_class=capability_class,
     )
 
@@ -2613,6 +2664,7 @@ def build_development_authorization_service(
         *workload_identity_permission_definitions(),
         *inventory_device_permission_definitions(),
         *itsm_integration_permission_definitions(),
+        *itsm_attachment_permission_definitions(),
         *audit_permission_definitions(),
         PermissionDefinition(
             permission_id=IDENTITY_SELF_READ,
@@ -3963,6 +4015,11 @@ def build_development_authorization_service(
                 ITSM_IDEMPOTENCY_CONFLICT_MANAGE,
                 ITSM_CMDB_RECONCILIATION_MANAGE,
                 ITSM_INCIDENT_RECORD_CACHE_MANAGE,
+                ITSM_ATTACHMENT_READ,
+                ITSM_ATTACHMENT_CREATE,
+                ITSM_ATTACHMENT_DELETE,
+                ITSM_ATTACHMENT_DOWNLOAD,
+                ITSM_ATTACHMENT_ELEVATED_READ,
                 AI_GROUNDED_QUERY_CREATE,
                 AI_MODEL_LIFECYCLE_ADMINISTER,
                 GUARDRAIL_HUMAN_REVIEW_ENQUEUE,
@@ -4392,6 +4449,30 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=itsm_integration_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.itsm-attachment-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=itsm_attachment_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.itsm-attachment-manage",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=itsm_attachment_scope(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C2_DIAGNOSTIC,

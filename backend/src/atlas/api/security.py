@@ -155,6 +155,10 @@ from atlas.modules.authorization.application.bootstrap import (
     INVENTORY_DEVICE_READ,
     INVENTORY_DEVICE_RETIRE,
     INVESTIGATION_CREATE,
+    ITSM_ATTACHMENT_CREATE,
+    ITSM_ATTACHMENT_DELETE,
+    ITSM_ATTACHMENT_DOWNLOAD,
+    ITSM_ATTACHMENT_READ,
     ITSM_CMDB_RECONCILIATION_MANAGE,
     ITSM_DISPATCH_AUTHORIZATION_CREATE,
     ITSM_HANDOFF_REVIEW_DECIDE,
@@ -399,6 +403,7 @@ from atlas.modules.authorization.application.bootstrap import (
     identity_governance_scope,
     inventory_device_scope,
     investigation_scope,
+    itsm_attachment_scope,
     itsm_handoff_review_scope,
     itsm_integration_scope,
     knowledge_deletion_legal_hold_scope,
@@ -2789,6 +2794,86 @@ async def authorize_itsm_incident_record_cache_manage(
         request,
         subject,
         permission_id=ITSM_INCIDENT_RECORD_CACHE_MANAGE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+async def _authorize_itsm_attachment(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+    capability_class: CapabilityClass,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.itsm.attachments",
+            scope=itsm_attachment_scope(
+                subject.organization_id, settings.environment, capability_class
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_itsm_attachment_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_itsm_attachment(
+        request,
+        subject,
+        permission_id=ITSM_ATTACHMENT_READ,
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+async def authorize_itsm_attachment_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(itsm_integration_mutation_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_itsm_attachment(
+        request,
+        subject,
+        permission_id=ITSM_ATTACHMENT_CREATE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+async def authorize_itsm_attachment_delete(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(itsm_integration_mutation_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_itsm_attachment(
+        request,
+        subject,
+        permission_id=ITSM_ATTACHMENT_DELETE,
+        capability_class=CapabilityClass.C2_DIAGNOSTIC,
+    )
+
+
+async def authorize_itsm_attachment_download(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(itsm_integration_mutation_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_itsm_attachment(
+        request,
+        subject,
+        permission_id=ITSM_ATTACHMENT_DOWNLOAD,
         capability_class=CapabilityClass.C2_DIAGNOSTIC,
     )
 
