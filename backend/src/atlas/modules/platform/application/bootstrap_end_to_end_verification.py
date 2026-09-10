@@ -46,6 +46,25 @@ from atlas.modules.platform.domain.bootstrap_trust_provisioning import TrustProv
 from atlas.modules.platform.domain.release_preflight import DeploymentProfile
 
 
+def _verification_summary(checks: tuple[EndToEndVerificationCheck, ...]) -> dict[str, int]:
+    return {
+        "passed": sum(item.state is VerificationCheckState.PASSED for item in checks),
+        "failed": sum(item.state is VerificationCheckState.FAILED for item in checks),
+        "skipped": sum(item.state is VerificationCheckState.SKIPPED for item in checks),
+        "not_applicable": sum(
+            item.state is VerificationCheckState.NOT_APPLICABLE for item in checks
+        ),
+        "mandatory_passed": sum(
+            item.mandatory and item.state is VerificationCheckState.PASSED for item in checks
+        ),
+        "unresolved_mandatory": sum(
+            item.mandatory
+            and item.state in (VerificationCheckState.FAILED, VerificationCheckState.SKIPPED)
+            for item in checks
+        ),
+    }
+
+
 class BootstrapVerificationPlanService:
     def __init__(
         self,
@@ -99,13 +118,16 @@ class BootstrapVerificationPlanService:
             profile=profile,
             source_run_version=source_run_version,
             configuration_digest=configuration_digest,
+        )
+        checks = self._checks(
+            current=current,
+            configuration_digest=configuration_digest,
             trust_plan_digest=trust_plan_digest,
             data_plan_digest=data_plan_digest,
             service_plan_digest=service_plan_digest,
             identity_plan_digest=identity_plan_digest,
             integration_plan_digest=integration_plan_digest,
         )
-        checks = self._checks()
         target_id = "target.bootstrap-verification-report"
         target_kind = "target-kind.local-verification-report"
         ingress_contract_id = "ingress.local-api-ui"
@@ -180,14 +202,7 @@ class BootstrapVerificationPlanService:
                 "ingress_contract_id": plan.ingress_contract_id,
                 "target_id": plan.target_id,
                 "checks": [cls._check_payload(item) for item in plan.checks],
-                "summary": {
-                    "passed": 12,
-                    "failed": 0,
-                    "skipped": 0,
-                    "not_applicable": 3,
-                    "mandatory_passed": 12,
-                    "unresolved_mandatory": 0,
-                },
+                "summary": _verification_summary(plan.checks),
                 "model_request_performed": False,
                 "network_request_performed": False,
                 "secret_resolution_performed": False,
@@ -211,11 +226,6 @@ class BootstrapVerificationPlanService:
         profile: DeploymentProfile,
         source_run_version: int,
         configuration_digest: str,
-        trust_plan_digest: str,
-        data_plan_digest: str,
-        service_plan_digest: str,
-        identity_plan_digest: str,
-        integration_plan_digest: str,
     ) -> None:
         allowed_versions = {source_run_version}
         if current.end_to_end_verification is not None:
@@ -228,6 +238,18 @@ class BootstrapVerificationPlanService:
             or current.current_phase_id != "phase.verify"
         ):
             raise BootstrapVerificationError("bootstrap_verification_source_mismatch")
+
+    @staticmethod
+    def _checks(
+        *,
+        current: BootstrapRunRecord,
+        configuration_digest: str,
+        trust_plan_digest: str,
+        data_plan_digest: str,
+        service_plan_digest: str,
+        identity_plan_digest: str,
+        integration_plan_digest: str,
+    ) -> tuple[EndToEndVerificationCheck, ...]:
         artifact = current.artifact_acquisition
         configuration = current.configuration_rendering
         trust = current.trust_provisioning
@@ -244,148 +266,210 @@ class BootstrapVerificationPlanService:
             "phase.identity",
             "phase.integrations",
         }
-        valid = (
-            required_phases.issubset(current.completed_phase_ids)
-            and artifact is not None
+
+        phases_complete = required_phases.issubset(current.completed_phase_ids)
+        artifact_valid = (
+            artifact is not None
             and artifact.state is ArtifactAcquisitionState.COMPLETED
             and bool(artifact.evidence)
-            and configuration is not None
+        )
+        configuration_valid = (
+            configuration is not None
             and configuration.state is ConfigurationRenderingState.COMPLETED
             and configuration.configuration_digest == configuration_digest
             and bool(configuration.evidence)
-            and trust is not None
+        )
+        trust_valid = (
+            trust is not None
             and trust.state is TrustProvisioningState.COMPLETED
             and trust.trust_plan_digest == trust_plan_digest
             and len(trust.evidence) == 2
-            and data is not None
+        )
+        data_core_valid = (
+            data is not None
             and data.state is DataInitializationState.COMPLETED
             and data.data_plan_digest == data_plan_digest
-            and data.backup_applicability is BackupApplicability.NOT_APPLICABLE_CLEAN_INSTALL
             and len(data.evidence) == 1
-            and services is not None
+        )
+        data_backup_valid = bool(
+            data_core_valid
+            and data is not None
+            and data.backup_applicability is BackupApplicability.NOT_APPLICABLE_CLEAN_INSTALL
+        )
+        services_core_valid = (
+            services is not None
             and services.state is ServiceDeploymentState.COMPLETED
             and services.service_plan_digest == service_plan_digest
-            and services.ready_service_count == services.deployed_service_count
-            and services.passed_probe_count == services.ready_service_count * 3
             and len(services.evidence) == 1
-            and identity is not None
+        )
+        services_ready_valid = bool(
+            services_core_valid
+            and services is not None
+            and services.ready_service_count == services.deployed_service_count
+        )
+        services_probe_valid = bool(
+            services_core_valid
+            and services is not None
+            and services.passed_probe_count == services.ready_service_count * 3
+        )
+        identity_core_valid = (
+            identity is not None
             and identity.state is IdentityHandoffState.COMPLETED
             and identity.identity_plan_digest == identity_plan_digest
-            and identity.validation_count == 5
-            and identity.enterprise_authentication_validated
-            and identity.recovery_identity_verified
             and len(identity.evidence) == 1
-            and integrations is not None
+        )
+        identity_auth_valid = bool(
+            identity_core_valid
+            and identity is not None
+            and identity.enterprise_authentication_validated
+        )
+        identity_rbac_valid = bool(
+            identity_core_valid
+            and identity is not None
+            and identity.validation_count == 5
+            and identity.recovery_identity_verified
+        )
+        integrations_core_valid = (
+            integrations is not None
             and integrations.state is IntegrationValidationState.COMPLETED
             and integrations.integration_plan_digest == integration_plan_digest
             and integrations.mandatory_pass_count == 12
-            and integrations.activation_count == 0
-            and integrations.network_request_count == 0
-            and integrations.secret_resolution_count == 0
             and len(integrations.evidence) == 1
         )
-        if not valid:
-            raise BootstrapVerificationError("bootstrap_verification_evidence_missing")
+        integrations_connector_valid = bool(
+            integrations_core_valid
+            and integrations is not None
+            and integrations.activation_count == 0
+            and integrations.network_request_count == 0
+        )
+        integrations_security_valid = bool(
+            integrations_core_valid
+            and integrations is not None
+            and integrations.secret_resolution_count == 0
+        )
+        ingress_valid = bool(phases_complete and artifact_valid and configuration_valid)
 
-    @staticmethod
-    def _checks() -> tuple[EndToEndVerificationCheck, ...]:
-        passed = VerificationCheckState.PASSED
+        def result(valid: bool) -> VerificationCheckState:
+            return VerificationCheckState.PASSED if valid else VerificationCheckState.FAILED
+
         na = VerificationCheckState.NOT_APPLICABLE
         rows = (
             (
                 "verify.ingress-ui-api",
                 "category.ingress",
                 "ingress.local-api-ui",
-                passed,
-                "verification.ingress.ready",
+                result(ingress_valid),
+                "verification.ingress.ready" if ingress_valid else "verification.ingress.not-ready",
                 True,
             ),
             (
                 "verify.authentication-session",
                 "category.identity",
                 "identity.enterprise-session",
-                passed,
-                "verification.identity.auth-session-passed",
+                result(identity_auth_valid),
+                "verification.identity.auth-session-passed"
+                if identity_auth_valid
+                else "verification.identity.auth-session-failed",
                 True,
             ),
             (
                 "verify.rbac-group-mapping",
                 "category.identity",
                 "authorization.default-deny",
-                passed,
-                "verification.identity.rbac-mapping-passed",
+                result(identity_rbac_valid),
+                "verification.identity.rbac-mapping-passed"
+                if identity_rbac_valid
+                else "verification.identity.rbac-mapping-failed",
                 True,
             ),
             (
                 "verify.audit-integrity",
                 "category.audit",
                 "audit.durable-protected",
-                passed,
-                "verification.audit.integrity-passed",
+                result(trust_valid),
+                "verification.audit.integrity-passed"
+                if trust_valid
+                else "verification.audit.integrity-failed",
                 True,
             ),
             (
                 "verify.logging-redaction",
                 "category.logging",
                 "logging.structured-redacted",
-                passed,
-                "verification.logging.pipeline-passed",
+                result(configuration_valid),
+                "verification.logging.pipeline-passed"
+                if configuration_valid
+                else "verification.logging.pipeline-failed",
                 True,
             ),
             (
                 "verify.data-contract",
                 "category.data",
                 "data.postgresql-schema",
-                passed,
-                "verification.data.contract-passed",
+                result(data_core_valid),
+                "verification.data.contract-passed"
+                if data_core_valid
+                else "verification.data.contract-failed",
                 True,
             ),
             (
                 "verify.model-contract",
                 "category.model",
                 "model.offline-structured-contract",
-                passed,
-                "verification.model.contract-passed",
+                result(services_ready_valid),
+                "verification.model.contract-passed"
+                if services_ready_valid
+                else "verification.model.contract-failed",
                 True,
             ),
             (
                 "verify.knowledge-contract",
                 "category.knowledge",
                 "knowledge.synthetic-lifecycle",
-                passed,
-                "verification.knowledge.contract-passed",
+                result(data_core_valid),
+                "verification.knowledge.contract-passed"
+                if data_core_valid
+                else "verification.knowledge.contract-failed",
                 True,
             ),
             (
                 "verify.workflow-policy-approval",
                 "category.workflow",
                 "workflow.synthetic-governance",
-                passed,
-                "verification.workflow.contract-passed",
+                result(services_probe_valid),
+                "verification.workflow.contract-passed"
+                if services_probe_valid
+                else "verification.workflow.contract-failed",
                 True,
             ),
             (
                 "verify.connector-read-only",
                 "category.connector",
                 "connector.synthetic-storage-read",
-                passed,
-                "verification.connector.read-only-passed",
+                result(integrations_connector_valid),
+                "verification.connector.read-only-passed"
+                if integrations_connector_valid
+                else "verification.connector.read-only-failed",
                 True,
             ),
             (
                 "verify.backup-restore-contract",
                 "category.recovery",
                 "recovery.clean-install-declaration",
-                passed,
-                "verification.recovery.contract-passed",
+                result(data_backup_valid),
+                "verification.recovery.contract-passed"
+                if data_backup_valid
+                else "verification.recovery.contract-failed",
                 True,
             ),
             (
                 "verify.security-boundary",
                 "category.security",
                 "security.zero-external-operations",
-                passed,
-                "verification.security.boundary-passed",
+                result(integrations_security_valid),
+                "verification.security.boundary-passed"
+                if integrations_security_valid
+                else "verification.security.boundary-failed",
                 True,
             ),
             (
@@ -640,30 +724,50 @@ class BootstrapEndToEndVerificationService:
             identity_plan_digest=identity_plan_digest,
             integration_plan_digest=integration_plan_digest,
         )
-        try:
-            receipt = await self._target.publish(
-                execution_id=running.execution_id,
-                plan=plan,
-                report=self._plan_service.render(plan),
-            )
-            finished = replace(
-                running,
-                state=VerificationExecutionState.COMPLETED,
-                result_code="bootstrap.verification.completed",
-                completed_at=self._clock(),
-                passed_count=12,
-                not_applicable_count=3,
-                mandatory_pass_count=12,
-                checks=receipt.checks,
-                evidence=receipt.evidence,
-            )
-        except BootstrapVerificationError as error:
+        summary = _verification_summary(plan.checks)
+        if summary["unresolved_mandatory"]:
             finished = replace(
                 running,
                 state=VerificationExecutionState.FAILED,
-                result_code=error.code,
+                result_code="bootstrap.verification.mandatory-check-unresolved",
                 completed_at=self._clock(),
+                passed_count=summary["passed"],
+                failed_count=summary["failed"],
+                skipped_count=summary["skipped"],
+                not_applicable_count=summary["not_applicable"],
+                mandatory_pass_count=summary["mandatory_passed"],
+                unresolved_mandatory_count=summary["unresolved_mandatory"],
+                checks=plan.checks,
+                evidence=(),
             )
+        else:
+            try:
+                receipt = await self._target.publish(
+                    execution_id=running.execution_id,
+                    plan=plan,
+                    report=self._plan_service.render(plan),
+                )
+                finished = replace(
+                    running,
+                    state=VerificationExecutionState.COMPLETED,
+                    result_code="bootstrap.verification.completed",
+                    completed_at=self._clock(),
+                    passed_count=summary["passed"],
+                    failed_count=summary["failed"],
+                    skipped_count=summary["skipped"],
+                    not_applicable_count=summary["not_applicable"],
+                    mandatory_pass_count=summary["mandatory_passed"],
+                    unresolved_mandatory_count=summary["unresolved_mandatory"],
+                    checks=receipt.checks,
+                    evidence=receipt.evidence,
+                )
+            except BootstrapVerificationError as error:
+                finished = replace(
+                    running,
+                    state=VerificationExecutionState.FAILED,
+                    result_code=error.code,
+                    completed_at=self._clock(),
+                )
         await self._audit(
             actor=actor,
             correlation_id=correlation_id,

@@ -52,10 +52,6 @@ class EndToEndVerificationCheck:
             (self.result_code, "verification result code"),
         ):
             validate_stable_identifier(value, label)
-        if self.mandatory and self.state is not VerificationCheckState.PASSED:
-            raise ValueError("mandatory verification check must pass")
-        if not self.mandatory and self.state is not VerificationCheckState.NOT_APPLICABLE:
-            raise ValueError("optional verification check must declare applicability")
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,12 +119,10 @@ class BootstrapVerificationPlan:
         check_ids = tuple(item.check_id for item in self.checks)
         if len(set(check_ids)) != len(check_ids):
             raise ValueError("bootstrap verification catalog contains duplicate checks")
-        passed = sum(item.state is VerificationCheckState.PASSED for item in self.checks)
-        not_applicable = sum(
-            item.state is VerificationCheckState.NOT_APPLICABLE for item in self.checks
-        )
-        if passed != 12 or not_applicable != 3:
-            raise ValueError("bootstrap verification verdict is incomplete")
+        mandatory_count = sum(item.mandatory for item in self.checks)
+        optional_count = len(self.checks) - mandatory_count
+        if mandatory_count != 12 or optional_count != 3:
+            raise ValueError("bootstrap verification catalog composition is invalid")
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,37 +202,60 @@ class EndToEndVerificationExecution:
             self.completed_at is not None and self.completed_at.tzinfo is None
         ):
             raise ValueError("verification timestamps must be timezone-aware")
-        final_values = (
-            self.passed_count,
-            self.failed_count,
-            self.skipped_count,
-            self.not_applicable_count,
-            self.mandatory_pass_count,
-            self.unresolved_mandatory_count,
-            bool(self.checks),
-            bool(self.evidence),
-        )
         if self.external_operation_count:
             raise ValueError("verification performed a forbidden external operation")
+        empty_evidence = (
+            self.passed_count == 0
+            and self.failed_count == 0
+            and self.skipped_count == 0
+            and self.not_applicable_count == 0
+            and self.mandatory_pass_count == 0
+            and self.unresolved_mandatory_count == 0
+            and not self.checks
+            and not self.evidence
+        )
         if self.state is VerificationExecutionState.RUNNING:
-            if self.completed_at is not None or any(final_values):
+            if self.completed_at is not None or not empty_evidence:
                 raise ValueError("running verification cannot contain final evidence")
-        elif self.completed_at is None or self.completed_at < self.started_at:
+            return
+        if self.completed_at is None or self.completed_at < self.started_at:
             raise ValueError("finished verification requires a completion time")
+        if self.state is VerificationExecutionState.FAILED and empty_evidence:
+            # The execution was abandoned (e.g. a reclaimed lease) before any
+            # check was ever evaluated. That is a legitimate empty failure,
+            # distinct from a failure that ran checks but hid the results.
+            return
+        passed = sum(item.state is VerificationCheckState.PASSED for item in self.checks)
+        failed = sum(item.state is VerificationCheckState.FAILED for item in self.checks)
+        skipped = sum(item.state is VerificationCheckState.SKIPPED for item in self.checks)
+        not_applicable = sum(
+            item.state is VerificationCheckState.NOT_APPLICABLE for item in self.checks
+        )
+        mandatory_pass = sum(
+            item.mandatory and item.state is VerificationCheckState.PASSED for item in self.checks
+        )
+        unresolved_mandatory = sum(
+            item.mandatory
+            and item.state in (VerificationCheckState.FAILED, VerificationCheckState.SKIPPED)
+            for item in self.checks
+        )
+        if (
+            len(self.checks) != 15
+            or self.passed_count != passed
+            or self.failed_count != failed
+            or self.skipped_count != skipped
+            or self.not_applicable_count != not_applicable
+            or self.mandatory_pass_count != mandatory_pass
+            or self.unresolved_mandatory_count != unresolved_mandatory
+        ):
+            raise ValueError("verification counts are inconsistent with recorded checks")
         if self.state is VerificationExecutionState.COMPLETED:
-            if (
-                self.passed_count != 12
-                or self.failed_count != 0
-                or self.skipped_count != 0
-                or self.not_applicable_count != 3
-                or self.mandatory_pass_count != 12
-                or self.unresolved_mandatory_count != 0
-                or len(self.checks) != 15
-                or len(self.evidence) != 1
-            ):
-                raise ValueError("completed verification evidence is incomplete")
-        elif any(final_values):
-            raise ValueError("failed verification cannot contain successful evidence")
+            if unresolved_mandatory != 0 or len(self.evidence) != 1:
+                raise ValueError("completed verification cannot have unresolved mandatory checks")
+        elif unresolved_mandatory == 0 and failed == 0:
+            raise ValueError(
+                "failed verification must show a real failed or unresolved mandatory check"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -247,10 +264,14 @@ class EndToEndVerificationReceipt:
     evidence: tuple[VerificationReportEvidence, ...]
 
     def __post_init__(self) -> None:
-        if (
-            len(self.checks) != 15
-            or sum(item.state is VerificationCheckState.PASSED for item in self.checks) != 12
-            or sum(item.state is VerificationCheckState.NOT_APPLICABLE for item in self.checks) != 3
-            or len(self.evidence) != 1
-        ):
+        if len(self.checks) != 15 or len(self.evidence) != 1:
             raise ValueError("end-to-end verification receipt is incomplete")
+        unresolved_mandatory = sum(
+            item.mandatory
+            and item.state in (VerificationCheckState.FAILED, VerificationCheckState.SKIPPED)
+            for item in self.checks
+        )
+        if unresolved_mandatory:
+            raise ValueError(
+                "end-to-end verification receipt cannot publish unresolved mandatory checks"
+            )

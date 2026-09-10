@@ -57,6 +57,7 @@ from atlas.modules.platform.domain.bootstrap_data_initialization import (
     DataStateEvidence,
 )
 from atlas.modules.platform.domain.bootstrap_end_to_end_verification import (
+    EndToEndVerificationExecution,
     VerificationCheckState,
     VerificationExecutionState,
     VerificationReportDisposition,
@@ -83,6 +84,7 @@ from atlas.modules.platform.domain.bootstrap_state import (
     BootstrapMutationResult,
     BootstrapPhaseCheckpoint,
     BootstrapRunIdentity,
+    BootstrapRunState,
 )
 from atlas.modules.platform.domain.bootstrap_trust_provisioning import (
     TrustFileDisposition,
@@ -576,3 +578,186 @@ def test_verification_plan_api_is_strict_and_redacted(tmp_path: Path) -> None:
     assert "reader_token" not in lowered
     assert "bearer " not in lowered
     assert malformed.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_verification_plan_reports_real_check_failures_for_mismatched_evidence(
+    tmp_path: Path,
+) -> None:
+    _, _, _, _, service, inputs = await prepared_verification(tmp_path)
+    broken_inputs = {**inputs, "identity_plan_digest": "9" * 64}
+    plan = await service.prepare(**broken_inputs)
+    assert len(plan.checks) == 15
+    by_id = {item.check_id: item for item in plan.checks}
+    assert by_id["verify.authentication-session"].state is VerificationCheckState.FAILED
+    assert by_id["verify.rbac-group-mapping"].state is VerificationCheckState.FAILED
+    unaffected_mandatory = (
+        "verify.ingress-ui-api",
+        "verify.audit-integrity",
+        "verify.logging-redaction",
+        "verify.data-contract",
+        "verify.model-contract",
+        "verify.knowledge-contract",
+        "verify.workflow-policy-approval",
+        "verify.connector-read-only",
+        "verify.backup-restore-contract",
+        "verify.security-boundary",
+    )
+    for check_id in unaffected_mandatory:
+        assert by_id[check_id].state is VerificationCheckState.PASSED, check_id
+    for check_id in (
+        "verify.optional-data-services",
+        "verify.external-export",
+        "verify.production-ingress",
+    ):
+        assert by_id[check_id].state is VerificationCheckState.NOT_APPLICABLE
+    assert sum(item.state is VerificationCheckState.FAILED for item in plan.checks) == 2
+    assert sum(item.state is VerificationCheckState.PASSED for item in plan.checks) == 10
+    assert sum(item.state is VerificationCheckState.NOT_APPLICABLE for item in plan.checks) == 3
+
+
+@pytest.mark.asyncio
+async def test_verification_execution_fails_with_real_evidence_for_unresolved_mandatory_check(
+    tmp_path: Path,
+) -> None:
+    sink, repository, seeded, target, plan_service, inputs = await prepared_verification(tmp_path)
+    broken_inputs = {**inputs, "identity_plan_digest": "9" * 64}
+    plan = await plan_service.prepare(**broken_inputs)
+    service = BootstrapEndToEndVerificationService(
+        repository=repository,
+        plan_service=plan_service,
+        target=target,
+        audit_sink=sink,
+        environment_id="environment.test",
+        site_id="site.local",
+        clock=lambda: NOW,
+    )
+    result = await service.execute(
+        actor=actor(),
+        lease_holder_id="session.verification.primary",
+        run_id=seeded.run_id,
+        organization_id=seeded.identity.organization_id,
+        environment_id=seeded.identity.environment_id,
+        site_id=seeded.identity.site_id,
+        expected_version=seeded.version,
+        plan_digest=seeded.identity.plan_digest,
+        resume_key=seeded.identity.resume_key,
+        release_id=seeded.identity.release_id,
+        profile=seeded.identity.profile,
+        configuration_digest=plan.configuration_digest,
+        trust_plan_digest=plan.trust_plan_digest,
+        data_plan_digest=plan.data_plan_digest,
+        service_plan_digest=plan.service_plan_digest,
+        identity_plan_digest=plan.identity_plan_digest,
+        integration_plan_digest=plan.integration_plan_digest,
+        verification_schema_version=plan.schema_version,
+        suite_version=plan.suite_version,
+        verification_plan_digest=plan.verification_plan_digest,
+        target_id=plan.target_id,
+        expected_target_state=plan.target_state,
+        justification="Verify against an intentionally mismatched identity digest",
+        idempotency_key="verification-execution-failed-0001",
+        correlation_id="correlation.verification.execution.failed",
+    )
+    execution = result.end_to_end_verification
+    assert execution is not None
+    assert execution.state is VerificationExecutionState.FAILED
+    assert execution.result_code == "bootstrap.verification.mandatory-check-unresolved"
+    assert execution.unresolved_mandatory_count == 2
+    assert execution.failed_count == 2
+    assert execution.passed_count == 10
+    assert execution.not_applicable_count == 3
+    assert execution.mandatory_pass_count == 10
+    assert len(execution.checks) == 15
+    assert execution.evidence == ()
+    failed_ids = {
+        item.check_id for item in execution.checks if item.state is VerificationCheckState.FAILED
+    }
+    assert failed_ids == {"verify.authentication-session", "verify.rbac-group-mapping"}
+    assert result.record.current_phase_id == "phase.verify"
+    assert result.record.state is BootstrapRunState.FAILED
+    replay = await service.execute(
+        actor=actor(),
+        lease_holder_id="session.verification.primary",
+        run_id=seeded.run_id,
+        organization_id=seeded.identity.organization_id,
+        environment_id=seeded.identity.environment_id,
+        site_id=seeded.identity.site_id,
+        expected_version=seeded.version,
+        plan_digest=seeded.identity.plan_digest,
+        resume_key=seeded.identity.resume_key,
+        release_id=seeded.identity.release_id,
+        profile=seeded.identity.profile,
+        configuration_digest=plan.configuration_digest,
+        trust_plan_digest=plan.trust_plan_digest,
+        data_plan_digest=plan.data_plan_digest,
+        service_plan_digest=plan.service_plan_digest,
+        identity_plan_digest=plan.identity_plan_digest,
+        integration_plan_digest=plan.integration_plan_digest,
+        verification_schema_version=plan.schema_version,
+        suite_version=plan.suite_version,
+        verification_plan_digest=plan.verification_plan_digest,
+        target_id=plan.target_id,
+        expected_target_state=plan.target_state,
+        justification="Verify against an intentionally mismatched identity digest",
+        idempotency_key="verification-execution-failed-0001",
+        correlation_id="correlation.verification.execution.failed",
+    )
+    assert replay.replayed is True
+    assert replay.end_to_end_verification == execution
+
+
+@pytest.mark.parametrize(
+    "unresolved_state", [VerificationCheckState.FAILED, VerificationCheckState.SKIPPED]
+)
+@pytest.mark.asyncio
+async def test_completed_execution_cannot_pair_with_unresolved_mandatory_check(
+    tmp_path: Path, unresolved_state: VerificationCheckState
+) -> None:
+    _, _, _, target, plan_service, inputs = await prepared_verification(tmp_path)
+    plan = await plan_service.prepare(**inputs)
+    receipt = await target.publish(
+        execution_id="phase-execution.invariant-check",
+        plan=plan,
+        report=plan_service.render(plan),
+    )
+    broken_checks = tuple(
+        replace(
+            item,
+            state=unresolved_state,
+            result_code="verification.identity.auth-session-failed",
+        )
+        if item.check_id == "verify.authentication-session"
+        else item
+        for item in receipt.checks
+    )
+    with pytest.raises(ValueError, match="unresolved mandatory"):
+        EndToEndVerificationExecution(
+            execution_id="phase-execution.invariant-check",
+            phase_id="phase.verify",
+            release_id=plan.release_id,
+            profile=plan.profile,
+            configuration_digest=plan.configuration_digest,
+            trust_plan_digest=plan.trust_plan_digest,
+            data_plan_digest=plan.data_plan_digest,
+            service_plan_digest=plan.service_plan_digest,
+            identity_plan_digest=plan.identity_plan_digest,
+            integration_plan_digest=plan.integration_plan_digest,
+            verification_schema_version=plan.schema_version,
+            suite_version=plan.suite_version,
+            verification_plan_digest=plan.verification_plan_digest,
+            target_id=plan.target_id,
+            state=VerificationExecutionState.COMPLETED,
+            result_code="bootstrap.verification.completed",
+            started_at=NOW,
+            completed_at=NOW,
+            passed_count=11,
+            failed_count=1 if unresolved_state is VerificationCheckState.FAILED else 0,
+            skipped_count=1 if unresolved_state is VerificationCheckState.SKIPPED else 0,
+            not_applicable_count=3,
+            mandatory_pass_count=11,
+            unresolved_mandatory_count=1,
+            external_operation_count=0,
+            checks=broken_checks,
+            evidence=receipt.evidence,
+        )

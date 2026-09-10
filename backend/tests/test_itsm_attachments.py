@@ -697,7 +697,7 @@ def _login(client: TestClient) -> str:
 
 def test_itsm_attachments_require_authentication() -> None:
     """No session cookie and no development identity: every route must fail closed at
-    authentication, not merely at authorization."""
+    authentication, not merely at authorization. Covers all 8 ITSM attachment/evidence routes."""
     with TestClient(create_app(Settings(environment="test"))) as client:
         upload = client.post(
             "/api/v1/itsm/attachments",
@@ -710,18 +710,57 @@ def test_itsm_attachments_require_authentication() -> None:
             },
         )
         read = client.get("/api/v1/itsm/attachments/itsm-attachment.wiring-test-auth")
+        delete = client.delete("/api/v1/itsm/attachments/itsm-attachment.wiring-test-auth")
+        replace = client.post(
+            "/api/v1/itsm/attachments/itsm-attachment.wiring-test-auth/replace",
+            json={
+                "filename": "notes-v2.txt",
+                "media_type": "text/plain",
+                "classification": "classification.internal",
+                "content_base64": "Y2xlYW4=",
+            },
+        )
+        create_package = client.post(
+            "/api/v1/itsm/evidence-packages",
+            json={
+                "external_ticket_id": "INC0010001",
+                "attachment_ids": ["itsm-attachment.wiring-test-auth"],
+                "artifact_versions": ["report.itsm-attachment-wiring-test:v1"],
+                "classification": "classification.internal",
+            },
+        )
+        get_package = client.get(
+            "/api/v1/itsm/evidence-packages/itsm-evidence-package.wiring-test-auth"
+        )
+        issue_link = client.post(
+            "/api/v1/itsm/evidence-packages/itsm-evidence-package.wiring-test-auth/download-links",
+            json={
+                "attachment_id": "itsm-attachment.wiring-test-auth",
+                "ttl_seconds": 300,
+            },
+        )
         download = client.get(
             "/api/v1/itsm/evidence-packages/itsm-evidence-package.wiring-test-auth/"
             "download-links/itsm-attachment-download-link.wiring-test-auth"
         )
-    for response in (upload, read, download):
+    for response in (
+        upload,
+        read,
+        delete,
+        replace,
+        create_package,
+        get_package,
+        issue_link,
+        download,
+    ):
         assert response.status_code == 401, response.text
         assert response.json()["code"] == "authentication_required"
 
 
 def test_itsm_attachments_require_permission() -> None:
     """A real, logged-in human subject with zero granted role permissions must still be denied
-    by the real `AuthorizationService`, not by a faked dependency override."""
+    by the real `AuthorizationService`, not by a faked dependency override. Covers all 8 ITSM
+    attachment/evidence routes."""
     with TestClient(create_app(_settings(development_role_ids=()))) as client:
         csrf = _login(client)
         upload_denied = client.post(
@@ -742,6 +781,29 @@ def test_itsm_attachments_require_permission() -> None:
             "/api/v1/itsm/attachments/itsm-attachment.wiring-test-denied",
             headers={"X-CSRF-Token": csrf},
         )
+        replace_denied = client.post(
+            "/api/v1/itsm/attachments/itsm-attachment.wiring-test-denied/replace",
+            json={
+                "filename": "notes-v2.txt",
+                "media_type": "text/plain",
+                "classification": "classification.internal",
+                "content_base64": "Y2xlYW4=",
+            },
+            headers={"X-CSRF-Token": csrf},
+        )
+        create_package_denied = client.post(
+            "/api/v1/itsm/evidence-packages",
+            json={
+                "external_ticket_id": "INC0010001",
+                "attachment_ids": ["itsm-attachment.wiring-test-denied"],
+                "artifact_versions": ["report.itsm-attachment-wiring-test:v1"],
+                "classification": "classification.internal",
+            },
+            headers={"X-CSRF-Token": csrf},
+        )
+        get_package_denied = client.get(
+            "/api/v1/itsm/evidence-packages/itsm-evidence-package.wiring-test-denied",
+        )
         link_denied = client.post(
             "/api/v1/itsm/evidence-packages/itsm-evidence-package.wiring-test-denied/"
             "download-links",
@@ -751,7 +813,20 @@ def test_itsm_attachments_require_permission() -> None:
             },
             headers={"X-CSRF-Token": csrf},
         )
-    for response in (upload_denied, read_denied, delete_denied, link_denied):
+        download_denied = client.get(
+            "/api/v1/itsm/evidence-packages/itsm-evidence-package.wiring-test-denied/"
+            "download-links/itsm-attachment-download-link.wiring-test-denied"
+        )
+    for response in (
+        upload_denied,
+        read_denied,
+        delete_denied,
+        replace_denied,
+        create_package_denied,
+        get_package_denied,
+        link_denied,
+        download_denied,
+    ):
         assert response.status_code == 403, response.text
         assert response.json()["code"] == "authorization_denied"
 
