@@ -21,7 +21,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -19969,6 +19969,12 @@ class DocumentKnowledgeVectorModel(Base):
     model_profile_id: Mapped[str] = mapped_column(String(128), nullable=False)
     embedding: Mapped[list[float]] = mapped_column(Vector(384), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # Real PostgreSQL full-text-search lexemes, derived server-side (via to_tsvector)
+    # from the same governance-tagged tokens as the embedding above -- never raw
+    # chunk text. Nullable: rows indexed before hybrid retrieval existed (migration
+    # 20260911_0171) simply have no lexical ranking contribution. See
+    # atlas.modules.knowledge.domain.document_retrieval.tokenize_for_lexical_search.
+    lexical_search_vector: Mapped[str | None] = mapped_column(TSVECTOR, nullable=True)
 
 
 class AuditLedgerHeadModel(Base):

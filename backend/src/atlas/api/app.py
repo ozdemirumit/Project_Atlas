@@ -89,6 +89,7 @@ from atlas.api.routes import (
     mcp_builder_drafts,
     model_context_assembly,
     model_lifecycle,
+    operations,
     package_approvals,
     package_installations,
     package_registrations,
@@ -1451,6 +1452,11 @@ from atlas.modules.mcp_builder.adapters.validation_postgres import (
 )
 from atlas.modules.mcp_builder.application.draft_and_supersession import BuilderDraftService
 from atlas.modules.mcp_builder.application.service import McpBuilderService
+from atlas.modules.operations.adapters.memory import InMemoryOperationResourceRepository
+from atlas.modules.operations.adapters.permission import (
+    AuthorizationOperationResourcePermissionAuthorizer,
+)
+from atlas.modules.operations.application.service import OperationResourceService
 from atlas.modules.platform.adapters.bootstrap_artifact_filesystem import (
     FileSystemReleaseArtifactPublisher,
     MemoryArtifactContentSource,
@@ -3271,6 +3277,7 @@ def create_app(
     backup_operations_service: BackupOperationsService | None = None,
     document_knowledge_service: DocumentKnowledgeService | None = None,
     document_knowledge_retrieval_service: DocumentKnowledgeRetrievalService | None = None,
+    operation_resource_service: OperationResourceService | None = None,
     inventory_device_service: InventoryDeviceService | None = None,
     itsm_integration_service: ItsmIntegrationService | None = None,
     graph_impact_service: GraphImpactService | None = None,
@@ -7653,6 +7660,14 @@ def create_app(
         )
     else:
         resolved_document_knowledge_retrieval_service = None
+    resolved_operation_resource_service = operation_resource_service or OperationResourceService(
+        repository=InMemoryOperationResourceRepository(),
+        permission_authorizer=AuthorizationOperationResourcePermissionAuthorizer(
+            service=resolved_authorization_service,
+            environment=resolved_settings.environment,
+        ),
+        audit_sink=resolved_audit_sink,
+    )
     resolved_investigation_service = investigation_service or InvestigationService(
         assembler=SyntheticInvestigationAssembler(),
         audit_sink=resolved_audit_sink,
@@ -10627,6 +10642,7 @@ def create_app(
         app.state.document_knowledge_retrieval_service = (
             resolved_document_knowledge_retrieval_service
         )
+        app.state.operation_resource_service = resolved_operation_resource_service
         app.state.inventory_device_service = resolved_inventory_device_service
         app.state.itsm_integration_service = resolved_itsm_integration_service
         app.state.graph_impact_service = resolved_graph_impact_service
@@ -11204,4 +11220,5 @@ def create_app(
     app.include_router(security_export_detections.router, prefix="/api/v1")
     app.include_router(audit_export.router, prefix="/api/v1")
     app.include_router(audit_ledger_integrity.router, prefix="/api/v1")
+    app.include_router(operations.router, prefix="/api/v1")
     return app

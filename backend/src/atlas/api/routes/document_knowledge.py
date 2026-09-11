@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated, NoReturn
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response
 
 from atlas.api.document_knowledge_schemas import (
     DocumentKnowledgeApprovalData,
@@ -28,6 +28,7 @@ from atlas.api.document_retrieval_schemas import (
     DocumentKnowledgeSearchResultData,
 )
 from atlas.api.errors import AtlasError
+from atlas.api.operation_schemas import OperationResourceData, OperationResourceResponse
 from atlas.api.schemas import ResponseMeta
 from atlas.api.security import (
     authorize_document_knowledge_approval_create,
@@ -48,6 +49,8 @@ from atlas.modules.knowledge.application.document_retrieval import (
 from atlas.modules.knowledge.application.document_retrieval_ports import (
     DocumentKnowledgeRetrievalError,
 )
+from atlas.modules.operations.application.ports import OperationResourceError
+from atlas.modules.operations.application.service import OperationResourceService
 
 router = APIRouter(prefix="/knowledge/documents", tags=["knowledge"])
 
@@ -260,6 +263,143 @@ async def index_document_knowledge(
             preparation_id=payload.preparation_id, chunk_count=chunk_count
         ),
         meta=_meta(request),
+    )
+
+
+def _raise_operation(error: OperationResourceError) -> NoReturn:
+    code = error.code
+    if code.endswith(("required", "denied")):
+        status = 403
+    elif code.endswith("not_found"):
+        status = 404
+    elif code.endswith(("invalid", "reason_required")):
+        status = 422
+    else:
+        status = 409
+    raise AtlasError(
+        status=status,
+        code=code,
+        title="Operation resource request unavailable",
+        detail="Document indexing operation resource creation failed.",
+    ) from error
+
+
+async def _run_index_document_operation(
+    *,
+    retrieval_service: DocumentKnowledgeRetrievalService,
+    operation_service: OperationResourceService,
+    actor: AuthenticatedSubject,
+    organization_id: str,
+    environment_id: str,
+    preparation_id: str,
+    operation_id: str,
+    correlation_id: str,
+) -> None:
+    """Runs after the `202` response has been sent (FastAPI's `BackgroundTasks`), reporting the
+    REAL outcome of the REAL `DocumentKnowledgeRetrievalService.index_document()` call back onto
+    the SAME operation resource `index_document_knowledge_as_operation()` already created.
+    """
+    try:
+        await operation_service.mark_running(
+            actor=actor,
+            organization_id=organization_id,
+            environment_id=environment_id,
+            operation_id=operation_id,
+            current_step="indexing",
+            progress_summary="Chunking, embedding, and indexing the approved document.",
+            correlation_id=correlation_id,
+        )
+        chunk_count = await retrieval_service.index_document(
+            actor=actor,
+            organization_id=organization_id,
+            environment_id=environment_id,
+            preparation_id=preparation_id,
+            correlation_id=correlation_id,
+        )
+    except DocumentKnowledgeRetrievalError as error:
+        await operation_service.mark_failed(
+            actor=actor,
+            organization_id=organization_id,
+            environment_id=environment_id,
+            operation_id=operation_id,
+            error_reference=f"error.{error.code}",
+            correlation_id=correlation_id,
+        )
+        return
+    except OperationResourceError:
+        # The operation resource itself was concurrently cancelled or otherwise transitioned --
+        # nothing further to report back onto it.
+        return
+    await operation_service.mark_succeeded(
+        actor=actor,
+        organization_id=organization_id,
+        environment_id=environment_id,
+        operation_id=operation_id,
+        result_reference=f"chunks.{chunk_count}",
+        correlation_id=correlation_id,
+    )
+
+
+@router.post(
+    "/index-operations",
+    response_model=OperationResourceResponse,
+    status_code=202,
+)
+async def index_document_knowledge_as_operation(
+    payload: DocumentKnowledgeIndexInput,
+    request: Request,
+    response: Response,
+    background_tasks: BackgroundTasks,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+    _decision: Annotated[
+        AuthorizationDecision, Depends(authorize_document_knowledge_indexing_create)
+    ],
+) -> OperationResourceResponse:
+    """SS19's "requests expected to outlive the HTTP transaction return `202`", applied to the
+    one genuinely slow real operation in this codebase: FastEmbed chunk embedding over a
+    potentially large approved document. Additive to, and independent of, the existing
+    synchronous `POST /index` route above -- that route is unmodified and keeps returning `201`
+    once the real indexing has already finished inline.
+    """
+    retrieval_service: DocumentKnowledgeRetrievalService | None = (
+        request.app.state.document_knowledge_retrieval_service
+    )
+    if retrieval_service is None:
+        _raise_retrieval(
+            DocumentKnowledgeRetrievalError(
+                "document_knowledge_retrieval_unavailable",
+                "Document retrieval is not enabled in this environment.",
+            )
+        )
+    operation_service: OperationResourceService = request.app.state.operation_resource_service
+    organization_id = subject.organization_id
+    environment_id = f"environment.{request.app.state.settings.environment}"
+    correlation_id = str(request.state.correlation_id)
+    try:
+        operation = await operation_service.create(
+            actor=subject,
+            organization_id=organization_id,
+            environment_id=environment_id,
+            operation_type="operation.knowledge-document-indexing",
+            input_artifact_reference=payload.preparation_id,
+            correlation_id=correlation_id,
+        )
+    except OperationResourceError as error:
+        _raise_operation(error)
+    background_tasks.add_task(
+        _run_index_document_operation,
+        retrieval_service=retrieval_service,
+        operation_service=operation_service,
+        actor=subject,
+        organization_id=organization_id,
+        environment_id=environment_id,
+        preparation_id=payload.preparation_id,
+        operation_id=operation.operation_id,
+        correlation_id=correlation_id,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return OperationResourceResponse(
+        data=OperationResourceData.from_domain(operation), meta=_meta(request)
     )
 
 

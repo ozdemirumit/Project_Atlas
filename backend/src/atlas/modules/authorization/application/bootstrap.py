@@ -190,6 +190,9 @@ SECURITY_EXPORT_DETECTION_HANDOFF_RECORD = "security-export.detection.handoff-re
 AUDIT_READ = "audit.read"
 AUDIT_EXPORT = "audit.export"
 AUDIT_LEDGER_INTEGRITY_VERIFY = "audit.ledger-integrity.verify"
+OPERATION_RESOURCE_READ = "operations.resources.read"
+OPERATION_RESOURCE_CANCEL = "operations.resources.cancel"
+OPERATION_RESOURCE_CROSS_SUBJECT_ACCESS = "operations.resources-cross-subject.access"
 RELEASE_PREFLIGHT_READ = "platform.release-preflight.read"
 DEPLOYMENT_CONFIGURATION_PREVIEW = "platform.deployment-configuration.preview"
 BOOTSTRAP_PLAN_READ = "platform.bootstrap-plan.read"
@@ -2642,6 +2645,40 @@ def audit_permission_definitions() -> tuple[PermissionDefinition, ...]:
     )
 
 
+def operation_resource_scope(
+    organization_id: str,
+    environment: str,
+    capability_class: CapabilityClass,
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.operations",
+        resource_id="resource.operations.resources",
+        capability_class=capability_class,
+    )
+
+
+def operation_resource_permission_definitions() -> tuple[PermissionDefinition, ...]:
+    return (
+        PermissionDefinition(
+            permission_id=OPERATION_RESOURCE_READ,
+            description="Poll the current state of an owned long-running operation resource.",
+        ),
+        PermissionDefinition(
+            permission_id=OPERATION_RESOURCE_CANCEL,
+            description="Issue an explicit idempotent cancellation of an owned operation resource.",
+        ),
+        PermissionDefinition(
+            permission_id=OPERATION_RESOURCE_CROSS_SUBJECT_ACCESS,
+            description=(
+                "Read or cancel a long-running operation resource owned by a different subject."
+            ),
+        ),
+    )
+
+
 def security_auditor_role_definition() -> RoleDefinition:
     return RoleDefinition(
         role_id=SECURITY_AUDITOR_ROLE_ID,
@@ -2688,6 +2725,7 @@ def build_development_authorization_service(
         *itsm_integration_permission_definitions(),
         *itsm_attachment_permission_definitions(),
         *audit_permission_definitions(),
+        *operation_resource_permission_definitions(),
         PermissionDefinition(
             permission_id=IDENTITY_SELF_READ,
             description="Read the authenticated subject's own normalized identity context.",
@@ -4342,6 +4380,9 @@ def build_development_authorization_service(
                 KNOWLEDGE_DELETION_LEGAL_HOLD_REQUEST,
                 KNOWLEDGE_DELETION_LEGAL_HOLD_COMPLETE,
                 AUDIT_LEDGER_INTEGRITY_VERIFY,
+                OPERATION_RESOURCE_READ,
+                OPERATION_RESOURCE_CANCEL,
+                OPERATION_RESOURCE_CROSS_SUBJECT_ACCESS,
             }
         ),
     )
@@ -7265,6 +7306,42 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=audit_ledger_integrity_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.operation-resource-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=operation_resource_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.operation-resource-cancel",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=operation_resource_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.operation-resource-cross-subject-access",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=operation_resource_scope(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C2_DIAGNOSTIC,

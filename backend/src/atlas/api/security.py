@@ -245,6 +245,8 @@ from atlas.modules.authorization.application.bootstrap import (
     MCP_BUILDER_SUPERSESSION_CREATE,
     MCP_BUILDER_VALIDATION_CREATE,
     MCP_BUILDER_VALIDATION_READ,
+    OPERATION_RESOURCE_CANCEL,
+    OPERATION_RESOURCE_READ,
     RCA_CLOSE,
     RCA_CREATE,
     RCA_REVIEW,
@@ -415,6 +417,7 @@ from atlas.modules.authorization.application.bootstrap import (
     logical_backup_scope,
     mcp_builder_draft_scope,
     mcp_builder_scope,
+    operation_resource_scope,
     operational_evidence_knowledge_draft_scope,
     operational_knowledge_correction_scope,
     operational_knowledge_deterministic_chunking_scope,
@@ -2541,6 +2544,60 @@ async def authorize_document_knowledge_retrieval_create(
 ) -> AuthorizationDecision:
     return await _authorize_document_knowledge(
         request, subject, permission_id=KNOWLEDGE_DOCUMENT_RETRIEVAL_CREATE
+    )
+
+
+async def _authorize_operation_resource(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    capability_class = (
+        CapabilityClass.C1_READ_ONLY
+        if permission_id.endswith(".read")
+        else CapabilityClass.C2_DIAGNOSTIC
+    )
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.operations.resources",
+            scope=operation_resource_scope(
+                subject.organization_id, settings.environment, capability_class
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_operation_resource_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_operation_resource(
+        request, subject, permission_id=OPERATION_RESOURCE_READ
+    )
+
+
+async def authorize_operation_resource_cancel(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_operation_resource(
+        request, subject, permission_id=OPERATION_RESOURCE_CANCEL
     )
 
 

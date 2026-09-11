@@ -23,6 +23,7 @@ from atlas.modules.knowledge.application.document_retrieval_ports import (
 from atlas.modules.knowledge.domain.document_retrieval import (
     DocumentKnowledgeSearchResult,
     DocumentKnowledgeVectorRecord,
+    tokenize_for_lexical_search,
 )
 
 _KNOWLEDGE_DOCUMENT_INDEXING_CREATE = "knowledge.document-indexing.create"
@@ -181,6 +182,11 @@ class DocumentKnowledgeRetrievalService:
                     model_profile_id=self._embedder.model_profile_id,
                     embedding=vector,
                     created_at=now,
+                    # Derived from the real chunk_text while it is still in scope,
+                    # here and only here -- never re-fetched or re-derived from the
+                    # protected-content store. Governance-safe: see
+                    # tokenize_for_lexical_search's docstring.
+                    lexical_tokens=tokenize_for_lexical_search(chunk_text),
                 )
             )
         await self._vector_index.upsert(records)
@@ -222,13 +228,18 @@ class DocumentKnowledgeRetrievalService:
             environment_id=environment_id,
             correlation_id=correlation_id,
         )
-        query_vector = self._embedder.embed_query(query.strip())
+        stripped_query = query.strip()
+        query_vector = self._embedder.embed_query(stripped_query)
         raw_results = await self._vector_index.search(
             query_vector=query_vector,
             organization_id=organization_id,
             environment_id=environment_id,
             top_k=top_k,
             max_classification=ceiling,
+            # Same real query text, tokenized the same way as indexed chunks were --
+            # this is what makes the hybrid retrieval real rather than vector-only
+            # search with unused lexical plumbing.
+            lexical_query=tokenize_for_lexical_search(stripped_query),
         )
         results: list[DocumentKnowledgeSearchResult] = []
         for result in raw_results:

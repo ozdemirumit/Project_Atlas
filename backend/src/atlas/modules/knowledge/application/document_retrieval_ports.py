@@ -42,4 +42,11 @@ class DocumentKnowledgeVectorIndex(Protocol):
         environment_id: str,
         top_k: int,
         max_classification: DataClassification,
-    ) -> list[DocumentKnowledgeSearchResult]: ...
+        lexical_query: frozenset[str] = frozenset(),
+    ) -> list[DocumentKnowledgeSearchResult]:
+        """Real vector-similarity search, hybridized with lexical matching when
+        ``lexical_query`` is non-empty (Reciprocal Rank Fusion of both independently
+        classification-gated rankings). An empty ``lexical_query`` -- the default --
+        performs the original vector-only search unchanged, for callers indexed or
+        written before hybrid retrieval existed."""
+        ...
