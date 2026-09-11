@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import replace
@@ -160,7 +161,7 @@ from atlas.core.audit_ledger import (
 from atlas.core.classification import DataClassification
 from atlas.core.config import Settings, get_settings
 from atlas.core.events import InMemoryDomainEventBus
-from atlas.core.persistence.database import DatabaseHealthProbe
+from atlas.core.persistence.database import DatabaseHealthProbe, SchemaCompatibilityProbe
 from atlas.core.protected_content import (
     InMemoryProtectedContentStore,
     PostgreSQLProtectedContentStore,
@@ -1572,6 +1573,7 @@ from atlas.modules.platform.domain.advisory_posture import (
     assert_advisory_only_component_registry,
     assert_advisory_only_composition,
 )
+from atlas.modules.platform.domain.status import ComponentState
 from atlas.modules.rca.adapters.chained import ChainedRcaAssembler
 from atlas.modules.rca.adapters.configured_hitachi import ConfiguredHitachiRcaAssembler
 from atlas.modules.rca.adapters.configured_huawei_dorado import ConfiguredHuaweiDoradoRcaAssembler
@@ -2188,6 +2190,8 @@ from atlas.modules.workflows.domain import (
     canonical_digest,
     code_owned_workflow_registry,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class _WorkflowCredentialAccessAuthorizationNoStoreMiddleware(BaseHTTPMiddleware):
@@ -7253,11 +7257,12 @@ def create_app(
             environment_id=f"environment.{resolved_settings.environment}",
         )
     database_probe = DatabaseHealthProbe(resolved_settings)
+    schema_compatibility_probe = SchemaCompatibilityProbe(resolved_settings)
     status_service = PlatformStatusService(
         service_name=resolved_settings.service_name,
         service_version=__version__,
         environment=resolved_settings.environment,
-        probes=(database_probe,),
+        probes=(database_probe, schema_compatibility_probe),
         operational_posture=operational_posture,
     )
     resolved_inventory_device_service = inventory_device_service or InventoryDeviceService(
@@ -11019,6 +11024,23 @@ def create_app(
             resolved_workflow_event_transport_compatibility_admission_service.repository
         )
         assert_advisory_only_component_registry(app.state._state)
+        if resolved_settings.database_url and resolved_settings.database_required:
+            startup_schema_check = await schema_compatibility_probe.check()
+            if startup_schema_check.status is not ComponentState.HEALTHY:
+                logger.error(
+                    "schema_compatibility_startup_check_failed",
+                    extra={
+                        "code": startup_schema_check.code,
+                        "expected_revision": schema_compatibility_probe.last_expected_revision,
+                        "applied_revision": schema_compatibility_probe.last_applied_revision,
+                    },
+                )
+                raise RuntimeError(
+                    "database schema is not compatible with the running application code "
+                    f"(code={startup_schema_check.code}, "
+                    f"expected={schema_compatibility_probe.last_expected_revision!r}, "
+                    f"applied={schema_compatibility_probe.last_applied_revision!r})"
+                )
         yield
         await resolved_workflow_planning_service.close()
         await resolved_conversation_service.close()
@@ -11126,6 +11148,7 @@ def create_app(
         await resolved_report_service.close()
         await resolved_bootstrap_state_service.close()
         await database_probe.close()
+        await schema_compatibility_probe.close()
 
     app = FastAPI(
         title="Project Atlas API",

@@ -30,7 +30,13 @@ def test_readiness_discloses_disabled_optional_database() -> None:
             "status": "disabled",
             "required": False,
             "code": "database_not_configured",
-        }
+        },
+        {
+            "name": "database_schema",
+            "status": "disabled",
+            "required": False,
+            "code": "database_not_configured",
+        },
     ]
 
 
@@ -41,7 +47,14 @@ def test_required_database_without_url_is_not_ready() -> None:
 
     assert response.status_code == 503
     assert response.json()["status"] == "not_ready"
-    assert response.json()["components"][0]["code"] == "database_url_missing"
+    components = response.json()["components"]
+    assert components[0]["code"] == "database_url_missing"
+    assert components[1] == {
+        "name": "database_schema",
+        "status": "unavailable",
+        "required": True,
+        "code": "database_url_missing",
+    }
 
 
 def test_production_without_database_is_not_ready_without_memory_fallback() -> None:
@@ -56,7 +69,10 @@ def test_production_without_database_is_not_ready_without_memory_fallback() -> N
         response = client.get("/health/ready")
 
     assert response.status_code == 503
-    assert response.json()["components"][0]["code"] == "database_url_missing"
+    components = response.json()["components"]
+    assert components[0]["code"] == "database_url_missing"
+    assert components[1]["name"] == "database_schema"
+    assert components[1]["code"] == "database_url_missing"
 
 
 def test_platform_status_uses_api_envelope() -> None:
