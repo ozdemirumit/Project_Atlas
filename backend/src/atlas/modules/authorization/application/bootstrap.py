@@ -177,6 +177,7 @@ APPROVAL_REQUEST_READ = "approval.request.read"
 APPROVAL_REQUEST_DECIDE = "approval.request.decide"
 APPROVAL_REQUEST_CANCEL = "approval.request.cancel"
 APPROVAL_REQUEST_REVOKE = "approval.request.revoke"
+NOTIFICATION_READ = "notification.read"
 REPORT_CREATE = "report.create"
 REPORT_READ = "report.read"
 ITSM_HANDOFF_REVIEW_READ = "report.itsm-handoff-review.read"
@@ -2553,6 +2554,20 @@ def approval_scope(
     )
 
 
+def notification_scope(organization_id: str, environment: str) -> ResourceScope:
+    """pass 38: every real in-app `Notification` a subject reads/marks-read is scoped here --
+    see `atlas.modules.notifications.domain.models` for why notifications are a dedicated
+    cross-cutting module rather than living under `domain.approval`."""
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.notification",
+        resource_id="resource.notification.storage.synthetic",
+        capability_class=CapabilityClass.C0_INFORMATIONAL,
+    )
+
+
 def report_scope(
     organization_id: str,
     environment: str,
@@ -3095,6 +3110,10 @@ def build_development_authorization_service(
         PermissionDefinition(
             permission_id=APPROVAL_REQUEST_REVOKE,
             description="Withdraw a previously approved request before handoff or completion.",
+        ),
+        PermissionDefinition(
+            permission_id=NOTIFICATION_READ,
+            description="Read and mark-read the caller's own real in-app notifications.",
         ),
         PermissionDefinition(
             permission_id=REPORT_CREATE,
@@ -4170,6 +4189,7 @@ def build_development_authorization_service(
                 APPROVAL_REQUEST_DECIDE,
                 APPROVAL_REQUEST_CANCEL,
                 APPROVAL_REQUEST_REVOKE,
+                NOTIFICATION_READ,
                 REPORT_CREATE,
                 REPORT_READ,
                 ITSM_HANDOFF_REVIEW_READ,
@@ -7231,6 +7251,17 @@ def build_development_authorization_service(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C2_DIAGNOSTIC,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.notification-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=notification_scope(
+                    settings.development_organization_id,
+                    settings.environment,
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),
             ),

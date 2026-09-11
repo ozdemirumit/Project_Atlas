@@ -13,6 +13,7 @@ from atlas.modules.authorization.domain.models import (
     EffectiveAccessPreview,
     EffectiveGrant,
     PermissionDefinition,
+    ResourceScope,
     RoleAssignment,
     RoleDefinition,
 )
@@ -170,6 +171,45 @@ class AuthorizationService:
             )
         )
         return preview
+
+    async def subjects_with_role(
+        self, *, role_id: str, scope: ResourceScope, at: datetime | None = None
+    ) -> tuple[str, ...]:
+        """Reverse lookup: every subject with a currently-active `RoleAssignment` binding them
+        to `role_id` at exactly `scope`. Added for pass 38's real notification-recipient
+        derivation (`atlas.modules.notifications.application.subscriber`), which needs "who
+        holds this role here" -- the mirror image of `evaluate()`'s own forward "does this one
+        subject/role/scope combination grant this permission" check. Reads the same private
+        `self._assignments` `evaluate()` already scans; no new state."""
+        now = at if at is not None else self._clock()
+        return tuple(
+            sorted(
+                {
+                    assignment.subject_id
+                    for assignment in self._assignments
+                    if assignment.role_id == role_id
+                    and assignment.scope == scope
+                    and assignment.is_active(now)
+                }
+            )
+        )
+
+    async def subjects_with_permission(
+        self, *, permission_id: str, scope: ResourceScope, at: datetime | None = None
+    ) -> tuple[str, ...]:
+        """As `subjects_with_role`, but by permission rather than role id -- every subject whose
+        currently-active role assignment at exactly `scope` grants a role carrying this
+        permission. Used for a request with no stage plan, where "who could decide" is a flat
+        permission grant (`APPROVAL_REQUEST_DECIDE`) rather than a discrete named role."""
+        now = at if at is not None else self._clock()
+        subjects: set[str] = set()
+        for assignment in self._assignments:
+            if assignment.scope != scope or not assignment.is_active(now):
+                continue
+            role = self._roles.get(assignment.role_id)
+            if role is not None and permission_id in role.permissions:
+                subjects.add(assignment.subject_id)
+        return tuple(sorted(subjects))
 
     async def _audit_decision(
         self, request: AuthorizationRequest, decision: AuthorizationDecision

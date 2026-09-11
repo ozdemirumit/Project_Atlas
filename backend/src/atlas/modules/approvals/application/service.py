@@ -14,6 +14,7 @@ from atlas.core.audit import AuditRecord, AuditSink
 from atlas.core.classification import DataClassification
 from atlas.core.event_catalog import ApprovalGranted, ApprovalRequestCreated
 from atlas.core.events import EventEnvelope, InMemoryDomainEventBus
+from atlas.core.pagination import CursorCodec, CursorDecodeError
 from atlas.modules.approvals.application.ports import RecommendationProvider
 from atlas.modules.approvals.domain.models import (
     ApprovalCreateRequest,
@@ -29,6 +30,7 @@ from atlas.modules.approvals.domain.stages import (
     ApprovalStageRequirement,
     StageDecisionRecord,
     evaluate_plan_state,
+    reachable_stage_roles,
 )
 from atlas.modules.itsm.domain.approval_sync import ItsmExternalApprovalBinding
 from atlas.modules.recommendations.domain.models import OptionState, RecommendationArtifact
@@ -38,6 +40,10 @@ EVENT_PRODUCER = "approvals"
 APPROVAL_RESOURCE_ID = "resource.approval.storage.synthetic"
 CANONICALIZATION_VERSION = "atlas-approval-packet.v1"
 ELIGIBLE_ASSURANCE = frozenset({"development", "single_factor", "multi_factor", "hardware_backed"})
+
+# Mirrors HumanReviewService.MAX_INBOX_SCAN -- a real, defensive upper bound on how many
+# in-memory records list() will scan before paginating in-process.
+MAX_APPROVAL_LIST_SCAN = 1000
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +83,7 @@ class ApprovalService:
         self._records: dict[str, ApprovalRecord] = {}
         self._idempotency: dict[tuple[str, str], tuple[str, ApprovalRecord]] = {}
         self._lock = asyncio.Lock()
+        self._cursor_codec = CursorCodec()
 
     async def create(
         self,
@@ -187,6 +194,136 @@ class ApprovalService:
                 permission_id="approval.request.read",
             )
             return record
+
+    async def list(
+        self,
+        *,
+        context: ApprovalAccessContext,
+        state: ApprovalState | None = None,
+        role_id: str | None = None,
+        scope_reference: str | None = None,
+        owner_subject_id: str | None = None,
+        expiring_before: datetime | None = None,
+        cursor: str | None = None,
+        limit: int = 20,
+        correlation_id: str,
+    ) -> tuple[tuple[ApprovalRecord, ...], str | None]:
+        """docs/037_Approval_Workflow.md SS22: "List requests by state, role, scope, owner, and
+        expiry." A caller sees only requests they own (`packet.requested_by`) or are currently
+        eligible to decide -- for a staged request, holding one of `reachable_stage_roles()`'s
+        currently-required roles; for a single-stage/legacy request, the same real, non-owner,
+        sufficiently-assured human posture `_validate_reviewer()` itself requires before a
+        decision can be recorded. There is no elevated cross-scope override today (unlike
+        `OperationResourceService.get()`'s `cross_subject_access_allowed` fallback) because no
+        such permission exists yet in this codebase's authorization catalog for approvals --
+        adding one is real future work, not silently assumed here. For the same reason,
+        `owner_subject_id` (if given) must equal the caller's own subject id, and `role_id` (if
+        given) must be one of the caller's own `context.role_ids`.
+
+        `role_id`/`scope_reference` further narrow an already-visible result to records actually
+        matching that filter -- they can only narrow, never grant visibility a caller otherwise
+        lacks. `scope_reference` matches `ApprovalStageRequirement.required_scope_reference`
+        directly (the exact string a stage plan already carries); a non-staged record has no
+        comparable field and never matches a `scope_reference` filter.
+
+        Cursor pagination is "position in one deterministically ordered, freshly computed result
+        list" via `atlas.core.pagination.CursorCodec` -- the same opaque, signed, integrity-
+        protected primitive `security_export` already implements privately for its own event
+        export, reused here directly since `ApprovalService` (like this whole approvals module)
+        has no repository/database layer able to hand back a stable native row sequence.
+        """
+        self._validate_context(context)
+        if not 1 <= limit <= 100:
+            raise ApprovalOperationsError(
+                "approval_list_limit_invalid", "The requested page size is invalid."
+            )
+        if owner_subject_id is not None and owner_subject_id != context.subject_id:
+            raise ApprovalOperationsError(
+                "approval_list_owner_forbidden",
+                "A subject may only list their own requests as owner.",
+            )
+        if role_id is not None and role_id not in context.role_ids:
+            raise ApprovalOperationsError(
+                "approval_list_role_forbidden",
+                "A role filter must be one of the caller's own roles.",
+            )
+        async with self._lock:
+            candidates = list(self._records.values())
+        if len(candidates) > MAX_APPROVAL_LIST_SCAN:
+            # Mirrors HumanReviewService.inbox()'s own capacity guard: a bounded scan that
+            # silently truncated would hide real records from a caller without any signal that
+            # happened -- a real, audited error is the honest behavior instead.
+            raise ApprovalOperationsError(
+                "approval_list_capacity_exceeded",
+                "Too many approval requests exist to list in one bounded scan.",
+            )
+        results: list[ApprovalRecord] = []
+        for record in candidates:
+            if not self._visible(record, context):
+                continue
+            effective_state = self._effective_state(record, context.requested_at)
+            if state is not None and effective_state is not state:
+                continue
+            if owner_subject_id is not None and record.packet.requested_by != owner_subject_id:
+                continue
+            if expiring_before is not None and record.packet.expires_at >= expiring_before:
+                continue
+            if scope_reference is not None and not self._matches_scope_reference(
+                record, scope_reference
+            ):
+                continue
+            is_owner = record.packet.requested_by == context.subject_id
+            eligible_roles = (
+                reachable_stage_roles(record.stage_plan, record.stage_decisions)
+                if record.stage_plan is not None
+                else frozenset()
+            )
+            if record.stage_plan is not None:
+                is_eligible_approver = bool(eligible_roles & set(context.role_ids))
+            else:
+                is_eligible_approver = (
+                    context.actor_type == "human"
+                    and context.assurance_level in ELIGIBLE_ASSURANCE
+                    and not is_owner
+                )
+            if role_id is not None:
+                if record.stage_plan is None or role_id not in eligible_roles:
+                    continue
+            elif not (is_owner or is_eligible_approver):
+                continue
+            results.append(record)
+        results.sort(key=lambda item: (item.created_at, item.request_id))
+        start = 0
+        if cursor is not None:
+            try:
+                start = self._cursor_codec.decode(cursor)
+            except CursorDecodeError as exc:
+                raise ApprovalOperationsError(
+                    "approval_list_cursor_invalid", "The pagination cursor is invalid."
+                ) from exc
+        page = tuple(results[start : start + limit])
+        has_more = start + limit < len(results)
+        next_cursor = self._cursor_codec.encode(start + len(page)) if has_more and page else None
+        await self._audit(
+            context,
+            event_type="atlas.approval.request.listed",
+            outcome="succeeded",
+            result_code="approval_list_read",
+            request_id="list",
+            permission_id="approval.request.read",
+        )
+        return page, next_cursor
+
+    async def get_record_unchecked(self, request_id: str) -> ApprovalRecord | None:
+        """Internal-only accessor for trusted in-process subscribers reacting to this service's
+        own already-published domain events (e.g.
+        `atlas.modules.notifications.application.subscriber`) -- never exposed over HTTP, and
+        performs no RBAC/audit of its own since there is no external caller to authorize or hold
+        accountable. The authority is the already-committed state transition the subscriber is
+        reacting to, the same posture `atlas.core.audit` records are written under (no per-write
+        permission check of their own)."""
+        async with self._lock:
+            return self._records.get(request_id)
 
     async def decide(
         self,
@@ -855,6 +992,26 @@ class ApprovalService:
             and record.packet.organization_id == context.organization_id
             and record.packet.environment_id == context.environment_id
             and record.packet.site_id == context.site_id
+        )
+
+    @staticmethod
+    def _effective_state(record: ApprovalRecord, at: datetime) -> ApprovalState:
+        """A side-effect-free view of what `record.state` would become if `_expire_if_needed`
+        ran right now -- used by `list()` so a bulk read never has to mutate every stored record
+        it scans just to answer a `state` filter accurately."""
+        if (
+            record.state in {ApprovalState.PENDING, ApprovalState.APPROVED, ApprovalState.DEFERRED}
+            and at >= record.packet.expires_at
+        ):
+            return ApprovalState.EXPIRED
+        return record.state
+
+    @staticmethod
+    def _matches_scope_reference(record: ApprovalRecord, scope_reference: str) -> bool:
+        if record.stage_plan is None:
+            return False
+        return any(
+            stage.required_scope_reference == scope_reference for stage in record.stage_plan.stages
         )
 
     async def _expire_if_needed(

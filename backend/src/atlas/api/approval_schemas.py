@@ -209,3 +209,18 @@ class ApprovalResponse(BaseModel):
 
     data: ApprovalRecordData
     meta: ResponseMeta
+
+
+class ApprovalListData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[ApprovalRecordData]
+    next_cursor: str | None
+    limit: int
+
+
+class ApprovalListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: ApprovalListData
+    meta: ResponseMeta

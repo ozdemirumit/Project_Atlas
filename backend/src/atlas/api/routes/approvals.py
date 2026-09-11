@@ -3,11 +3,13 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Request, Response
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
 
 from atlas.api.approval_schemas import (
     ApprovalCreatePayload,
     ApprovalDecisionPayload,
+    ApprovalListData,
+    ApprovalListResponse,
     ApprovalRecordData,
     ApprovalResponse,
     ApprovalWithdrawalPayload,
@@ -29,7 +31,11 @@ from atlas.modules.approvals.application.service import (
     ApprovalOperationsError,
     ApprovalService,
 )
-from atlas.modules.approvals.domain.models import ApprovalCreateRequest, ApprovalOutcome
+from atlas.modules.approvals.domain.models import (
+    ApprovalCreateRequest,
+    ApprovalOutcome,
+    ApprovalState,
+)
 from atlas.modules.approvals.domain.stages import ApprovalStageRequirement
 from atlas.modules.authorization.application.bootstrap import approval_scope
 from atlas.modules.authorization.domain.models import AuthorizationDecision
@@ -76,6 +82,8 @@ def _error(exc: ApprovalOperationsError) -> AtlasError:
         "approval_separation_required",
         "approval_cancel_not_requester",
         "approval_stage_role_mismatch",
+        "approval_list_owner_forbidden",
+        "approval_list_role_forbidden",
     }:
         status = 403
     elif exc.code in {
@@ -85,6 +93,8 @@ def _error(exc: ApprovalOperationsError) -> AtlasError:
         "approval_stage_required",
         "approval_stage_unknown",
         "approval_stage_plan_invalid",
+        "approval_list_limit_invalid",
+        "approval_list_cursor_invalid",
     }:
         status = 422
     else:
@@ -147,6 +157,59 @@ async def create_approval(
     response.headers["Cache-Control"] = "no-store"
     return ApprovalResponse(
         data=ApprovalRecordData.from_domain(record),
+        meta=ResponseMeta(correlation_id=str(request.state.correlation_id), generated_at=now),
+    )
+
+
+@router.get("", response_model=ApprovalListResponse)
+async def list_approvals(
+    request: Request,
+    response: Response,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+    decision: Annotated[AuthorizationDecision, Depends(authorize_approval_read)],
+    state: Annotated[
+        str | None,
+        Query(
+            pattern=(
+                r"^(pending|partially_approved|approved|rejected|needs_evidence|deferred"
+                r"|expired|revoked|cancelled)$"
+            )
+        ),
+    ] = None,
+    role_id: Annotated[str | None, Query(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")] = None,
+    scope_reference: Annotated[str | None, Query(max_length=400)] = None,
+    owner_subject_id: Annotated[str | None, Query(pattern=r"^[a-z][a-z0-9_.:-]{2,127}$")] = None,
+    expiring_before: Annotated[datetime | None, Query()] = None,
+    cursor: Annotated[str | None, Query(max_length=512)] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> ApprovalListResponse:
+    """docs/037_Approval_Workflow.md SS22/SS29: the real, RBAC-gated approval inbox -- lists
+    requests the caller owns or is currently eligible to decide, filterable by state, role,
+    scope, owner, and expiry, cursor-paginated. See `ApprovalService.list()` for the full
+    visibility and filtering contract."""
+    now = datetime.now(UTC)
+    service: ApprovalService = request.app.state.approval_service
+    try:
+        records, next_cursor = await service.list(
+            context=_context(request, subject, decision, now, CapabilityClass.C0_INFORMATIONAL),
+            state=ApprovalState(state) if state is not None else None,
+            role_id=role_id,
+            scope_reference=scope_reference,
+            owner_subject_id=owner_subject_id,
+            expiring_before=expiring_before,
+            cursor=cursor,
+            limit=limit,
+            correlation_id=str(request.state.correlation_id),
+        )
+    except ApprovalOperationsError as exc:
+        raise _error(exc) from exc
+    response.headers["Cache-Control"] = "no-store"
+    return ApprovalListResponse(
+        data=ApprovalListData(
+            items=[ApprovalRecordData.from_domain(record) for record in records],
+            next_cursor=next_cursor,
+            limit=limit,
+        ),
         meta=ResponseMeta(correlation_id=str(request.state.correlation_id), generated_at=now),
     )
 

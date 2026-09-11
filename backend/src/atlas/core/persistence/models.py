@@ -20062,3 +20062,34 @@ class AuditLedgerRecordModel(Base):
     previous_record_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     record_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class NotificationModel(Base):
+    """One real, durable, pull-based in-app notification (docs/037_Approval_Workflow.md SS20/
+    SS22, pass 38). See atlas.modules.notifications.domain.models for why this table -- and its
+    owning module -- is deliberately not approvals-only. Created by a real event-bus subscriber
+    reacting to an already-committed domain event (see
+    atlas.modules.notifications.application.subscriber), never written directly from an HTTP
+    request. `created_at`/`read_at` are duplicated as real, indexed columns alongside the full
+    `payload` for the same reason `DocumentKnowledgeItemLifecycleModel.state` is -- so
+    `list_candidates`'s unread filter and ordering do not need to parse JSON to answer a query
+    every read of this table performs.
+    """
+
+    __tablename__ = "notifications"
+    __table_args__ = (
+        Index(
+            "ix_notifications_recipient",
+            "recipient_subject_id",
+            "organization_id",
+            "environment_id",
+        ),
+    )
+
+    notification_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    recipient_subject_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

@@ -153,6 +153,27 @@ def evaluate_plan_state(
     return ApprovalState.APPROVED
 
 
+def reachable_stage_roles(
+    plan: ApprovalStagePlan,
+    decisions: tuple[StageDecisionRecord, ...],
+) -> frozenset[str]:
+    """pass 38: the `required_role`(s) of the plan's current not-yet-satisfied sequence group --
+    exactly the stage(s) `evaluate_plan_state()` is still waiting on. Empty once every stage is
+    satisfied (the plan is `APPROVED`) or a rejection has already stopped it (SS12: "a rejection
+    stops the request..."). Used by `ApprovalService.list()` (a caller's own inbox visibility) and
+    `atlas.modules.notifications.application.subscriber` (who to notify on
+    `ApprovalRequestCreated`) -- a real, shared, side-effect-free *visibility/notification* view,
+    not an authorization gate on its own: a caller needing "can this specific decision be recorded
+    right now" must still go through `decide()`, which independently re-validates the reviewer and
+    the request's current state under its own lock."""
+    for group in plan.sequence_groups:
+        if any(stage_has_a_rejection(stage, decisions) for stage in group):
+            return frozenset()
+        if not all(is_stage_satisfied(stage, decisions) for stage in group):
+            return frozenset(stage.required_role for stage in group)
+    return frozenset()
+
+
 def rejection_allows_the_request_to_proceed_without_permitted_revision() -> bool:
     """SS12: "A rejection stops the request unless policy explicitly permits revision and
     resubmission.\""""

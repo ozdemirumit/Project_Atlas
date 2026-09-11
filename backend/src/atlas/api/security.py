@@ -249,6 +249,7 @@ from atlas.modules.authorization.application.bootstrap import (
     MCP_BUILDER_SUPERSESSION_CREATE,
     MCP_BUILDER_VALIDATION_CREATE,
     MCP_BUILDER_VALIDATION_READ,
+    NOTIFICATION_READ,
     OPERATION_RESOURCE_CANCEL,
     OPERATION_RESOURCE_READ,
     RCA_CLOSE,
@@ -421,6 +422,7 @@ from atlas.modules.authorization.application.bootstrap import (
     logical_backup_scope,
     mcp_builder_draft_scope,
     mcp_builder_scope,
+    notification_scope,
     operation_resource_scope,
     operational_evidence_knowledge_draft_scope,
     operational_knowledge_correction_scope,
@@ -5864,6 +5866,33 @@ async def authorize_approval_revoke(
         permission_id=APPROVAL_REQUEST_REVOKE,
         capability_class=CapabilityClass.C2_DIAGNOSTIC,
     )
+
+
+async def authorize_notification_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=NOTIFICATION_READ,
+            resource_type="resource.notifications",
+            scope=notification_scope(subject.organization_id, settings.environment),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The notification operation is not authorized.",
+        )
+    request.state.authorization_decision = decision
+    return decision
 
 
 async def authorize_report_create(

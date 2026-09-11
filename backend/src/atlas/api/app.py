@@ -90,6 +90,7 @@ from atlas.api.routes import (
     mcp_builder_drafts,
     model_context_assembly,
     model_lifecycle,
+    notifications,
     operations,
     package_approvals,
     package_installations,
@@ -1462,6 +1463,10 @@ from atlas.modules.mcp_builder.adapters.validation_postgres import (
 )
 from atlas.modules.mcp_builder.application.draft_and_supersession import BuilderDraftService
 from atlas.modules.mcp_builder.application.service import McpBuilderService
+from atlas.modules.notifications.adapters.memory import InMemoryNotificationRepository
+from atlas.modules.notifications.adapters.postgres import PostgreSQLNotificationRepository
+from atlas.modules.notifications.application.service import NotificationService
+from atlas.modules.notifications.application.subscriber import ApprovalNotificationSubscriber
 from atlas.modules.operations.adapters.memory import InMemoryOperationResourceRepository
 from atlas.modules.operations.adapters.permission import (
     AuthorizationOperationResourcePermissionAuthorizer,
@@ -3297,6 +3302,7 @@ def create_app(
     rca_service: RcaService | None = None,
     recommendation_service: RecommendationService | None = None,
     approval_service: ApprovalService | None = None,
+    notification_service: NotificationService | None = None,
     report_service: ReportService | None = None,
     itsm_handoff_review_service: ItsmHandoffReviewService | None = None,
     itsm_dispatch_authorization_service: ItsmDispatchAuthorizationService | None = None,
@@ -7830,6 +7836,31 @@ def create_app(
         audit_sink=resolved_audit_sink,
         event_bus=resolved_event_bus,
     )
+    resolved_notification_repository = (
+        PostgreSQLNotificationRepository.from_url(resolved_settings.database_url)
+        if resolved_settings.database_url
+        else InMemoryNotificationRepository()
+    )
+    resolved_notification_service = notification_service or NotificationService(
+        repository=resolved_notification_repository,
+        audit_sink=resolved_audit_sink,
+    )
+    # pass 38: a real event-bus subscriber turning ApprovalRequestCreated/ApprovalGranted --
+    # already published by ApprovalService onto this same resolved_event_bus -- into real,
+    # durable Notification records. See
+    # atlas.modules.notifications.application.subscriber.ApprovalNotificationSubscriber.
+    _approval_notification_subscriber = ApprovalNotificationSubscriber(
+        approval_service=resolved_approval_service,
+        authorization_service=resolved_authorization_service,
+        notification_service=resolved_notification_service,
+        environment=resolved_settings.environment,
+    )
+    resolved_event_bus.subscribe(
+        "ApprovalRequestCreated", _approval_notification_subscriber.handle_request_created
+    )
+    resolved_event_bus.subscribe(
+        "ApprovalGranted", _approval_notification_subscriber.handle_granted
+    )
     synthetic_model_id = "atlas-local-synthetic"
     model_transport: ModelTransport
     if resolved_settings.local_model_enabled:
@@ -10685,6 +10716,7 @@ def create_app(
         app.state.rca_service = resolved_rca_service
         app.state.recommendation_service = resolved_recommendation_service
         app.state.approval_service = resolved_approval_service
+        app.state.notification_service = resolved_notification_service
         app.state.report_service = resolved_report_service
         app.state.itsm_handoff_review_service = resolved_itsm_handoff_review_service
         app.state.itsm_dispatch_authorization_service = resolved_itsm_dispatch_authorization_service
@@ -11249,6 +11281,7 @@ def create_app(
     app.include_router(rca.router, prefix="/api/v1")
     app.include_router(recommendations.router, prefix="/api/v1")
     app.include_router(approvals.router, prefix="/api/v1")
+    app.include_router(notifications.router, prefix="/api/v1")
     app.include_router(reports.router, prefix="/api/v1")
     app.include_router(ai.router, prefix="/api/v1")
     app.include_router(security_export.router, prefix="/api/v1")
