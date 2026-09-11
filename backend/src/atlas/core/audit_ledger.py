@@ -13,6 +13,20 @@ ledger/immutable-storage technology as an open question -- but hash chaining ove
 no new external dependency (no KMS, no signing-key custody) and is explicitly one of SS12's named
 "equivalent controls" alongside signed batches, so it is the correct MVP mechanism: nothing here
 waits on an infrastructure decision the way ATLAS-058's registry/signing selection did.
+
+Wiring status (docs/032_Audit.md SS12/S22 -- "integrity verification runs on schedule and on
+demand", observability shows "integrity verification status and last successful check"):
+on-demand verification is wired through `POST /api/v1/platform/audit-ledger/integrity-verifications`
+(`atlas.api.routes.audit_ledger_integrity`), gated by the `audit.ledger-integrity.verify`
+permission, and calls `DurableAuditLedger.verify_integrity()` on the app's real ledger
+(`app.state.audit_ledger`). Every run -- pass or fail -- emits a real `AuditRecord` through the
+app's existing `AuditSink`, so "was integrity last verified, when, and did it pass" is answerable
+through the existing audit trail (the same `audit_export` read surface every other "last X
+happened" fact in this codebase is answered through), not a bespoke new persisted field.
+Scheduled/periodic verification remains a genuine, infrastructure-blocked deferral: this codebase
+has no cron/job-scheduler subsystem anywhere, and inventing one as a one-off for this single check
+would be architecturally inconsistent with the rest of the platform; closing that half requires
+this codebase's first real scheduler, not a workaround grafted onto this module.
 """
 
 from __future__ import annotations

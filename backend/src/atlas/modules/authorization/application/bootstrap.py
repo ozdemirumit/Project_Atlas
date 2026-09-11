@@ -189,6 +189,7 @@ SECURITY_EXPORT_DETECTION_TRANSITION = "security-export.detection.transition"
 SECURITY_EXPORT_DETECTION_HANDOFF_RECORD = "security-export.detection.handoff-record"
 AUDIT_READ = "audit.read"
 AUDIT_EXPORT = "audit.export"
+AUDIT_LEDGER_INTEGRITY_VERIFY = "audit.ledger-integrity.verify"
 RELEASE_PREFLIGHT_READ = "platform.release-preflight.read"
 DEPLOYMENT_CONFIGURATION_PREVIEW = "platform.deployment-configuration.preview"
 BOOTSTRAP_PLAN_READ = "platform.bootstrap-plan.read"
@@ -2607,6 +2608,21 @@ def audit_export_scope(
     )
 
 
+def audit_ledger_integrity_scope(
+    organization_id: str,
+    environment: str,
+    capability_class: CapabilityClass,
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.audit",
+        resource_id="resource.audit.ledger-integrity",
+        capability_class=capability_class,
+    )
+
+
 def audit_permission_definitions() -> tuple[PermissionDefinition, ...]:
     return (
         PermissionDefinition(
@@ -2616,6 +2632,12 @@ def audit_permission_definitions() -> tuple[PermissionDefinition, ...]:
         PermissionDefinition(
             permission_id=AUDIT_EXPORT,
             description="Retry bounded delivery of exact-scope audit events to an approved export.",
+        ),
+        PermissionDefinition(
+            permission_id=AUDIT_LEDGER_INTEGRITY_VERIFY,
+            description=(
+                "Run an on-demand integrity verification of the durable audit ledger's hash chain."
+            ),
         ),
     )
 
@@ -4319,6 +4341,7 @@ def build_development_authorization_service(
                 KNOWLEDGE_DELETION_LEGAL_HOLD_RELEASE,
                 KNOWLEDGE_DELETION_LEGAL_HOLD_REQUEST,
                 KNOWLEDGE_DELETION_LEGAL_HOLD_COMPLETE,
+                AUDIT_LEDGER_INTEGRITY_VERIFY,
             }
         ),
     )
@@ -7233,6 +7256,18 @@ def build_development_authorization_service(
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=mcp_builder_draft_scope(
                     settings.development_organization_id, settings.environment
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.audit-ledger-integrity-verify",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=audit_ledger_integrity_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),
             ),

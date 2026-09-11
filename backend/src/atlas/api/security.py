@@ -41,6 +41,7 @@ from atlas.modules.authorization.application.bootstrap import (
     APPROVAL_REQUEST_READ,
     APPROVAL_REQUEST_REVOKE,
     AUDIT_EXPORT,
+    AUDIT_LEDGER_INTEGRITY_VERIFY,
     AUDIT_READ,
     BACKUP_LOGICAL_CREATE,
     BACKUP_LOGICAL_PREVIEW,
@@ -354,6 +355,7 @@ from atlas.modules.authorization.application.bootstrap import (
     api_credential_self_scope,
     approval_scope,
     audit_export_scope,
+    audit_ledger_integrity_scope,
     backup_overview_scope,
     bootstrap_invalidation_scope,
     bootstrap_plan_scope,
@@ -6044,6 +6046,35 @@ async def authorize_audit_export(
         permission_id=AUDIT_EXPORT,
         capability_class=CapabilityClass.C2_DIAGNOSTIC,
     )
+
+
+async def authorize_audit_ledger_integrity_verify(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=AUDIT_LEDGER_INTEGRITY_VERIFY,
+            resource_type="resource.audit.ledger-integrity",
+            scope=audit_ledger_integrity_scope(
+                subject.organization_id, settings.environment, CapabilityClass.C2_DIAGNOSTIC
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
 
 
 async def _authorize_mcp_builder(

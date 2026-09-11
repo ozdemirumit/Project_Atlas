@@ -20,6 +20,7 @@ from atlas.api.routes import (
     api_credentials,
     approvals,
     audit_export,
+    audit_ledger_integrity,
     authority_behavior_validations,
     backup_operations,
     bootstrap_artifacts,
@@ -148,7 +149,11 @@ from atlas.api.routes import (
     workload_identities,
 )
 from atlas.core.audit import AuditSink, LoggingAuditSink
-from atlas.core.audit_ledger import PostgresDurableAuditLedger
+from atlas.core.audit_ledger import (
+    DurableAuditLedger,
+    InMemoryDurableAuditLedger,
+    PostgresDurableAuditLedger,
+)
 from atlas.core.classification import DataClassification
 from atlas.core.config import Settings, get_settings
 from atlas.core.events import InMemoryDomainEventBus
@@ -3258,6 +3263,7 @@ def create_app(
     settings: Settings | None = None,
     *,
     audit_sink: AuditSink | None = None,
+    audit_ledger: DurableAuditLedger | None = None,
     event_bus: InMemoryDomainEventBus | None = None,
     identity_provider: IdentityProvider | None = None,
     authorization_service: AuthorizationService | None = None,
@@ -3655,6 +3661,17 @@ def create_app(
         PostgresDurableAuditLedger.from_url(resolved_settings.database_url)
         if resolved_settings.database_url
         else LoggingAuditSink(resolved_settings.logger)
+    )
+    # The durable ledger's own `verify_integrity()` is a richer protocol than the plain
+    # `AuditSink` above -- reuse `base_audit_sink` when it already is a real durable ledger
+    # (the production/database-configured path), otherwise fall back to the same dependency-free
+    # reference implementation `InMemoryDurableAuditLedger` provides for `AuditSink` itself, so
+    # on-demand integrity verification (docs/032_Audit.md SS12/S22) always has a real ledger to
+    # run against, including in tests and database-less development.
+    resolved_audit_ledger: DurableAuditLedger = audit_ledger or (
+        base_audit_sink
+        if isinstance(base_audit_sink, (InMemoryDurableAuditLedger, PostgresDurableAuditLedger))
+        else InMemoryDurableAuditLedger()
     )
     resolved_event_bus = event_bus or InMemoryDomainEventBus()
     resolved_security_export_service = security_export_service or SecurityExportService(
@@ -10375,6 +10392,7 @@ def create_app(
             )
         app.state.settings = resolved_settings
         app.state.audit_sink = resolved_audit_sink
+        app.state.audit_ledger = resolved_audit_ledger
         app.state.security_export_service = resolved_security_export_service
         app.state.syslog_destination_administration_service = (
             resolved_syslog_destination_administration_service
@@ -11185,4 +11203,5 @@ def create_app(
     app.include_router(security_export.router, prefix="/api/v1")
     app.include_router(security_export_detections.router, prefix="/api/v1")
     app.include_router(audit_export.router, prefix="/api/v1")
+    app.include_router(audit_ledger_integrity.router, prefix="/api/v1")
     return app
