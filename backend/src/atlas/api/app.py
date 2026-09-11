@@ -52,6 +52,7 @@ from atlas.api.routes import (
     deployment_configuration,
     deterministic_chunking,
     document_knowledge,
+    document_knowledge_lifecycle,
     draft_review_requests,
     embedding_generation,
     embedding_model_lifecycle,
@@ -1043,6 +1044,12 @@ from atlas.modules.knowledge.adapters.document_chunking import ParagraphBoundedC
 from atlas.modules.knowledge.adapters.document_embedding_fastembed import (
     FastEmbedDocumentEmbedder,
 )
+from atlas.modules.knowledge.adapters.document_knowledge_lifecycle_memory import (
+    InMemoryDocumentKnowledgeLifecycleRepository,
+)
+from atlas.modules.knowledge.adapters.document_knowledge_lifecycle_postgres import (
+    PostgreSQLDocumentKnowledgeLifecycleRepository,
+)
 from atlas.modules.knowledge.adapters.document_knowledge_memory import (
     InMemoryDocumentKnowledgeRepository,
 )
@@ -1308,6 +1315,9 @@ from atlas.modules.knowledge.application.deterministic_chunking import (
     build_development_operational_knowledge_chunking_policy,
 )
 from atlas.modules.knowledge.application.document_knowledge import DocumentKnowledgeService
+from atlas.modules.knowledge.application.document_knowledge_lifecycle import (
+    DocumentKnowledgeLifecycleService,
+)
 from atlas.modules.knowledge.application.document_retrieval import (
     DocumentKnowledgeRetrievalService,
 )
@@ -3277,6 +3287,7 @@ def create_app(
     backup_operations_service: BackupOperationsService | None = None,
     document_knowledge_service: DocumentKnowledgeService | None = None,
     document_knowledge_retrieval_service: DocumentKnowledgeRetrievalService | None = None,
+    document_knowledge_lifecycle_service: DocumentKnowledgeLifecycleService | None = None,
     operation_resource_service: OperationResourceService | None = None,
     inventory_device_service: InventoryDeviceService | None = None,
     itsm_integration_service: ItsmIntegrationService | None = None,
@@ -7638,6 +7649,22 @@ def create_app(
         audit_sink=resolved_audit_sink,
         subject_salt=f"document-knowledge-subject-salt.{resolved_settings.environment}",
     )
+    resolved_document_knowledge_lifecycle_repository = (
+        PostgreSQLDocumentKnowledgeLifecycleRepository.from_url(resolved_settings.database_url)
+        if resolved_settings.database_url
+        else InMemoryDocumentKnowledgeLifecycleRepository()
+    )
+    resolved_document_knowledge_lifecycle_service = (
+        document_knowledge_lifecycle_service
+        or DocumentKnowledgeLifecycleService(
+            repository=resolved_document_knowledge_lifecycle_repository,
+            permission_authorizer=AuthorizationDocumentKnowledgePermissionAuthorizer(
+                service=resolved_authorization_service,
+                environment=resolved_settings.environment,
+            ),
+            audit_sink=resolved_audit_sink,
+        )
+    )
     resolved_document_knowledge_retrieval_service: DocumentKnowledgeRetrievalService | None
     if document_knowledge_retrieval_service is not None:
         resolved_document_knowledge_retrieval_service = document_knowledge_retrieval_service
@@ -7657,6 +7684,10 @@ def create_app(
                 environment=resolved_settings.environment,
             ),
             audit_sink=resolved_audit_sink,
+            # SS13/pass 37: real retrieval-time enforcement -- a suspended, superseded, or
+            # retired item's chunks must never reach a search result. See
+            # DocumentKnowledgeRetrievalService.retrieve().
+            lifecycle_reader=resolved_document_knowledge_lifecycle_repository,
         )
     else:
         resolved_document_knowledge_retrieval_service = None
@@ -10642,6 +10673,9 @@ def create_app(
         app.state.document_knowledge_retrieval_service = (
             resolved_document_knowledge_retrieval_service
         )
+        app.state.document_knowledge_lifecycle_service = (
+            resolved_document_knowledge_lifecycle_service
+        )
         app.state.operation_resource_service = resolved_operation_resource_service
         app.state.inventory_device_service = resolved_inventory_device_service
         app.state.itsm_integration_service = resolved_itsm_integration_service
@@ -11206,6 +11240,7 @@ def create_app(
     app.include_router(storage.router, prefix="/api/v1")
     app.include_router(backup_operations.router, prefix="/api/v1")
     app.include_router(document_knowledge.router, prefix="/api/v1")
+    app.include_router(document_knowledge_lifecycle.router, prefix="/api/v1")
     app.include_router(graph.router, prefix="/api/v1")
     app.include_router(guardrail_human_review.router, prefix="/api/v1")
     app.include_router(guardrail_security_incidents.router, prefix="/api/v1")

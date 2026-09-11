@@ -9,6 +9,9 @@ from atlas import __version__
 from atlas.core.audit import AuditRecord, AuditSink
 from atlas.core.protected_content import ProtectedContentStore, content_digest
 from atlas.modules.identity.domain.models import AuthenticatedSubject, SubjectKind
+from atlas.modules.knowledge.application.document_knowledge_lifecycle_ports import (
+    DocumentKnowledgeLifecycleReader,
+)
 from atlas.modules.knowledge.application.document_knowledge_ports import (
     DocumentKnowledgeError,
     DocumentKnowledgePermissionAuthorizer,
@@ -51,6 +54,7 @@ class DocumentKnowledgeRetrievalService:
         permission_authorizer: DocumentKnowledgePermissionAuthorizer,
         audit_sink: AuditSink,
         clock: Callable[[], datetime] | None = None,
+        lifecycle_reader: DocumentKnowledgeLifecycleReader | None = None,
     ) -> None:
         self._repository = repository
         self._protected_content = protected_content
@@ -60,6 +64,13 @@ class DocumentKnowledgeRetrievalService:
         self._permission_authorizer = permission_authorizer
         self._audit_sink = audit_sink
         self._clock = clock or (lambda: datetime.now(UTC))
+        # Optional so every pre-existing caller (tests, and any composition root built before
+        # SS8/SS21 lifecycle tracking existed) keeps its exact original, unfiltered behavior --
+        # `None` means "no lifecycle information available", which is indistinguishable from
+        # "every item is ACTIVE" since that is the default state for an item with no record
+        # anyway. The real app wiring (atlas.api.app) always passes a real reader, so real
+        # retrieval traffic is always genuinely filtered -- see `retrieve()` below.
+        self._lifecycle_reader = lifecycle_reader
 
     @staticmethod
     def _require_human(actor: AuthenticatedSubject) -> None:
@@ -241,6 +252,19 @@ class DocumentKnowledgeRetrievalService:
             # search with unused lexical plumbing.
             lexical_query=tokenize_for_lexical_search(stripped_query),
         )
+        if self._lifecycle_reader is not None and raw_results:
+            # SS13: filtering happens at the one point where leakage would otherwise start.
+            # Excluded here, before any excerpt is ever fetched for it, so a suspended or
+            # superseded item's content never reaches this method's caller -- not bookkeeping
+            # nobody reads, a real gate on every real search result.
+            active_item_ids = await self._lifecycle_reader.get_active_states(
+                knowledge_item_ids=tuple({result.knowledge_item_id for result in raw_results}),
+                organization_id=organization_id,
+                environment_id=environment_id,
+            )
+            raw_results = [
+                result for result in raw_results if result.knowledge_item_id in active_item_ids
+            ]
         results: list[DocumentKnowledgeSearchResult] = []
         for result in raw_results:
             excerpt_bytes = await self._protected_content.retrieve(

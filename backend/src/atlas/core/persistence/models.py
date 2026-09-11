@@ -19977,6 +19977,60 @@ class DocumentKnowledgeVectorModel(Base):
     lexical_search_vector: Mapped[str | None] = mapped_column(TSVECTOR, nullable=True)
 
 
+class DocumentKnowledgeItemLifecycleModel(Base):
+    """One current-state row per document-sourced knowledge item (docs/027 SS8). See
+    atlas.modules.knowledge.domain.document_knowledge_lifecycle. Mutable, unlike the
+    append-only DocumentKnowledge{Draft,Review,Approval,Preparation}Model tables above --
+    this table tracks an already-published item's ongoing lifecycle, not a one-way approval
+    chain, so there is exactly one row of *current* truth per item rather than a growing chain.
+    Composite primary key on (knowledge_item_id, organization_id, environment_id) -- an item has
+    at most one current lifecycle row per scope.
+    """
+
+    __tablename__ = "document_knowledge_item_lifecycle"
+    __table_args__ = (
+        Index(
+            "ix_document_knowledge_item_lifecycle_scope",
+            "organization_id",
+            "environment_id",
+        ),
+    )
+
+    knowledge_item_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    environment_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class DocumentKnowledgeConflictModel(Base):
+    """Append-only detected conflict between two document-sourced knowledge items (docs/027
+    SS21). See atlas.modules.knowledge.domain.document_knowledge_lifecycle. Resolution is
+    recorded in place (never a new row) via the payload's resolution/resolved_by/resolved_at
+    fields. Indexed on each side of the conflicting pair independently (rather than a single
+    composite index) so `list_conflicts_for_item` can find a real conflict regardless of which
+    side of the canonical (lexicographically ordered) pair the queried item landed on.
+    """
+
+    __tablename__ = "document_knowledge_conflicts"
+    __table_args__ = (
+        Index(
+            "ix_document_knowledge_conflicts_scope",
+            "organization_id",
+            "environment_id",
+        ),
+        Index("ix_document_knowledge_conflicts_item_a", "knowledge_item_id_a"),
+        Index("ix_document_knowledge_conflicts_item_b", "knowledge_item_id_b"),
+    )
+
+    conflict_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    knowledge_item_id_a: Mapped[str] = mapped_column(String(128), nullable=False)
+    knowledge_item_id_b: Mapped[str] = mapped_column(String(128), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
 class AuditLedgerHeadModel(Base):
     """Tracks each named ledger's chain tip (ATLAS-032 SS12's hash chain). Locked with
     `SELECT ... FOR UPDATE` inside the append transaction to serialize concurrent appenders --

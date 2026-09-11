@@ -181,9 +181,13 @@ from atlas.modules.authorization.application.bootstrap import (
     KNOWLEDGE_DETERMINISTIC_CHUNKING_CREATE,
     KNOWLEDGE_DETERMINISTIC_CHUNKING_READ,
     KNOWLEDGE_DOCUMENT_APPROVAL_CREATE,
+    KNOWLEDGE_DOCUMENT_CONFLICT_CREATE,
+    KNOWLEDGE_DOCUMENT_CONFLICT_READ,
     KNOWLEDGE_DOCUMENT_DRAFT_CREATE,
     KNOWLEDGE_DOCUMENT_DRAFT_READ,
     KNOWLEDGE_DOCUMENT_INDEXING_CREATE,
+    KNOWLEDGE_DOCUMENT_LIFECYCLE_CREATE,
+    KNOWLEDGE_DOCUMENT_LIFECYCLE_READ,
     KNOWLEDGE_DOCUMENT_PUBLICATION_PREPARATION_CREATE,
     KNOWLEDGE_DOCUMENT_RETRIEVAL_CREATE,
     KNOWLEDGE_DOCUMENT_REVIEW_CREATE,
@@ -2544,6 +2548,42 @@ async def authorize_document_knowledge_retrieval_create(
 ) -> AuthorizationDecision:
     return await _authorize_document_knowledge(
         request, subject, permission_id=KNOWLEDGE_DOCUMENT_RETRIEVAL_CREATE
+    )
+
+
+async def authorize_document_knowledge_lifecycle_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_document_knowledge(
+        request, subject, permission_id=KNOWLEDGE_DOCUMENT_LIFECYCLE_CREATE
+    )
+
+
+async def authorize_document_knowledge_lifecycle_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_document_knowledge(
+        request, subject, permission_id=KNOWLEDGE_DOCUMENT_LIFECYCLE_READ
+    )
+
+
+async def authorize_document_knowledge_conflict_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_document_knowledge(
+        request, subject, permission_id=KNOWLEDGE_DOCUMENT_CONFLICT_CREATE
+    )
+
+
+async def authorize_document_knowledge_conflict_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_document_knowledge(
+        request, subject, permission_id=KNOWLEDGE_DOCUMENT_CONFLICT_READ
     )
 
 

@@ -393,6 +393,10 @@ KNOWLEDGE_DOCUMENT_PUBLICATION_PREPARATION_READ = "knowledge.document-publicatio
 KNOWLEDGE_DOCUMENT_INDEXING_CREATE = "knowledge.document-indexing.create"
 KNOWLEDGE_DOCUMENT_RETRIEVAL_CREATE = "knowledge.document-retrieval.create"
 KNOWLEDGE_DOCUMENT_RETRIEVAL_ELEVATED_READ = "knowledge.document-retrieval-elevated.read"
+KNOWLEDGE_DOCUMENT_LIFECYCLE_CREATE = "knowledge.document-lifecycle.create"
+KNOWLEDGE_DOCUMENT_LIFECYCLE_READ = "knowledge.document-lifecycle.read"
+KNOWLEDGE_DOCUMENT_CONFLICT_CREATE = "knowledge.document-conflicts.create"
+KNOWLEDGE_DOCUMENT_CONFLICT_READ = "knowledge.document-conflicts.read"
 KNOWLEDGE_PROTECTED_RETRIEVAL_CREATE = "knowledge.protected-retrieval.create"
 KNOWLEDGE_PROTECTED_RETRIEVAL_READ = "knowledge.protected-retrieval.read"
 AI_PROTECTED_MODEL_CONTEXT_CREATE = "ai.protected-model-context.create"
@@ -3813,6 +3817,28 @@ def build_development_authorization_service(
             ),
         ),
         PermissionDefinition(
+            permission_id=KNOWLEDGE_DOCUMENT_LIFECYCLE_CREATE,
+            description=(
+                "Suspend, resume, supersede, or retire one document-sourced knowledge item "
+                "(docs/027 Sec.8)."
+            ),
+        ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_DOCUMENT_LIFECYCLE_READ,
+            description="Read one document-sourced knowledge item's current lifecycle state.",
+        ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_DOCUMENT_CONFLICT_CREATE,
+            description=(
+                "Record or resolve a detected conflict between two document-sourced knowledge "
+                "items (docs/027 Sec.21)."
+            ),
+        ),
+        PermissionDefinition(
+            permission_id=KNOWLEDGE_DOCUMENT_CONFLICT_READ,
+            description="List detected conflicts involving one document-sourced knowledge item.",
+        ),
+        PermissionDefinition(
             permission_id=KNOWLEDGE_INDEX_STAGING_CREATE,
             description="Stage and validate one governed protected knowledge index projection.",
         ),
@@ -4321,6 +4347,10 @@ def build_development_authorization_service(
                 KNOWLEDGE_DOCUMENT_INDEXING_CREATE,
                 KNOWLEDGE_DOCUMENT_RETRIEVAL_CREATE,
                 KNOWLEDGE_DOCUMENT_RETRIEVAL_ELEVATED_READ,
+                KNOWLEDGE_DOCUMENT_LIFECYCLE_CREATE,
+                KNOWLEDGE_DOCUMENT_LIFECYCLE_READ,
+                KNOWLEDGE_DOCUMENT_CONFLICT_CREATE,
+                KNOWLEDGE_DOCUMENT_CONFLICT_READ,
                 KNOWLEDGE_INDEX_STAGING_CREATE,
                 KNOWLEDGE_INDEX_STAGING_READ,
                 KNOWLEDGE_RETRIEVAL_PUBLICATION_CREATE,
@@ -5947,6 +5977,54 @@ def build_development_authorization_service(
             ),
             RoleAssignment(
                 assignment_id="assignment.development.knowledge-document-retrieval-elevated-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=document_knowledge_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.knowledge-document-lifecycle-create",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=document_knowledge_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.knowledge-document-lifecycle-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=document_knowledge_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.knowledge-document-conflict-create",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=document_knowledge_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C2_DIAGNOSTIC,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.knowledge-document-conflict-read",
                 version=1,
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,

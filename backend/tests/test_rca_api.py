@@ -135,6 +135,43 @@ def test_rca_requires_exact_assignment() -> None:
     assert "RCA" not in response.json()["detail"]
 
 
+def test_rca_review_requires_authentication() -> None:
+    """Pass 37 of this session's standing audit loop found `POST /rca/cases/{id}/review` had
+    zero denial-test coverage -- `authorize_rca_review` gates it with its own distinct
+    permission (RCA_REVIEW, separate from RCA_CREATE/RCA_CLOSE), but no test proved a genuinely
+    unauthenticated or unprivileged identity is denied.
+    """
+    with TestClient(create_app(Settings(environment="test"))) as client:
+        response = client.post(
+            "/api/v1/rca/cases/rca-case.wiring-denied-0001/review",
+            json={
+                "expected_version": 1,
+                "status": "review-status.accepted",
+                "decision_reason": "Prove that this request is denied by a real dependency.",
+            },
+        )
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "authentication_required"
+
+
+def test_rca_review_requires_permission() -> None:
+    with TestClient(
+        create_app(settings(development_role_ids=()), audit_sink=CollectingAuditSink())
+    ) as client:
+        response = client.post(
+            "/api/v1/rca/cases/rca-case.wiring-denied-0001/review",
+            json={
+                "expected_version": 1,
+                "status": "review-status.accepted",
+                "decision_reason": "Prove that this request is denied by a real dependency.",
+            },
+        )
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "authorization_denied"
+
+
 def test_rca_returns_provisional_ranked_evidence_grounded_case() -> None:
     audit_sink = CollectingAuditSink()
     with TestClient(create_app(settings(), audit_sink=audit_sink)) as client:
