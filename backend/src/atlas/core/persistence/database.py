@@ -48,6 +48,17 @@ def _classify_schema_compatibility(
     Factored out of `SchemaCompatibilityProbe.check` so the comparison itself -- the part
     of this probe with real branching logic -- can be exercised directly in tests without
     a live database, by passing in a stubbed `applied_revision`.
+
+    Deferred architectural note (pass 40, 2026-09-11): docs/053_Database.md SS24 says startup
+    "verifies supported schema range" and separately describes a rolling-upgrade "compatibility
+    window" concept, but this comparison is a strict single-revision exact match, not range
+    tolerance. That is the correct MVP behavior today -- this application has no rolling/blue-green
+    deployment mode where two schema versions would ever be simultaneously valid, so there is
+    exactly one supported revision at any moment, and "range" degenerates to that single value.
+    Real range tolerance would require a migration-compatibility classification scheme (which
+    migrations are additive/backward-compatible vs. breaking) that does not exist anywhere in this
+    codebase yet. Revisit if/when a rolling-upgrade deployment mode becomes real MVP scope; user
+    decision on record is to document this rather than build or loosen the doc wording now.
     """
     if applied_revision is None:
         return ComponentState.UNAVAILABLE, "schema_not_migrated"
