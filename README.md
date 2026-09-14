@@ -6,7 +6,7 @@ Its purpose is to help infrastructure teams understand complex environments, ana
 
 Atlas is not a traditional monitoring tool and it is not an autonomous operator. It is designed as an intelligent decision-support platform that can correlate infrastructure data, vendor knowledge, operational history, topology, health checks, and human-approved workflows.
 
-The project has an approved documentation baseline. All 47 planned governed documents are at version `1.0.0` with `Approved` status. Implementation is now underway through governed tasks recorded in the implementation tracker.
+The project has an approved documentation baseline of 47 governed documents, all at version `1.0.0` with `Approved` status, and a working implementation built against it: 35 backend modules, 6 real vendor MCP connectors, an Enterprise React web application, and an automated deployment path, all tracked task-by-task in [`docs/implementation/IMPLEMENTATION_TRACKER.md`](docs/implementation/IMPLEMENTATION_TRACKER.md).
 
 ## Executive Summary
 
@@ -88,6 +88,10 @@ Everything required to build, test, validate, and deploy Atlas should be documen
 
 ## Roadmap
 
+All seven phases below define the governed documentation baseline; that baseline is complete (47/47
+documents `Approved`). Implementation against it is ongoing and tracked task-by-task in
+[`docs/implementation/IMPLEMENTATION_TRACKER.md`](docs/implementation/IMPLEMENTATION_TRACKER.md).
+
 ### Phase 1 - Product Definition
 
 Define product vision, requirements, principles, and shared terminology.
@@ -118,29 +122,51 @@ Define the master operating prompt and control protocol for AI-assisted developm
 
 ## Development Status
 
-Current status: Implementation Foundation.
+Current status: core platform implemented and passing continuous verification.
 
-ATLAS-IMP-001 introduces the runnable modular-monolith API, PostgreSQL migration baseline, enterprise web application shell, local development scripts, container assets, and continuous integration. Connector, identity, LLM, RAG, and infrastructure-changing capabilities remain outside this task.
+The backend is a runnable modular monolith of 35 domain modules (`backend/src/atlas/modules/`),
+including identity and RBAC, LDAP/Active Directory integration, the infrastructure knowledge
+graph, policy engine, guardrails, explainability, root cause analysis, recommendations, change
+impact, runbook engine, approval workflows with ITSM binding, notifications, audit logging with a
+hash-chained integrity ledger, and a retrieval-augmented knowledge base. Six vendor MCP connectors
+are implemented against each vendor's real API (`mcp/connectors/`): Hitachi Ops Center, Huawei
+Dorado, Huawei Pacific, Brocade SANnav, VMware vCenter, and Commvault. The web application
+(`frontend/`) and the automated deployment path (see Getting Started, below) are both real and
+runnable end to end. The backend carries an extensive automated test suite (850+ test files) run
+with `ruff`, `mypy`, and `pytest` on every change.
 
-All 47 governed documents are at version `1.0.0` with `Approved` status and form the first binding implementation baseline.
+Every implementation task is recorded in
+[`docs/implementation/IMPLEMENTATION_TRACKER.md`](docs/implementation/IMPLEMENTATION_TRACKER.md),
+which is the authoritative source for what is built, in progress, or deliberately deferred. Items
+currently deferred by explicit, on-record decision rather than oversight include: the composition
+of a single guardrails/pipeline architecture across several already-built modules (an open product
+question, not a missing feature); the MCP Builder's manual-change tracking and regeneration
+workflow; and the `infrastructure/` implementation track, which remains an intentional placeholder
+pending a dedicated implementation request.
+
+All 47 governed documents are at version `1.0.0` with `Approved` status and form the binding
+implementation baseline that every task above is built against.
 
 ## Repository Structure
 
 ```text
 AGENTS.md          AI development rules for Codex, Claude Code, and similar agents
 docs/              Product, architecture, platform, security, AI, and development documents
-backend/           Backend services and APIs
-frontend/          Web interface
-mcp/               MCP framework and connector implementations
-agents/            AI agent definitions and orchestration
-knowledge/         RAG, document ingestion, and knowledge sources
-workflows/         Health checks, runbooks, and operational workflows
-infrastructure/    Deployment and platform infrastructure
-tests/             Test suites and validation assets
-scripts/           Project automation, bootstrap, and environment checks
+backend/           Backend API and all domain modules (identity, graph, policy, RCA, ...)
+frontend/          Enterprise React web application
+mcp/connectors/    Real vendor MCP connector packages (Hitachi, Huawei, Brocade, vCenter, Commvault)
+scripts/           Deployment (Docker) and local development automation
+tests/             Cross-cutting test suites and validation assets
+agents/            Placeholder for standalone AI agent orchestration (not yet implemented)
+knowledge/         Placeholder for repository-level knowledge assets (not yet implemented)
+workflows/         Placeholder for repository-level workflow assets (not yet implemented)
+infrastructure/    Placeholder for deployment/platform infrastructure (not yet implemented)
 ```
 
 Each top-level directory contains a short README that defines its ownership and current status.
+`agents/`, `knowledge/`, `workflows/`, and `infrastructure/` are intentional placeholders reserved
+by their governing documents -- the working equivalents of AI orchestration, RAG, and health-check
+logic already exist today inside `backend/src/atlas/modules/`.
 
 ## Getting Started
 
