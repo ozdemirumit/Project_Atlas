@@ -174,9 +174,25 @@ before the first run.
 Open `http://localhost:5173`. The API is available at `http://localhost:8000`, with interactive
 API documentation at `http://localhost:8000/docs`.
 
-Stop and remove everything the installer created with `scripts/uninstall.sh` (or
-`scripts\uninstall.cmd` / `.\scripts\uninstall.ps1`); pass `--purge` (`-Purge` on PowerShell) to
-also delete the database volume.
+Verify everything came up healthy:
+
+```bash
+docker ps --filter "name=atlas-"                       # all three containers should show "healthy"
+curl http://localhost:8000/health/ready                 # backend readiness check
+docker logs -f atlas-backend                             # follow backend logs
+```
+
+Stop and remove everything the installer created:
+
+```bash
+scripts/uninstall.sh              # Linux, macOS, or WSL
+scripts/uninstall.sh --purge      # also deletes the database volume
+```
+
+```powershell
+scripts\uninstall.cmd             # Windows
+.\scripts\uninstall.ps1 -Purge    # also deletes the database volume
+```
 
 ### Configuration
 
@@ -235,6 +251,10 @@ scripts\dev.cmd
 ```
 
 Open `http://localhost:5173`. The API is available at `http://localhost:8000`, with interactive development documentation at `http://localhost:8000/docs`.
+
+```powershell
+curl http://localhost:8000/health/ready    # backend readiness check
+```
 
 The supported development launcher explicitly enables a local, server-configured identity named
 `Local Operator`. This identity is disabled by default, cannot run in production, and has only the
