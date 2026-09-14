@@ -144,13 +144,48 @@ Each top-level directory contains a short README that defines its ownership and 
 
 ## Getting Started
 
+Everything needed to build, run, and deploy Atlas ships in this repository -- there is nothing to
+fetch from anywhere else. Cloning the repository and running one script is enough to bring the
+whole stack (PostgreSQL, backend, frontend) up in a new environment.
+
+### Deploy anywhere with Docker
+
+Prerequisites: Docker.
+
+```bash
+git clone https://github.com/ozdemirumit/Project_Atlas.git
+cd Project_Atlas
+scripts/install.sh          # Linux, macOS, or WSL
+```
+
+```powershell
+scripts\install.cmd         # Windows, no PowerShell execution-policy change required
+# or: .\scripts\install.ps1
+```
+
+The installer builds the backend and frontend images, starts PostgreSQL, the backend, and the
+frontend as plain Docker containers on a private network, runs database migrations, and waits for
+every service to report healthy. There is no Docker Compose file and no YAML involved -- the
+script itself is the whole deployment description. If `.env` does not already exist, the installer
+creates one from `.env.example` with a freshly generated database password; review `.env.example`
+first if you need to enable enterprise directory authentication or other production settings
+before the first run.
+
+Open `http://localhost:5173`. The API is available at `http://localhost:8000`, with interactive
+API documentation at `http://localhost:8000/docs`.
+
+Stop and remove everything the installer created with `scripts/uninstall.sh` (or
+`scripts\uninstall.cmd` / `.\scripts\uninstall.ps1`); pass `--purge` (`-Purge` on PowerShell) to
+also delete the database volume.
+
+### Local development without Docker
+
 Prerequisites:
 
 - Python 3.12
 - uv 0.12.1
 - Node.js 24
 - pnpm 11.7.0
-- Docker with Compose for the full PostgreSQL profile
 
 For direct local development on Windows without changing PowerShell execution policy:
 
@@ -173,12 +208,6 @@ scripts\check.cmd
 
 Equivalent PowerShell scripts remain available for environments where signed or local scripts
 are permitted. Do not disable antivirus or lower organizational security controls for Atlas.
-
-For the container profile, create a local `.env` from `.env.example`, replace the placeholder database password, and run:
-
-```powershell
-docker compose up --build
-```
 
 Contributors should read:
 

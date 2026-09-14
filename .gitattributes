@@ -1,0 +1,8 @@
+# POSIX shell scripts must keep LF line endings on every platform, or a Windows checkout
+# with autocrlf enabled would break the shebang and produce "bad interpreter" errors when
+# run on Linux/macOS/WSL.
+*.sh text eol=lf
+
+# Windows batch/PowerShell scripts use CRLF by convention.
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
