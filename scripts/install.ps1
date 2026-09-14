@@ -161,11 +161,16 @@ Write-Step "Starting the backend ($BackendContainer)."
 Remove-IfExists $BackendContainer
 $databaseUrl = "postgresql+psycopg://atlas:${postgresPassword}@${DatabaseContainer}:5432/atlas"
 $backendHealthCmd = "python -c `"import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready', timeout=2)`""
+# --env-file forwards every setting in .env (directory auth, session/CSRF, API-credential
+# limits, ...) into the container. The -e flags below always win over --env-file for the
+# same key, which is what forces development identity on and points the database URL at
+# the container network regardless of what .env itself says for those two keys.
 $backendArgs = @(
     "run", "-d",
     "--name", $BackendContainer,
     "--network", $NetworkName,
     "--restart", "unless-stopped",
+    "--env-file", $EnvFile,
     "-e", "ATLAS_ENVIRONMENT=development",
     "-e", "ATLAS_DATABASE_REQUIRED=true",
     "-e", "ATLAS_DATABASE_URL=$databaseUrl",

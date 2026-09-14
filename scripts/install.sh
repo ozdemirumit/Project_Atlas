@@ -50,10 +50,10 @@ else
     log "Using existing .env."
 fi
 
-# shellcheck disable=SC1090
-set -a
-source "$ENV_FILE"
-set +a
+# .env can hold values that are not valid bash syntax on their own (JSON arrays, LDAP filter
+# strings with unescaped parentheses, ...), so it must not be `source`d as a script. Only
+# ATLAS_POSTGRES_PASSWORD is actually needed here; pull it out as plain text instead.
+ATLAS_POSTGRES_PASSWORD="$(grep -E '^ATLAS_POSTGRES_PASSWORD=' "$ENV_FILE" | tail -n1 | cut -d '=' -f2-)"
 
 [ -n "${ATLAS_POSTGRES_PASSWORD:-}" ] || fail "ATLAS_POSTGRES_PASSWORD is not set in .env."
 if [ "$ATLAS_POSTGRES_PASSWORD" = "replace-with-a-local-development-secret" ]; then
@@ -117,10 +117,15 @@ docker build -t "$BACKEND_IMAGE" "$REPO_ROOT/backend"
 
 log "Starting the backend ($BACKEND_CONTAINER)."
 remove_if_exists "$BACKEND_CONTAINER"
+# --env-file forwards every setting in .env (directory auth, session/CSRF, API-credential
+# limits, ...) into the container. The -e flags below always win over --env-file for the
+# same key, which is what forces development identity on and points the database URL at
+# the container network regardless of what .env itself says for those two keys.
 docker run -d \
     --name "$BACKEND_CONTAINER" \
     --network "$NETWORK_NAME" \
     --restart unless-stopped \
+    --env-file "$ENV_FILE" \
     -e ATLAS_ENVIRONMENT=development \
     -e ATLAS_DATABASE_REQUIRED=true \
     -e ATLAS_DATABASE_URL="postgresql+psycopg://atlas:${ATLAS_POSTGRES_PASSWORD}@${DATABASE_CONTAINER}:5432/atlas" \

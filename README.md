@@ -178,6 +178,46 @@ Stop and remove everything the installer created with `scripts/uninstall.sh` (or
 `scripts\uninstall.cmd` / `.\scripts\uninstall.ps1`); pass `--purge` (`-Purge` on PowerShell) to
 also delete the database volume.
 
+### Configuration
+
+All runtime configuration lives in `.env`, which `scripts/install` creates from `.env.example` on
+first run (see `.env.example` for the full, commented list). Every variable is prefixed `ATLAS_`.
+For the Docker deployment path, the installer forwards the whole file into the backend container
+with `docker run --env-file`; four keys (`ATLAS_ENVIRONMENT`, `ATLAS_DATABASE_REQUIRED`,
+`ATLAS_DATABASE_URL`, `ATLAS_DEVELOPMENT_IDENTITY_ENABLED`) are always set explicitly by the
+installer and override whatever `.env` itself says for them, because they describe the container
+network rather than a user choice.
+
+Unlike a shell or the backend's own settings loader, `docker run --env-file` does not strip
+surrounding quotes from values. Keep JSON-array and other structured values in `.env` unquoted, or
+a quoted value will reach the application as literal text -- including the quote characters --
+instead of being parsed.
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `ATLAS_POSTGRES_PASSWORD` | Database password for the `atlas` PostgreSQL role. Generated automatically on first install. | *(generated)* |
+| `ATLAS_DEVELOPMENT_IDENTITY_ENABLED` | Enables the built-in `Local Operator` identity for local testing. Disabled by default outside the installer/dev scripts; never enable in production. | `false` |
+| `ATLAS_DIRECTORY_IDENTITY_ENABLED` | Enables enterprise LDAP/Active Directory authentication. | `false` |
+| `ATLAS_DIRECTORY_ENDPOINTS` | JSON array of LDAPS endpoint URLs. | `[]` |
+| `ATLAS_DIRECTORY_CA_CERTIFICATE_FILE` | Path to the directory server's CA certificate, read inside the process that reads it. For the Docker deployment path this is a container-side path -- add a `docker run -v <host-path>:<container-path>:ro` for the backend container yourself and point this at the container-side path. When running the backend directly (not in a container), this is a normal host filesystem path. | *(unset)* |
+| `ATLAS_DIRECTORY_USER_PRINCIPAL_TEMPLATE` | Template used to build a user's bind principal, with `{username}` substituted. | `{username}@example.internal` |
+| `ATLAS_DIRECTORY_USER_SEARCH_BASE` | LDAP search base for user lookups. | `OU=People,DC=example,DC=internal` |
+| `ATLAS_DIRECTORY_USER_SEARCH_FILTER` | LDAP search filter, with `{username}` substituted. | `(&(objectClass=user)(sAMAccountName={username}))` |
+| `ATLAS_DIRECTORY_GROUP_MAPPINGS` | JSON array mapping directory groups to Atlas roles. No directory password or bind secret belongs in this file. | `[]` |
+| `ATLAS_WORKFLOW_TRANSPORT_CREDENTIAL_ASSIGNMENTS` | JSON array of secret-free deployment credential-assignment metadata. Passwords, tokens, private keys, certificates, vault paths, and retrievable secret references are prohibited here. | `[]` |
+| `ATLAS_SESSION_COOKIE_NAME` | Name of the browser session cookie. | `atlas_session` |
+| `ATLAS_CSRF_COOKIE_NAME` | Name of the CSRF cookie. | `atlas_csrf` |
+| `ATLAS_CSRF_HEADER_NAME` | Header clients must echo the CSRF token in. | `X-CSRF-Token` |
+| `ATLAS_SESSION_ABSOLUTE_TIMEOUT_MINUTES` | Maximum session lifetime regardless of activity (5-1440). | `480` |
+| `ATLAS_SESSION_IDLE_TIMEOUT_MINUTES` | Session expiry after inactivity (1-240). | `30` |
+| `ATLAS_SESSION_MAX_PER_SUBJECT` | Maximum concurrent sessions per identity (1-20). | `5` |
+| `ATLAS_API_CREDENTIAL_MAX_LIFETIME_MINUTES` | Maximum lifetime of an issued API credential (5-60). | `60` |
+| `ATLAS_API_CREDENTIAL_MAX_ACTIVE_PER_SUBJECT` | Maximum concurrent active API credentials per identity (1-20). | `10` |
+
+When running the backend directly without Docker (see below), it reads `.env` itself via its own
+settings loader, which does strip matching quotes -- both quoted and unquoted values work in that
+path.
+
 ### Local development without Docker
 
 Prerequisites:
