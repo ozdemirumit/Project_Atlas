@@ -131,17 +131,18 @@ bootstrap_atlas_role() {
     # or via -c, e.g. `run_as_superuser -c "..."`.
     local run_as_superuser="$1"
 
-    # psql does not interpolate :'var' inside a dollar-quoted ($$ ... $$) string -- it is
-    # scanned as an opaque SQL literal, same as a regular quoted string, so a DO block using
-    # :'pw' internally silently sends the literal text ":'pw'" to the server instead of the
-    # password. Check role existence separately and run CREATE/ALTER as a plain top-level
-    # statement instead, where :'pw' interpolates normally.
+    # psql interpolates :'var' only for script/stdin input, never for -c: per its own docs, a -c
+    # command "must be ... completely parsable by the server (i.e., it contains no psql-specific
+    # features)". (A dollar-quoted DO block also fails, separately, since :'var' isn't
+    # interpolated inside a quoted SQL literal such as $$ ... $$.) Check role existence
+    # separately, then pipe the CREATE/ALTER statement in via stdin, where :'pw' interpolates
+    # correctly.
     local role_exists
     role_exists="$("$run_as_superuser" -tAc "SELECT 1 FROM pg_roles WHERE rolname = 'atlas'")"
     local role_verb="CREATE"
     [ -n "$role_exists" ] && role_verb="ALTER"
-    "$run_as_superuser" -v ON_ERROR_STOP=1 -v pw="$ATLAS_POSTGRES_PASSWORD" \
-        -c "$role_verb ROLE atlas WITH LOGIN PASSWORD :'pw'"
+    echo "$role_verb ROLE atlas WITH LOGIN PASSWORD :'pw'" | \
+        "$run_as_superuser" -v ON_ERROR_STOP=1 -v pw="$ATLAS_POSTGRES_PASSWORD"
 
     local db_exists
     db_exists="$("$run_as_superuser" -tAc "SELECT 1 FROM pg_database WHERE datname = 'atlas'")"

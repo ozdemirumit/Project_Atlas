@@ -341,19 +341,21 @@ else {
 
     $env:PGPASSWORD = $suPassword
     try {
-        # psql does not interpolate :'var' inside a dollar-quoted ($$ ... $$) string -- it is
-        # scanned as an opaque SQL literal, same as a regular quoted string, so a DO block using
-        # :'pw' internally silently sends the literal text ":'pw'" to the server instead of the
-        # password. Check role existence separately and run CREATE/ALTER as a plain top-level
-        # statement instead, where :'pw' interpolates normally.
+        # psql interpolates :'var' only for script/stdin input, never for -c: per its own docs,
+        # a -c command "must be ... completely parsable by the server (i.e., it contains no
+        # psql-specific features)". (An earlier attempt used -c here and still failed for exactly
+        # that reason; a dollar-quoted DO block before that failed too, since :'var' also isn't
+        # interpolated inside a quoted SQL literal such as $$ ... $$.) Check role existence
+        # separately, then pipe the CREATE/ALTER statement in via stdin, where :'pw' interpolates
+        # correctly.
         $roleCheckArgs = @("-h", $postgresHost, "-p", $postgresPort, "-U", $suUser, "-d", "postgres",
             "-tAc", "SELECT 1 FROM pg_roles WHERE rolname = 'atlas'")
         $roleExists = Invoke-NativeAllowFailure { & psql @roleCheckArgs }
         $roleVerb = if ([string]::IsNullOrWhiteSpace($roleExists)) { "CREATE" } else { "ALTER" }
+        $roleSql = "$roleVerb ROLE atlas WITH LOGIN PASSWORD :'pw'"
         $roleArgs = @("-h", $postgresHost, "-p", $postgresPort, "-U", $suUser, "-d", "postgres",
-            "-v", "ON_ERROR_STOP=1", "-v", "pw=$postgresPassword",
-            "-c", "$roleVerb ROLE atlas WITH LOGIN PASSWORD :'pw'")
-        Invoke-NativeAllowFailure { & psql @roleArgs }
+            "-v", "ON_ERROR_STOP=1", "-v", "pw=$postgresPassword")
+        Invoke-NativeAllowFailure { $roleSql | & psql @roleArgs }
         if ($LASTEXITCODE -ne 0) { throw "Failed to create/update the atlas role." }
 
         $dbCheckArgs = @("-h", $postgresHost, "-p", $postgresPort, "-U", $suUser, "-d", "postgres",
