@@ -41,6 +41,24 @@ function Write-Step {
     Write-Host "`n==> $Message"
 }
 
+function Invoke-NativeAllowFailure {
+    # Windows PowerShell 5.1 wraps a native command's stderr text into a terminating error
+    # when it also exits non-zero and $ErrorActionPreference = "Stop" is in effect -- regardless
+    # of stream redirection (confirmed: *>$null does not prevent it). Every call site below where
+    # a non-zero exit is expected and handled via $LASTEXITCODE needs this, or the script aborts
+    # on its own anticipated failures (e.g. "atlas role doesn't exist yet") instead of handling
+    # them.
+    param([Parameter(Mandatory)][scriptblock]$ScriptBlock)
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $ScriptBlock
+    }
+    finally {
+        $ErrorActionPreference = $previous
+    }
+}
+
 function Update-SessionPath {
     # Machine/User PATH entries can be REG_EXPAND_SZ values containing unexpanded %VAR%
     # references (pnpm's installer, for one, writes "%PNPM_HOME%\bin" rather than a literal
@@ -299,7 +317,7 @@ if ($postgresPassword -eq "replace-with-a-local-development-secret") {
 
 $env:PGPASSWORD = $postgresPassword
 $checkArgs = @("-h", $postgresHost, "-p", $postgresPort, "-U", "atlas", "-d", "atlas", "-c", "SELECT 1")
-& psql @checkArgs *>$null
+Invoke-NativeAllowFailure { & psql @checkArgs *>$null }
 $atlasReachable = ($LASTEXITCODE -eq 0)
 Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue
 
@@ -330,24 +348,24 @@ $$;
 '@
         $roleArgs = @("-h", $postgresHost, "-p", $postgresPort, "-U", $suUser, "-d", "postgres",
             "-v", "ON_ERROR_STOP=1", "-v", "pw=$postgresPassword")
-        $roleSql | & psql @roleArgs
+        Invoke-NativeAllowFailure { $roleSql | & psql @roleArgs }
         if ($LASTEXITCODE -ne 0) { throw "Failed to create/update the atlas role." }
 
         $dbCheckArgs = @("-h", $postgresHost, "-p", $postgresPort, "-U", $suUser, "-d", "postgres",
             "-tAc", "SELECT 1 FROM pg_database WHERE datname = 'atlas'")
-        $dbExists = & psql @dbCheckArgs
+        $dbExists = Invoke-NativeAllowFailure { & psql @dbCheckArgs }
         if ([string]::IsNullOrWhiteSpace($dbExists)) {
             Write-Step "Creating database 'atlas'."
             $createDbArgs = @("-h", $postgresHost, "-p", $postgresPort, "-U", $suUser, "-d", "postgres",
                 "-v", "ON_ERROR_STOP=1", "-c", "CREATE DATABASE atlas OWNER atlas")
-            & psql @createDbArgs
+            Invoke-NativeAllowFailure { & psql @createDbArgs }
             if ($LASTEXITCODE -ne 0) { throw "Failed to create the atlas database." }
         }
 
         Write-Step "Enabling the pgvector extension (requires pgvector to already be installed on this PostgreSQL server)."
         $extensionArgs = @("-h", $postgresHost, "-p", $postgresPort, "-U", $suUser, "-d", "atlas",
             "-v", "ON_ERROR_STOP=1", "-c", "CREATE EXTENSION IF NOT EXISTS vector")
-        & psql @extensionArgs
+        Invoke-NativeAllowFailure { & psql @extensionArgs }
         if ($LASTEXITCODE -ne 0) {
             throw "Could not create the pgvector extension. Install pgvector on this PostgreSQL server first -- see README.md."
         }
@@ -415,7 +433,7 @@ function Stop-IfRunning {
     if (-not (Test-Path $PidFile)) { return }
     $processId = Get-Content $PidFile
     if ($processId) {
-        & taskkill /PID $processId /T /F *>$null
+        Invoke-NativeAllowFailure { & taskkill /PID $processId /T /F *>$null }
     }
     Remove-Item $PidFile -Force -ErrorAction SilentlyContinue
 }
