@@ -193,7 +193,11 @@ hand beforehand on most platforms:
     ships no binary distribution for Windows at all -- only a source build is possible -- so the
     script also installs Visual Studio C++ Build Tools automatically if needed (several GB,
     several minutes) and builds pgvector from source. This requires an elevated (Administrator)
-    PowerShell session; re-run as Administrator if it stops with a permissions error.
+    PowerShell session; re-run as Administrator if it stops with a permissions error. If your
+    network blocks the download (some corporate proxies block `.exe`/binary downloads by policy),
+    obtain `vs_buildtools.exe` and the pgvector source zip through an approved channel yourself
+    and pass their paths: `./scripts/install.ps1 -VcBuildToolsInstaller <path> -PgVectorArchive
+    <path>`.
   - **Other Linux distributions**: no safe auto-install path is wired up; install PostgreSQL and
     pgvector yourself via your distribution's package manager (see the
     [pgvector installation notes](https://github.com/pgvector/pgvector#installation)) and re-run.

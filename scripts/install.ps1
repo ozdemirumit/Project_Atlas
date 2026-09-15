@@ -8,11 +8,24 @@
 # confirmation first. pgvector has no Windows binary distribution, so it is built from source --
 # this installs Visual Studio C++ Build Tools automatically if needed (several GB) and requires
 # an elevated PowerShell session. See README.md.
+#
+# On a network that blocks direct downloads (e.g. a proxy that blocks .exe files by policy),
+# obtain the files through an approved channel yourself and pass their local paths instead:
+#   ./scripts/install.ps1 -VcBuildToolsInstaller C:\path\to\vs_buildtools.exe -PgVectorArchive C:\path\to\pgvector.zip
 # Idempotent: re-running rebuilds dependencies and restarts the backend/frontend processes
 # without touching existing database data. Run scripts/uninstall.ps1 to stop everything.
 
 [CmdletBinding()]
-param()
+param(
+    # Local path to an already-downloaded vs_buildtools.exe (Visual Studio C++ Build Tools
+    # bootstrapper, normally fetched from https://aka.ms/vs/17/release/vs_buildtools.exe).
+    # Use this when your network blocks that download.
+    [string]$VcBuildToolsInstaller = "",
+    # Local path to an already-downloaded pgvector source archive (normally fetched from
+    # https://github.com/pgvector/pgvector/archive/refs/tags/v0.8.6.zip). Use this when your
+    # network blocks that download.
+    [string]$PgVectorArchive = ""
+)
 
 $ErrorActionPreference = "Stop"
 $RepositoryRoot = Split-Path -Parent $PSScriptRoot
@@ -117,14 +130,30 @@ function Ensure-VcBuildTools {
         if (-not [string]::IsNullOrWhiteSpace($existing)) { return }
     }
     Write-Step "Visual Studio C++ Build Tools not found; installing them (this downloads several GB and can take a while)."
-    $installer = Join-Path $env:TEMP "vs_buildtools.exe"
-    Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_buildtools.exe" -OutFile $installer
+    $ownDownload = $false
+    if ($VcBuildToolsInstaller -ne "") {
+        if (-not (Test-Path $VcBuildToolsInstaller)) { throw "-VcBuildToolsInstaller path not found: $VcBuildToolsInstaller" }
+        $installer = $VcBuildToolsInstaller
+    }
+    else {
+        $installer = Join-Path $env:TEMP "vs_buildtools.exe"
+        $ownDownload = $true
+        try {
+            Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_buildtools.exe" -OutFile $installer
+        }
+        catch {
+            throw "Could not download the Visual Studio Build Tools installer -- your network may block it (e.g. " +
+                "a proxy blocking .exe downloads). Ask your network/IT team to allow " +
+                "https://aka.ms/vs/17/release/vs_buildtools.exe, or download it yourself through an approved " +
+                "channel and re-run with -VcBuildToolsInstaller <path-to-vs_buildtools.exe>. Original error: $_"
+        }
+    }
     $process = Start-Process -FilePath $installer -ArgumentList @(
         "--quiet", "--wait", "--norestart", "--nocache",
         "--add", "Microsoft.VisualStudio.Workload.VCTools",
         "--add", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64"
     ) -PassThru -Wait
-    Remove-Item $installer -Force -ErrorAction SilentlyContinue
+    if ($ownDownload) { Remove-Item $installer -Force -ErrorAction SilentlyContinue }
     if ($process.ExitCode -ne 0 -and $process.ExitCode -ne 3010) {
         throw "Visual Studio Build Tools installation failed (exit code $($process.ExitCode))."
     }
@@ -151,10 +180,26 @@ function Ensure-PgVector {
 
     $buildDir = Join-Path $env:TEMP "pgvector-build"
     Remove-Item -Recurse -Force $buildDir -ErrorAction SilentlyContinue
-    $zipPath = Join-Path $env:TEMP "pgvector.zip"
-    Invoke-WebRequest -Uri "https://github.com/pgvector/pgvector/archive/refs/tags/v0.8.6.zip" -OutFile $zipPath
+    $ownZipDownload = $false
+    if ($PgVectorArchive -ne "") {
+        if (-not (Test-Path $PgVectorArchive)) { throw "-PgVectorArchive path not found: $PgVectorArchive" }
+        $zipPath = $PgVectorArchive
+    }
+    else {
+        $zipPath = Join-Path $env:TEMP "pgvector.zip"
+        $ownZipDownload = $true
+        try {
+            Invoke-WebRequest -Uri "https://github.com/pgvector/pgvector/archive/refs/tags/v0.8.6.zip" -OutFile $zipPath
+        }
+        catch {
+            throw ("Could not download pgvector -- your network may block it. Ask your network/IT team to allow " +
+                "github.com, or download " +
+                "https://github.com/pgvector/pgvector/archive/refs/tags/v0.8.6.zip yourself through an approved " +
+                "channel and re-run with -PgVectorArchive <path-to-pgvector.zip>. Original error: $_")
+        }
+    }
     Expand-Archive -Path $zipPath -DestinationPath $env:TEMP -Force
-    Remove-Item $zipPath -Force
+    if ($ownZipDownload) { Remove-Item $zipPath -Force }
     Rename-Item (Join-Path $env:TEMP "pgvector-0.8.6") $buildDir
 
     Push-Location $buildDir
