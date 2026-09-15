@@ -332,6 +332,12 @@ else {
     $suBstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($suSecure)
     $suPassword = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($suBstr)
     [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($suBstr)
+    if ([string]::IsNullOrEmpty($suPassword)) {
+        throw "No superuser password was entered. This is the password you set for the '$suUser' " +
+            "role when PostgreSQL itself was installed/configured (e.g. during the EDB setup " +
+            "wizard) -- not the ATLAS_POSTGRES_PASSWORD in .env, which is for the separate " +
+            "'atlas' role this step is about to create."
+    }
 
     $env:PGPASSWORD = $suPassword
     try {
