@@ -107,17 +107,34 @@ function Ensure-Pnpm {
     if ($currentVersion -and (-not $requiredVersion -or $currentVersion -eq $requiredVersion)) { return }
 
     $label = if ($requiredVersion) { "pnpm $requiredVersion" } else { "pnpm" }
+    $pnpmFound = $false
+
     Write-Step "Installing $label with the official installer (user-local, no admin required)."
-    if ($requiredVersion) { $env:PNPM_VERSION = $requiredVersion }
     try {
-        Invoke-RestMethod https://get.pnpm.io/install.ps1 | Invoke-Expression
+        if ($requiredVersion) { $env:PNPM_VERSION = $requiredVersion }
+        try {
+            Invoke-RestMethod https://get.pnpm.io/install.ps1 | Invoke-Expression
+        }
+        finally {
+            Remove-Item Env:\PNPM_VERSION -ErrorAction SilentlyContinue
+        }
+        Update-SessionPath
+        $pnpmFound = $null -ne (Get-Command pnpm -ErrorAction SilentlyContinue)
     }
-    finally {
-        Remove-Item Env:\PNPM_VERSION -ErrorAction SilentlyContinue
+    catch {
+        Write-Step "The official installer failed ($($_.Exception.Message.Split("`n")[0])). This can happen when a network proxy intercepts TLS and the installer's own HTTP client doesn't trust it, even though Windows tools like npm do."
     }
-    Update-SessionPath
-    if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
-        throw "pnpm installation failed. Install it manually: https://pnpm.io/installation"
+
+    if (-not $pnpmFound -and (Get-Command npm -ErrorAction SilentlyContinue)) {
+        Write-Step "Installing $label with npm instead."
+        $npmSpec = if ($requiredVersion) { "pnpm@$requiredVersion" } else { "pnpm" }
+        Invoke-NativeAllowFailure { & npm install -g $npmSpec }
+        Update-SessionPath
+        $pnpmFound = $null -ne (Get-Command pnpm -ErrorAction SilentlyContinue)
+    }
+
+    if (-not $pnpmFound) {
+        throw "pnpm installation failed via both the official installer and npm. Install it manually: https://pnpm.io/installation"
     }
     if ($requiredVersion) {
         $installedVersion = (Invoke-NativeAllowFailure { & pnpm --version 2>$null }).Trim()
