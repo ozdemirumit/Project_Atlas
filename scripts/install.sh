@@ -40,14 +40,42 @@ ensure_uv() {
         || fail "uv installation failed. Install it manually: https://docs.astral.sh/uv/getting-started/installation/"
 }
 
+# frontend/package.json pins the exact pnpm version via "packageManager". A newer pnpm run
+# inside frontend/ detects a mismatch against that pin and tries to fetch the pinned version
+# from the npm registry on the fly -- which fails outright on a network that blocks that
+# registry. Installing the exact pinned version up front avoids ever needing that fetch.
+required_pnpm_version() {
+    local package_json="$REPO_ROOT/frontend/package.json"
+    [ -f "$package_json" ] || return 0
+    grep -o '"packageManager"[[:space:]]*:[[:space:]]*"pnpm@[^"]*"' "$package_json" \
+        | sed -E 's/.*pnpm@([^"]*)".*/\1/'
+}
+
 ensure_pnpm() {
-    command -v pnpm >/dev/null 2>&1 && return 0
-    log "pnpm not found; installing it with the official installer (user-local, no admin required)."
-    curl -fsSL https://get.pnpm.io/install.sh | sh -
+    local required_version current_version
+    required_version="$(required_pnpm_version)"
+    if command -v pnpm >/dev/null 2>&1; then
+        current_version="$(pnpm --version 2>/dev/null || true)"
+    fi
+    if [ -n "${current_version:-}" ] && { [ -z "$required_version" ] || [ "$current_version" = "$required_version" ]; }; then
+        return 0
+    fi
+
+    log "Installing pnpm${required_version:+ $required_version} with the official installer (user-local, no admin required)."
+    if [ -n "$required_version" ]; then
+        curl -fsSL https://get.pnpm.io/install.sh | env PNPM_VERSION="$required_version" sh -
+    else
+        curl -fsSL https://get.pnpm.io/install.sh | sh -
+    fi
     export PNPM_HOME="$HOME/.local/share/pnpm"
     export PATH="$PNPM_HOME:$PATH"
     command -v pnpm >/dev/null 2>&1 \
         || fail "pnpm installation failed. Install it manually: https://pnpm.io/installation"
+    if [ -n "$required_version" ]; then
+        current_version="$(pnpm --version 2>/dev/null || true)"
+        [ "$current_version" = "$required_version" ] \
+            || fail "pnpm $required_version was requested but $current_version is on PATH. Open a new shell and re-run, or install pnpm@$required_version manually."
+    fi
 }
 
 ensure_postgresql() {

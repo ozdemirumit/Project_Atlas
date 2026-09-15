@@ -86,13 +86,45 @@ function Ensure-Uv {
     }
 }
 
+function Get-RequiredPnpmVersion {
+    # frontend/package.json pins the exact pnpm version via "packageManager". A newer pnpm run
+    # inside frontend/ detects a mismatch against that pin and tries to fetch the pinned version
+    # from the npm registry on the fly -- which fails outright on a network that blocks that
+    # registry. Installing the exact pinned version up front avoids ever needing that fetch.
+    $packageJsonPath = Join-Path $RepositoryRoot "frontend\package.json"
+    if (-not (Test-Path $packageJsonPath)) { return $null }
+    $packageManager = (Get-Content $packageJsonPath -Raw | ConvertFrom-Json).packageManager
+    if ($packageManager -match "^pnpm@(.+)$") { return $Matches[1] }
+    return $null
+}
+
 function Ensure-Pnpm {
-    if (Get-Command pnpm -ErrorAction SilentlyContinue) { return }
-    Write-Step "pnpm not found; installing it with the official installer (user-local, no admin required)."
-    Invoke-RestMethod https://get.pnpm.io/install.ps1 | Invoke-Expression
+    $requiredVersion = Get-RequiredPnpmVersion
+    $currentVersion = $null
+    if (Get-Command pnpm -ErrorAction SilentlyContinue) {
+        $currentVersion = (Invoke-NativeAllowFailure { & pnpm --version 2>$null }).Trim()
+    }
+    if ($currentVersion -and (-not $requiredVersion -or $currentVersion -eq $requiredVersion)) { return }
+
+    $label = if ($requiredVersion) { "pnpm $requiredVersion" } else { "pnpm" }
+    Write-Step "Installing $label with the official installer (user-local, no admin required)."
+    if ($requiredVersion) { $env:PNPM_VERSION = $requiredVersion }
+    try {
+        Invoke-RestMethod https://get.pnpm.io/install.ps1 | Invoke-Expression
+    }
+    finally {
+        Remove-Item Env:\PNPM_VERSION -ErrorAction SilentlyContinue
+    }
     Update-SessionPath
     if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
         throw "pnpm installation failed. Install it manually: https://pnpm.io/installation"
+    }
+    if ($requiredVersion) {
+        $installedVersion = (Invoke-NativeAllowFailure { & pnpm --version 2>$null }).Trim()
+        if ($installedVersion -ne $requiredVersion) {
+            throw "pnpm $requiredVersion was requested but $installedVersion is on PATH. " +
+                "Open a new PowerShell window and re-run, or install pnpm@$requiredVersion manually."
+        }
     }
 }
 
