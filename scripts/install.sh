@@ -131,17 +131,17 @@ bootstrap_atlas_role() {
     # or via -c, e.g. `run_as_superuser -c "..."`.
     local run_as_superuser="$1"
 
-    "$run_as_superuser" -v ON_ERROR_STOP=1 -v pw="$ATLAS_POSTGRES_PASSWORD" <<'SQL'
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'atlas') THEN
-        EXECUTE format('CREATE ROLE atlas WITH LOGIN PASSWORD %L', :'pw');
-    ELSE
-        EXECUTE format('ALTER ROLE atlas WITH LOGIN PASSWORD %L', :'pw');
-    END IF;
-END
-$$;
-SQL
+    # psql does not interpolate :'var' inside a dollar-quoted ($$ ... $$) string -- it is
+    # scanned as an opaque SQL literal, same as a regular quoted string, so a DO block using
+    # :'pw' internally silently sends the literal text ":'pw'" to the server instead of the
+    # password. Check role existence separately and run CREATE/ALTER as a plain top-level
+    # statement instead, where :'pw' interpolates normally.
+    local role_exists
+    role_exists="$("$run_as_superuser" -tAc "SELECT 1 FROM pg_roles WHERE rolname = 'atlas'")"
+    local role_verb="CREATE"
+    [ -n "$role_exists" ] && role_verb="ALTER"
+    "$run_as_superuser" -v ON_ERROR_STOP=1 -v pw="$ATLAS_POSTGRES_PASSWORD" \
+        -c "$role_verb ROLE atlas WITH LOGIN PASSWORD :'pw'"
 
     local db_exists
     db_exists="$("$run_as_superuser" -tAc "SELECT 1 FROM pg_database WHERE datname = 'atlas'")"

@@ -341,20 +341,19 @@ else {
 
     $env:PGPASSWORD = $suPassword
     try {
-        $roleSql = @'
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'atlas') THEN
-        EXECUTE format('CREATE ROLE atlas WITH LOGIN PASSWORD %L', :'pw');
-    ELSE
-        EXECUTE format('ALTER ROLE atlas WITH LOGIN PASSWORD %L', :'pw');
-    END IF;
-END
-$$;
-'@
+        # psql does not interpolate :'var' inside a dollar-quoted ($$ ... $$) string -- it is
+        # scanned as an opaque SQL literal, same as a regular quoted string, so a DO block using
+        # :'pw' internally silently sends the literal text ":'pw'" to the server instead of the
+        # password. Check role existence separately and run CREATE/ALTER as a plain top-level
+        # statement instead, where :'pw' interpolates normally.
+        $roleCheckArgs = @("-h", $postgresHost, "-p", $postgresPort, "-U", $suUser, "-d", "postgres",
+            "-tAc", "SELECT 1 FROM pg_roles WHERE rolname = 'atlas'")
+        $roleExists = Invoke-NativeAllowFailure { & psql @roleCheckArgs }
+        $roleVerb = if ([string]::IsNullOrWhiteSpace($roleExists)) { "CREATE" } else { "ALTER" }
         $roleArgs = @("-h", $postgresHost, "-p", $postgresPort, "-U", $suUser, "-d", "postgres",
-            "-v", "ON_ERROR_STOP=1", "-v", "pw=$postgresPassword")
-        Invoke-NativeAllowFailure { $roleSql | & psql @roleArgs }
+            "-v", "ON_ERROR_STOP=1", "-v", "pw=$postgresPassword",
+            "-c", "$roleVerb ROLE atlas WITH LOGIN PASSWORD :'pw'")
+        Invoke-NativeAllowFailure { & psql @roleArgs }
         if ($LASTEXITCODE -ne 0) { throw "Failed to create/update the atlas role." }
 
         $dbCheckArgs = @("-h", $postgresHost, "-p", $postgresPort, "-U", $suUser, "-d", "postgres",
