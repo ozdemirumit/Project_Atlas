@@ -171,12 +171,30 @@ logic already exist today inside `backend/src/atlas/modules/`.
 ## Getting Started
 
 Everything needed to build, run, and deploy Atlas ships in this repository -- there is nothing to
-fetch from anywhere else. Cloning the repository and running one script is enough to bring the
-whole stack (PostgreSQL, backend, frontend) up in a new environment.
+fetch from anywhere else except PostgreSQL itself. Cloning the repository and running one script
+is enough to bring the backend and frontend up in a new environment. There is no Docker, no
+containers, and no YAML anywhere in the deployment path -- `scripts/install` runs everything as
+plain background processes.
 
-### Deploy anywhere with Docker
+### Deploy anywhere
 
-Prerequisites: Docker.
+Prerequisites:
+
+- **PostgreSQL 16+ with the [pgvector](https://github.com/pgvector/pgvector) extension available
+  on the server.** Install PostgreSQL first, then pgvector, from your platform's usual channel:
+  - Windows: [postgresql.org/download/windows](https://www.postgresql.org/download/windows/) for
+    PostgreSQL, then build pgvector from source per its
+    [Windows instructions](https://github.com/pgvector/pgvector#windows) (requires Visual Studio's
+    C++ build tools).
+  - macOS: `brew install postgresql@18 pgvector`
+  - Debian/Ubuntu: `sudo apt install postgresql` then
+    `sudo apt install postgresql-<version>-pgvector` from the
+    [PGDG apt repository](https://www.postgresql.org/download/linux/ubuntu/).
+  - Other Linux: see your distribution's PostgreSQL package and the
+    [pgvector installation notes](https://github.com/pgvector/pgvector#installation).
+
+  This is the one manual step -- everything after it is automated by `scripts/install`.
+- `uv` 0.12.1, `pnpm` 11.7.0 (same as local development, below).
 
 ```bash
 git clone https://github.com/ozdemirumit/Project_Atlas.git
@@ -189,13 +207,13 @@ scripts\install.cmd         # Windows, no PowerShell execution-policy change req
 # or: .\scripts\install.ps1
 ```
 
-The installer builds the backend and frontend images, starts PostgreSQL, the backend, and the
-frontend as plain Docker containers on a private network, runs database migrations, and waits for
-every service to report healthy. There is no Docker Compose file and no YAML involved -- the
-script itself is the whole deployment description. If `.env` does not already exist, the installer
-creates one from `.env.example` with a freshly generated database password; review `.env.example`
-first if you need to enable enterprise directory authentication or other production settings
-before the first run.
+The installer creates `.env` from `.env.example` with a freshly generated database password if
+`.env` does not already exist, then -- the first time it cannot already connect as the `atlas`
+role -- prompts once for your PostgreSQL superuser credentials to create the `atlas` role,
+`atlas` database, and the `vector` extension. It then installs backend and frontend dependencies,
+runs database migrations, and starts both as background processes, waiting for each to report
+healthy. Re-running `scripts/install` is safe: it skips the superuser step once the `atlas` role
+is reachable, and only reinstalls dependencies and restarts the processes.
 
 Open `http://localhost:5173`. The API is available at `http://localhost:8000`, with interactive
 API documentation at `http://localhost:8000/docs`.
@@ -203,45 +221,42 @@ API documentation at `http://localhost:8000/docs`.
 Verify everything came up healthy:
 
 ```bash
-docker ps --filter "name=atlas-"                       # all three containers should show "healthy"
-curl http://localhost:8000/health/ready                 # backend readiness check
-docker logs -f atlas-backend                             # follow backend logs
+curl http://localhost:8000/health/ready       # backend readiness check
+tail -f .atlas/backend.log .atlas/frontend.log
 ```
 
-Stop and remove everything the installer created:
+Stop everything the installer started:
 
 ```bash
 scripts/uninstall.sh              # Linux, macOS, or WSL
-scripts/uninstall.sh --purge      # also deletes the database volume
+scripts/uninstall.sh --purge      # also drops the atlas database and role
 ```
 
 ```powershell
 scripts\uninstall.cmd             # Windows
-.\scripts\uninstall.ps1 -Purge    # also deletes the database volume
+.\scripts\uninstall.ps1 -Purge    # also drops the atlas database and role
 ```
 
 ### Configuration
 
 All runtime configuration lives in `.env`, which `scripts/install` creates from `.env.example` on
 first run (see `.env.example` for the full, commented list). Every variable is prefixed `ATLAS_`.
-For the Docker deployment path, the installer forwards the whole file into the backend container
-with `docker run --env-file`; four keys (`ATLAS_ENVIRONMENT`, `ATLAS_DATABASE_REQUIRED`,
-`ATLAS_DATABASE_URL`, `ATLAS_DEVELOPMENT_IDENTITY_ENABLED`) are always set explicitly by the
-installer and override whatever `.env` itself says for them, because they describe the container
-network rather than a user choice.
-
-Unlike a shell or the backend's own settings loader, `docker run --env-file` does not strip
-surrounding quotes from values. Keep JSON-array and other structured values in `.env` unquoted, or
-a quoted value will reach the application as literal text -- including the quote characters --
-instead of being parsed.
+`ATLAS_POSTGRES_HOST` and `ATLAS_POSTGRES_PORT` (defaulting to `localhost`/`5432`) and
+`ATLAS_POSTGRES_PASSWORD` are read by `scripts/install` itself to reach PostgreSQL and to build
+`ATLAS_DATABASE_URL` for the backend; every other variable is read directly by the backend. Four
+of them (`ATLAS_ENVIRONMENT`, `ATLAS_DATABASE_REQUIRED`, `ATLAS_DATABASE_URL`,
+`ATLAS_DEVELOPMENT_IDENTITY_ENABLED`) are always set explicitly by `scripts/install` when it
+starts the backend process, overriding whatever `.env` itself says for them.
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
-| `ATLAS_POSTGRES_PASSWORD` | Database password for the `atlas` PostgreSQL role. Generated automatically on first install. | *(generated)* |
+| `ATLAS_POSTGRES_HOST` | Hostname of the PostgreSQL server. Read only by `scripts/install`. | `localhost` |
+| `ATLAS_POSTGRES_PORT` | Port of the PostgreSQL server. Read only by `scripts/install`. | `5432` |
+| `ATLAS_POSTGRES_PASSWORD` | Password for the `atlas` PostgreSQL role. Generated automatically on first install. | *(generated)* |
 | `ATLAS_DEVELOPMENT_IDENTITY_ENABLED` | Enables the built-in `Local Operator` identity for local testing. Disabled by default outside the installer/dev scripts; never enable in production. | `false` |
 | `ATLAS_DIRECTORY_IDENTITY_ENABLED` | Enables enterprise LDAP/Active Directory authentication. | `false` |
 | `ATLAS_DIRECTORY_ENDPOINTS` | JSON array of LDAPS endpoint URLs. | `[]` |
-| `ATLAS_DIRECTORY_CA_CERTIFICATE_FILE` | Path to the directory server's CA certificate, read inside the process that reads it. For the Docker deployment path this is a container-side path -- add a `docker run -v <host-path>:<container-path>:ro` for the backend container yourself and point this at the container-side path. When running the backend directly (not in a container), this is a normal host filesystem path. | *(unset)* |
+| `ATLAS_DIRECTORY_CA_CERTIFICATE_FILE` | Filesystem path to the directory server's CA certificate, read directly by the backend process. | *(unset)* |
 | `ATLAS_DIRECTORY_USER_PRINCIPAL_TEMPLATE` | Template used to build a user's bind principal, with `{username}` substituted. | `{username}@example.internal` |
 | `ATLAS_DIRECTORY_USER_SEARCH_BASE` | LDAP search base for user lookups. | `OU=People,DC=example,DC=internal` |
 | `ATLAS_DIRECTORY_USER_SEARCH_FILTER` | LDAP search filter, with `{username}` substituted. | `(&(objectClass=user)(sAMAccountName={username}))` |
@@ -256,11 +271,10 @@ instead of being parsed.
 | `ATLAS_API_CREDENTIAL_MAX_LIFETIME_MINUTES` | Maximum lifetime of an issued API credential (5-60). | `60` |
 | `ATLAS_API_CREDENTIAL_MAX_ACTIVE_PER_SUBJECT` | Maximum concurrent active API credentials per identity (1-20). | `10` |
 
-When running the backend directly without Docker (see below), it reads `.env` itself via its own
-settings loader, which does strip matching quotes -- both quoted and unquoted values work in that
-path.
+The backend process reads `.env` itself via its own settings loader, regardless of which script
+starts it, and that loader strips matching quotes, so both quoted and unquoted values work.
 
-### Local development without Docker
+### Local development, with hot reload
 
 Prerequisites:
 
@@ -268,6 +282,10 @@ Prerequisites:
 - uv 0.12.1
 - Node.js 24
 - pnpm 11.7.0
+
+Unlike `scripts/install`, these scripts run the backend and frontend in the foreground with live
+reload, for active development, and default to synthetic mode
+(`ATLAS_DATABASE_REQUIRED=false`) unless `.env` points `ATLAS_DATABASE_URL` at a real database.
 
 For direct local development on Windows without changing PowerShell execution policy:
 

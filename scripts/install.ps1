@@ -1,11 +1,12 @@
-# Builds and starts Project Atlas (database, backend, frontend) as plain Docker containers.
-# No Docker Compose, no YAML -- everything here is imperative `docker build`/`docker run`.
+# Builds and starts Project Atlas (backend, frontend) as plain background processes against a
+# PostgreSQL server you install yourself. No Docker, no containers, no YAML.
 #
 # Usage:
 #   ./scripts/install.ps1
 #
-# Idempotent: re-running rebuilds the images and replaces any existing Atlas containers.
-# Run scripts/uninstall.ps1 to stop and remove everything this script creates.
+# Prerequisites: PostgreSQL (with the pgvector extension available), uv, pnpm. See README.md.
+# Idempotent: re-running rebuilds dependencies and restarts the backend/frontend processes
+# without touching existing database data. Run scripts/uninstall.ps1 to stop everything.
 
 [CmdletBinding()]
 param()
@@ -14,15 +15,10 @@ $ErrorActionPreference = "Stop"
 $RepositoryRoot = Split-Path -Parent $PSScriptRoot
 $EnvFile = Join-Path $RepositoryRoot ".env"
 $EnvExample = Join-Path $RepositoryRoot ".env.example"
+$RuntimeDir = Join-Path $RepositoryRoot ".atlas"
 
-$NetworkName = "atlas-network"
-$VolumeName = "atlas-postgres-data"
-$DatabaseContainer = "atlas-database"
-$BackendContainer = "atlas-backend"
-$FrontendContainer = "atlas-frontend"
-$DatabaseImage = "pgvector/pgvector:pg18"
-$BackendImage = "atlas-backend:local"
-$FrontendImage = "atlas-frontend:local"
+$BackendPort = 8000
+$FrontendPort = 5173
 
 function Write-Step {
     param([string]$Message)
@@ -36,11 +32,11 @@ function Require-Command {
     }
 }
 
-Require-Command "docker"
-docker info *>$null
-if ($LASTEXITCODE -ne 0) {
-    throw "Docker does not appear to be running. Start Docker and try again."
-}
+Require-Command "uv"
+Require-Command "pnpm"
+Require-Command "psql"
+
+New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
 
 # --- .env: create it from .env.example with a freshly generated database password ---
 
@@ -49,8 +45,6 @@ if (-not (Test-Path $EnvFile)) {
     if (-not (Test-Path $EnvExample)) {
         throw ".env.example is missing; cannot generate .env."
     }
-    # RNGCryptoServiceProvider (rather than the newer RandomNumberGenerator.Fill) is used
-    # because it is available on both Windows PowerShell 5.1 (.NET Framework) and PowerShell 7+.
     $bytes = New-Object byte[] 32
     $rng = New-Object System.Security.Cryptography.RNGCryptoServiceProvider
     try {
@@ -83,6 +77,11 @@ foreach ($line in Get-Content $EnvFile) {
 }
 
 $postgresPassword = $envValues["ATLAS_POSTGRES_PASSWORD"]
+$postgresHost = $envValues["ATLAS_POSTGRES_HOST"]
+$postgresPort = $envValues["ATLAS_POSTGRES_PORT"]
+if ([string]::IsNullOrEmpty($postgresHost)) { $postgresHost = "localhost" }
+if ([string]::IsNullOrEmpty($postgresPort)) { $postgresPort = "5432" }
+
 if ([string]::IsNullOrEmpty($postgresPassword)) {
     throw "ATLAS_POSTGRES_PASSWORD is not set in .env."
 }
@@ -90,134 +89,179 @@ if ($postgresPassword -eq "replace-with-a-local-development-secret") {
     throw "ATLAS_POSTGRES_PASSWORD in .env is still the placeholder value. Set a real secret and re-run."
 }
 
-# --- network + volume (idempotent) ---
+# --- database: create the atlas role/database/extension only if they are not already usable ---
 
-docker network inspect $NetworkName *>$null
-if ($LASTEXITCODE -ne 0) {
-    Write-Step "Creating Docker network '$NetworkName'."
-    docker network create $NetworkName | Out-Null
+$env:PGPASSWORD = $postgresPassword
+$checkArgs = @("-h", $postgresHost, "-p", $postgresPort, "-U", "atlas", "-d", "atlas", "-c", "SELECT 1")
+& psql @checkArgs *>$null
+$atlasReachable = ($LASTEXITCODE -eq 0)
+Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue
+
+if ($atlasReachable) {
+    Write-Step "Database already reachable as the atlas role; skipping superuser setup."
 }
+else {
+    Write-Step "Database not reachable as the atlas role yet. One-time setup needs your PostgreSQL superuser credentials."
+    $suUser = Read-Host "PostgreSQL superuser name [postgres]"
+    if ([string]::IsNullOrEmpty($suUser)) { $suUser = "postgres" }
+    $suSecure = Read-Host "PostgreSQL superuser password" -AsSecureString
+    $suBstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($suSecure)
+    $suPassword = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($suBstr)
+    [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($suBstr)
 
-docker volume inspect $VolumeName *>$null
-if ($LASTEXITCODE -ne 0) {
-    Write-Step "Creating Docker volume '$VolumeName'."
-    docker volume create $VolumeName | Out-Null
-}
+    $env:PGPASSWORD = $suPassword
+    try {
+        $roleSql = @'
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'atlas') THEN
+        EXECUTE format('CREATE ROLE atlas WITH LOGIN PASSWORD %L', :'pw');
+    ELSE
+        EXECUTE format('ALTER ROLE atlas WITH LOGIN PASSWORD %L', :'pw');
+    END IF;
+END
+$$;
+'@
+        $roleArgs = @("-h", $postgresHost, "-p", $postgresPort, "-U", $suUser, "-d", "postgres",
+            "-v", "ON_ERROR_STOP=1", "-v", "pw=$postgresPassword")
+        $roleSql | & psql @roleArgs
+        if ($LASTEXITCODE -ne 0) { throw "Failed to create/update the atlas role." }
 
-function Remove-IfExists {
-    param([string]$Container)
-    docker rm -f $Container *>$null
-}
-
-function Wait-Healthy {
-    param([string]$Container, [int]$Attempts = 30, [int]$DelaySeconds = 2)
-    for ($i = 0; $i -lt $Attempts; $i++) {
-        $status = (docker inspect --format '{{.State.Health.Status}}' $Container 2>$null)
-        if ($status -eq "healthy") { return }
-        if ($status -eq "unhealthy") {
-            throw "$Container reported unhealthy. Check: docker logs $Container"
+        $dbCheckArgs = @("-h", $postgresHost, "-p", $postgresPort, "-U", $suUser, "-d", "postgres",
+            "-tAc", "SELECT 1 FROM pg_database WHERE datname = 'atlas'")
+        $dbExists = & psql @dbCheckArgs
+        if ([string]::IsNullOrWhiteSpace($dbExists)) {
+            Write-Step "Creating database 'atlas'."
+            $createDbArgs = @("-h", $postgresHost, "-p", $postgresPort, "-U", $suUser, "-d", "postgres",
+                "-v", "ON_ERROR_STOP=1", "-c", "CREATE DATABASE atlas OWNER atlas")
+            & psql @createDbArgs
+            if ($LASTEXITCODE -ne 0) { throw "Failed to create the atlas database." }
         }
-        Start-Sleep -Seconds $DelaySeconds
+
+        Write-Step "Enabling the pgvector extension (requires pgvector to already be installed on this PostgreSQL server)."
+        $extensionArgs = @("-h", $postgresHost, "-p", $postgresPort, "-U", $suUser, "-d", "atlas",
+            "-v", "ON_ERROR_STOP=1", "-c", "CREATE EXTENSION IF NOT EXISTS vector")
+        & psql @extensionArgs
+        if ($LASTEXITCODE -ne 0) {
+            throw "Could not create the pgvector extension. Install pgvector on this PostgreSQL server first -- see README.md."
+        }
     }
-    throw "$Container did not become healthy in time. Check: docker logs $Container"
+    finally {
+        Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue
+        $suPassword = $null
+    }
 }
 
-# Native docker.exe arguments are passed as an array and invoked with `&` throughout this
-# script (rather than one long backtick-continued line) -- PowerShell's argument marshalling
-# for native commands is unreliable once a single argument contains both spaces and quotes,
-# which the health-check commands below do.
+$databaseUrl = "postgresql+psycopg://atlas:${postgresPassword}@${postgresHost}:${postgresPort}/atlas"
 
-# --- database ---
+# --- backend: install dependencies and run migrations ---
 
-Write-Step "Starting PostgreSQL ($DatabaseContainer)."
-Remove-IfExists $DatabaseContainer
-$databaseArgs = @(
-    "run", "-d",
-    "--name", $DatabaseContainer,
-    "--network", $NetworkName,
-    "--restart", "unless-stopped",
-    "-e", "POSTGRES_DB=atlas",
-    "-e", "POSTGRES_USER=atlas",
-    "-e", "POSTGRES_PASSWORD=$postgresPassword",
-    "-v", "${VolumeName}:/var/lib/postgresql/data",
-    "--health-cmd", "pg_isready -U atlas -d atlas",
-    "--health-interval", "5s",
-    "--health-timeout", "3s",
-    "--health-retries", "10",
-    "--health-start-period", "10s",
-    $DatabaseImage
-)
-& docker @databaseArgs | Out-Null
+Write-Step "Installing backend dependencies."
+Push-Location (Join-Path $RepositoryRoot "backend")
+try {
+    uv sync --frozen
+    if ($LASTEXITCODE -ne 0) { throw "uv sync failed." }
 
-Write-Step "Waiting for PostgreSQL to become healthy."
-Wait-Healthy $DatabaseContainer 30 2
+    Write-Step "Running database migrations."
+    $env:ATLAS_DATABASE_URL = $databaseUrl
+    try {
+        uv run alembic upgrade head
+        if ($LASTEXITCODE -ne 0) { throw "alembic upgrade head failed." }
+    }
+    finally {
+        Remove-Item Env:\ATLAS_DATABASE_URL -ErrorAction SilentlyContinue
+    }
+}
+finally {
+    Pop-Location
+}
 
-# --- backend ---
+# --- frontend: install dependencies ---
 
-Write-Step "Building the backend image."
-& docker build -t $BackendImage (Join-Path $RepositoryRoot "backend")
+Write-Step "Installing frontend dependencies."
+Push-Location (Join-Path $RepositoryRoot "frontend")
+try {
+    pnpm install --frozen-lockfile
+    if ($LASTEXITCODE -ne 0) { throw "pnpm install failed." }
+}
+finally {
+    Pop-Location
+}
 
-Write-Step "Starting the backend ($BackendContainer)."
-Remove-IfExists $BackendContainer
-$databaseUrl = "postgresql+psycopg://atlas:${postgresPassword}@${DatabaseContainer}:5432/atlas"
-$backendHealthCmd = "python -c `"import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready', timeout=2)`""
-# --env-file forwards every setting in .env (directory auth, session/CSRF, API-credential
-# limits, ...) into the container. The -e flags below always win over --env-file for the
-# same key, which is what forces development identity on and points the database URL at
-# the container network regardless of what .env itself says for those two keys.
-$backendArgs = @(
-    "run", "-d",
-    "--name", $BackendContainer,
-    "--network", $NetworkName,
-    "--restart", "unless-stopped",
-    "--env-file", $EnvFile,
-    "-e", "ATLAS_ENVIRONMENT=development",
-    "-e", "ATLAS_DATABASE_REQUIRED=true",
-    "-e", "ATLAS_DATABASE_URL=$databaseUrl",
-    "-e", "ATLAS_DEVELOPMENT_IDENTITY_ENABLED=true",
-    "-p", "127.0.0.1:8000:8000",
-    "--health-cmd", $backendHealthCmd,
-    "--health-interval", "10s",
-    "--health-timeout", "3s",
-    "--health-retries", "6",
-    "--health-start-period", "15s",
-    "--entrypoint", "sh",
-    $BackendImage,
-    "-c", "uv run --no-dev alembic upgrade head && uv run --no-dev uvicorn atlas.main:app --app-dir src --host 0.0.0.0 --port 8000"
-)
-& docker @backendArgs | Out-Null
+# --- start backend + frontend as background processes ---
 
-Write-Step "Waiting for the backend to become healthy (this runs the database migrations)."
-Wait-Healthy $BackendContainer 30 3
+function Wait-ForHttp {
+    param([string]$Url, [int]$Attempts = 30, [int]$DelaySeconds = 2)
+    for ($i = 0; $i -lt $Attempts; $i++) {
+        try {
+            Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 3 | Out-Null
+            return $true
+        }
+        catch {
+            Start-Sleep -Seconds $DelaySeconds
+        }
+    }
+    return $false
+}
 
-# --- frontend ---
+function Stop-IfRunning {
+    param([string]$PidFile)
+    if (-not (Test-Path $PidFile)) { return }
+    $processId = Get-Content $PidFile
+    if ($processId) {
+        & taskkill /PID $processId /T /F *>$null
+    }
+    Remove-Item $PidFile -Force -ErrorAction SilentlyContinue
+}
 
-Write-Step "Building the frontend image."
-& docker build -t $FrontendImage (Join-Path $RepositoryRoot "frontend")
+Write-Step "Starting the backend on port $BackendPort."
+$backendPidFile = Join-Path $RuntimeDir "backend.pid"
+Stop-IfRunning $backendPidFile
+$backendEnv = @{
+    ATLAS_ENVIRONMENT = "development"
+    ATLAS_DATABASE_REQUIRED = "true"
+    ATLAS_DATABASE_URL = $databaseUrl
+    ATLAS_DEVELOPMENT_IDENTITY_ENABLED = "true"
+}
+foreach ($key in $backendEnv.Keys) { [System.Environment]::SetEnvironmentVariable($key, $backendEnv[$key], "Process") }
+$backendProcess = Start-Process -FilePath "uv" -ArgumentList @(
+    "run", "uvicorn", "atlas.main:app", "--app-dir", "src", "--host", "0.0.0.0", "--port", "$BackendPort"
+) -WorkingDirectory (Join-Path $RepositoryRoot "backend") -PassThru -NoNewWindow `
+    -RedirectStandardOutput (Join-Path $RuntimeDir "backend.log") `
+    -RedirectStandardError (Join-Path $RuntimeDir "backend.error.log")
+foreach ($key in $backendEnv.Keys) { [System.Environment]::SetEnvironmentVariable($key, $null, "Process") }
+Set-Content -Path $backendPidFile -Value $backendProcess.Id
 
-Write-Step "Starting the frontend ($FrontendContainer)."
-Remove-IfExists $FrontendContainer
-$frontendArgs = @(
-    "run", "-d",
-    "--name", $FrontendContainer,
-    "--network", $NetworkName,
-    "--restart", "unless-stopped",
-    "-p", "127.0.0.1:5173:8080",
-    $FrontendImage
-)
-& docker @frontendArgs | Out-Null
+Write-Step "Waiting for the backend to become healthy."
+if (-not (Wait-ForHttp "http://127.0.0.1:$BackendPort/health/ready" 30 2)) {
+    throw "Backend did not become healthy in time. Check: $RuntimeDir\backend.log / backend.error.log"
+}
 
-Write-Step "Waiting for the frontend to become healthy."
-Wait-Healthy $FrontendContainer 15 2
+Write-Step "Starting the frontend on port $FrontendPort."
+$frontendPidFile = Join-Path $RuntimeDir "frontend.pid"
+Stop-IfRunning $frontendPidFile
+[System.Environment]::SetEnvironmentVariable("ATLAS_API_PROXY_TARGET", "http://127.0.0.1:$BackendPort", "Process")
+$frontendProcess = Start-Process -FilePath "pnpm" -ArgumentList @(
+    "dev", "--host", "0.0.0.0", "--port", "$FrontendPort"
+) -WorkingDirectory (Join-Path $RepositoryRoot "frontend") -PassThru -NoNewWindow `
+    -RedirectStandardOutput (Join-Path $RuntimeDir "frontend.log") `
+    -RedirectStandardError (Join-Path $RuntimeDir "frontend.error.log")
+[System.Environment]::SetEnvironmentVariable("ATLAS_API_PROXY_TARGET", $null, "Process")
+Set-Content -Path $frontendPidFile -Value $frontendProcess.Id
+
+Write-Step "Waiting for the frontend to become available."
+if (-not (Wait-ForHttp "http://127.0.0.1:$FrontendPort/" 30 2)) {
+    throw "Frontend did not become available in time. Check: $RuntimeDir\frontend.log / frontend.error.log"
+}
 
 Write-Host @"
 
 Project Atlas is running.
 
-  Web application: http://localhost:5173
-  API:              http://localhost:8000
-  API docs:         http://localhost:8000/docs
+  Web application: http://localhost:$FrontendPort
+  API:              http://localhost:$BackendPort
+  API docs:         http://localhost:$BackendPort/docs
 
-Stop and remove everything with: ./scripts/uninstall.ps1
-View logs with: docker logs -f $BackendContainer
+Stop everything with: ./scripts/uninstall.ps1
+View logs with: Get-Content -Wait $RuntimeDir\backend.log
 "@

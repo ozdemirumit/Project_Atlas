@@ -1,6 +1,7 @@
 @echo off
-rem Builds and starts Project Atlas as plain Docker containers (no Compose, no YAML).
-rem Delegates to install.ps1: the full logic (secure password generation, container
+rem Builds and starts Project Atlas as plain background processes -- no Docker, no containers,
+rem no YAML. Requires PostgreSQL (with pgvector) installed separately; see README.md.
+rem Delegates to install.ps1: the full logic (secure password generation, PostgreSQL setup,
 rem health polling) is impractical in plain batch. `-ExecutionPolicy Bypass` here only
 rem affects this one invocation of powershell.exe; it does not change any system or
 rem user execution-policy setting, so it does not weaken endpoint security controls.

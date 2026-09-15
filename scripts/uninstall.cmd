@@ -1,5 +1,5 @@
 @echo off
-rem Stops and removes the containers and network install.cmd/install.ps1 created.
+rem Stops the backend/frontend processes install.cmd/install.ps1 started.
 rem Delegates to uninstall.ps1 -- see install.cmd for why -ExecutionPolicy Bypass here
 rem is scoped to this one invocation and does not weaken any system security control.
 setlocal
