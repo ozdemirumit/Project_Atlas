@@ -29,9 +29,20 @@ function Write-Step {
 }
 
 function Update-SessionPath {
+    # Machine/User PATH entries can be REG_EXPAND_SZ values containing unexpanded %VAR%
+    # references (pnpm's installer, for one, writes "%PNPM_HOME%\bin" rather than a literal
+    # path) -- GetEnvironmentVariable returns them raw. Import every Machine/User variable into
+    # this process first so those references resolve, then expand PATH against them explicitly.
+    foreach ($scope in @("Machine", "User")) {
+        foreach ($entry in [Environment]::GetEnvironmentVariables($scope).GetEnumerator()) {
+            if ($entry.Key -ne "Path") {
+                [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, "Process")
+            }
+        }
+    }
     $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-    $env:Path = "$machinePath;$userPath"
+    $env:Path = [Environment]::ExpandEnvironmentVariables("$machinePath;$userPath")
 }
 
 function Ensure-Uv {
