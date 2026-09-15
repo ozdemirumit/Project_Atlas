@@ -122,14 +122,27 @@ function Import-VcVars {
     }
 }
 
+function Test-WindowsSdkAvailable {
+    # The MSVC compiler needs the Universal CRT headers (corecrt.h and friends), which ship in
+    # the Windows SDK -- a component separate from the compiler itself. Checking for the actual
+    # header, rather than a specific versioned SDK component ID, avoids depending on exactly
+    # which SDK version happens to be current in the VS Build Tools channel manifest.
+    $sdkIncludeRoot = "${env:ProgramFiles(x86)}\Windows Kits\10\Include"
+    if (-not (Test-Path $sdkIncludeRoot)) { return $false }
+    return $null -ne (Get-ChildItem -Path $sdkIncludeRoot -Filter "corecrt.h" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1)
+}
+
 function Ensure-VcBuildTools {
     $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+    $hasVcTools = $false
     if (Test-Path $vswhere) {
         $existing = & $vswhere -latest -products * `
             -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-        if (-not [string]::IsNullOrWhiteSpace($existing)) { return }
+        $hasVcTools = -not [string]::IsNullOrWhiteSpace($existing)
     }
-    Write-Step "Visual Studio C++ Build Tools not found; installing them (this downloads several GB and can take a while)."
+    if ($hasVcTools -and (Test-WindowsSdkAvailable)) { return }
+
+    Write-Step "Visual Studio C++ Build Tools and/or the Windows SDK are missing; installing/repairing them (this can download several GB and take a while)."
     $ownDownload = $false
     if ($VcBuildToolsInstaller -ne "") {
         if (-not (Test-Path $VcBuildToolsInstaller)) { throw "-VcBuildToolsInstaller path not found: $VcBuildToolsInstaller" }
@@ -151,11 +164,17 @@ function Ensure-VcBuildTools {
     $process = Start-Process -FilePath $installer -ArgumentList @(
         "--quiet", "--wait", "--norestart", "--nocache",
         "--add", "Microsoft.VisualStudio.Workload.VCTools",
-        "--add", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64"
+        "--add", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+        "--includeRecommended"
     ) -PassThru -Wait
     if ($ownDownload) { Remove-Item $installer -Force -ErrorAction SilentlyContinue }
     if ($process.ExitCode -ne 0 -and $process.ExitCode -ne 3010) {
         throw "Visual Studio Build Tools installation failed (exit code $($process.ExitCode))."
+    }
+    if (-not (Test-WindowsSdkAvailable)) {
+        throw "Visual Studio Build Tools installed but the Windows SDK (corecrt.h) is still missing. " +
+            "Open the Visual Studio Installer, Modify the Build Tools installation, and add a " +
+            "'Windows 10/11 SDK' component under Individual components, then re-run."
     }
 }
 
