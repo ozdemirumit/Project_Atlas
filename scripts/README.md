@@ -9,10 +9,13 @@ The `.cmd` entry points do not require a PowerShell execution-policy change.
 processes against a PostgreSQL server you install yourself -- no containers of any kind. This is
 the script to run when deploying Atlas in a new environment.
 
-Prerequisites: PostgreSQL (with the pgvector extension available on the server), `uv`, `pnpm`.
-Installing PostgreSQL itself is a manual, one-time step (see README.md for download links); the
-scripts handle everything after that -- creating the `atlas` role/database/extension, running
-migrations, and starting both services.
+`uv` and `pnpm` are installed automatically if missing. PostgreSQL + pgvector are installed
+automatically on macOS (Homebrew) and Debian/Ubuntu (the official PGDG apt repository), each after
+a one-line confirmation; on Windows the script launches the PostgreSQL installer via `winget`, but
+pgvector has no Windows binary distribution and needs a manual source build (see README.md) --
+the one deployment step that stays manual there. Either way, the scripts handle everything after
+PostgreSQL exists -- creating the `atlas` role/database/extension, running migrations, and
+starting both services.
 
 ```bash
 scripts/install.sh          # Linux, macOS, WSL

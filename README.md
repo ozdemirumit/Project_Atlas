@@ -178,23 +178,26 @@ plain background processes.
 
 ### Deploy anywhere
 
-Prerequisites:
+`scripts/install` installs almost everything it needs itself -- there is nothing to set up by
+hand beforehand on most platforms:
 
-- **PostgreSQL 16+ with the [pgvector](https://github.com/pgvector/pgvector) extension available
-  on the server.** Install PostgreSQL first, then pgvector, from your platform's usual channel:
-  - Windows: [postgresql.org/download/windows](https://www.postgresql.org/download/windows/) for
-    PostgreSQL, then build pgvector from source per its
-    [Windows instructions](https://github.com/pgvector/pgvector#windows) (requires Visual Studio's
-    C++ build tools).
-  - macOS: `brew install postgresql@18 pgvector`
-  - Debian/Ubuntu: `sudo apt install postgresql` then
-    `sudo apt install postgresql-<version>-pgvector` from the
-    [PGDG apt repository](https://www.postgresql.org/download/linux/ubuntu/).
-  - Other Linux: see your distribution's PostgreSQL package and the
-    [pgvector installation notes](https://github.com/pgvector/pgvector#installation).
-
-  This is the one manual step -- everything after it is automated by `scripts/install`.
-- `uv` 0.12.1, `pnpm` 11.7.0 (same as local development, below).
+- **`uv` and `pnpm`** are installed automatically if missing, using their official installers
+  (user-local, no administrator/root privileges needed).
+- **PostgreSQL 18 with [pgvector](https://github.com/pgvector/pgvector)**, if `psql` isn't already
+  found:
+  - **macOS**: installed automatically with Homebrew (`brew install postgresql@18 pgvector`),
+    after a one-line confirmation.
+  - **Debian/Ubuntu**: installed automatically via the official PGDG apt repository, after a
+    one-line confirmation (needs `sudo`).
+  - **Windows**: the script launches the PostgreSQL installer for you via `winget`, but pgvector
+    ships no binary distribution for Windows at all -- only a source build with Visual Studio's
+    C++ build tools is possible (see the
+    [pgvector Windows instructions](https://github.com/pgvector/pgvector#windows)). This is the
+    one deployment step that stays manual on Windows; the script tells you exactly what failed if
+    you reach it before pgvector is built.
+  - **Other Linux distributions**: no safe auto-install path is wired up; install PostgreSQL and
+    pgvector yourself via your distribution's package manager (see the
+    [pgvector installation notes](https://github.com/pgvector/pgvector#installation)) and re-run.
 
 ```bash
 git clone https://github.com/ozdemirumit/Project_Atlas.git
@@ -207,13 +210,16 @@ scripts\install.cmd         # Windows, no PowerShell execution-policy change req
 # or: .\scripts\install.ps1
 ```
 
-The installer creates `.env` from `.env.example` with a freshly generated database password if
-`.env` does not already exist, then -- the first time it cannot already connect as the `atlas`
-role -- prompts once for your PostgreSQL superuser credentials to create the `atlas` role,
-`atlas` database, and the `vector` extension. It then installs backend and frontend dependencies,
-runs database migrations, and starts both as background processes, waiting for each to report
-healthy. Re-running `scripts/install` is safe: it skips the superuser step once the `atlas` role
-is reachable, and only reinstalls dependencies and restarts the processes.
+The installer first makes sure `uv`, `pnpm`, and PostgreSQL are present (installing whichever are
+missing, as described above), creates `.env` from `.env.example` with a freshly generated database
+password if `.env` does not already exist, then -- the first time it cannot already connect as the
+`atlas` role -- sets up the `atlas` role, `atlas` database, and `vector` extension. When the
+installer just installed PostgreSQL itself (macOS/Debian/Ubuntu), this happens automatically with
+no prompt; otherwise it prompts once for your existing PostgreSQL server's superuser credentials.
+It then installs backend and frontend dependencies, runs database migrations, and starts both as
+background processes, waiting for each to report healthy. Re-running `scripts/install` is safe: it
+skips already-installed prerequisites and the superuser step once the `atlas` role is reachable,
+and only reinstalls dependencies and restarts the processes.
 
 Open `http://localhost:5173`. The API is available at `http://localhost:8000`, with interactive
 API documentation at `http://localhost:8000/docs`.

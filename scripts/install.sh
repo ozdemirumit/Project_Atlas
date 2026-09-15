@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Builds and starts Project Atlas (backend, frontend) as plain background processes against a
-# PostgreSQL server you install yourself. No Docker, no containers, no YAML.
+# Builds and starts Project Atlas (backend, frontend) as plain background processes. No Docker,
+# no containers, no YAML.
 #
 # Usage:
 #   scripts/install.sh
 #
-# Prerequisites: PostgreSQL (with the pgvector extension available), uv, pnpm. See README.md.
+# uv, pnpm, and (on macOS/Debian/Ubuntu) PostgreSQL + pgvector are installed automatically if
+# missing, asking for confirmation before any system-wide/sudo step. See README.md for what is
+# and isn't auto-installable on your platform.
 # Idempotent: re-running rebuilds dependencies and restarts the backend/frontend processes
 # without touching existing database data. Run scripts/uninstall.sh to stop everything.
 
@@ -22,15 +24,71 @@ FRONTEND_PORT=5173
 log() { printf '\n==> %s\n' "$1"; }
 fail() { printf '\nError: %s\n' "$1" >&2; exit 1; }
 
-require_command() {
-    command -v "$1" >/dev/null 2>&1 || fail "Required command '$1' is not available. See README.md for prerequisites."
+mkdir -p "$RUNTIME_DIR"
+
+# --- prerequisites: install uv/pnpm automatically (user-local, no admin needed); install
+# PostgreSQL + pgvector automatically where a safe, official package-manager path exists ---
+
+JUST_INSTALLED_PG=0
+
+ensure_uv() {
+    command -v uv >/dev/null 2>&1 && return 0
+    log "uv not found; installing it with the official installer (user-local, no admin required)."
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+    command -v uv >/dev/null 2>&1 \
+        || fail "uv installation failed. Install it manually: https://docs.astral.sh/uv/getting-started/installation/"
 }
 
-require_command uv
-require_command pnpm
-require_command psql
+ensure_pnpm() {
+    command -v pnpm >/dev/null 2>&1 && return 0
+    log "pnpm not found; installing it with the official installer (user-local, no admin required)."
+    curl -fsSL https://get.pnpm.io/install.sh | sh -
+    export PNPM_HOME="$HOME/.local/share/pnpm"
+    export PATH="$PNPM_HOME:$PATH"
+    command -v pnpm >/dev/null 2>&1 \
+        || fail "pnpm installation failed. Install it manually: https://pnpm.io/installation"
+}
 
-mkdir -p "$RUNTIME_DIR"
+ensure_postgresql() {
+    command -v psql >/dev/null 2>&1 && return 0
+    log "PostgreSQL (psql) not found."
+    local os
+    os="$(uname -s)"
+    if [ "$os" = "Darwin" ] && command -v brew >/dev/null 2>&1; then
+        read -r -p "Install PostgreSQL 18 + pgvector with Homebrew now? Requires 'brew install postgresql@18 pgvector'. [y/N] " CONFIRM
+        [ "$CONFIRM" = "y" ] || [ "$CONFIRM" = "Y" ] \
+            || fail "PostgreSQL is required. Install it yourself -- see README.md -- then re-run."
+        brew install postgresql@18 pgvector
+        brew services start postgresql@18
+        export PATH="$(brew --prefix postgresql@18)/bin:$PATH"
+        JUST_INSTALLED_PG="brew"
+    elif [ "$os" = "Linux" ] && command -v apt-get >/dev/null 2>&1; then
+        read -r -p "Install PostgreSQL 18 + pgvector with apt now? Uses the official PGDG repository and needs sudo. [y/N] " CONFIRM
+        [ "$CONFIRM" = "y" ] || [ "$CONFIRM" = "Y" ] \
+            || fail "PostgreSQL is required. Install it yourself -- see README.md -- then re-run."
+        sudo apt-get update
+        sudo apt-get install -y postgresql-common curl ca-certificates
+        sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+        sudo apt-get install -y postgresql-18 postgresql-18-pgvector
+        sudo systemctl enable --now postgresql
+        JUST_INSTALLED_PG="apt"
+    else
+        fail "Could not auto-install PostgreSQL on this system. Install PostgreSQL (with pgvector) yourself -- see README.md for platform-specific instructions -- then re-run."
+    fi
+    command -v psql >/dev/null 2>&1 \
+        || fail "PostgreSQL installation finished but 'psql' is still not on PATH. Open a new shell and re-run."
+
+    log "Waiting for PostgreSQL to accept connections."
+    for _ in $(seq 1 15); do
+        pg_isready -q >/dev/null 2>&1 && break
+        sleep 1
+    done
+}
+
+ensure_uv
+ensure_pnpm
+ensure_postgresql
 
 # --- .env: create it from .env.example with a freshly generated database password ---
 
@@ -68,20 +126,12 @@ fi
 
 # --- database: create the atlas role/database/extension only if they are not already usable ---
 
-if PGPASSWORD="$ATLAS_POSTGRES_PASSWORD" psql -h "$ATLAS_POSTGRES_HOST" -p "$ATLAS_POSTGRES_PORT" \
-    -U atlas -d atlas -c "SELECT 1" >/dev/null 2>&1; then
-    log "Database already reachable as the atlas role; skipping superuser setup."
-else
-    log "Database not reachable as the atlas role yet. One-time setup needs your PostgreSQL superuser credentials."
-    read -r -p "PostgreSQL superuser name [postgres]: " SU_USER
-    SU_USER="${SU_USER:-postgres}"
-    read -r -s -p "PostgreSQL superuser password: " SU_PASSWORD
-    echo
+bootstrap_atlas_role() {
+    # $1: a function name that runs `psql` as a PostgreSQL superuser, given the SQL on stdin
+    # or via -c, e.g. `run_as_superuser -c "..."`.
+    local run_as_superuser="$1"
 
-    export PGPASSWORD="$SU_PASSWORD"
-
-    psql -h "$ATLAS_POSTGRES_HOST" -p "$ATLAS_POSTGRES_PORT" -U "$SU_USER" -d postgres \
-        -v ON_ERROR_STOP=1 -v pw="$ATLAS_POSTGRES_PASSWORD" <<'SQL'
+    "$run_as_superuser" -v ON_ERROR_STOP=1 -v pw="$ATLAS_POSTGRES_PASSWORD" <<'SQL'
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'atlas') THEN
@@ -93,19 +143,41 @@ END
 $$;
 SQL
 
-    DB_EXISTS="$(psql -h "$ATLAS_POSTGRES_HOST" -p "$ATLAS_POSTGRES_PORT" -U "$SU_USER" -d postgres \
-        -tAc "SELECT 1 FROM pg_database WHERE datname = 'atlas'")"
-    if [ -z "$DB_EXISTS" ]; then
+    local db_exists
+    db_exists="$("$run_as_superuser" -tAc "SELECT 1 FROM pg_database WHERE datname = 'atlas'")"
+    if [ -z "$db_exists" ]; then
         log "Creating database 'atlas'."
-        psql -h "$ATLAS_POSTGRES_HOST" -p "$ATLAS_POSTGRES_PORT" -U "$SU_USER" -d postgres \
-            -v ON_ERROR_STOP=1 -c "CREATE DATABASE atlas OWNER atlas"
+        "$run_as_superuser" -v ON_ERROR_STOP=1 -c "CREATE DATABASE atlas OWNER atlas"
     fi
 
     log "Enabling the pgvector extension (requires pgvector to already be installed on this PostgreSQL server)."
-    psql -h "$ATLAS_POSTGRES_HOST" -p "$ATLAS_POSTGRES_PORT" -U "$SU_USER" -d atlas \
-        -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS vector" \
+    "$run_as_superuser" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS vector" \
         || fail "Could not create the pgvector extension. Install pgvector on this PostgreSQL server first -- see README.md."
+}
 
+if PGPASSWORD="$ATLAS_POSTGRES_PASSWORD" psql -h "$ATLAS_POSTGRES_HOST" -p "$ATLAS_POSTGRES_PORT" \
+    -U atlas -d atlas -c "SELECT 1" >/dev/null 2>&1; then
+    log "Database already reachable as the atlas role; skipping superuser setup."
+elif [ "$JUST_INSTALLED_PG" = "apt" ]; then
+    log "Bootstrapping the atlas role/database via the postgres OS account (local, no password needed)."
+    run_as_local_superuser() { sudo -u postgres psql -d postgres "$@"; }
+    bootstrap_atlas_role run_as_local_superuser
+elif [ "$JUST_INSTALLED_PG" = "brew" ]; then
+    log "Bootstrapping the atlas role/database as the local Homebrew PostgreSQL superuser (local, no password needed)."
+    run_as_local_superuser() { psql -U "$(whoami)" -d postgres "$@"; }
+    bootstrap_atlas_role run_as_local_superuser
+else
+    log "Database not reachable as the atlas role yet. One-time setup needs your PostgreSQL superuser credentials."
+    read -r -p "PostgreSQL superuser name [postgres]: " SU_USER
+    SU_USER="${SU_USER:-postgres}"
+    read -r -s -p "PostgreSQL superuser password: " SU_PASSWORD
+    echo
+
+    export PGPASSWORD="$SU_PASSWORD"
+    run_as_remote_superuser() {
+        psql -h "$ATLAS_POSTGRES_HOST" -p "$ATLAS_POSTGRES_PORT" -U "$SU_USER" -d postgres "$@"
+    }
+    bootstrap_atlas_role run_as_remote_superuser
     unset PGPASSWORD
     unset SU_PASSWORD
 fi

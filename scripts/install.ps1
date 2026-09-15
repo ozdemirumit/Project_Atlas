@@ -1,10 +1,12 @@
-# Builds and starts Project Atlas (backend, frontend) as plain background processes against a
-# PostgreSQL server you install yourself. No Docker, no containers, no YAML.
+# Builds and starts Project Atlas (backend, frontend) as plain background processes. No Docker,
+# no containers, no YAML.
 #
 # Usage:
 #   ./scripts/install.ps1
 #
-# Prerequisites: PostgreSQL (with the pgvector extension available), uv, pnpm. See README.md.
+# uv and pnpm are installed automatically if missing. PostgreSQL itself can be launched via
+# winget (asking for confirmation first), but its setup wizard and the pgvector extension
+# still need a few manual steps on Windows -- see README.md.
 # Idempotent: re-running rebuilds dependencies and restarts the backend/frontend processes
 # without touching existing database data. Run scripts/uninstall.ps1 to stop everything.
 
@@ -25,16 +27,52 @@ function Write-Step {
     Write-Host "`n==> $Message"
 }
 
-function Require-Command {
-    param([string]$Name)
-    if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
-        throw "Required command '$Name' is not available. See README.md for prerequisites."
+function Update-SessionPath {
+    $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    $env:Path = "$machinePath;$userPath"
+}
+
+function Ensure-Uv {
+    if (Get-Command uv -ErrorAction SilentlyContinue) { return }
+    Write-Step "uv not found; installing it with the official installer (user-local, no admin required)."
+    Invoke-RestMethod https://astral.sh/uv/install.ps1 | Invoke-Expression
+    Update-SessionPath
+    if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
+        throw "uv installation failed. Install it manually: https://docs.astral.sh/uv/getting-started/installation/"
     }
 }
 
-Require-Command "uv"
-Require-Command "pnpm"
-Require-Command "psql"
+function Ensure-Pnpm {
+    if (Get-Command pnpm -ErrorAction SilentlyContinue) { return }
+    Write-Step "pnpm not found; installing it with the official installer (user-local, no admin required)."
+    Invoke-RestMethod https://get.pnpm.io/install.ps1 | Invoke-Expression
+    Update-SessionPath
+    if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
+        throw "pnpm installation failed. Install it manually: https://pnpm.io/installation"
+    }
+}
+
+function Ensure-PostgreSql {
+    if (Get-Command psql -ErrorAction SilentlyContinue) { return }
+    Write-Step "PostgreSQL (psql) not found."
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+        throw "Could not find winget to auto-install PostgreSQL. Install PostgreSQL (with pgvector) yourself -- see README.md -- then re-run."
+    }
+    $confirm = Read-Host "Launch the PostgreSQL 18 installer with winget now? You will still need to complete its setup wizard (superuser password, port) and build pgvector manually afterward -- see README.md [y/N]"
+    if ($confirm -ne "y" -and $confirm -ne "Y") {
+        throw "PostgreSQL is required. Install it yourself -- see README.md -- then re-run."
+    }
+    winget install -e --id PostgreSQL.PostgreSQL --accept-package-agreements --accept-source-agreements
+    Update-SessionPath
+    if (-not (Get-Command psql -ErrorAction SilentlyContinue)) {
+        throw "PostgreSQL installation finished but 'psql' is still not on PATH. Open a new PowerShell window and re-run."
+    }
+}
+
+Ensure-Uv
+Ensure-Pnpm
+Ensure-PostgreSql
 
 New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
 
