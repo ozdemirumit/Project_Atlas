@@ -2,11 +2,12 @@
 # no containers, no YAML.
 #
 # Usage:
-#   ./scripts/install.ps1
+#   ./scripts/install.ps1   (run as Administrator the first time, if pgvector needs building)
 #
-# uv and pnpm are installed automatically if missing. PostgreSQL itself can be launched via
-# winget (asking for confirmation first), but its setup wizard and the pgvector extension
-# still need a few manual steps on Windows -- see README.md.
+# uv, pnpm, and PostgreSQL (via winget) are installed automatically if missing, asking for
+# confirmation first. pgvector has no Windows binary distribution, so it is built from source --
+# this installs Visual Studio C++ Build Tools automatically if needed (several GB) and requires
+# an elevated PowerShell session. See README.md.
 # Idempotent: re-running rebuilds dependencies and restarts the backend/frontend processes
 # without touching existing database data. Run scripts/uninstall.ps1 to stop everything.
 
@@ -59,7 +60,7 @@ function Ensure-PostgreSql {
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
         throw "Could not find winget to auto-install PostgreSQL. Install PostgreSQL (with pgvector) yourself -- see README.md -- then re-run."
     }
-    $confirm = Read-Host "Launch the PostgreSQL 18 installer with winget now? You will still need to complete its setup wizard (superuser password, port) and build pgvector manually afterward -- see README.md [y/N]"
+    $confirm = Read-Host "Launch the PostgreSQL 18 installer with winget now? You will still need to complete its setup wizard (superuser password, port) [y/N]"
     if ($confirm -ne "y" -and $confirm -ne "Y") {
         throw "PostgreSQL is required. Install it yourself -- see README.md -- then re-run."
     }
@@ -70,9 +71,101 @@ function Ensure-PostgreSql {
     }
 }
 
+# pgvector ships no Windows binaries at all (confirmed against its GitHub releases and its own
+# README) -- the only way to get it on Windows is a source build with the MSVC C++ toolchain.
+# Both installing that toolchain and running `nmake ... install` need to write into
+# "Program Files", so this whole step requires an elevated (Administrator) PowerShell session.
+function Test-IsAdministrator {
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+    return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Import-VcVars {
+    $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+    if (-not (Test-Path $vswhere)) { throw "vswhere.exe not found; the Build Tools installation may have failed." }
+    $vsInstallPath = & $vswhere -latest -products * `
+        -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+    if ([string]::IsNullOrWhiteSpace($vsInstallPath)) {
+        throw "Could not find a Visual Studio C++ toolchain installation via vswhere."
+    }
+    $vcvarsPath = Join-Path $vsInstallPath "VC\Auxiliary\Build\vcvarsall.bat"
+    $output = cmd.exe /c "`"$vcvarsPath`" x64 && set"
+    foreach ($line in $output) {
+        if ($line -match "^([^=]+)=(.*)$") {
+            [System.Environment]::SetEnvironmentVariable($matches[1], $matches[2], "Process")
+        }
+    }
+}
+
+function Ensure-VcBuildTools {
+    $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+    if (Test-Path $vswhere) {
+        $existing = & $vswhere -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+        if (-not [string]::IsNullOrWhiteSpace($existing)) { return }
+    }
+    Write-Step "Visual Studio C++ Build Tools not found; installing them (this downloads several GB and can take a while)."
+    $installer = Join-Path $env:TEMP "vs_buildtools.exe"
+    Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_buildtools.exe" -OutFile $installer
+    $process = Start-Process -FilePath $installer -ArgumentList @(
+        "--quiet", "--wait", "--norestart", "--nocache",
+        "--add", "Microsoft.VisualStudio.Workload.VCTools",
+        "--add", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64"
+    ) -PassThru -Wait
+    Remove-Item $installer -Force -ErrorAction SilentlyContinue
+    if ($process.ExitCode -ne 0 -and $process.ExitCode -ne 3010) {
+        throw "Visual Studio Build Tools installation failed (exit code $($process.ExitCode))."
+    }
+}
+
+function Ensure-PgVector {
+    $pgShareDir = (& pg_config --sharedir).Trim()
+    if (Test-Path (Join-Path $pgShareDir "extension\vector.control")) { return }
+
+    Write-Step "pgvector is not installed on this PostgreSQL server."
+    if (-not (Test-IsAdministrator)) {
+        throw "Building pgvector needs an elevated PowerShell session. Re-run this script as Administrator."
+    }
+    $confirm = Read-Host "Build and install pgvector from source now? Installs Visual Studio C++ Build Tools first if needed (several GB, several minutes) [y/N]"
+    if ($confirm -ne "y" -and $confirm -ne "Y") {
+        throw "pgvector is required. Build it yourself -- see README.md -- then re-run."
+    }
+
+    Ensure-VcBuildTools
+    Import-VcVars
+
+    $pgBinDir = (& pg_config --bindir).Trim()
+    $env:PGROOT = Split-Path -Parent $pgBinDir
+
+    $buildDir = Join-Path $env:TEMP "pgvector-build"
+    Remove-Item -Recurse -Force $buildDir -ErrorAction SilentlyContinue
+    $zipPath = Join-Path $env:TEMP "pgvector.zip"
+    Invoke-WebRequest -Uri "https://github.com/pgvector/pgvector/archive/refs/tags/v0.8.6.zip" -OutFile $zipPath
+    Expand-Archive -Path $zipPath -DestinationPath $env:TEMP -Force
+    Remove-Item $zipPath -Force
+    Rename-Item (Join-Path $env:TEMP "pgvector-0.8.6") $buildDir
+
+    Push-Location $buildDir
+    try {
+        & nmake /F Makefile.win
+        if ($LASTEXITCODE -ne 0) { throw "pgvector build failed (nmake exit code $LASTEXITCODE)." }
+        & nmake /F Makefile.win install
+        if ($LASTEXITCODE -ne 0) { throw "pgvector install failed (nmake exit code $LASTEXITCODE)." }
+    }
+    finally {
+        Pop-Location
+    }
+
+    if (-not (Test-Path (Join-Path $pgShareDir "extension\vector.control"))) {
+        throw "pgvector build finished but vector.control is still missing from $pgShareDir\extension."
+    }
+}
+
 Ensure-Uv
 Ensure-Pnpm
 Ensure-PostgreSql
+Ensure-PgVector
 
 New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
 

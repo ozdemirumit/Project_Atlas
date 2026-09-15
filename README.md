@@ -189,12 +189,11 @@ hand beforehand on most platforms:
     after a one-line confirmation.
   - **Debian/Ubuntu**: installed automatically via the official PGDG apt repository, after a
     one-line confirmation (needs `sudo`).
-  - **Windows**: the script launches the PostgreSQL installer for you via `winget`, but pgvector
-    ships no binary distribution for Windows at all -- only a source build with Visual Studio's
-    C++ build tools is possible (see the
-    [pgvector Windows instructions](https://github.com/pgvector/pgvector#windows)). This is the
-    one deployment step that stays manual on Windows; the script tells you exactly what failed if
-    you reach it before pgvector is built.
+  - **Windows**: the script launches the PostgreSQL installer for you via `winget`. pgvector
+    ships no binary distribution for Windows at all -- only a source build is possible -- so the
+    script also installs Visual Studio C++ Build Tools automatically if needed (several GB,
+    several minutes) and builds pgvector from source. This requires an elevated (Administrator)
+    PowerShell session; re-run as Administrator if it stops with a permissions error.
   - **Other Linux distributions**: no safe auto-install path is wired up; install PostgreSQL and
     pgvector yourself via your distribution's package manager (see the
     [pgvector installation notes](https://github.com/pgvector/pgvector#installation)) and re-run.
