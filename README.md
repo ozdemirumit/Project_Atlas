@@ -1,161 +1,151 @@
 # Project Atlas
 
-Project Atlas is an enterprise-grade AI Infrastructure Operations Platform.
+**An enterprise AI infrastructure operations platform that explains itself.**
 
-Its purpose is to help infrastructure teams understand complex environments, analyze operational problems, assess risk, and generate explainable recommendations without allowing AI to perform unauthorized infrastructure changes.
+[![CI](https://github.com/ozdemirumit/Project_Atlas/actions/workflows/ci.yml/badge.svg)](https://github.com/ozdemirumit/Project_Atlas/actions/workflows/ci.yml)
+![Docs baseline](https://img.shields.io/badge/docs-47%2F47_approved-2ea44f)
+![Backend modules](https://img.shields.io/badge/backend_modules-38-blue)
+![Vendor connectors](https://img.shields.io/badge/vendor_connectors-6-blue)
+![No Docker](https://img.shields.io/badge/deployment-no_Docker%2C_no_YAML-informational)
 
-Atlas is not a traditional monitoring tool and it is not an autonomous operator. It is designed as an intelligent decision-support platform that can correlate infrastructure data, vendor knowledge, operational history, topology, health checks, and human-approved workflows.
+Atlas helps infrastructure teams understand complex environments, analyze operational problems,
+assess risk, and generate explainable recommendations -- without letting AI perform unauthorized
+infrastructure changes. It correlates infrastructure data, vendor knowledge, operational history,
+topology, and health checks, then hands every conclusion to a human with the evidence behind it.
 
-The project has an approved documentation baseline of 47 governed documents, all at version `1.0.0` with `Approved` status, and a working implementation built against it: 35 backend modules, 6 real vendor MCP connectors, an Enterprise React web application, and an automated deployment path, all tracked task-by-task in [`docs/implementation/IMPLEMENTATION_TRACKER.md`](docs/implementation/IMPLEMENTATION_TRACKER.md).
+> **AI assists. Humans decide.**
+> Atlas analyzes, explains, recommends, and prepares plans. It never executes
+> infrastructure-changing operations itself -- approved plans are carried out through external,
+> human-governed organizational processes.
 
-## Executive Summary
+## Contents
 
-Modern enterprise infrastructure spans storage systems, SAN switches, virtualization platforms, operating systems, backup platforms, directory services, network services, and vendor-specific tools. These domains are often managed through separate consoles, APIs, scripts, runbooks, and operational knowledge.
+- [What Atlas is](#what-atlas-is)
+- [Architecture at a glance](#architecture-at-a-glance)
+- [Design principles](#design-principles)
+- [Roadmap](#roadmap)
+- [Development status](#development-status)
+- [Repository structure](#repository-structure)
+- [Getting started](#getting-started)
+  - [Deploy anywhere](#deploy-anywhere)
+  - [Configuration](#configuration)
+  - [Local development, with hot reload](#local-development-with-hot-reload)
+- [Contributing](#contributing)
 
-Project Atlas aims to create a unified AI-assisted operations platform for this environment. It uses modular MCP connectors, an infrastructure knowledge graph, retrieval-augmented generation, AI agents, policy controls, and enterprise governance to help engineers investigate incidents, understand impact, and prepare safe remediation plans.
+## What Atlas is
 
-Atlas must be suitable for enterprise environments from the beginning. Security, RBAC, LDAP and Active Directory integration, audit logging, Syslog, SIEM integration, explainability, approval workflows, and reproducible deployment are core requirements, not optional later additions.
+Modern enterprise infrastructure spans storage systems, SAN switches, virtualization platforms,
+operating systems, backup platforms, directory services, network services, and vendor-specific
+tools -- usually managed through separate consoles, APIs, scripts, runbooks, and tribal knowledge.
 
-## Core Principle
+Atlas unifies that operational picture through modular MCP connectors, an infrastructure knowledge
+graph, retrieval-augmented generation, AI agents, policy controls, and enterprise governance, so
+engineers can investigate incidents, understand blast radius, and prepare safe remediation plans
+from one place. It is not a monitoring tool and not an autonomous operator -- it is a
+decision-support platform, built enterprise-first: identity integration, RBAC, LDAP/Active
+Directory, audit logging, Syslog, SIEM, explainability, and approval workflows are core
+requirements from day one, not later additions.
 
-AI assists. Humans decide.
+| | |
+| --- | --- |
+| **Documentation baseline** | 47 governed documents, all version `1.0.0`, all `Approved` |
+| **Backend** | 38 domain modules -- identity/RBAC, knowledge graph, policy engine, guardrails, RCA, recommendations, change impact, runbook engine, approvals, audit ledger, RAG knowledge base |
+| **Vendor connectors** | 6, each against the vendor's real API -- Hitachi Ops Center, Huawei Dorado, Huawei Pacific, Brocade SANnav, VMware vCenter, Commvault |
+| **Frontend** | React web application, pre-built and served by the backend |
+| **Tests** | 850+ backend test files, checked with `ruff`, `mypy`, and `pytest` on every change and in CI |
+| **Deployment** | One script, no Docker, no containers, no YAML anywhere in the path |
 
-Atlas may analyze, correlate, explain, recommend, prepare plans, estimate impact, and propose rollback
-steps. It does not execute infrastructure-changing operations; approved plans are carried out through
-external, human-governed organizational processes.
+## Architecture at a glance
 
-## Product Vision
+```mermaid
+flowchart LR
+    User(["Engineer<br/>(browser)"]) -->|":8000"| Backend
 
-Atlas should become the AI-powered operating platform that understands enterprise infrastructure, reasons about operational problems, and assists engineers in making safe, explainable, and informed decisions.
+    subgraph Backend["Atlas backend (FastAPI)"]
+        API["REST API<br/>/api/v1/*"]
+        Web["Pre-built web app<br/>frontend/dist/"]
+        Modules["38 domain modules<br/>graph · policy · guardrails<br/>RCA · recommendations · approvals"]
+    end
 
-The long-term vision includes:
+    Backend --> DB[("PostgreSQL<br/>+ pgvector")]
+    Modules --> Connectors["MCP connectors"]
 
-- Infrastructure discovery and relationship mapping
-- Infrastructure knowledge graph
-- Vendor and operational knowledge management
-- Health checks and scheduled assessments
-- Root cause analysis
-- Change impact analysis
-- Risk scoring and service interruption estimation
-- Recommendation and rollback planning
-- Human-controlled approval workflows
-- Enterprise audit and compliance evidence
-- AI-assisted MCP connector generation
+    Connectors --> Hitachi["Hitachi<br/>Ops Center"]
+    Connectors --> Dorado["Huawei<br/>Dorado"]
+    Connectors --> Pacific["Huawei<br/>Pacific"]
+    Connectors --> Brocade["Brocade<br/>SANnav"]
+    Connectors --> VCenter["VMware<br/>vCenter"]
+    Connectors --> Commvault["Commvault"]
+```
 
-## Design Principles
+The backend is a single deployable process: it serves the REST API, the pre-built web application,
+and reaches every vendor system exclusively through read-oriented MCP connectors -- there is no
+path from Atlas to an infrastructure-changing operation.
 
-The following principles are architectural constraints for the entire project.
+## Design principles
 
-### AI Assists, Humans Decide
+These are architectural constraints for the whole project, not aspirations.
 
-Atlas may analyze, explain, recommend, and prepare plans. It must not perform operationally risky or
-infrastructure-changing actions. Approval cannot convert a recommendation into Atlas execution
-authority.
-
-### Explainability First
-
-Every recommendation must include evidence, reasoning, confidence, risk, expected impact, assumptions, and alternatives where applicable.
-
-### Enterprise First
-
-Atlas must be designed for enterprise usage from day one, including identity integration, RBAC, auditability, logging, approval workflows, high availability, and operational governance.
-
-### Vendor Agnostic
-
-Atlas must not depend on a single vendor ecosystem. Infrastructure capabilities should be integrated through modular MCP connectors.
-
-### Modular by Design
-
-MCP connectors, AI agents, health checks, workflows, policies, reports, knowledge sources, and UI modules should be independently replaceable and versioned.
-
-### Security by Default
-
-Secure defaults, least privilege, protected secrets, auditable actions, and safe failure behavior are mandatory.
-
-### Reproducible From the Repository
-
-Everything required to build, test, validate, and deploy Atlas should be documented and automated from the repository. Enterprise and restricted-network environments must be considered in setup and bootstrap design.
-
-## Initial Scope
-
-- Modular MCP-based infrastructure integrations
-- Infrastructure knowledge graph
-- RAG-based vendor and operational knowledge
-- AI-assisted troubleshooting and root cause analysis
-- Health checks, reporting, and recommendations
-- Enterprise authentication, RBAC, audit logging, Syslog, SIEM, and ITSM integration
-- Human-controlled change impact analysis and approval workflows
+| Principle | What it means |
+| --- | --- |
+| **AI assists, humans decide** | Atlas may analyze, explain, recommend, and prepare plans. It must not perform operationally risky or infrastructure-changing actions. Approval never converts a recommendation into Atlas execution authority. |
+| **Explainability first** | Every recommendation carries evidence, reasoning, confidence, risk, expected impact, assumptions, and alternatives. |
+| **Enterprise first** | Identity integration, RBAC, auditability, logging, approval workflows, high availability, and operational governance are designed in from day one. |
+| **Vendor agnostic** | No dependency on a single vendor ecosystem -- infrastructure capabilities are integrated through modular MCP connectors. |
+| **Modular by design** | Connectors, AI agents, health checks, workflows, policies, reports, knowledge sources, and UI modules are independently replaceable and versioned. |
+| **Security by default** | Secure defaults, least privilege, protected secrets, auditable actions, and safe failure behavior are mandatory, not opt-in. |
+| **Reproducible from the repository** | Everything needed to build, test, validate, and deploy Atlas is documented and automated from this repository, including for enterprise and restricted-network environments. |
 
 ## Roadmap
 
-All seven phases below define the governed documentation baseline; that baseline is complete (47/47
-documents `Approved`). Implementation against it is ongoing and tracked task-by-task in
+The documentation baseline below is complete (47/47 documents `Approved`); implementation against
+it is ongoing and tracked task-by-task in
 [`docs/implementation/IMPLEMENTATION_TRACKER.md`](docs/implementation/IMPLEMENTATION_TRACKER.md).
 
-### Phase 1 - Product Definition
+| Phase | Focus |
+| --- | --- |
+| 1 -- Product Definition | Product vision, requirements, principles, shared terminology |
+| 2 -- Architecture | System, component, service, deployment, AI, RAG, and event architecture |
+| 3 -- Core Platform | MCP framework and SDK, MCP Builder, workflow, decision, policy, graph, and knowledge engines |
+| 4 -- Enterprise | Authentication, RBAC, audit, logging, Syslog, SIEM, ITSM, approval, deployment, and bootstrap controls |
+| 5 -- AI | Agents, reasoning, root cause analysis, recommendations, change impact, runbook intelligence, explainability, guardrails |
+| 6 -- Development | API, backend, frontend, databases, coding standards, testing, deployment, CI/CD, release practices |
+| 7 -- AI Development Control | The master operating prompt and control protocol for AI-assisted development |
 
-Define product vision, requirements, principles, and shared terminology.
+## Development status
 
-### Phase 2 - Architecture
+**Core platform implemented and passing continuous verification.**
 
-Define system, component, service, deployment, AI, RAG, and event architecture.
-
-### Phase 3 - Core Platform
-
-Define the MCP framework and SDK, MCP Builder, workflow, decision, policy, graph, and knowledge engines.
-
-### Phase 4 - Enterprise
-
-Define authentication, RBAC, audit, logging, Syslog, SIEM, ITSM, approval, deployment, and bootstrap controls.
-
-### Phase 5 - AI
-
-Define agents, reasoning, root cause analysis, recommendations, change impact, runbook intelligence, explainability, and guardrails.
-
-### Phase 6 - Development
-
-Define API, backend, frontend, databases, coding standards, testing, deployment, CI/CD, and release practices.
-
-### Phase 7 - AI Development Control
-
-Define the master operating prompt and control protocol for AI-assisted development.
-
-## Development Status
-
-Current status: core platform implemented and passing continuous verification.
-
-The backend is a runnable modular monolith of 35 domain modules (`backend/src/atlas/modules/`),
+The backend is a runnable modular monolith of 38 domain modules (`backend/src/atlas/modules/`),
 including identity and RBAC, LDAP/Active Directory integration, the infrastructure knowledge
 graph, policy engine, guardrails, explainability, root cause analysis, recommendations, change
 impact, runbook engine, approval workflows with ITSM binding, notifications, audit logging with a
 hash-chained integrity ledger, and a retrieval-augmented knowledge base. Six vendor MCP connectors
-are implemented against each vendor's real API (`mcp/connectors/`): Hitachi Ops Center, Huawei
-Dorado, Huawei Pacific, Brocade SANnav, VMware vCenter, and Commvault. The web application
-(`frontend/`) and the automated deployment path (see Getting Started, below) are both real and
-runnable end to end. The backend carries an extensive automated test suite (850+ test files) run
-with `ruff`, `mypy`, and `pytest` on every change.
+are implemented against each vendor's real API (`mcp/connectors/`). The web application
+(`frontend/`) and the automated deployment path (see [Getting Started](#getting-started)) are both
+real and runnable end to end. The backend carries an extensive automated test suite (850+ test
+files) run with `ruff`, `mypy`, and `pytest` on every change and in CI.
 
 Every implementation task is recorded in
 [`docs/implementation/IMPLEMENTATION_TRACKER.md`](docs/implementation/IMPLEMENTATION_TRACKER.md),
-which is the authoritative source for what is built, in progress, or deliberately deferred. Items
-currently deferred by explicit, on-record decision rather than oversight include: the composition
-of a single guardrails/pipeline architecture across several already-built modules (an open product
-question, not a missing feature); the MCP Builder's manual-change tracking and regeneration
-workflow; and the `infrastructure/` implementation track, which remains an intentional placeholder
-pending a dedicated implementation request.
+the authoritative source for what is built, in progress, or deliberately deferred. Items currently
+deferred by explicit, on-record decision rather than oversight:
 
-All 47 governed documents are at version `1.0.0` with `Approved` status and form the binding
-implementation baseline that every task above is built against.
+- The composition of a single guardrails/pipeline architecture across several already-built
+  modules -- an open product question, not a missing feature.
+- The MCP Builder's manual-change tracking and regeneration workflow.
+- The `infrastructure/` implementation track, an intentional placeholder pending a dedicated
+  implementation request.
 
-## Repository Structure
+## Repository structure
 
 ```text
 AGENTS.md          AI development rules for Codex, Claude Code, and similar agents
 docs/              Product, architecture, platform, security, AI, and development documents
 backend/           Backend API and all domain modules (identity, graph, policy, RCA, ...)
-frontend/          Enterprise React web application
+frontend/          Enterprise React web application (frontend/dist/ ships pre-built)
 mcp/connectors/    Real vendor MCP connector packages (Hitachi, Huawei, Brocade, vCenter, Commvault)
-scripts/           Deployment (Docker) and local development automation
+scripts/           Deployment and local development automation
 tests/             Cross-cutting test suites and validation assets
 agents/            Placeholder for standalone AI agent orchestration (not yet implemented)
 knowledge/         Placeholder for repository-level knowledge assets (not yet implemented)
@@ -168,7 +158,7 @@ Each top-level directory contains a short README that defines its ownership and 
 by their governing documents -- the working equivalents of AI orchestration, RAG, and health-check
 logic already exist today inside `backend/src/atlas/modules/`.
 
-## Getting Started
+## Getting started
 
 Everything needed to build, run, and deploy Atlas ships in this repository -- there is nothing to
 fetch from anywhere else except PostgreSQL itself. Cloning the repository and running one script
@@ -307,7 +297,8 @@ scripts\bootstrap.cmd
 scripts\dev.cmd
 ```
 
-Open `http://localhost:5173`. The API is available at `http://localhost:8000`, with interactive development documentation at `http://localhost:8000/docs`.
+Open `http://localhost:5173`. The API is available at `http://localhost:8000`, with interactive
+development documentation at `http://localhost:8000/docs`.
 
 ```powershell
 curl http://localhost:8000/health/ready    # backend readiness check
@@ -339,7 +330,8 @@ Contributors should read:
 
 ## Contributing
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the documentation lifecycle, review and approval workflow, versioning policy, and pull request expectations.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the documentation lifecycle, review and approval
+workflow, versioning policy, and pull request expectations.
 
 - Start implementation only through a scoped task governed by the accepted documents.
 - Do not commit secrets, credentials, IP addresses, customer names, or real infrastructure details.
