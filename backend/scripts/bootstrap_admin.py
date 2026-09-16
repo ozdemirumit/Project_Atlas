@@ -156,7 +156,13 @@ async def _main() -> None:
         "Administrator subject id", default="subject.bootstrap-administrator.primary"
     )
     display_name = _prompt("Display name")
-    organization_id = _prompt("Organization id", default=settings.development_organization_id)
+    # Not a free-form prompt: this Atlas deployment is single-organization, and every durably
+    # granted role-assignment scope (see static_role_scopes(DEVELOPMENT_ROLE_ID) below) is pinned
+    # to this exact value. A different organization id here would silently make every granted
+    # assignment invisible to this account (scope.organization_id would never match), reproducing
+    # the same "Identity could not be verified" failure this whole script exists to prevent.
+    organization_id = settings.development_organization_id
+    print(f"Organization id: {organization_id} (fixed -- this deployment is single-organization)")
     role_id = _prompt_role_id()
     temporary_password = _prompt_password("Temporary bootstrap password")
     final_password = _prompt_password(
