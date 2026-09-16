@@ -20,7 +20,13 @@ import asyncio
 import getpass
 import logging
 import sys
+from pathlib import Path
 from uuid import uuid4
+
+# The `atlas` package is not pip-installed in this project -- every entry point adds `src/` to
+# the path itself (uvicorn's `--app-dir src`, pytest's `pythonpath = ["src"]`). This script is no
+# different: it must do the same before importing anything from `atlas`.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from atlas.core.audit import LoggingAuditSink
 from atlas.core.config import Settings
