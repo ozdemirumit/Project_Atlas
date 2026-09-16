@@ -441,7 +441,14 @@ $backendEnv = @{
 }
 foreach ($key in $backendEnv.Keys) { [System.Environment]::SetEnvironmentVariable($key, $backendEnv[$key], "Process") }
 $backendProcess = Start-Process -FilePath "uv" -ArgumentList @(
-    "run", "uvicorn", "atlas.main:app", "--app-dir", "src", "--host", "0.0.0.0", "--port", "$BackendPort"
+    # uvicorn's default --loop ("auto"/"asyncio") resolves to ProactorEventLoop on Windows
+    # (uvicorn/loops/asyncio.py), which psycopg's async driver refuses to run under ("Psycopg
+    # cannot use the 'ProactorEventLoop' to run in async mode"). Force SelectorEventLoop
+    # instead -- verified directly against this uvicorn version's loop-factory resolution before
+    # relying on it; setting asyncio's global event loop *policy* does not work here, since this
+    # uvicorn passes loop_factory= to asyncio.run() directly and never consults the policy.
+    "run", "uvicorn", "atlas.main:app", "--app-dir", "src", "--host", "0.0.0.0", "--port", "$BackendPort",
+    "--loop", "asyncio:SelectorEventLoop"
 ) -WorkingDirectory (Join-Path $RepositoryRoot "backend") -PassThru -NoNewWindow `
     -RedirectStandardOutput (Join-Path $RuntimeDir "backend.log") `
     -RedirectStandardError (Join-Path $RuntimeDir "backend.error.log")
