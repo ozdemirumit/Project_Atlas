@@ -1009,6 +1009,24 @@ textarea:focus-visible {
   overflow-wrap: anywhere;
 }
 
+.bundled-connection-vault-secret {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #c7d8d2;
+  border-radius: 6px;
+  background: #f7faf9;
+}
+
+.bundled-connection-vault-secret label {
+  display: grid;
+  gap: 6px;
+}
+
+.bundled-connection-vault-secret button {
+  justify-self: start;
+}
+
 .installed-mcp-table .state-badge.success {
   border-color: #b8d6cb;
   color: #245f4b;

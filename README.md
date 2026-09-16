@@ -29,6 +29,7 @@ topology, and health checks, then hands every conclusion to a human with the evi
 - [Getting started](#getting-started)
   - [Deploy anywhere](#deploy-anywhere)
   - [Configuration](#configuration)
+  - [Going to production](#going-to-production)
   - [Local development, with hot reload](#local-development-with-hot-reload)
 - [Contributing](#contributing)
 
@@ -240,6 +241,21 @@ scripts\uninstall.cmd             # Windows
 .\scripts\uninstall.ps1 -Purge    # also drops the atlas database and role
 ```
 
+For routine day-to-day process control after that first install (e.g. restarting after a server
+reboot), use the lighter `scripts/start`/`scripts/stop` instead -- they skip dependency
+installation, PostgreSQL setup, and migrations, and just start or stop the already-installed
+backend:
+
+```bash
+scripts/start.sh                  # Linux, macOS, or WSL
+scripts/stop.sh
+```
+
+```powershell
+scripts\start.cmd                 # Windows
+scripts\stop.cmd
+```
+
 ### Configuration
 
 All runtime configuration lives in `.env`, which `scripts/install` creates from `.env.example` on
@@ -257,6 +273,10 @@ starts the backend process, overriding whatever `.env` itself says for them.
 | `ATLAS_POSTGRES_PORT` | Port of the PostgreSQL server. Read only by `scripts/install`. | `5432` |
 | `ATLAS_POSTGRES_PASSWORD` | Password for the `atlas` PostgreSQL role. Generated automatically on first install. | *(generated)* |
 | `ATLAS_DEVELOPMENT_IDENTITY_ENABLED` | Enables the built-in `Local Operator` identity for local testing. Disabled by default outside the installer/dev scripts; never enable in production. | `false` |
+| `ATLAS_LOCAL_MODEL_ENABLED` | Enables governed invocation of a real, on-prem/local LLM gateway. Requires the three variables below when `true`, or the backend refuses to start. | `false` |
+| `ATLAS_LOCAL_MODEL_BASE_URL` | Base URL of an OpenAI-compatible `/v1` chat-completions endpoint. | *(unset)* |
+| `ATLAS_LOCAL_MODEL_ID` | Model identifier passed to the gateway. | *(unset)* |
+| `ATLAS_LOCAL_MODEL_READER_TOKEN` | Bearer token for the gateway. Never commit a real value -- set it only in your own untracked `.env`. | *(unset)* |
 | `ATLAS_DIRECTORY_IDENTITY_ENABLED` | Enables enterprise LDAP/Active Directory authentication. | `false` |
 | `ATLAS_DIRECTORY_ENDPOINTS` | JSON array of LDAPS endpoint URLs. | `[]` |
 | `ATLAS_DIRECTORY_CA_CERTIFICATE_FILE` | Filesystem path to the directory server's CA certificate, read directly by the backend process. | *(unset)* |
@@ -273,9 +293,41 @@ starts the backend process, overriding whatever `.env` itself says for them.
 | `ATLAS_SESSION_MAX_PER_SUBJECT` | Maximum concurrent sessions per identity (1-20). | `5` |
 | `ATLAS_API_CREDENTIAL_MAX_LIFETIME_MINUTES` | Maximum lifetime of an issued API credential (5-60). | `60` |
 | `ATLAS_API_CREDENTIAL_MAX_ACTIVE_PER_SUBJECT` | Maximum concurrent active API credentials per identity (1-20). | `10` |
+| `ATLAS_PROTECTED_CONTENT_ENCRYPTION_KEY_B64` | Base64-encoded 32-byte AES-256-GCM key backing the encrypted-content-at-rest store: document-sourced knowledge and the self-built connector-credential vault (see "Going to production" below). | *(unset)* |
 
 The backend process reads `.env` itself via its own settings loader, regardless of which script
 starts it, and that loader strips matching quotes, so both quoted and unquoted values work.
+
+### Going to production
+
+`ATLAS_ENVIRONMENT=production` turns on a real, already-enforced validator
+(`enforce_production_security_defaults` in `backend/src/atlas/core/config.py`) that fails closed
+rather than silently degrading: it requires `ATLAS_DATABASE_REQUIRED=true`, forbids
+`ATLAS_DEVELOPMENT_IDENTITY_ENABLED=true`, forbids enabling development and directory identity
+together, requires a complete real LDAPS profile if directory identity is enabled, and forbids
+`ATLAS_ENABLE_API_DOCS=true`. Two more steps make the *safe* path actually usable in production,
+closing what were previously the only two development-only gaps:
+
+1. **A durable administrator account.** Run the bootstrap script once, on the server:
+
+   ```bash
+   scripts/bootstrap_admin.sh    # Linux, macOS, WSL
+   scripts/bootstrap_admin.cmd   # Windows Command Prompt
+   # or: .\scripts\bootstrap_admin.ps1
+   ```
+
+   It prompts for a username, display name, role, and a masked password, then creates one real
+   local administrator account (ATLAS-030) that survives restarts. There is deliberately no HTTP
+   endpoint for this -- only someone who already has shell access to the server can create the
+   first account. Sign in with it through the same "Sign in" form used in development; it must
+   replace its password on first use.
+
+2. **A real connector-credential vault.** Set `ATLAS_PROTECTED_CONTENT_ENCRYPTION_KEY_B64` (see
+   the table above) before starting the backend. With it set, every bundled connector's "Set /
+   rotate secret value" action (in its connection dialog) stores that vendor's credential
+   AES-256-GCM-encrypted in PostgreSQL instead of requiring a hand-set OS environment variable --
+   the self-built vault this project uses instead of an external secret manager. Losing this key
+   makes everything it encrypted permanently unrecoverable, so back it up outside the database.
 
 ### Local development, with hot reload
 

@@ -19895,6 +19895,43 @@ class ProtectedContentBlobModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class LocalCredentialModel(Base):
+    """Durable storage for `atlas.modules.identity.domain.local_credentials.LocalCredentialRecord`.
+    See `atlas.modules.identity.adapters.local_credentials_postgres`."""
+
+    __tablename__ = "local_credentials"
+
+    subject_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class LocalRecoveryActivationModel(Base):
+    """Durable storage for `LocalRecoveryActivation`, one row per recovery-kind subject."""
+
+    __tablename__ = "local_recovery_activations"
+
+    subject_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class ConnectorVaultSecretModel(Base):
+    """Pointer row for a self-built connector-credential vault (ADR-184's encrypted-content-at-
+    rest boundary, see `atlas.core.protected_content`). Never stores the plaintext secret or the
+    encryption key -- only which `protected_content_blobs` digest a `secret_reference_id`
+    currently resolves to."""
+
+    __tablename__ = "connector_vault_secrets"
+
+    organization_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    environment_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    secret_reference_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    protected_content_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    set_by_subject_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class DocumentKnowledgeDraftModel(Base):
     __tablename__ = "document_knowledge_drafts"
 

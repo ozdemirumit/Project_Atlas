@@ -136,6 +136,8 @@ from atlas.modules.authorization.application.bootstrap import (
     CONNECTOR_UPGRADE_SIGNING_PROVIDER_CONFORMANCE_READ,
     CONNECTOR_UPGRADE_SIGNING_PROVIDER_ONBOARDING_POLICY_PROVENANCE_DIAGNOSTIC_READ,
     CONNECTOR_UPGRADE_SIGNING_PROVIDER_ONBOARDING_READINESS_READ,
+    CONNECTOR_VAULT_SECRET_CREATE,
+    CONNECTOR_VAULT_SECRET_READ,
     CONVERSATION_CREATE,
     CONVERSATION_READ,
     CONVERSATION_TURN_APPEND,
@@ -400,6 +402,7 @@ from atlas.modules.authorization.application.bootstrap import (
     connector_secret_brokerage_scope,
     connector_target_configuration_scope,
     connector_target_session_scope,
+    connector_vault_secret_scope,
     conversation_scope,
     current_identity_scope,
     deployment_configuration_scope,
@@ -8301,6 +8304,61 @@ async def authorize_connector_target_session_read(
         request,
         subject,
         permission_id=CONNECTOR_TARGET_SESSION_READ,
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+async def _authorize_connector_vault_secret(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+    capability_class: CapabilityClass,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.connector.vault-secrets",
+            scope=connector_vault_secret_scope(
+                subject.organization_id, settings.environment, capability_class
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Authorization denied",
+            detail="The subject is not authorized for this connector vault secret operation.",
+        )
+    return decision
+
+
+async def authorize_connector_vault_secret_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_connector_vault_secret(
+        request,
+        subject,
+        permission_id=CONNECTOR_VAULT_SECRET_CREATE,
+        capability_class=CapabilityClass.C3_CONTROLLED_CHANGE,
+    )
+
+
+async def authorize_connector_vault_secret_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_connector_vault_secret(
+        request,
+        subject,
+        permission_id=CONNECTOR_VAULT_SECRET_READ,
         capability_class=CapabilityClass.C1_READ_ONLY,
     )
 

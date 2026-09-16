@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BadgeCheck, Link2, RefreshCw, ShieldCheck, X } from "lucide-react";
+import { BadgeCheck, KeyRound, Link2, RefreshCw, ShieldCheck, X } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
 import {
@@ -11,6 +11,7 @@ import {
   type ConnectorConnectionTestResult,
 } from "../../api/bundledConnectorConnections";
 import type { ConnectorInstanceRecord } from "../../api/connectorInstances";
+import { setConnectorVaultSecret } from "../../api/connectorVaultSecrets";
 
 export function BundledConnectionDialog({
   configuration,
@@ -77,10 +78,18 @@ export function BundledConnectionDialog({
       onTested?.(result);
     },
   });
+  const [vaultSecretValue, setVaultSecretValue] = useState("");
+  const setSecretMutation = useMutation({
+    mutationFn: () =>
+      setConnectorVaultSecret({ secretReferenceId: secretReferenceId.trim(), value: vaultSecretValue }),
+    onSuccess: () => setVaultSecretValue(""),
+  });
   const valid = /^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$/.test(hostname.trim()) &&
     port !== null && port >= 1 && port <= 65_535 &&
     /^secret\.[a-z0-9_.:-]{2,120}$/.test(secretReferenceId.trim());
-  const error = saveMutation.error ?? testMutation.error ?? configurationQuery.error;
+  const secretReferenceValid = /^secret\.[a-z0-9_.:-]{2,120}$/.test(secretReferenceId.trim());
+  const error =
+    saveMutation.error ?? testMutation.error ?? setSecretMutation.error ?? configurationQuery.error;
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -152,6 +161,34 @@ export function BundledConnectionDialog({
                 onChange={(event) => setSecretReferenceOverride(event.target.value.toLowerCase())}
               />
             </label>
+            <div className="bundled-connection-vault-secret">
+              <label>
+                Set / rotate secret value
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  value={vaultSecretValue}
+                  maxLength={8_192}
+                  placeholder="Paste the credential value for this reference ID"
+                  disabled={!secretReferenceValid}
+                  onChange={(event) => setVaultSecretValue(event.target.value)}
+                />
+              </label>
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={!secretReferenceValid || !vaultSecretValue || setSecretMutation.isPending}
+                onClick={() => setSecretMutation.mutate()}
+              >
+                {setSecretMutation.isPending ? <RefreshCw className="spin" size={16} /> : <KeyRound size={16} />}
+                Set secret value
+              </button>
+              {setSecretMutation.isSuccess && (
+                <span className="muted-copy">
+                  Stored in the connector-credential vault. Never displayed again.
+                </span>
+              )}
+            </div>
             <div className="installed-mcp-package-facts">
               <span>Protocol <strong>HTTPS</strong></span>
               <span>Credential handling <strong>reference only</strong></span>

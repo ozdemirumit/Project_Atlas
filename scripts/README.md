@@ -42,6 +42,49 @@ gitignored `.atlas/` directory at the repository root.
 `install` refuses to run if `frontend/dist/index.html` is missing -- rebuild and commit it after
 a frontend source change (see README.md's Contributing section: `pnpm build` from `frontend/`).
 
+## Starting and stopping (routine day-to-day process control)
+
+Once `install` has been run at least once, `start`/`stop` are the lighter-weight scripts for
+everyday process control -- starting the backend again after a server reboot, or restarting it --
+without redoing dependency installation, PostgreSQL/pgvector setup, or database migrations.
+
+```bash
+scripts/start.sh    # Linux, macOS, WSL
+scripts/stop.sh
+```
+
+```powershell
+scripts\start.cmd    # Windows Command Prompt
+scripts\stop.cmd
+# or, directly in PowerShell:
+./scripts/start.ps1
+./scripts/stop.ps1
+```
+
+`start` is idempotent: if the backend is already running, it reports its status and does nothing.
+`stop` keeps the database and all installed dependencies -- only `uninstall -Purge`/`--purge`
+deletes data. Re-run `install` (not `start`) after pulling a code or dependency update, since
+`start` intentionally skips `uv sync` and `alembic upgrade head`.
+
+## Going to production
+
+See README.md's "Going to production" section for the full checklist. Two one-time steps live
+here:
+
+```bash
+scripts/bootstrap_admin.sh    # Linux, macOS, WSL -- create the first durable local admin account
+scripts/bootstrap_admin.cmd   # Windows Command Prompt
+# or, directly in PowerShell:
+./scripts/bootstrap_admin.ps1
+```
+
+`bootstrap_admin` is a script run on the server by someone with shell access, on purpose -- there
+is no HTTP endpoint for creating the first administrator, so an attacker without shell access can
+never create one through the API. It prompts for a username, display name, role, and a
+masked password (never a command-line argument), then creates one durable local administrator
+account via the real ATLAS-030 bootstrap credential lifecycle. Requires `ATLAS_DATABASE_URL` to
+already be configured; run `install` first.
+
 ## Local development (foreground, with hot reload)
 
 Requires an already-running PostgreSQL server pointed to by `ATLAS_DATABASE_URL` in `.env`, or

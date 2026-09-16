@@ -347,6 +347,8 @@ CONNECTOR_BOUNDED_INVOCATION_CREATE = "connectors.bounded-invocations.create"
 CONNECTOR_BOUNDED_INVOCATION_READ = "connectors.bounded-invocations.read"
 CONNECTOR_INVOCATION_EVIDENCE_CREATE = "connectors.invocation-evidence.create"
 CONNECTOR_INVOCATION_EVIDENCE_READ = "connectors.invocation-evidence.read"
+CONNECTOR_VAULT_SECRET_CREATE = "connectors.vault-secrets.create"
+CONNECTOR_VAULT_SECRET_READ = "connectors.vault-secrets.read"
 KNOWLEDGE_EMBEDDING_MODEL_LIFECYCLE_ADMINISTER = "knowledge.embedding-model-lifecycle.administer"
 KNOWLEDGE_SOURCE_REGISTRATION_ADMINISTER = "knowledge.source-registration.administer"
 KNOWLEDGE_EVIDENCE_DRAFT_CREATE = "knowledge.operational-evidence-drafts.create"
@@ -1297,6 +1299,19 @@ def connector_target_session_scope(
         site_id="site.local",
         domain_id="domain.connectors",
         resource_id="resource.connector.target-session-verifications",
+        capability_class=capability_class,
+    )
+
+
+def connector_vault_secret_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.connectors",
+        resource_id="resource.connector.vault-secrets",
         capability_class=capability_class,
     )
 
@@ -3668,6 +3683,14 @@ def build_development_authorization_service(
             description="Read minimized connector invocation evidence metadata.",
         ),
         PermissionDefinition(
+            permission_id=CONNECTOR_VAULT_SECRET_CREATE,
+            description="Set or rotate one connector-credential vault secret's value.",
+        ),
+        PermissionDefinition(
+            permission_id=CONNECTOR_VAULT_SECRET_READ,
+            description="Read connector-credential vault secret metadata; never the value.",
+        ),
+        PermissionDefinition(
             permission_id=KNOWLEDGE_EMBEDDING_MODEL_LIFECYCLE_ADMINISTER,
             description=(
                 "Register and transition an embedding model through its governed lifecycle."
@@ -4326,6 +4349,8 @@ def build_development_authorization_service(
                 CONNECTOR_BOUNDED_INVOCATION_READ,
                 CONNECTOR_INVOCATION_EVIDENCE_CREATE,
                 CONNECTOR_INVOCATION_EVIDENCE_READ,
+                CONNECTOR_VAULT_SECRET_CREATE,
+                CONNECTOR_VAULT_SECRET_READ,
                 KNOWLEDGE_EMBEDDING_MODEL_LIFECYCLE_ADMINISTER,
                 KNOWLEDGE_SOURCE_REGISTRATION_ADMINISTER,
                 KNOWLEDGE_EVIDENCE_DRAFT_CREATE,
@@ -5593,6 +5618,30 @@ def build_development_authorization_service(
                 subject_id=settings.development_subject_id,
                 role_id=DEVELOPMENT_ROLE_ID,
                 scope=connector_target_session_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.connector-vault-secret-create",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=connector_vault_secret_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C3_CONTROLLED_CHANGE,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.connector-vault-secret-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=connector_vault_secret_scope(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C1_READ_ONLY,

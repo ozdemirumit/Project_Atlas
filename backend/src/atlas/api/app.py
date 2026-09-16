@@ -149,6 +149,7 @@ from atlas.api.routes import (
     target_configuration,
     target_session_verifications,
     upgrades,
+    vault_secrets,
     vulnerability_analyses,
     workflows,
     workload_identities,
@@ -415,6 +416,9 @@ from atlas.modules.connectors.adapters.configuration_validation_postgres import 
 from atlas.modules.connectors.adapters.connection_test_credential_environment import (
     DevelopmentEnvironmentCredentialMaterializer,
 )
+from atlas.modules.connectors.adapters.connection_test_credential_local_vault import (
+    LocalVaultConnectorCredentialMaterializer,
+)
 from atlas.modules.connectors.adapters.connection_test_memory import (
     InMemoryConnectorConnectionTestResultRepository,
 )
@@ -663,6 +667,12 @@ from atlas.modules.connectors.adapters.validation_intake_memory import (
 from atlas.modules.connectors.adapters.validation_intake_postgres import (
     PostgreSQLPackageValidationRepository,
 )
+from atlas.modules.connectors.adapters.vault_secret_memory import (
+    InMemoryConnectorVaultSecretRepository,
+)
+from atlas.modules.connectors.adapters.vault_secret_postgres import (
+    PostgreSQLConnectorVaultSecretRepository,
+)
 from atlas.modules.connectors.adapters.vulnerability_analysis_memory import (
     InMemoryPackageVulnerabilityAnalysisRepository,
     StaticAdvisorySnapshotProvider,
@@ -702,6 +712,9 @@ from atlas.modules.connectors.application.configuration_validation import (
     build_development_connector_configuration_validation_policy,
 )
 from atlas.modules.connectors.application.connection_test import ConnectorConnectionTestService
+from atlas.modules.connectors.application.connection_test_ports import (
+    ConnectorCredentialMaterializer,
+)
 from atlas.modules.connectors.application.content_policy_scan import PackageContentPolicyScanService
 from atlas.modules.connectors.application.contract_validation import (
     PackageContractValidationService,
@@ -821,6 +834,10 @@ from atlas.modules.connectors.application.upgrade_readiness import (
     PackageInstallationUpgradeSource,
 )
 from atlas.modules.connectors.application.validation_intake import PackageValidationService
+from atlas.modules.connectors.application.vault_secret import (
+    ConnectorVaultSecretRepository,
+    ConnectorVaultService,
+)
 from atlas.modules.connectors.application.vulnerability_analysis import (
     PackageVulnerabilityAnalysisService,
     build_bootstrap_advisory_snapshot,
@@ -948,6 +965,9 @@ from atlas.modules.identity.adapters.development import DevelopmentIdentityProvi
 from atlas.modules.identity.adapters.directory import build_directory_identity_provider
 from atlas.modules.identity.adapters.identity_status import InMemoryIdentityStatusRepository
 from atlas.modules.identity.adapters.local_credentials import InMemoryLocalCredentialRepository
+from atlas.modules.identity.adapters.local_credentials_postgres import (
+    PostgreSQLLocalCredentialRepository,
+)
 from atlas.modules.identity.adapters.sessions import InMemorySessionRepository
 from atlas.modules.identity.adapters.workload_identities import (
     InMemoryWorkloadIdentityRepository,
@@ -3780,8 +3800,10 @@ def create_app(
         repository=InMemorySecurityIncidentRepository(),
         audit_sink=resolved_audit_sink,
     )
-    resolved_local_credential_repository = (
-        local_credential_repository or InMemoryLocalCredentialRepository()
+    resolved_local_credential_repository = local_credential_repository or (
+        PostgreSQLLocalCredentialRepository.from_url(resolved_settings.database_url)
+        if resolved_settings.database_url
+        else InMemoryLocalCredentialRepository()
     )
     resolved_local_credential_service = local_credential_service or LocalCredentialService(
         repository=resolved_local_credential_repository,
@@ -5305,24 +5327,58 @@ def create_app(
         deployment_environment=resolved_settings.environment,
         runtime_state_repository=bundled_runtime_state_repository,
     )
-    connector_credential_materializer = DevelopmentEnvironmentCredentialMaterializer(
-        deployment_environment=resolved_settings.environment,
-        reference_environment_variables={
-            "secret.hitachi.readonly": "ATLAS_HITACHI_AUTHORIZATION",
-            "secret.brocade.readonly": "ATLAS_BROCADE_AUTHORIZATION",
-            # OceanStor's real REST API is session-based (see huawei_dorado/ports.py): this
-            # reference resolves to a "username:password" pair, not a pre-built header.
-            "secret.huawei.dorado.readonly": "ATLAS_HUAWEI_DORADO_AUTHORIZATION",
-            # Pacific's real cluster-manager REST API is also session-based (see
-            # huawei_pacific/ports.py), the same "username:password" convention.
-            "secret.huawei.pacific.readonly": "ATLAS_HUAWEI_PACIFIC_AUTHORIZATION",
-            # vCenter's real Automation API is also session-based (see vcenter/ports.py), the
-            # same "username:password" convention.
-            "secret.vmware.vcenter.readonly": "ATLAS_VCENTER_AUTHORIZATION",
-            # Commvault's real REST API is also session-based (see commvault/ports.py), the same
-            # "username:password" convention.
-            "secret.commvault.readonly": "ATLAS_COMMVAULT_AUTHORIZATION",
-        },
+    resolved_protected_content_store: ProtectedContentStore
+    if (
+        resolved_settings.database_url
+        and resolved_settings.protected_content_encryption_key_b64 is not None
+    ):
+        resolved_protected_content_store = PostgreSQLProtectedContentStore.from_url_and_key_b64(
+            resolved_settings.database_url,
+            key_b64=resolved_settings.protected_content_encryption_key_b64.get_secret_value(),
+        )
+    elif is_production:
+        resolved_protected_content_store = UnavailableProtectedContentStore()
+    else:
+        resolved_protected_content_store = InMemoryProtectedContentStore()
+    connector_vault_secret_repository: ConnectorVaultSecretRepository = (
+        PostgreSQLConnectorVaultSecretRepository.from_url(resolved_settings.database_url)
+        if resolved_settings.database_url
+        else InMemoryConnectorVaultSecretRepository()
+    )
+    connector_vault_service = ConnectorVaultService(
+        repository=connector_vault_secret_repository,
+        protected_content=resolved_protected_content_store,
+        audit_sink=resolved_audit_sink,
+        environment_id=resolved_connector_instance_creation_service.environment_id,
+        subject_salt=f"connector-vault-subject-salt.{resolved_settings.environment}",
+    )
+    connector_credential_materializer: ConnectorCredentialMaterializer = (
+        LocalVaultConnectorCredentialMaterializer(
+            repository=connector_vault_secret_repository,
+            protected_content=resolved_protected_content_store,
+            organization_id=resolved_settings.development_organization_id,
+            environment_id=resolved_connector_instance_creation_service.environment_id,
+        )
+        if isinstance(resolved_protected_content_store, PostgreSQLProtectedContentStore)
+        else DevelopmentEnvironmentCredentialMaterializer(
+            deployment_environment=resolved_settings.environment,
+            reference_environment_variables={
+                "secret.hitachi.readonly": "ATLAS_HITACHI_AUTHORIZATION",
+                "secret.brocade.readonly": "ATLAS_BROCADE_AUTHORIZATION",
+                # OceanStor's real REST API is session-based (see huawei_dorado/ports.py): this
+                # reference resolves to a "username:password" pair, not a pre-built header.
+                "secret.huawei.dorado.readonly": "ATLAS_HUAWEI_DORADO_AUTHORIZATION",
+                # Pacific's real cluster-manager REST API is also session-based (see
+                # huawei_pacific/ports.py), the same "username:password" convention.
+                "secret.huawei.pacific.readonly": "ATLAS_HUAWEI_PACIFIC_AUTHORIZATION",
+                # vCenter's real Automation API is also session-based (see vcenter/ports.py), the
+                # same "username:password" convention.
+                "secret.vmware.vcenter.readonly": "ATLAS_VCENTER_AUTHORIZATION",
+                # Commvault's real REST API is also session-based (see commvault/ports.py), the
+                # same "username:password" convention.
+                "secret.commvault.readonly": "ATLAS_COMMVAULT_AUTHORIZATION",
+            },
+        )
     )
     hitachi_transport_factory = HitachiOpsCenterConnectionTestHttpsFactory()
     brocade_transport_factory = BrocadeSanNavConnectionTestHttpsFactory()
@@ -7633,19 +7689,6 @@ def create_app(
         ),
         audit_sink=resolved_audit_sink,
     )
-    resolved_protected_content_store: ProtectedContentStore
-    if (
-        resolved_settings.database_url
-        and resolved_settings.protected_content_encryption_key_b64 is not None
-    ):
-        resolved_protected_content_store = PostgreSQLProtectedContentStore.from_url_and_key_b64(
-            resolved_settings.database_url,
-            key_b64=resolved_settings.protected_content_encryption_key_b64.get_secret_value(),
-        )
-    elif is_production:
-        resolved_protected_content_store = UnavailableProtectedContentStore()
-    else:
-        resolved_protected_content_store = InMemoryProtectedContentStore()
     resolved_document_knowledge_repository = (
         PostgreSQLDocumentKnowledgeRepository.from_url(resolved_settings.database_url)
         if resolved_settings.database_url
@@ -10583,6 +10626,7 @@ def create_app(
             resolved_bundled_connection_configuration_service
         )
         app.state.connector_connection_test_service = resolved_connector_connection_test_service
+        app.state.connector_vault_service = connector_vault_service
         app.state.bundled_connector_runtime_state_service = (
             resolved_bundled_connector_runtime_state_service
         )
@@ -11237,6 +11281,7 @@ def create_app(
     app.include_router(instance_creation.router, prefix="/api/v1")
     app.include_router(bundled_connector_catalog.router, prefix="/api/v1")
     app.include_router(connector_connection_tests.router, prefix="/api/v1")
+    app.include_router(vault_secrets.router, prefix="/api/v1")
     app.include_router(target_configuration.router, prefix="/api/v1")
     app.include_router(credential_assignments.router, prefix="/api/v1")
     app.include_router(configuration_validations.router, prefix="/api/v1")

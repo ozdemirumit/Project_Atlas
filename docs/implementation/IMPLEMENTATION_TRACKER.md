@@ -436,6 +436,104 @@ Three of the six services `task_87506e3c` was spawned to wire. `GuardrailReviewS
 - Discovered while running this fix that the shared working tree was being edited concurrently by other passes/tasks in this same session's broader loop; moved this fix's work into an isolated `git worktree` (branch `guardrail-mcp-builder-wiring`) after an in-progress edit to `bootstrap.py` was partly lost to a concurrent `git stash`, to avoid clobbering or being clobbered by unrelated concurrent work on `app.py`/`security.py`/`bootstrap.py`.
 - 3 new integration tests (`test_guardrails_mcp_builder_wiring_api.py`), all passing. `ruff format --check`, `ruff check`, `mypy` (full project) clean. Full backend suite re-run to confirm zero regressions.
 
+### ATLAS-IMP-282 Scope and Verification (complete)
+
+Self-built connector-credential vault, superseding an earlier plan to use an external HashiCorp
+Vault, plus the production-cutover documentation and process-control scripts that make it and
+ATLAS-IMP-281's admin login actually usable outside development. User-directed feature work
+(plan mode), not part of the ATLAS-IMP-280 standing audit loop.
+
+- **Vault**: builds directly on the already-real `PostgreSQLProtectedContentStore` (AES-256-GCM
+  encrypted-content-at-rest, ADR-184) -- no new encryption primitive, no new key. New
+  `connector_vault_secrets` pointer table (migration `20260916_0174`, shared with ATLAS-IMP-281's
+  tables) storing only a `protected_content_blobs` digest per `(organization_id, environment_id,
+  secret_reference_id)`, never the plaintext or the key. New `PostgreSQLConnectorVaultSecretRepository`
+  (`connectors/adapters/vault_secret_postgres.py`) and in-memory dev/test counterpart
+  (`vault_secret_memory.py`). New `ConnectorVaultService` (`connectors/application/vault_secret.py`):
+  `set_secret` (validates the reference format, stores via `protected_content_store.store()`,
+  audits) and `list_references` (metadata only -- reference id, last-set time, setter digest --
+  never the value or the digest it resolves to). New `LocalVaultConnectorCredentialMaterializer`
+  (`connectors/adapters/connection_test_credential_local_vault.py`) implementing the existing
+  `ConnectorCredentialMaterializer` Protocol against the vault, replacing
+  `DevelopmentEnvironmentCredentialMaterializer` (hard-gated to `development`, raw `os.environ`
+  reads) as the production path -- selected in `app.py` whenever `resolved_protected_content_store`
+  is a real `PostgreSQLProtectedContentStore`, with zero vendor-transport code changes (every
+  vendor already calls only `.authorization_header()`).
+- **HTTP surface**: new `PUT/GET /api/v1/connectors/vault-secrets[/{secret_reference_id}]`
+  (`api/routes/vault_secrets.py`, `api/vault_secret_schemas.py`), gated by two new permissions
+  (`connectors.vault-secrets.create`/`.read`) with matching `connector_vault_secret_scope()` and
+  `RoleAssignment` entries in `authorization/application/bootstrap.py` -- applying this session's
+  own repeated lesson (a permission definition alone is not reachable without a matching
+  `RoleAssignment`) on the first attempt. Frontend: `BundledConnectionDialog.tsx` gained a
+  "Set / rotate secret value" action (new `api/connectorVaultSecrets.ts`) paired with the existing
+  "Credential reference ID" field -- the direct answer to this session's earlier question about
+  how connector passwords actually get entered; the value is masked, never echoed back, and the
+  UI only ever shows when a secret was last set.
+- **Production cutover**: new `scripts/bootstrap_admin.{py,ps1,sh,cmd}` (server-run only, per
+  user's explicit choice -- no HTTP endpoint, so only shell access to the box can create the first
+  admin) invoking ATLAS-IMP-281's `LocalCredentialService.bootstrap_administrator`. New
+  `scripts/start.{ps1,sh,cmd}`/`scripts/stop.{ps1,sh,cmd}` -- lighter-weight day-to-day process
+  control than `install`/`uninstall`, reusing the same PID-file/health-check logic without
+  redoing dependency installation, PostgreSQL setup, or migrations. README.md gained a "Going to
+  production" section (the real, already-enforced `enforce_production_security_defaults`
+  requirements, plus these two new one-time/routine steps) and `.env.example` documents
+  `ATLAS_PROTECTED_CONTENT_ENCRYPTION_KEY_B64` (commented out by default -- an empty-but-present
+  value would be a configured-but-invalid key, not an absent one, and would fail closed on a
+  fresh install) and the pre-existing but previously-undocumented `ATLAS_LOCAL_MODEL_*` settings
+  for a real OpenAI-compatible LLM gateway.
+- Verified: `ruff format --check`/`ruff check` clean across the full project, `mypy` blocked by
+  this sandbox's Application Control policy (environmental, not a code issue) -- covered instead by
+  manual type review and live functional testing. New `test_vault_secrets_wiring_api.py` (4 tests:
+  set-then-list end to end with the plaintext never echoed, invalid-reference-format 422, and the
+  established two-stage 401/403 denial pattern) and `test_local_credentials_and_connector_vault_postgres.py`
+  (2 live-Postgres round-trip tests, gated on `ATLAS_TEST_POSTGRES_DSN`, skipped in this sandbox
+  which has no live database). A real, live `TestClient` smoke test (login, set a secret, list it,
+  and independently unit-test the materializer's round-trip and its unavailable-secret error path)
+  confirmed the whole chain end to end before committing. Full backend suite: 6756 passed, 73
+  skipped, and 5 pre-existing tests broken by this change's own new migration becoming the alembic
+  head (`test_alembic_graph_has_single_*_head`-style assertions in five `test_workflow_protected_runtime_*`
+  files hardcoding the previous head `20260911_0173`) -- fixed by updating the literal to
+  `20260916_0174`, the same recurring maintenance cost this project has hit and fixed before (see
+  `test_database_health.py`'s own comment on this bug class); all 5 files (31 tests) reverified
+  passing. Frontend: `pnpm build`/`tsc -b`/`eslint` clean; the full vitest suite showed one
+  timing-sensitive failure in `WorkflowPlanningWorkspace.test.tsx` (a `findByRole` against the
+  global 3-second `asyncUtilTimeout`) with no plausible code-level connection to this change (no
+  import relationship, CSS additions are class-scoped) -- confirmed by running it in isolation
+  three times with these changes present (fail, fail, pass) and the pre-change baseline twice
+  (pass, pass) via `git stash`; the fails correlated with heavy concurrent background test runs on
+  this machine and the one pass-under-low-load result is consistent with resource contention, not
+  a regression -- a frontend instance of the same wall-clock-flake class already documented for
+  `test_workflow_target_context_binding_adapters.py` on the backend.
+
+### ATLAS-IMP-281 Scope and Verification (complete)
+
+Durable local admin login, closing the sole real gap in the otherwise-complete ATLAS-030 SS6.3/SS11
+local bootstrap/recovery credential subsystem: `InMemoryLocalCredentialRepository` was the only
+implementation, so the admin account did not survive a restart, and no way existed to create the
+first one outside a unit test. User-directed feature work (plan mode; see ATLAS-IMP-282 above for
+the paired connector-vault half of the same request), not part of the ATLAS-IMP-280 standing audit
+loop.
+
+- New `local_credentials`/`local_recovery_activations` tables (migration `20260916_0174`, JSONB
+  payload + a few indexed lookup columns, matching the established `ConnectorPackageSigningReceiptModel`
+  adapter pattern rather than one column per field). New `PostgreSQLLocalCredentialRepository`
+  (`identity/adapters/local_credentials_postgres.py`) implementing the existing
+  `LocalCredentialRepository` Protocol exactly (`get`/`create`/`update`/`get_recovery_activation`/
+  `save_recovery_activation`) -- zero changes needed to `LocalCredentialService`,
+  `LocalCredentialIdentityProvider`, or `CompositeIdentityProvider`, all already real and already
+  wired. `app.py`'s `resolved_local_credential_repository` now selects the Postgres repository
+  whenever `database_url` is configured, in-memory only as the no-database dev/test fallback.
+- New `scripts/bootstrap_admin.{py,ps1,sh,cmd}` (documented under ATLAS-IMP-282 above, since it's
+  part of that entry's "production cutover" scripts) is the only way to create the first account --
+  a deliberate choice over an HTTP endpoint, so only shell access to the server can do it.
+- Verified: `ruff format --check`/`ruff check` clean. New
+  `test_local_credentials_and_connector_vault_postgres.py::test_live_postgres_restores_local_credential_and_recovery_activation`
+  (live-Postgres round-trip: create/get, version-conflict update rejection, recovery-activation
+  save/review round-trip; gated on `ATLAS_TEST_POSTGRES_DSN`, skipped in this sandbox) plus a
+  direct unit-level round-trip of the adapter's JSONB normalize/denormalize logic against a real
+  `LocalCredentialRecord` (enum/datetime/tuple handling), run manually before committing. See
+  ATLAS-IMP-282 above for the shared full-suite verification run (both entries landed together).
+
 ### ATLAS-IMP-279 Scope and Verification (complete)
 
 All five subsystems below were built, tested, and verified: Reasoning (ATLAS-041) 15/15 slices, 208 tests. Decision Engine (ATLAS-024) 13/13 slices, 133 tests. Change Impact (ATLAS-044) 15/15 slices, 123 tests. AI Agents (ATLAS-040) 15/15 slices, 134 tests. MCP Plugin SDK (ATLAS-021) 13/13 slices, 113 tests. 71 total slices, 711 tests. A follow-up audit (docs 001-004, 050-060) found zero further gaps at the time -- superseded by ATLAS-IMP-280's deeper pass 1 audit above, which found three real gaps that shallower existence-checking had missed.
