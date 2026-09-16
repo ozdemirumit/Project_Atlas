@@ -468,6 +468,17 @@ finally {
 
 # --- frontend: install dependencies ---
 
+# pnpm 11 defaults minimumReleaseAge to 1440 minutes: every dependency needs a live registry
+# query to check its publish timestamp, even for an already-resolved --frozen-lockfile install.
+# This project has no committed YAML anywhere (a deliberate choice -- see README.md), and pnpm's
+# own settings (as opposed to legacy npm-compatible registry/auth settings) can only be stored in
+# a YAML file, project-local or global -- there is no CLI flag or env var override. Writing this
+# to the *global*, machine-local pnpm config (not the repository) keeps that choice intact: it's
+# local tool configuration on this machine, the same category as pnpm's own store directory, not
+# part of Atlas's own deployment description.
+pnpm config set --location=global minimumReleaseAge 0
+if ($LASTEXITCODE -ne 0) { throw "Failed to configure pnpm's minimumReleaseAge setting." }
+
 Write-Step "Installing frontend dependencies."
 Push-Location (Join-Path $RepositoryRoot "frontend")
 try {
