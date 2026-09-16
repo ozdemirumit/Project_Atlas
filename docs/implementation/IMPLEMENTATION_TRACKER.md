@@ -508,6 +508,20 @@ LOCAL-reachable tiers an admin can grant -- **admin, operator (day-to-day), moni
   hardcoded-alembic-head maintenance cost this project has hit and fixed twice before this pass
   alone (5 `test_alembic_graph_has_single_*_head`-style tests updated from `20260916_0174` to the
   new head `20260917_0175`); all 31 tests in those 5 files reverified passing.
+- **Confirmed working end to end on the user's real deployment**, after three further real-server
+  bugs surfaced and were fixed in sequence: (1) `bootstrap_admin.py`'s free-form organization-id
+  prompt let an operator type a value other than the fixed single-tenant
+  `development_organization_id`, silently making every granted scope unmatchable (`72a1d5a6`) --
+  prompt removed, the id is now always the fixed value; (2) the script's own `Settings()` reads
+  `.env` directly, where `ATLAS_DEVELOPMENT_IDENTITY_ENABLED=false` is the correct, secure value
+  for a real deployment -- but that flag also gates whether `static_role_scopes()`'s source list is
+  populated at all, so the script was silently granting the chosen tier **zero** scopes even though
+  it reported success (`650834a3`) -- fixed with a dedicated, forced-on `Settings()` built only for
+  that one scope computation, never used to authenticate anyone. A regression test
+  (`test_bootstrap_admin_local_tier_scopes.py`) pins both the failure premise and the fix. The user
+  bootstrapped a fresh administrator after both fixes, signed in through the real web app, and
+  confirmed the Workspace loads and `/identity/me` succeeds with the real `role.local-administrator`
+  grant -- the original symptom that opened this item is resolved.
 
 ### ATLAS-IMP-282 Scope and Verification (complete)
 
