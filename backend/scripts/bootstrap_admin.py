@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import getpass
 import logging
+import os
 import sys
 from pathlib import Path
 from uuid import uuid4
@@ -39,6 +40,36 @@ from atlas.modules.identity.application.local_credentials import (
 )
 
 _DEFAULT_ROLE_ID = "role.security-administrator"
+
+
+def _resolve_database_url() -> str | None:
+    """``ATLAS_DATABASE_URL`` is never a literal line in ``.env`` -- install/start build it from
+    ``ATLAS_POSTGRES_HOST``/``_PORT``/``_PASSWORD`` and set it only in the backend process's own
+    environment (see those scripts). This script is a separate, short-lived process launched by
+    its own wrapper script, so rather than depend on that wrapper correctly forwarding an
+    explicit environment variable across a `uv run` subprocess boundary, read the same three
+    values directly out of the repository-root ``.env`` and build the same URL here."""
+    if existing := os.environ.get("ATLAS_DATABASE_URL"):
+        return existing
+    env_file = Path(__file__).resolve().parent.parent.parent / ".env"
+    if not env_file.is_file():
+        return None
+    values: dict[str, str] = {}
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, _, value = stripped.partition("=")
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] == "'":
+            value = value[1:-1]
+        values[key.strip()] = value
+    password = values.get("ATLAS_POSTGRES_PASSWORD")
+    if not password:
+        return None
+    host = values.get("ATLAS_POSTGRES_HOST") or "localhost"
+    port = values.get("ATLAS_POSTGRES_PORT") or "5432"
+    return f"postgresql+psycopg://atlas:{password}@{host}:{port}/atlas"
 
 
 def _prompt(label: str, *, default: str | None = None) -> str:
@@ -66,14 +97,18 @@ def _prompt_password() -> str:
 
 
 async def _main() -> None:
-    settings = Settings()
-    if not settings.database_url:
+    database_url = _resolve_database_url()
+    if not database_url:
         print(
-            "ATLAS_DATABASE_URL is not configured (see .env). Refusing to bootstrap an "
-            "administrator account that would only live in process memory.",
+            "Could not determine the database URL. Set ATLAS_POSTGRES_PASSWORD (and, if not "
+            "default, ATLAS_POSTGRES_HOST/_PORT) in .env at the repository root, or export "
+            "ATLAS_DATABASE_URL yourself. Refusing to bootstrap an administrator account that "
+            "would only live in process memory.",
             file=sys.stderr,
         )
         raise SystemExit(1)
+    os.environ["ATLAS_DATABASE_URL"] = database_url
+    settings = Settings()
 
     print("Project Atlas -- local administrator bootstrap")
     subject_id = _prompt(
