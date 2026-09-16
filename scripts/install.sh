@@ -21,6 +21,15 @@ RUNTIME_DIR="$REPO_ROOT/.atlas"
 BACKEND_PORT=8000
 FRONTEND_PORT=5173
 
+# On a network with a TLS-intercepting proxy (common on managed corporate machines), Node.js
+# tools (npm, pnpm) fail registry requests with UNABLE_TO_GET_ISSUER_CERT_LOCALLY, because
+# Node.js does not trust the OS certificate store by default -- only its own bundled CA list.
+# --use-system-ca (Node.js 23.8.0+; this project targets Node 24) makes Node also trust whatever
+# the OS already trusts, which is where a corporate proxy's own certificate normally lives once
+# IT has deployed it. This does not weaken certificate validation -- unlike "strict-ssl=false",
+# it does not disable it -- it only extends the trust store Node already checks against.
+export NODE_USE_SYSTEM_CA=1
+
 log() { printf '\n==> %s\n' "$1"; }
 fail() { printf '\nError: %s\n' "$1" >&2; exit 1; }
 
