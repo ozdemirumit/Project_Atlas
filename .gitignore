@@ -16,6 +16,11 @@ node_modules/
 dist/
 coverage/
 
+# frontend/dist/ is the one exception: the deployment path (scripts/install.sh|ps1) serves this
+# pre-built bundle directly from the backend, so a target machine needs no Node.js/npm/pnpm of
+# its own. Rebuild and recommit it (`cd frontend && pnpm build`) whenever frontend source changes.
+!/frontend/dist/
+
 # Editors and operating systems
 .idea/
 .vscode/

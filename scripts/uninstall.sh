@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Stops the backend/frontend processes scripts/install.sh started.
+# Stops the backend process scripts/install.sh started.
 #
 # Usage:
-#   scripts/uninstall.sh          # stop backend + frontend, keep the database
+#   scripts/uninstall.sh          # stop the backend, keep the database
 #   scripts/uninstall.sh --purge  # also drop the atlas database and role (destroys all data)
 
 set -euo pipefail
@@ -27,7 +27,6 @@ stop_if_running() {
     rm -f "$pidfile"
 }
 
-stop_if_running "frontend" "$RUNTIME_DIR/frontend.pid"
 stop_if_running "backend" "$RUNTIME_DIR/backend.pid"
 
 if [ "${1:-}" = "--purge" ]; then

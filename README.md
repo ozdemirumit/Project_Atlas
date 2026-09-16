@@ -172,17 +172,21 @@ logic already exist today inside `backend/src/atlas/modules/`.
 
 Everything needed to build, run, and deploy Atlas ships in this repository -- there is nothing to
 fetch from anywhere else except PostgreSQL itself. Cloning the repository and running one script
-is enough to bring the backend and frontend up in a new environment. There is no Docker, no
-containers, and no YAML anywhere in the deployment path -- `scripts/install` runs everything as
-plain background processes.
+is enough to bring Atlas up in a new environment. There is no Docker, no containers, and no YAML
+anywhere in the deployment path -- `scripts/install` runs a single backend process, no Node.js or
+package registry access required.
+
+The frontend ships pre-built as static files at `frontend/dist/`, served directly by the backend
+on the same port -- a deployment target needs no Node.js, npm, or pnpm of its own. See
+[Contributing](#contributing) for how to rebuild `frontend/dist/` after a frontend source change.
 
 ### Deploy anywhere
 
 `scripts/install` installs almost everything it needs itself -- there is nothing to set up by
 hand beforehand on most platforms:
 
-- **`uv` and `pnpm`** are installed automatically if missing, using their official installers
-  (user-local, no administrator/root privileges needed).
+- **`uv`** is installed automatically if missing, using its official installer (user-local, no
+  administrator/root privileges needed).
 - **PostgreSQL 18 with [pgvector](https://github.com/pgvector/pgvector)**, if `psql` isn't already
   found:
   - **macOS**: installed automatically with Homebrew (`brew install postgresql@18 pgvector`),
@@ -213,25 +217,25 @@ scripts\install.cmd         # Windows, no PowerShell execution-policy change req
 # or: .\scripts\install.ps1
 ```
 
-The installer first makes sure `uv`, `pnpm`, and PostgreSQL are present (installing whichever are
-missing, as described above), creates `.env` from `.env.example` with a freshly generated database
+The installer first makes sure `uv` and PostgreSQL are present (installing whichever are missing,
+as described above), creates `.env` from `.env.example` with a freshly generated database
 password if `.env` does not already exist, then -- the first time it cannot already connect as the
 `atlas` role -- sets up the `atlas` role, `atlas` database, and `vector` extension. When the
 installer just installed PostgreSQL itself (macOS/Debian/Ubuntu), this happens automatically with
 no prompt; otherwise it prompts once for your existing PostgreSQL server's superuser credentials.
-It then installs backend and frontend dependencies, runs database migrations, and starts both as
-background processes, waiting for each to report healthy. Re-running `scripts/install` is safe: it
-skips already-installed prerequisites and the superuser step once the `atlas` role is reachable,
-and only reinstalls dependencies and restarts the processes.
+It then installs backend dependencies, runs database migrations, and starts the backend as a
+background process (which also serves the pre-built frontend), waiting for it to report healthy.
+Re-running `scripts/install` is safe: it skips already-installed prerequisites and the superuser
+step once the `atlas` role is reachable, and only reinstalls dependencies and restarts the process.
 
-Open `http://localhost:5173`. The API is available at `http://localhost:8000`, with interactive
-API documentation at `http://localhost:8000/docs`.
+Open `http://localhost:8000` -- the backend serves both the web application and the API from the
+same port, with interactive API documentation at `http://localhost:8000/docs`.
 
-Verify everything came up healthy:
+Verify it came up healthy:
 
 ```bash
 curl http://localhost:8000/health/ready       # backend readiness check
-tail -f .atlas/backend.log .atlas/frontend.log
+tail -f .atlas/backend.log
 ```
 
 Stop everything the installer started:
@@ -342,3 +346,17 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the documentation lifecycle, review
 - Keep changes scoped to the assigned task.
 - Preserve the principle that AI assists and humans decide.
 - Update documentation when decisions change.
+
+### Updating the pre-built frontend
+
+`frontend/dist/` is committed so `scripts/install` never needs Node.js/npm/pnpm or npm registry
+access on the deployment target -- it is the one intentional exception to this repository's
+"no build output committed" rule (see `.gitignore`). After any change under `frontend/src/`,
+rebuild and commit it:
+
+```bash
+cd frontend
+pnpm install --frozen-lockfile
+pnpm build
+git add dist
+```

@@ -6,12 +6,13 @@ from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
+from pathlib import Path
 from typing import Any, cast
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.responses import Response
+from starlette.responses import FileResponse, Response
 
 from atlas import __version__
 from atlas.api.errors import register_error_handlers
@@ -11312,4 +11313,20 @@ def create_app(
     app.include_router(audit_export.router, prefix="/api/v1")
     app.include_router(audit_ledger_integrity.router, prefix="/api/v1")
     app.include_router(operations.router, prefix="/api/v1")
+
+    # Serves the pre-built frontend (frontend/dist/, built with `pnpm build`) directly from the
+    # backend so a deployment target needs no Node.js/npm/pnpm of its own -- see
+    # scripts/install.sh|ps1. Registered last so it never shadows an /api/* or other route above,
+    # and skipped entirely when frontend/dist/ doesn't exist (e.g. local development, where
+    # scripts/dev.* runs the Vite dev server on its own port instead).
+    frontend_dist = Path(__file__).resolve().parents[4] / "frontend" / "dist"
+    if frontend_dist.is_dir():
+
+        @app.get("/{full_path:path}", include_in_schema=False)
+        async def serve_frontend(full_path: str) -> FileResponse:
+            candidate = (frontend_dist / full_path).resolve()
+            if candidate.is_file() and frontend_dist in candidate.parents:
+                return FileResponse(candidate)
+            return FileResponse(frontend_dist / "index.html")
+
     return app

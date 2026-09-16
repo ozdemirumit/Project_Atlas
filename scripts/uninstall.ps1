@@ -1,7 +1,7 @@
-# Stops the backend/frontend processes scripts/install.ps1 started.
+# Stops the backend process scripts/install.ps1 started.
 #
 # Usage:
-#   ./scripts/uninstall.ps1          # stop backend + frontend, keep the database
+#   ./scripts/uninstall.ps1          # stop the backend, keep the database
 #   ./scripts/uninstall.ps1 -Purge   # also drop the atlas database and role (destroys all data)
 
 [CmdletBinding()]
@@ -29,7 +29,6 @@ function Stop-IfRunning {
     Remove-Item $PidFile -Force -ErrorAction SilentlyContinue
 }
 
-Stop-IfRunning "frontend" (Join-Path $RuntimeDir "frontend.pid")
 Stop-IfRunning "backend" (Join-Path $RuntimeDir "backend.pid")
 
 if ($Purge) {

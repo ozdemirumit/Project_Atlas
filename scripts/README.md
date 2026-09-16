@@ -5,21 +5,23 @@ The `.cmd` entry points do not require a PowerShell execution-policy change.
 
 ## Deployment (native, no Docker, no containers, no YAML)
 
-`install`/`uninstall` bring up or tear down the backend and frontend as plain background
-processes against a PostgreSQL server you install yourself -- no containers of any kind. This is
-the script to run when deploying Atlas in a new environment.
+`install`/`uninstall` bring up or tear down the backend as a plain background process against a
+PostgreSQL server you install yourself -- no containers of any kind, and no Node.js/npm/pnpm on
+the target either, since the frontend is the pre-built `frontend/dist/` bundle already committed
+to the repository, served directly by the backend on the same port. This is the script to run
+when deploying Atlas in a new environment.
 
-`uv` and `pnpm` are installed automatically if missing everywhere. PostgreSQL + pgvector are
-installed automatically too: on macOS (Homebrew) and Debian/Ubuntu (the official PGDG apt
-repository) after a one-line confirmation, and on Windows via `winget` for PostgreSQL plus an
-automatic Visual Studio C++ Build Tools install and source build for pgvector (which has no
-Windows binary distribution) -- the Windows path needs an elevated (Administrator) PowerShell
-session. Either way, the scripts handle everything after PostgreSQL exists -- creating the
-`atlas` role/database/extension, running migrations, and starting both services.
+`uv` is installed automatically if missing everywhere. PostgreSQL + pgvector are installed
+automatically too: on macOS (Homebrew) and Debian/Ubuntu (the official PGDG apt repository) after
+a one-line confirmation, and on Windows via `winget` for PostgreSQL plus an automatic Visual
+Studio C++ Build Tools install and source build for pgvector (which has no Windows binary
+distribution) -- the Windows path needs an elevated (Administrator) PowerShell session. Either
+way, the scripts handle everything after PostgreSQL exists -- creating the `atlas`
+role/database/extension, running migrations, and starting the backend.
 
 ```bash
 scripts/install.sh          # Linux, macOS, WSL
-scripts/uninstall.sh        # stop backend + frontend; add --purge to also drop the database
+scripts/uninstall.sh        # stop the backend; add --purge to also drop the database
 ```
 
 ```powershell
@@ -30,12 +32,15 @@ scripts\uninstall.cmd
 ./scripts/uninstall.ps1 -Purge   # -Purge also drops the atlas database and role
 ```
 
-`install` is idempotent: re-running it reinstalls dependencies and restarts the backend/frontend
-processes without touching existing database data (it only performs the one-time PostgreSQL
-superuser setup -- role, database, `CREATE EXTENSION vector` -- the first time the `atlas` role
-isn't reachable yet). If `.env` does not already exist, `install` creates one from `.env.example`
-with a freshly generated, randomly-created database password. Process IDs and logs live under the
+`install` is idempotent: re-running it reinstalls dependencies and restarts the backend process
+without touching existing database data (it only performs the one-time PostgreSQL superuser
+setup -- role, database, `CREATE EXTENSION vector` -- the first time the `atlas` role isn't
+reachable yet). If `.env` does not already exist, `install` creates one from `.env.example` with
+a freshly generated, randomly-created database password. Process ID and logs live under the
 gitignored `.atlas/` directory at the repository root.
+
+`install` refuses to run if `frontend/dist/index.html` is missing -- rebuild and commit it after
+a frontend source change (see README.md's Contributing section: `pnpm build` from `frontend/`).
 
 ## Local development (foreground, with hot reload)
 

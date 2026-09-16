@@ -1,19 +1,21 @@
-# Builds and starts Project Atlas (backend, frontend) as plain background processes. No Docker,
-# no containers, no YAML.
+# Builds and starts Project Atlas as a single background process. No Docker, no containers, no
+# YAML, and no Node.js/npm/pnpm needed on this machine -- the frontend is a pre-built static
+# bundle already committed at frontend/dist/ (see README.md's Contributing section for how to
+# rebuild it after a frontend change), served directly by the backend.
 #
 # Usage:
 #   ./scripts/install.ps1   (run as Administrator the first time, if pgvector needs building)
 #
-# uv, pnpm, and PostgreSQL (via winget) are installed automatically if missing, asking for
-# confirmation first. pgvector has no Windows binary distribution, so it is built from source --
-# this installs Visual Studio C++ Build Tools automatically if needed (several GB) and requires
-# an elevated PowerShell session. See README.md.
+# uv and PostgreSQL (via winget) are installed automatically if missing, asking for confirmation
+# first. pgvector has no Windows binary distribution, so it is built from source -- this installs
+# Visual Studio C++ Build Tools automatically if needed (several GB) and requires an elevated
+# PowerShell session. See README.md.
 #
 # On a network that blocks direct downloads (e.g. a proxy that blocks .exe files by policy),
 # obtain the files through an approved channel yourself and pass their local paths instead:
 #   ./scripts/install.ps1 -VcBuildToolsInstaller C:\path\to\vs_buildtools.exe -PgVectorArchive C:\path\to\pgvector.zip
-# Idempotent: re-running rebuilds dependencies and restarts the backend/frontend processes
-# without touching existing database data. Run scripts/uninstall.ps1 to stop everything.
+# Idempotent: re-running rebuilds backend dependencies and restarts the process without touching
+# existing database data. Run scripts/uninstall.ps1 to stop it.
 
 [CmdletBinding()]
 param(
@@ -32,19 +34,9 @@ $RepositoryRoot = Split-Path -Parent $PSScriptRoot
 $EnvFile = Join-Path $RepositoryRoot ".env"
 $EnvExample = Join-Path $RepositoryRoot ".env.example"
 $RuntimeDir = Join-Path $RepositoryRoot ".atlas"
+$FrontendDist = Join-Path $RepositoryRoot "frontend\dist"
 
 $BackendPort = 8000
-$FrontendPort = 5173
-
-# On a network with a TLS-intercepting proxy (common on managed corporate machines), Node.js
-# tools (npm, pnpm) fail registry requests with UNABLE_TO_GET_ISSUER_CERT_LOCALLY, because
-# Node.js does not trust the Windows certificate store by default -- only its own bundled CA
-# list. --use-system-ca (Node.js 23.8.0+; this project targets Node 24) makes Node also trust
-# whatever the OS already trusts, which is where a corporate proxy's own certificate normally
-# lives once IT has deployed it. This does not weaken certificate validation -- it does not
-# disable it, unlike "strict-ssl=false" -- it only extends the trust store Node already checks
-# against to match what the rest of Windows already trusts.
-$env:NODE_USE_SYSTEM_CA = "1"
 
 function Write-Step {
     param([string]$Message)
@@ -71,9 +63,9 @@ function Invoke-NativeAllowFailure {
 
 function Update-SessionPath {
     # Machine/User PATH entries can be REG_EXPAND_SZ values containing unexpanded %VAR%
-    # references (pnpm's installer, for one, writes "%PNPM_HOME%\bin" rather than a literal
-    # path) -- GetEnvironmentVariable returns them raw. Import every Machine/User variable into
-    # this process first so those references resolve, then expand PATH against them explicitly.
+    # references -- GetEnvironmentVariable returns them raw. Import every Machine/User variable
+    # into this process first so those references resolve, then expand PATH against them
+    # explicitly.
     foreach ($scope in @("Machine", "User")) {
         foreach ($entry in [Environment]::GetEnvironmentVariables($scope).GetEnumerator()) {
             if ($entry.Key -ne "Path") {
@@ -93,65 +85,6 @@ function Ensure-Uv {
     Update-SessionPath
     if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
         throw "uv installation failed. Install it manually: https://docs.astral.sh/uv/getting-started/installation/"
-    }
-}
-
-function Get-RequiredPnpmVersion {
-    # frontend/package.json pins the exact pnpm version via "packageManager". A newer pnpm run
-    # inside frontend/ detects a mismatch against that pin and tries to fetch the pinned version
-    # from the npm registry on the fly -- which fails outright on a network that blocks that
-    # registry. Installing the exact pinned version up front avoids ever needing that fetch.
-    $packageJsonPath = Join-Path $RepositoryRoot "frontend\package.json"
-    if (-not (Test-Path $packageJsonPath)) { return $null }
-    $packageManager = (Get-Content $packageJsonPath -Raw | ConvertFrom-Json).packageManager
-    if ($packageManager -match "^pnpm@(.+)$") { return $Matches[1] }
-    return $null
-}
-
-function Ensure-Pnpm {
-    $requiredVersion = Get-RequiredPnpmVersion
-    $currentVersion = $null
-    if (Get-Command pnpm -ErrorAction SilentlyContinue) {
-        $currentVersion = (Invoke-NativeAllowFailure { & pnpm --version 2>$null }).Trim()
-    }
-    if ($currentVersion -and (-not $requiredVersion -or $currentVersion -eq $requiredVersion)) { return }
-
-    $label = if ($requiredVersion) { "pnpm $requiredVersion" } else { "pnpm" }
-    $pnpmFound = $false
-
-    Write-Step "Installing $label with the official installer (user-local, no admin required)."
-    try {
-        if ($requiredVersion) { $env:PNPM_VERSION = $requiredVersion }
-        try {
-            Invoke-RestMethod https://get.pnpm.io/install.ps1 | Invoke-Expression
-        }
-        finally {
-            Remove-Item Env:\PNPM_VERSION -ErrorAction SilentlyContinue
-        }
-        Update-SessionPath
-        $pnpmFound = $null -ne (Get-Command pnpm -ErrorAction SilentlyContinue)
-    }
-    catch {
-        Write-Step "The official installer failed ($($_.Exception.Message.Split("`n")[0])). This can happen when a network proxy intercepts TLS and the installer's own HTTP client doesn't trust it, even though Windows tools like npm do."
-    }
-
-    if (-not $pnpmFound -and (Get-Command npm -ErrorAction SilentlyContinue)) {
-        Write-Step "Installing $label with npm instead."
-        $npmSpec = if ($requiredVersion) { "pnpm@$requiredVersion" } else { "pnpm" }
-        Invoke-NativeAllowFailure { & npm install -g $npmSpec }
-        Update-SessionPath
-        $pnpmFound = $null -ne (Get-Command pnpm -ErrorAction SilentlyContinue)
-    }
-
-    if (-not $pnpmFound) {
-        throw "pnpm installation failed via both the official installer and npm. Install it manually: https://pnpm.io/installation"
-    }
-    if ($requiredVersion) {
-        $installedVersion = (Invoke-NativeAllowFailure { & pnpm --version 2>$null }).Trim()
-        if ($installedVersion -ne $requiredVersion) {
-            throw "pnpm $requiredVersion was requested but $installedVersion is on PATH. " +
-                "Open a new PowerShell window and re-run, or install pnpm@$requiredVersion manually."
-        }
     }
 }
 
@@ -314,8 +247,13 @@ function Ensure-PgVector {
     }
 }
 
+if (-not (Test-Path (Join-Path $FrontendDist "index.html"))) {
+    throw "frontend/dist/ is missing or incomplete. It ships pre-built in the repository; if it's " +
+        "missing, rebuild it on a machine with npm registry access: cd frontend && pnpm install " +
+        "&& pnpm build -- then commit frontend/dist/."
+}
+
 Ensure-Uv
-Ensure-Pnpm
 Ensure-PostgreSql
 Ensure-PgVector
 
@@ -466,30 +404,7 @@ finally {
     Pop-Location
 }
 
-# --- frontend: install dependencies ---
-
-# pnpm 11 defaults minimumReleaseAge to 1440 minutes: every dependency needs a live registry
-# query to check its publish timestamp, even for an already-resolved --frozen-lockfile install.
-# This project has no committed YAML anywhere (a deliberate choice -- see README.md), and pnpm's
-# own settings (as opposed to legacy npm-compatible registry/auth settings) can only be stored in
-# a YAML file, project-local or global -- there is no CLI flag or env var override. Writing this
-# to the *global*, machine-local pnpm config (not the repository) keeps that choice intact: it's
-# local tool configuration on this machine, the same category as pnpm's own store directory, not
-# part of Atlas's own deployment description.
-pnpm config set --location=global minimumReleaseAge 0
-if ($LASTEXITCODE -ne 0) { throw "Failed to configure pnpm's minimumReleaseAge setting." }
-
-Write-Step "Installing frontend dependencies."
-Push-Location (Join-Path $RepositoryRoot "frontend")
-try {
-    pnpm install --frozen-lockfile
-    if ($LASTEXITCODE -ne 0) { throw "pnpm install failed." }
-}
-finally {
-    Pop-Location
-}
-
-# --- start backend + frontend as background processes ---
+# --- start the backend as a background process (it also serves frontend/dist/) ---
 
 function Wait-ForHttp {
     param([string]$Url, [int]$Attempts = 30, [int]$DelaySeconds = 2)
@@ -538,29 +453,11 @@ if (-not (Wait-ForHttp "http://127.0.0.1:$BackendPort/health/ready" 30 2)) {
     throw "Backend did not become healthy in time. Check: $RuntimeDir\backend.log / backend.error.log"
 }
 
-Write-Step "Starting the frontend on port $FrontendPort."
-$frontendPidFile = Join-Path $RuntimeDir "frontend.pid"
-Stop-IfRunning $frontendPidFile
-[System.Environment]::SetEnvironmentVariable("ATLAS_API_PROXY_TARGET", "http://127.0.0.1:$BackendPort", "Process")
-$frontendProcess = Start-Process -FilePath "pnpm" -ArgumentList @(
-    "dev", "--host", "0.0.0.0", "--port", "$FrontendPort"
-) -WorkingDirectory (Join-Path $RepositoryRoot "frontend") -PassThru -NoNewWindow `
-    -RedirectStandardOutput (Join-Path $RuntimeDir "frontend.log") `
-    -RedirectStandardError (Join-Path $RuntimeDir "frontend.error.log")
-[System.Environment]::SetEnvironmentVariable("ATLAS_API_PROXY_TARGET", $null, "Process")
-Set-Content -Path $frontendPidFile -Value $frontendProcess.Id
-
-Write-Step "Waiting for the frontend to become available."
-if (-not (Wait-ForHttp "http://127.0.0.1:$FrontendPort/" 30 2)) {
-    throw "Frontend did not become available in time. Check: $RuntimeDir\frontend.log / frontend.error.log"
-}
-
 Write-Host @"
 
 Project Atlas is running.
 
-  Web application: http://localhost:$FrontendPort
-  API:              http://localhost:$BackendPort
+  Web application: http://localhost:$BackendPort
   API docs:         http://localhost:$BackendPort/docs
 
 Stop everything with: ./scripts/uninstall.ps1

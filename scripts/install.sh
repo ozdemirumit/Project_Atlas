@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
-# Builds and starts Project Atlas (backend, frontend) as plain background processes. No Docker,
-# no containers, no YAML.
+# Builds and starts Project Atlas as a single background process. No Docker, no containers, no
+# YAML, and no Node.js/npm/pnpm needed on this machine -- the frontend is a pre-built static
+# bundle already committed at frontend/dist/ (see README.md's Contributing section for how to
+# rebuild it after a frontend change), served directly by the backend.
 #
 # Usage:
 #   scripts/install.sh
 #
-# uv, pnpm, and (on macOS/Debian/Ubuntu) PostgreSQL + pgvector are installed automatically if
-# missing, asking for confirmation before any system-wide/sudo step. See README.md for what is
-# and isn't auto-installable on your platform.
-# Idempotent: re-running rebuilds dependencies and restarts the backend/frontend processes
-# without touching existing database data. Run scripts/uninstall.sh to stop everything.
+# uv, and (on macOS/Debian/Ubuntu) PostgreSQL + pgvector are installed automatically if missing,
+# asking for confirmation before any system-wide/sudo step. See README.md for what is and isn't
+# auto-installable on your platform.
+# Idempotent: re-running rebuilds backend dependencies and restarts the process without touching
+# existing database data. Run scripts/uninstall.sh to stop it.
 
 set -euo pipefail
 
@@ -17,26 +19,19 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="$REPO_ROOT/.env"
 ENV_EXAMPLE="$REPO_ROOT/.env.example"
 RUNTIME_DIR="$REPO_ROOT/.atlas"
+FRONTEND_DIST="$REPO_ROOT/frontend/dist"
 
 BACKEND_PORT=8000
-FRONTEND_PORT=5173
-
-# On a network with a TLS-intercepting proxy (common on managed corporate machines), Node.js
-# tools (npm, pnpm) fail registry requests with UNABLE_TO_GET_ISSUER_CERT_LOCALLY, because
-# Node.js does not trust the OS certificate store by default -- only its own bundled CA list.
-# --use-system-ca (Node.js 23.8.0+; this project targets Node 24) makes Node also trust whatever
-# the OS already trusts, which is where a corporate proxy's own certificate normally lives once
-# IT has deployed it. This does not weaken certificate validation -- unlike "strict-ssl=false",
-# it does not disable it -- it only extends the trust store Node already checks against.
-export NODE_USE_SYSTEM_CA=1
 
 log() { printf '\n==> %s\n' "$1"; }
 fail() { printf '\nError: %s\n' "$1" >&2; exit 1; }
 
 mkdir -p "$RUNTIME_DIR"
 
-# --- prerequisites: install uv/pnpm automatically (user-local, no admin needed); install
-# PostgreSQL + pgvector automatically where a safe, official package-manager path exists ---
+[ -f "$FRONTEND_DIST/index.html" ] || fail "frontend/dist/ is missing or incomplete. It ships pre-built in the repository; if it's missing, rebuild it on a machine with npm registry access: cd frontend && pnpm install && pnpm build -- then commit frontend/dist/."
+
+# --- prerequisites: install uv automatically (user-local, no admin needed); install PostgreSQL
+# + pgvector automatically where a safe, official package-manager path exists ---
 
 JUST_INSTALLED_PG=0
 
@@ -47,44 +42,6 @@ ensure_uv() {
     export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
     command -v uv >/dev/null 2>&1 \
         || fail "uv installation failed. Install it manually: https://docs.astral.sh/uv/getting-started/installation/"
-}
-
-# frontend/package.json pins the exact pnpm version via "packageManager". A newer pnpm run
-# inside frontend/ detects a mismatch against that pin and tries to fetch the pinned version
-# from the npm registry on the fly -- which fails outright on a network that blocks that
-# registry. Installing the exact pinned version up front avoids ever needing that fetch.
-required_pnpm_version() {
-    local package_json="$REPO_ROOT/frontend/package.json"
-    [ -f "$package_json" ] || return 0
-    grep -o '"packageManager"[[:space:]]*:[[:space:]]*"pnpm@[^"]*"' "$package_json" \
-        | sed -E 's/.*pnpm@([^"]*)".*/\1/'
-}
-
-ensure_pnpm() {
-    local required_version current_version
-    required_version="$(required_pnpm_version)"
-    if command -v pnpm >/dev/null 2>&1; then
-        current_version="$(pnpm --version 2>/dev/null || true)"
-    fi
-    if [ -n "${current_version:-}" ] && { [ -z "$required_version" ] || [ "$current_version" = "$required_version" ]; }; then
-        return 0
-    fi
-
-    log "Installing pnpm${required_version:+ $required_version} with the official installer (user-local, no admin required)."
-    if [ -n "$required_version" ]; then
-        curl -fsSL https://get.pnpm.io/install.sh | env PNPM_VERSION="$required_version" sh -
-    else
-        curl -fsSL https://get.pnpm.io/install.sh | sh -
-    fi
-    export PNPM_HOME="$HOME/.local/share/pnpm"
-    export PATH="$PNPM_HOME:$PATH"
-    command -v pnpm >/dev/null 2>&1 \
-        || fail "pnpm installation failed. Install it manually: https://pnpm.io/installation"
-    if [ -n "$required_version" ]; then
-        current_version="$(pnpm --version 2>/dev/null || true)"
-        [ "$current_version" = "$required_version" ] \
-            || fail "pnpm $required_version was requested but $current_version is on PATH. Open a new shell and re-run, or install pnpm@$required_version manually."
-    fi
 }
 
 ensure_postgresql() {
@@ -124,7 +81,6 @@ ensure_postgresql() {
 }
 
 ensure_uv
-ensure_pnpm
 ensure_postgresql
 
 # --- .env: create it from .env.example with a freshly generated database password ---
@@ -230,22 +186,7 @@ log "Installing backend dependencies."
 log "Running database migrations."
 (cd "$REPO_ROOT/backend" && ATLAS_DATABASE_URL="$ATLAS_DATABASE_URL" uv run alembic upgrade head)
 
-# --- frontend: install dependencies ---
-
-# pnpm 11 defaults minimumReleaseAge to 1440 minutes: every dependency needs a live registry
-# query to check its publish timestamp, even for an already-resolved --frozen-lockfile install.
-# This project has no committed YAML anywhere (a deliberate choice -- see README.md), and pnpm's
-# own settings (as opposed to legacy npm-compatible registry/auth settings) can only be stored in
-# a YAML file, project-local or global -- there is no CLI flag or env var override. Writing this
-# to the *global*, machine-local pnpm config (not the repository) keeps that choice intact: it's
-# local tool configuration on this machine, the same category as pnpm's own store directory, not
-# part of Atlas's own deployment description.
-pnpm config set --location=global minimumReleaseAge 0
-
-log "Installing frontend dependencies."
-(cd "$REPO_ROOT/frontend" && pnpm install --frozen-lockfile)
-
-# --- start backend + frontend as background processes ---
+# --- start the backend as a background process (it also serves frontend/dist/) ---
 
 wait_for_http() {
     local url="$1" attempts="${2:-30}" delay="${3:-2}"
@@ -287,28 +228,13 @@ log "Waiting for the backend to become healthy."
 wait_for_http "http://127.0.0.1:${BACKEND_PORT}/health/ready" 30 2 \
     || fail "Backend did not become healthy in time. Check: $RUNTIME_DIR/backend.log"
 
-log "Starting the frontend on port $FRONTEND_PORT."
-stop_if_running "$RUNTIME_DIR/frontend.pid"
-(
-    cd "$REPO_ROOT/frontend"
-    ATLAS_API_PROXY_TARGET="http://127.0.0.1:${BACKEND_PORT}" \
-        nohup pnpm dev --host 0.0.0.0 --port "$FRONTEND_PORT" \
-        > "$RUNTIME_DIR/frontend.log" 2>&1 &
-    echo $! > "$RUNTIME_DIR/frontend.pid"
-)
-
-log "Waiting for the frontend to become available."
-wait_for_http "http://127.0.0.1:${FRONTEND_PORT}/" 30 2 \
-    || fail "Frontend did not become available in time. Check: $RUNTIME_DIR/frontend.log"
-
 cat <<EOF
 
 Project Atlas is running.
 
-  Web application: http://localhost:${FRONTEND_PORT}
-  API:              http://localhost:${BACKEND_PORT}
+  Web application: http://localhost:${BACKEND_PORT}
   API docs:         http://localhost:${BACKEND_PORT}/docs
 
 Stop everything with: scripts/uninstall.sh
-View logs with: tail -f $RUNTIME_DIR/backend.log $RUNTIME_DIR/frontend.log
+View logs with: tail -f $RUNTIME_DIR/backend.log
 EOF
