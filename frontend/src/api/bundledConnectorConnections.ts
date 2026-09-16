@@ -26,6 +26,20 @@ export const VCENTER_AUTHORIZATION_SECRET_REFERENCE = "secret.vmware.vcenter.rea
 export const COMMVAULT_AUTHORIZATION_SECRET_REFERENCE = "secret.commvault.readonly";
 
 /**
+ * How a vendor's transport expects the vault secret's on-the-wire value to be shaped, so the
+ * connection dialog can collect a plain username/password and compute the right string instead
+ * of asking the operator to hand-encode it:
+ * - `"basic-header"`: the transport sends the vault value verbatim as the `Authorization` header
+ *   (`brocade_sannav/https.py`, `hitachi_ops_center/https.py`) -- store the full
+ *   `"Basic " + base64("username:password")` header value.
+ * - `"raw-pair"`: the transport itself owns the vendor's login/session flow and only needs
+ *   `"username:password"` (`vcenter/https.py`, `huawei_dorado/https.py`,
+ *   `huawei_pacific/https.py`, `commvault/https.py`) -- store the raw, colon-joined pair
+ *   unencoded; each transport encodes/sends it however that vendor's own login API requires.
+ */
+export type VaultCredentialMode = "basic-header" | "raw-pair";
+
+/**
  * Per-vendor UI defaults for the bundled connection dialog, keyed by `connector_id`.
  * `defaultPort` is only populated where a vendor's real API port is confirmed in this
  * project's own vendor documentation research (`mcp/connectors/<vendor>/README.md` /
@@ -37,45 +51,78 @@ export const COMMVAULT_AUTHORIZATION_SECRET_REFERENCE = "secret.commvault.readon
  */
 export const BUNDLED_CONNECTOR_VENDOR_DEFAULTS: Record<
   string,
-  { vendorLabel: string; authorizationSecretReference: string; defaultPort: number | null; hostnamePlaceholder: string }
+  {
+    vendorLabel: string;
+    authorizationSecretReference: string;
+    defaultPort: number | null;
+    hostnamePlaceholder: string;
+    credentialMode: VaultCredentialMode;
+  }
 > = {
   [HITACHI_BUNDLED_CONNECTOR_ID]: {
     vendorLabel: "Hitachi Ops Center",
     authorizationSecretReference: HITACHI_AUTHORIZATION_SECRET_REFERENCE,
     defaultPort: 23450,
     hostnamePlaceholder: "opscenter.example.internal",
+    credentialMode: "basic-header",
   },
   [BROCADE_BUNDLED_CONNECTOR_ID]: {
     vendorLabel: "Brocade SANnav",
     authorizationSecretReference: BROCADE_AUTHORIZATION_SECRET_REFERENCE,
     defaultPort: null,
     hostnamePlaceholder: "sannav.example.internal",
+    credentialMode: "basic-header",
   },
   [HUAWEI_DORADO_BUNDLED_CONNECTOR_ID]: {
     vendorLabel: "Huawei OceanStor Dorado",
     authorizationSecretReference: HUAWEI_DORADO_AUTHORIZATION_SECRET_REFERENCE,
     defaultPort: 8088,
     hostnamePlaceholder: "dorado.example.internal",
+    credentialMode: "raw-pair",
   },
   [HUAWEI_PACIFIC_BUNDLED_CONNECTOR_ID]: {
     vendorLabel: "Huawei OceanStor Pacific",
     authorizationSecretReference: HUAWEI_PACIFIC_AUTHORIZATION_SECRET_REFERENCE,
     defaultPort: null,
     hostnamePlaceholder: "pacific.example.internal",
+    credentialMode: "raw-pair",
   },
   [VCENTER_BUNDLED_CONNECTOR_ID]: {
     vendorLabel: "VMware vCenter",
     authorizationSecretReference: VCENTER_AUTHORIZATION_SECRET_REFERENCE,
     defaultPort: null,
     hostnamePlaceholder: "vcenter.example.internal",
+    credentialMode: "raw-pair",
   },
   [COMMVAULT_BUNDLED_CONNECTOR_ID]: {
     vendorLabel: "Commvault CommServe",
     authorizationSecretReference: COMMVAULT_AUTHORIZATION_SECRET_REFERENCE,
     defaultPort: null,
     hostnamePlaceholder: "commserve.example.internal",
+    credentialMode: "raw-pair",
   },
 };
+
+/**
+ * Computes the exact on-the-wire vault secret value for a username/password pair, matching
+ * whichever convention (`VaultCredentialMode`) the target vendor's transport expects. Uses
+ * `TextEncoder` rather than a plain `btoa(username + ":" + password)` so non-ASCII credentials
+ * (accented characters, etc.) encode correctly instead of throwing or silently corrupting.
+ */
+export function encodeVaultCredential(
+  mode: VaultCredentialMode,
+  username: string,
+  password: string,
+): string {
+  const pair = `${username}:${password}`;
+  if (mode === "raw-pair") return pair;
+  const bytes = new TextEncoder().encode(pair);
+  let binary = "";
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return `Basic ${btoa(binary)}`;
+}
 
 export type BundledConnectionConfiguration = {
   configuration_id: string;

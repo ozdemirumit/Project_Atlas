@@ -5,6 +5,7 @@ import {
   HITACHI_SYSTEM_CA_TRUST_PROFILE,
   disableBundledConnectorRuntime,
   enableBundledConnectorRuntime,
+  encodeVaultCredential,
   getBundledConnectionConfiguration,
   getBundledConnectorRuntimeState,
   getLatestBundledConnectorConnectionTest,
@@ -142,5 +143,28 @@ describe("bundled connector connection API", () => {
     vi.stubGlobal("fetch", fetchMock);
     await expect(getLatestBundledConnectorConnectionTest(instanceId)).resolves.toEqual(result);
     await expect(getLatestBundledConnectorConnectionTest(instanceId)).resolves.toBeNull();
+  });
+});
+
+describe("encodeVaultCredential", () => {
+  it("joins the pair unencoded for raw-pair vendors, matching their own session-login flow", () => {
+    expect(encodeVaultCredential("raw-pair", "readonlyuser", "s3cret-pass")).toBe(
+      "readonlyuser:s3cret-pass",
+    );
+  });
+
+  it("base64-encodes a full Basic auth header for basic-header vendors", () => {
+    expect(encodeVaultCredential("basic-header", "readonlyuser", "s3cret-pass")).toBe(
+      `Basic ${btoa("readonlyuser:s3cret-pass")}`,
+    );
+  });
+
+  it("encodes non-ASCII credentials safely instead of throwing", () => {
+    const encoded = encodeVaultCredential("basic-header", "üser", "pässwörd");
+    expect(encoded.startsWith("Basic ")).toBe(true);
+    const decodedBytes = Uint8Array.from(atob(encoded.slice("Basic ".length)), (char) =>
+      char.charCodeAt(0),
+    );
+    expect(new TextDecoder().decode(decodedBytes)).toBe("üser:pässwörd");
   });
 });

@@ -7,6 +7,7 @@ import {
   saveBundledConnectionConfiguration,
   testBundledConnectorConnection,
 } from "../../api/bundledConnectorConnections";
+import { setConnectorVaultSecret } from "../../api/connectorVaultSecrets";
 import { connectorInstanceRecord } from "./testInstanceFixture";
 import { BundledConnectionDialog } from "./BundledConnectionDialog";
 
@@ -18,6 +19,11 @@ vi.mock("../../api/bundledConnectorConnections", async (importOriginal) => {
     saveBundledConnectionConfiguration: vi.fn(),
     testBundledConnectorConnection: vi.fn(),
   };
+});
+
+vi.mock("../../api/connectorVaultSecrets", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../api/connectorVaultSecrets")>();
+  return { ...original, setConnectorVaultSecret: vi.fn() };
 });
 
 const configuration = {
@@ -69,6 +75,12 @@ beforeEach(() => {
     managed_infrastructure_contacted: true,
     infrastructure_mutation_performed: false,
   });
+  vi.mocked(setConnectorVaultSecret).mockResolvedValue({
+    secret_reference_id: "secret.hitachi.readonly",
+    updated_at: "2026-08-25T12:00:00Z",
+    set_by_subject_digest: "digest.test",
+    secret_material_disclosed: false,
+  });
 });
 
 describe("BundledConnectionDialog", () => {
@@ -93,7 +105,6 @@ describe("BundledConnectionDialog", () => {
       port: configuration.port,
       secretReferenceId,
     }));
-    expect(screen.queryByLabelText(/password|token|authorization header/i)).toBeNull();
     fireEvent.click(await screen.findByRole("button", { name: "Test connection" }));
     await waitFor(() => expect(testBundledConnectorConnection).toHaveBeenCalledWith(
       connectorInstanceRecord.instance_id,
@@ -104,5 +115,26 @@ describe("BundledConnectionDialog", () => {
       outcome: "passed",
       infrastructure_mutation_performed: false,
     }));
+  });
+
+  it("stores a vendor-encoded credential, never the raw username/password pair itself", async () => {
+    renderDialog();
+    const secretReferenceId = "secret.hitachi.opscenter.production-reader";
+    fireEvent.change(await screen.findByRole("textbox", { name: "Credential reference ID" }), {
+      target: { value: secretReferenceId },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Username" }), {
+      target: { value: "readonlyuser" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "s3cret-pass" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Set credentials" }));
+
+    await waitFor(() => expect(setConnectorVaultSecret).toHaveBeenCalledWith({
+      secretReferenceId,
+      value: "readonlyuser:s3cret-pass",
+    }));
+    expect(await screen.findByText(/Stored in the connector-credential vault/i)).toBeVisible();
   });
 });

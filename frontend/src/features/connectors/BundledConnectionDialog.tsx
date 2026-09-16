@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 
 import {
   BUNDLED_CONNECTOR_VENDOR_DEFAULTS,
+  encodeVaultCredential,
   getBundledConnectionConfiguration,
   saveBundledConnectionConfiguration,
   testBundledConnectorConnection,
@@ -40,6 +41,7 @@ export function BundledConnectionDialog({
     authorizationSecretReference: "",
     defaultPort: null,
     hostnamePlaceholder: "target.example.internal",
+    credentialMode: "raw-pair" as const,
   };
   const [hostnameOverride, setHostnameOverride] = useState("");
   const [portOverride, setPortOverride] = useState<number | null>(null);
@@ -78,11 +80,18 @@ export function BundledConnectionDialog({
       onTested?.(result);
     },
   });
-  const [vaultSecretValue, setVaultSecretValue] = useState("");
+  const [vaultUsername, setVaultUsername] = useState("");
+  const [vaultPassword, setVaultPassword] = useState("");
   const setSecretMutation = useMutation({
     mutationFn: () =>
-      setConnectorVaultSecret({ secretReferenceId: secretReferenceId.trim(), value: vaultSecretValue }),
-    onSuccess: () => setVaultSecretValue(""),
+      setConnectorVaultSecret({
+        secretReferenceId: secretReferenceId.trim(),
+        value: encodeVaultCredential(vendorDefaults.credentialMode, vaultUsername, vaultPassword),
+      }),
+    onSuccess: () => {
+      setVaultUsername("");
+      setVaultPassword("");
+    },
   });
   const valid = /^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$/.test(hostname.trim()) &&
     port !== null && port >= 1 && port <= 65_535 &&
@@ -162,26 +171,46 @@ export function BundledConnectionDialog({
               />
             </label>
             <div className="bundled-connection-vault-secret">
-              <label>
-                Set / rotate secret value
-                <input
-                  type="password"
-                  autoComplete="new-password"
-                  value={vaultSecretValue}
-                  maxLength={8_192}
-                  placeholder="Paste the credential value for this reference ID"
-                  disabled={!secretReferenceValid}
-                  onChange={(event) => setVaultSecretValue(event.target.value)}
-                />
-              </label>
+              <p className="muted-copy">
+                Set or rotate the {vendorDefaults.vendorLabel} credentials for this reference ID.
+                Atlas encodes them the way this vendor expects before storing them -- the raw
+                values are never saved or displayed again.
+              </p>
+              <div className="installed-mcp-form-grid">
+                <label>
+                  Username
+                  <input
+                    type="text"
+                    autoComplete="off"
+                    value={vaultUsername}
+                    maxLength={512}
+                    placeholder="e.g. atlas-readonly"
+                    disabled={!secretReferenceValid}
+                    onChange={(event) => setVaultUsername(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Password
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    value={vaultPassword}
+                    maxLength={512}
+                    disabled={!secretReferenceValid}
+                    onChange={(event) => setVaultPassword(event.target.value)}
+                  />
+                </label>
+              </div>
               <button
                 className="secondary-button"
                 type="button"
-                disabled={!secretReferenceValid || !vaultSecretValue || setSecretMutation.isPending}
+                disabled={
+                  !secretReferenceValid || !vaultUsername || !vaultPassword || setSecretMutation.isPending
+                }
                 onClick={() => setSecretMutation.mutate()}
               >
                 {setSecretMutation.isPending ? <RefreshCw className="spin" size={16} /> : <KeyRound size={16} />}
-                Set secret value
+                Set credentials
               </button>
               {setSecretMutation.isSuccess && (
                 <span className="muted-copy">

@@ -331,11 +331,14 @@ closing what were previously the only two development-only gaps:
    `POST /api/v1/authorization/role-assignments`.
 
 2. **A real connector-credential vault.** Set `ATLAS_PROTECTED_CONTENT_ENCRYPTION_KEY_B64` (see
-   the table above) before starting the backend. With it set, every bundled connector's "Set /
-   rotate secret value" action (in its connection dialog) stores that vendor's credential
-   AES-256-GCM-encrypted in PostgreSQL instead of requiring a hand-set OS environment variable --
-   the self-built vault this project uses instead of an external secret manager. Losing this key
-   makes everything it encrypted permanently unrecoverable, so back it up outside the database.
+   the table above) before starting the backend. With it set, every bundled connector's connection
+   dialog lets you type that vendor's plain username and password directly -- Atlas encodes them
+   the way that specific vendor's API expects (a pre-built Basic-auth header for Brocade SANnav
+   and Hitachi Ops Center; a raw, unencoded pair for vCenter, Huawei OceanStor Dorado/Pacific, and
+   Commvault, each of which owns its own login/session exchange) before storing the result
+   AES-256-GCM-encrypted in PostgreSQL -- the self-built vault this project uses instead of an
+   external secret manager or a hand-set OS environment variable. Losing this key makes everything
+   it encrypted permanently unrecoverable, so back it up outside the database.
 
 ### Local development, with hot reload
 
