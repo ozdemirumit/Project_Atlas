@@ -144,4 +144,11 @@ async def _main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(_main())
+    # uvicorn's default --loop resolves to ProactorEventLoop on Windows (see install.ps1's
+    # --loop asyncio:SelectorEventLoop, the same fix for the backend server), which psycopg's
+    # async driver refuses to run under. asyncio.run() has the identical default on Windows, so
+    # this script needs the same fix.
+    if sys.platform == "win32":
+        asyncio.run(_main(), loop_factory=asyncio.SelectorEventLoop)
+    else:
+        asyncio.run(_main())
