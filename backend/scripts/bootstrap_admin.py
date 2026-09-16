@@ -52,7 +52,7 @@ from atlas.modules.authorization.application.bootstrap import (
     current_identity_scope,
     local_credential_self_scope,
 )
-from atlas.modules.authorization.domain.models import RoleAssignment
+from atlas.modules.authorization.domain.models import ResourceScope, RoleAssignment
 from atlas.modules.identity.adapters.local_credentials_postgres import (
     PostgreSQLLocalCredentialRepository,
 )
@@ -119,6 +119,29 @@ def _prompt_role_id() -> str:
             f"{', '.join(_GRANTABLE_ROLE_IDS)}.",
             file=sys.stderr,
         )
+
+
+def _local_tier_scopes(
+    organization_id: str, audit_sink: LoggingAuditSink
+) -> tuple[ResourceScope, ...]:
+    """Every scope a LOCAL-reachable role tier's grant should cover -- mechanically derived from
+    DEVELOPMENT_ROLE_ID's own already-exhaustive scope list (see
+    ``AuthorizationService.static_role_scopes``), not a second, hand-maintained list that would
+    drift out of sync. That static list is only ever populated when ``development_identity_enabled``
+    is true -- which install.ps1/start.ps1 set, but only as a process-only override for the
+    *backend's own* process, never written to ``.env``. This script's own ``Settings()`` reads
+    ``.env`` directly (correctly false there, e.g. for a production-bound install), so this
+    function builds a dedicated, forced-on settings object purely to reach the same scope shape
+    the running backend already computes for itself -- this never authenticates anyone as the
+    synthetic development identity, and never touches the real database as that identity; it only
+    borrows the scope list's shape."""
+    scope_settings = Settings(
+        environment="development",
+        development_identity_enabled=True,
+        development_organization_id=organization_id,
+    )
+    authorization_service = build_development_authorization_service(scope_settings, audit_sink)
+    return authorization_service.static_role_scopes(DEVELOPMENT_ROLE_ID)
 
 
 def _prompt_password(label: str, *, not_equal_to: str | None = None) -> str:
@@ -214,12 +237,7 @@ async def _main() -> None:
             correlation_id=f"cor_bootstrap_{uuid4().hex}",
         )
 
-        # The chosen tier's assignments -- mechanically derived from DEVELOPMENT_ROLE_ID's own
-        # already-exhaustive scope list (see AuthorizationService.static_role_scopes), not a
-        # second, hand-maintained list that would drift out of sync.
-        authorization_service = build_development_authorization_service(settings, audit_sink)
-        scopes = authorization_service.static_role_scopes(DEVELOPMENT_ROLE_ID)
-        for scope in scopes:
+        for scope in _local_tier_scopes(organization_id, audit_sink):
             await role_assignment_repository.create(
                 RoleAssignment(
                     assignment_id=f"assignment.{uuid4().hex}",
