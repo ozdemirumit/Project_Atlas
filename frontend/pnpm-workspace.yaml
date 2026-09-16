@@ -1,9 +1,0 @@
-# pnpm 11 defaults minimumReleaseAge to 1440 minutes (24 hours): pnpm queries the registry for
-# each dependency's publish timestamp and refuses to install anything newer, as a defense
-# against just-published, potentially-compromised package versions slipping into a build.
-# On a network where registry.npmjs.org is unreachable (e.g. a restrictive corporate proxy),
-# those live queries fail outright and `pnpm install` cannot complete even for an
-# already-resolved, --frozen-lockfile install. This restores the pre-11 default (this check
-# did not exist before pnpm 11) rather than leaving deployment blocked on network access this
-# environment may not have.
-minimumReleaseAge: 0
