@@ -133,6 +133,7 @@ from atlas.api.routes import (
     review_decisions,
     review_findings,
     reviewer_assignments,
+    role_assignments,
     runner_validations,
     runtime_activations,
     runtime_trust_grants,
@@ -330,8 +331,17 @@ from atlas.modules.ai.domain.models import (
     TaskClass,
 )
 from atlas.modules.approvals.application.service import ApprovalService
+from atlas.modules.authorization.adapters.role_assignment_memory import (
+    InMemoryRoleAssignmentRepository,
+)
+from atlas.modules.authorization.adapters.role_assignment_postgres import (
+    PostgreSQLRoleAssignmentRepository,
+)
 from atlas.modules.authorization.application.bootstrap import (
     build_development_authorization_service,
+)
+from atlas.modules.authorization.application.role_assignment_grant import (
+    RoleAssignmentGrantService,
 )
 from atlas.modules.authorization.application.service import AuthorizationService
 from atlas.modules.backup_operations.adapters.configured_commvault import (
@@ -5474,9 +5484,23 @@ def create_app(
             audit_sink=resolved_audit_sink,
             environment_id=f"environment.{resolved_settings.environment}",
         )
+    resolved_role_assignment_repository = (
+        PostgreSQLRoleAssignmentRepository.from_url(resolved_settings.database_url)
+        if resolved_settings.database_url
+        else InMemoryRoleAssignmentRepository()
+    )
     resolved_authorization_service = (
         authorization_service
-        or build_development_authorization_service(resolved_settings, resolved_audit_sink)
+        or build_development_authorization_service(
+            resolved_settings,
+            resolved_audit_sink,
+            dynamic_assignments=resolved_role_assignment_repository,
+        )
+    )
+    resolved_role_assignment_grant_service = RoleAssignmentGrantService(
+        repository=resolved_role_assignment_repository,
+        authorization_service=resolved_authorization_service,
+        audit_sink=resolved_audit_sink,
     )
     if invocation_authorization_service is not None:
         resolved_invocation_authorization_service = invocation_authorization_service
@@ -10747,6 +10771,7 @@ def create_app(
             resolved_final_recommendation_disposition_service
         )
         app.state.authorization_service = resolved_authorization_service
+        app.state.role_assignment_grant_service = resolved_role_assignment_grant_service
         app.state.platform_status_service = status_service
         app.state.storage_operations_service = resolved_storage_operations_service
         app.state.backup_operations_service = resolved_backup_operations_service
@@ -11282,6 +11307,7 @@ def create_app(
     app.include_router(bundled_connector_catalog.router, prefix="/api/v1")
     app.include_router(connector_connection_tests.router, prefix="/api/v1")
     app.include_router(vault_secrets.router, prefix="/api/v1")
+    app.include_router(role_assignments.router, prefix="/api/v1")
     app.include_router(target_configuration.router, prefix="/api/v1")
     app.include_router(credential_assignments.router, prefix="/api/v1")
     app.include_router(configuration_validations.router, prefix="/api/v1")

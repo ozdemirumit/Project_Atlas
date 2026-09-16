@@ -436,6 +436,79 @@ Three of the six services `task_87506e3c` was spawned to wire. `GuardrailReviewS
 - Discovered while running this fix that the shared working tree was being edited concurrently by other passes/tasks in this same session's broader loop; moved this fix's work into an isolated `git worktree` (branch `guardrail-mcp-builder-wiring`) after an in-progress edit to `bootstrap.py` was partly lost to a concurrent `git stash`, to avoid clobbering or being clobbered by unrelated concurrent work on `app.py`/`security.py`/`bootstrap.py`.
 - 3 new integration tests (`test_guardrails_mcp_builder_wiring_api.py`), all passing. `ruff format --check`, `ruff check`, `mypy` (full project) clean. Full backend suite re-run to confirm zero regressions.
 
+### ATLAS-IMP-283 Scope and Verification (complete)
+
+Durable, LOCAL-reachable RBAC role assignments (docs/031_RBAC.md Sec.11/26), plus the ATLAS-030
+SS11 credential-replacement HTTP endpoint the local-admin bootstrap flow (ATLAS-IMP-281/282)
+turned out to still need. Found by the user actually running `scripts/bootstrap_admin` on their
+server for the first time: sign-in succeeded, but every subsequent request 403'd with "Identity
+could not be verified." Root cause investigation (direct + two Explore agents) found something
+much larger than a missing grant: `AuthorizationService` (`modules/authorization/application/service.py`)
+was built **once**, from a fully static, hand-written `assignments` list constructed entirely
+inside `build_development_authorization_service()` -- for every environment, including
+production (no separate "production" builder exists). `evaluate()` requires a `RoleAssignment`
+row bound to the exact `subject_id`; there was no add/grant/reload path anywhere, so **no subject
+created at runtime could ever be authorized for anything**, not just the bootstrap admin. A second
+finding changed which role to grant at all: `role.security-administrator` (this session's
+original default) is deliberately gated to enterprise LDAP/OIDC/SAML identities only
+(`_require_enterprise_human`, a settled decision from an earlier pass) -- granting it to a local
+account would have fixed nothing. User's decision: build the real, durable capability, with three
+LOCAL-reachable tiers an admin can grant -- **admin, operator (day-to-day), monitor (read-only)**.
+
+- **Durable infrastructure**: new `role_assignments` table (migration `20260917_0175`), JSONB
+  payload + indexed `subject_id`/`role_id`, matching the established
+  `PostgreSQLRecommendationReviewerAssignmentRepository` adapter shape. New
+  `PostgreSQLRoleAssignmentRepository`/`InMemoryRoleAssignmentRepository`
+  (`modules/authorization/adapters/role_assignment_{postgres,memory}.py`). `AuthorizationService`
+  gained a purely **additive** dynamic-lookup path (a new optional `dynamic_assignments`
+  constructor param, checked only when no static assignment already matched) and a new
+  `static_role_scopes(role_id)` accessor -- mechanically derives "every scope the full
+  operational surface touches" from `DEVELOPMENT_ROLE_ID`'s own already-exhaustive static list,
+  so granting a tier to a new subject never needs a second, hand-maintained scope list that would
+  drift out of sync. Zero behavior change for any of the ~250 existing static assignments.
+- **Three role tiers** (`bootstrap.py`): `role.local-administrator`/`-operator`/`-monitor`,
+  derived from `DEVELOPMENT_ROLE_ID`'s permission set rather than hand-curated -- administrator =
+  full set plus a small admin-only set (identity governance, session/credential admin,
+  workload-identity admin, audit, RBAC management); operator = full set minus that same admin-only
+  set; monitor = operator's set filtered to permission ids ending in `.read`. Verified as real
+  subset relations and a real read-only filter by test, not just by inspection (348/336/158
+  permissions respectively in this build).
+- **Self-service grant endpoint**: new `RoleAssignmentGrantService`
+  (`modules/authorization/application/role_assignment_grant.py`) and
+  `POST/GET /api/v1/authorization/role-assignments` (`api/routes/role_assignments.py`). The
+  self-escalation guard is the route's own permission dependency (`RBAC_ROLE_ASSIGNMENT_CREATE`,
+  carried only by `role.local-administrator`) -- proven denied-for-real, not merely untested, by
+  a wiring test using a zero-permission real identity.
+- **ATLAS-030 SS11's missing piece**: `BOOTSTRAP_SETUP_ROLE_ID` (`role.platform.bootstrap-setup`,
+  the restricted role a `MUST_REPLACE` credential's session carries) was referenced everywhere but
+  never actually *registered* as a real `RoleDefinition` -- meaning even a correctly-granted
+  assignment for it could never match. Registered it with exactly two permissions
+  (`IDENTITY_SELF_READ`, new `LOCAL_CREDENTIAL_SELF_REPLACE`). New
+  `POST /api/v1/identity/local-credential/replace` (`api/routes/identity.py`), wired to the
+  already-real `LocalCredentialService.replace_credential` (built earlier this session, never
+  reachable over HTTP until now).
+- **`bootstrap_admin.py` rewritten**: now collects a temporary bootstrap password *and* a separate
+  final password, calls `replace_credential` itself immediately after bootstrapping, and durably
+  grants the chosen tier -- the operator never touches the API directly, and the account is
+  active (not stuck in `MUST_REPLACE`) the moment the script finishes. Role prompt now offers only
+  the three real LOCAL-reachable tiers.
+- Verified end to end, not just at the unit level: a live `TestClient` script (then converted to
+  `test_local_credential_replace_wiring_api.py`) reproduced the user's exact failure against the
+  pre-fix code, then proved the fixed flow -- first login as `role.platform.bootstrap-setup`,
+  `/identity/me` succeeds, `replace_credential` succeeds, second login now carries
+  `role.local-administrator`, `/identity/me` succeeds again with the real role. New
+  `test_authorization_role_tiers.py` (7 tests: subset relations, monitor read-only-or-self-service,
+  only-admin-can-grant, bootstrap-setup role is minimal, `static_role_scopes` stability),
+  `test_role_assignments_wiring_api.py` (4 tests: grant-then-list, invalid-role 422, the
+  established 401/403 denial pattern), `test_role_assignments_postgres.py` (live-Postgres
+  round-trip incl. expiry, gated on `ATLAS_TEST_POSTGRES_DSN`, skipped in this sandbox). `ruff
+  format --check`/`ruff check` and, this time, a fully unblocked project-wide `mypy` (1642 source
+  files, zero errors -- the sandbox's earlier Application Control block on `mypy` had cleared)
+  all clean. Full backend suite: 6770 passed, 74 skipped, and the same recurring
+  hardcoded-alembic-head maintenance cost this project has hit and fixed twice before this pass
+  alone (5 `test_alembic_graph_has_single_*_head`-style tests updated from `20260916_0174` to the
+  new head `20260917_0175`); all 31 tests in those 5 files reverified passing.
+
 ### ATLAS-IMP-282 Scope and Verification (complete)
 
 Self-built connector-credential vault, superseding an earlier plan to use an external HashiCorp

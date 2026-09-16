@@ -308,7 +308,8 @@ together, requires a complete real LDAPS profile if directory identity is enable
 `ATLAS_ENABLE_API_DOCS=true`. Two more steps make the *safe* path actually usable in production,
 closing what were previously the only two development-only gaps:
 
-1. **A durable administrator account.** Run the bootstrap script once, on the server:
+1. **A durable administrator account with real, durable permissions.** Run the bootstrap script
+   once, on the server:
 
    ```bash
    scripts/bootstrap_admin.sh    # Linux, macOS, WSL
@@ -316,11 +317,18 @@ closing what were previously the only two development-only gaps:
    # or: .\scripts\bootstrap_admin.ps1
    ```
 
-   It prompts for a username, display name, role, and a masked password, then creates one real
-   local administrator account (ATLAS-030) that survives restarts. There is deliberately no HTTP
-   endpoint for this -- only someone who already has shell access to the server can create the
-   first account. Sign in with it through the same "Sign in" form used in development; it must
-   replace its password on first use.
+   It prompts for a subject id, display name, one of three LOCAL-reachable role tiers
+   (`role.local-administrator` / `role.local-operator` / `role.local-monitor` -- day-to-day
+   operational access without governance/RBAC-management permissions, and read-only,
+   respectively; `role.security-administrator` is deliberately reserved for enterprise
+   LDAP/OIDC/SAML identities and cannot be used here), a temporary bootstrap password, and a
+   separate final password. ATLAS-030 requires the bootstrap password be replaced before the
+   account's real role applies, so the script replaces it and durably grants the chosen tier in
+   the same run -- the account is active and ready to sign in with the final password as soon as
+   the script finishes. There is deliberately no HTTP endpoint for this first step -- only
+   someone who already has shell access to the server can create the first account. Once it
+   exists, grant further accounts any of the three tiers directly from the running application:
+   `POST /api/v1/authorization/role-assignments`.
 
 2. **A real connector-credential vault.** Set `ATLAS_PROTECTED_CONTENT_ENCRYPTION_KEY_B64` (see
    the table above) before starting the backend. With it set, every bundled connector's "Set /

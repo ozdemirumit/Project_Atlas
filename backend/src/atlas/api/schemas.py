@@ -184,3 +184,24 @@ class CurrentIdentityResponse(BaseModel):
 
     data: CurrentIdentityData
     meta: ResponseMeta
+
+
+class LocalCredentialReplaceInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    current_password: str = Field(min_length=1, max_length=1024, exclude=True, repr=False)
+    new_password: str = Field(min_length=12, max_length=1024, exclude=True, repr=False)
+
+
+class LocalCredentialReplaceData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    subject_id: str
+    state: str
+
+
+class LocalCredentialReplaceResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: LocalCredentialReplaceData
+    meta: ResponseMeta

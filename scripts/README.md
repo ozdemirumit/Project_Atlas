@@ -80,10 +80,19 @@ scripts/bootstrap_admin.cmd   # Windows Command Prompt
 
 `bootstrap_admin` is a script run on the server by someone with shell access, on purpose -- there
 is no HTTP endpoint for creating the first administrator, so an attacker without shell access can
-never create one through the API. It prompts for a username, display name, role, and a
-masked password (never a command-line argument), then creates one durable local administrator
-account via the real ATLAS-030 bootstrap credential lifecycle. Requires `ATLAS_DATABASE_URL` to
-already be configured; run `install` first.
+never create one through the API. It prompts for a subject id, display name, one of three
+LOCAL-reachable role tiers (`role.local-administrator` / `-operator` / `-monitor` -- see README.md's
+"Going to production"), and two masked passwords (never a command-line argument): a temporary
+bootstrap password and a separate final password. ATLAS-030 requires the bootstrap password be
+replaced before the account's real role applies, so the script replaces it immediately in the
+same run and durably grants the chosen tier -- the account is active and ready to sign in with the
+final password as soon as the script finishes; no separate API call needed. Requires
+`ATLAS_POSTGRES_PASSWORD` to already be set in `.env`; run `install` first.
+
+Once at least one `role.local-administrator` account exists, further accounts (of any of the
+three tiers) can be granted directly from the running application via
+`POST /api/v1/authorization/role-assignments` -- `bootstrap_admin` only needs to be run once, for
+the very first account.
 
 ## Local development (foreground, with hot reload)
 

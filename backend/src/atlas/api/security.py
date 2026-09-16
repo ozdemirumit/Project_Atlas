@@ -231,6 +231,7 @@ from atlas.modules.authorization.application.bootstrap import (
     KNOWLEDGE_SOURCE_REGISTRATION_ADMINISTER,
     KNOWLEDGE_TRACK_REVIEW_DECISION_CREATE,
     KNOWLEDGE_TRACK_REVIEW_DECISION_READ,
+    LOCAL_CREDENTIAL_SELF_REPLACE,
     MCP_BUILDER_CANDIDATE_HANDOFF_CREATE,
     MCP_BUILDER_CANDIDATE_HANDOFF_DOWNLOAD,
     MCP_BUILDER_CANDIDATE_HANDOFF_READ,
@@ -254,6 +255,8 @@ from atlas.modules.authorization.application.bootstrap import (
     NOTIFICATION_READ,
     OPERATION_RESOURCE_CANCEL,
     OPERATION_RESOURCE_READ,
+    RBAC_ROLE_ASSIGNMENT_CREATE,
+    RBAC_ROLE_ASSIGNMENT_READ,
     RCA_CLOSE,
     RCA_CREATE,
     RCA_REVIEW,
@@ -422,6 +425,7 @@ from atlas.modules.authorization.application.bootstrap import (
     knowledge_feedback_scope,
     knowledge_review_expiry_scope,
     knowledge_source_registration_scope,
+    local_credential_self_scope,
     logical_backup_scope,
     mcp_builder_draft_scope,
     mcp_builder_scope,
@@ -444,6 +448,7 @@ from atlas.modules.authorization.application.bootstrap import (
     operational_knowledge_reviewer_assignment_scope,
     operational_knowledge_source_materialization_scope,
     operational_knowledge_track_review_decision_scope,
+    rbac_role_assignment_scope,
     rca_scope,
     recommendation_correction_resubmission_scope,
     recommendation_final_disposition_scope,
@@ -2009,6 +2014,35 @@ async def authorize_identity_self_read(
             permission_id=IDENTITY_SELF_READ,
             resource_type="resource.identity.context",
             scope=current_identity_scope(subject.organization_id, settings.environment),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Request denied",
+            detail="The current identity is not authorized for this operation.",
+        )
+    request.state.authorization_decision = decision
+    return decision
+
+
+async def authorize_local_credential_self_replace(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(authenticated_subject)],
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=LOCAL_CREDENTIAL_SELF_REPLACE,
+            resource_type="resource.identity.local-credential.self",
+            scope=local_credential_self_scope(
+                subject.organization_id, settings.environment, CapabilityClass.C3_CONTROLLED_CHANGE
+            ),
             correlation_id=str(request.state.correlation_id),
             requested_at=datetime.now(UTC),
         )
@@ -8359,6 +8393,61 @@ async def authorize_connector_vault_secret_read(
         request,
         subject,
         permission_id=CONNECTOR_VAULT_SECRET_READ,
+        capability_class=CapabilityClass.C1_READ_ONLY,
+    )
+
+
+async def _authorize_rbac_role_assignment(
+    request: Request,
+    subject: AuthenticatedSubject,
+    *,
+    permission_id: str,
+    capability_class: CapabilityClass,
+) -> AuthorizationDecision:
+    service: AuthorizationService = request.app.state.authorization_service
+    settings = request.app.state.settings
+    decision = await service.evaluate(
+        AuthorizationRequest(
+            subject=subject,
+            permission_id=permission_id,
+            resource_type="resource.authorization.role-assignments",
+            scope=rbac_role_assignment_scope(
+                subject.organization_id, settings.environment, capability_class
+            ),
+            correlation_id=str(request.state.correlation_id),
+            requested_at=datetime.now(UTC),
+        )
+    )
+    if not decision.allowed:
+        raise AtlasError(
+            status=403,
+            code="authorization_denied",
+            title="Authorization denied",
+            detail="The subject is not authorized for this role-assignment operation.",
+        )
+    return decision
+
+
+async def authorize_rbac_role_assignment_create(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_rbac_role_assignment(
+        request,
+        subject,
+        permission_id=RBAC_ROLE_ASSIGNMENT_CREATE,
+        capability_class=CapabilityClass.C3_CONTROLLED_CHANGE,
+    )
+
+
+async def authorize_rbac_role_assignment_read(
+    request: Request,
+    subject: Annotated[AuthenticatedSubject, Depends(browser_session_subject)],
+) -> AuthorizationDecision:
+    return await _authorize_rbac_role_assignment(
+        request,
+        subject,
+        permission_id=RBAC_ROLE_ASSIGNMENT_READ,
         capability_class=CapabilityClass.C1_READ_ONLY,
     )
 

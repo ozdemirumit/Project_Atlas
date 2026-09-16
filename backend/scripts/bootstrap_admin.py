@@ -6,12 +6,19 @@ on the box can never create an administrator account through the API. Requires a
 ``ATLAS_DATABASE_URL`` (see ``.env``); without one, the account would only live in process memory
 and vanish the moment this script exits.
 
+Also durably grants the new account one of the three LOCAL-reachable role tiers
+(administrator/operator/monitor) -- without this, the account authenticates but is authorized for
+nothing, since `AuthorizationService` otherwise only recognizes subjects hand-written into a
+static, code-level list. SS11 requires the bootstrap password be replaced before the account's
+real role grants apply, so this script also collects a separate final password and replaces the
+temporary one immediately, in the same run -- the operator never has to touch the API directly.
+
 Usage (from ``backend/``):
 
     uv run python scripts/bootstrap_admin.py
 
-The password is always read from an interactive, masked terminal prompt -- never accepted as a
-command-line argument, so it never lands in shell history.
+Passwords are always read from an interactive, masked terminal prompt -- never accepted as a
+command-line argument, so they never land in shell history.
 """
 
 from __future__ import annotations
@@ -21,6 +28,7 @@ import getpass
 import logging
 import os
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -30,16 +38,32 @@ from uuid import uuid4
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from atlas.core.audit import LoggingAuditSink
+from atlas.core.capabilities import CapabilityClass
 from atlas.core.config import Settings
+from atlas.modules.authorization.adapters.role_assignment_postgres import (
+    PostgreSQLRoleAssignmentRepository,
+)
+from atlas.modules.authorization.application.bootstrap import (
+    DEVELOPMENT_ROLE_ID,
+    LOCAL_ADMINISTRATOR_ROLE_ID,
+    LOCAL_MONITOR_ROLE_ID,
+    LOCAL_OPERATOR_ROLE_ID,
+    build_development_authorization_service,
+    current_identity_scope,
+    local_credential_self_scope,
+)
+from atlas.modules.authorization.domain.models import RoleAssignment
 from atlas.modules.identity.adapters.local_credentials_postgres import (
     PostgreSQLLocalCredentialRepository,
 )
 from atlas.modules.identity.application.local_credentials import (
+    BOOTSTRAP_SETUP_ROLE_ID,
     LocalCredentialError,
     LocalCredentialService,
 )
 
-_DEFAULT_ROLE_ID = "role.security-administrator"
+_GRANTABLE_ROLE_IDS = (LOCAL_ADMINISTRATOR_ROLE_ID, LOCAL_OPERATOR_ROLE_ID, LOCAL_MONITOR_ROLE_ID)
+_DEFAULT_ROLE_ID = LOCAL_ADMINISTRATOR_ROLE_ID
 
 
 def _resolve_database_url() -> str | None:
@@ -83,15 +107,32 @@ def _prompt(label: str, *, default: str | None = None) -> str:
     return value
 
 
-def _prompt_password() -> str:
+def _prompt_role_id() -> str:
     while True:
-        password = getpass.getpass("Administrator password: ")
-        confirmation = getpass.getpass("Confirm password: ")
+        role_id = _prompt(
+            f"Role id to grant ({', '.join(_GRANTABLE_ROLE_IDS)})", default=_DEFAULT_ROLE_ID
+        )
+        if role_id in _GRANTABLE_ROLE_IDS:
+            return role_id
+        print(
+            f"'{role_id}' is not one of the three LOCAL-reachable tiers: "
+            f"{', '.join(_GRANTABLE_ROLE_IDS)}.",
+            file=sys.stderr,
+        )
+
+
+def _prompt_password(label: str, *, not_equal_to: str | None = None) -> str:
+    while True:
+        password = getpass.getpass(f"{label}: ")
+        confirmation = getpass.getpass("Confirm: ")
         if password != confirmation:
             print("Passwords did not match; try again.", file=sys.stderr)
             continue
         if len(password) < 12:
             print("Use at least 12 characters.", file=sys.stderr)
+            continue
+        if not_equal_to is not None and password == not_equal_to:
+            print("This must be different from the temporary bootstrap password.", file=sys.stderr)
             continue
         return password
 
@@ -116,31 +157,84 @@ async def _main() -> None:
     )
     display_name = _prompt("Display name")
     organization_id = _prompt("Organization id", default=settings.development_organization_id)
-    role_id = _prompt("Role id to grant", default=_DEFAULT_ROLE_ID)
-    password = _prompt_password()
-
-    repository = PostgreSQLLocalCredentialRepository.from_url(settings.database_url)
-    service = LocalCredentialService(
-        repository=repository,
-        audit_sink=LoggingAuditSink(logging.getLogger("atlas.bootstrap_admin")),
+    role_id = _prompt_role_id()
+    temporary_password = _prompt_password("Temporary bootstrap password")
+    final_password = _prompt_password(
+        "Final administrator password", not_equal_to=temporary_password
     )
+
+    audit_sink = LoggingAuditSink(logging.getLogger("atlas.bootstrap_admin"))
+    credential_repository = PostgreSQLLocalCredentialRepository.from_url(database_url)
+    credential_service = LocalCredentialService(
+        repository=credential_repository, audit_sink=audit_sink
+    )
+    role_assignment_repository = PostgreSQLRoleAssignmentRepository.from_url(database_url)
     try:
-        await service.bootstrap_administrator(
+        await credential_service.bootstrap_administrator(
             subject_id=subject_id,
             organization_id=organization_id,
             display_name=display_name,
             role_ids=(role_id,),
-            password=password,
+            password=temporary_password,
             deployment_ownership_verified=True,
             correlation_id=f"cor_bootstrap_{uuid4().hex}",
         )
+
+        # BOOTSTRAP_SETUP_ROLE_ID assignments: a safety net so /identity/me and the
+        # replace-credential route both work over real HTTP too, in case the immediate
+        # replace_credential call below doesn't run to completion.
+        now = datetime.now(UTC)
+        for scope in (
+            current_identity_scope(organization_id, settings.environment),
+            local_credential_self_scope(
+                organization_id, settings.environment, CapabilityClass.C3_CONTROLLED_CHANGE
+            ),
+        ):
+            await role_assignment_repository.create(
+                RoleAssignment(
+                    assignment_id=f"assignment.{uuid4().hex}",
+                    version=1,
+                    subject_id=subject_id,
+                    role_id=BOOTSTRAP_SETUP_ROLE_ID,
+                    scope=scope,
+                    valid_from=now,
+                )
+            )
+
+        await credential_service.replace_credential(
+            subject_id=subject_id,
+            current_password=temporary_password,
+            new_password=final_password,
+            correlation_id=f"cor_bootstrap_{uuid4().hex}",
+        )
+
+        # The chosen tier's assignments -- mechanically derived from DEVELOPMENT_ROLE_ID's own
+        # already-exhaustive scope list (see AuthorizationService.static_role_scopes), not a
+        # second, hand-maintained list that would drift out of sync.
+        authorization_service = build_development_authorization_service(settings, audit_sink)
+        scopes = authorization_service.static_role_scopes(DEVELOPMENT_ROLE_ID)
+        for scope in scopes:
+            await role_assignment_repository.create(
+                RoleAssignment(
+                    assignment_id=f"assignment.{uuid4().hex}",
+                    version=1,
+                    subject_id=subject_id,
+                    role_id=role_id,
+                    scope=scope,
+                    valid_from=now,
+                )
+            )
     except LocalCredentialError as error:
         print(f"Could not create the administrator account: {error.code}", file=sys.stderr)
         raise SystemExit(1) from error
     finally:
-        await repository.close()
+        await credential_repository.close()
+        await role_assignment_repository.close()
 
-    print(f"Created administrator '{subject_id}'. It must replace its password on first sign-in.")
+    print(
+        f"Created administrator '{subject_id}' with role '{role_id}', active and ready to sign "
+        "in with the final password."
+    )
 
 
 if __name__ == "__main__":

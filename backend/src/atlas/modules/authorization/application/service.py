@@ -6,6 +6,9 @@ from uuid import uuid4
 
 from atlas import __version__
 from atlas.core.audit import AuditRecord, AuditSink
+from atlas.modules.authorization.application.role_assignment_ports import (
+    RoleAssignmentRepository,
+)
 from atlas.modules.authorization.domain.models import (
     AuthorizationDecision,
     AuthorizationRequest,
@@ -28,11 +31,13 @@ class AuthorizationService:
         roles: Sequence[RoleDefinition],
         assignments: Sequence[RoleAssignment],
         audit_sink: AuditSink,
+        dynamic_assignments: RoleAssignmentRepository | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._permissions = {item.permission_id: item for item in permissions}
         self._roles = {item.role_id: item for item in roles}
         self._assignments = tuple(assignments)
+        self._dynamic_assignments = dynamic_assignments
         self._audit_sink = audit_sink
         self._clock = clock or (lambda: datetime.now(UTC))
 
@@ -97,6 +102,22 @@ class AuthorizationService:
                 matched_assignments.append(assignment)
                 matched_roles.append(role)
 
+            if not matched_assignments and self._dynamic_assignments is not None:
+                dynamic_matches = await self._dynamic_assignments.list_active_for_subject(
+                    subject_id=request.subject.subject_id, at=decided_at
+                )
+                for assignment in dynamic_matches:
+                    role = self._roles.get(assignment.role_id)
+                    if (
+                        assignment.role_id not in request.subject.role_ids
+                        or role is None
+                        or assignment.scope != request.scope
+                        or request.permission_id not in role.permissions
+                    ):
+                        continue
+                    matched_assignments.append(assignment)
+                    matched_roles.append(role)
+
             if matched_assignments:
                 outcome = DecisionOutcome.ALLOWED
                 reason_code = "permission_granted"
@@ -117,6 +138,18 @@ class AuthorizationService:
         )
         await self._audit_decision(request, decision)
         return decision
+
+    def static_role_scopes(self, role_id: str) -> tuple[ResourceScope, ...]:
+        """Every distinct scope currently assigned to `role_id` in the static, code-level
+        assignment list. Used to mechanically derive "every scope the full operational surface
+        touches" when durably granting one of the LOCAL-reachable role tiers to a new subject
+        (`RoleAssignmentGrantService`), rather than hand-maintaining a second, parallel scope list
+        that would inevitably drift out of sync."""
+        seen: dict[str, ResourceScope] = {}
+        for assignment in self._assignments:
+            if assignment.role_id == role_id:
+                seen[assignment.scope.reference] = assignment.scope
+        return tuple(seen.values())
 
     async def effective_access_preview(
         self,

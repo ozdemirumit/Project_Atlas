@@ -19916,6 +19916,19 @@ class LocalRecoveryActivationModel(Base):
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
 
+class RoleAssignmentModel(Base):
+    """Durable storage for `atlas.modules.authorization.domain.models.RoleAssignment`, the
+    dynamic counterpart to the static, code-level assignment list `AuthorizationService` is
+    otherwise built from. See `atlas.modules.authorization.adapters.role_assignment_postgres`."""
+
+    __tablename__ = "role_assignments"
+
+    assignment_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    subject_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    role_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
 class ConnectorVaultSecretModel(Base):
     """Pointer row for a self-built connector-credential vault (ADR-184's encrypted-content-at-
     rest boundary, see `atlas.core.protected_content`). Never stores the plaintext secret or the

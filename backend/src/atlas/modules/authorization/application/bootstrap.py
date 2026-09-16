@@ -4,6 +4,9 @@ from datetime import UTC, datetime
 
 from atlas.core.audit import AuditSink
 from atlas.core.config import Settings
+from atlas.modules.authorization.application.role_assignment_ports import (
+    RoleAssignmentRepository,
+)
 from atlas.modules.authorization.application.service import AuthorizationService
 from atlas.modules.authorization.domain.models import (
     CapabilityClass,
@@ -12,9 +15,11 @@ from atlas.modules.authorization.domain.models import (
     RoleAssignment,
     RoleDefinition,
 )
+from atlas.modules.identity.application.local_credentials import BOOTSTRAP_SETUP_ROLE_ID
 from atlas.modules.identity.domain.models import CredentialGrant
 
 IDENTITY_SELF_READ = "identity.self.read"
+LOCAL_CREDENTIAL_SELF_REPLACE = "identity.local-credential.self.replace"
 SESSION_SELF_READ = "identity.session.self.read"
 SESSION_SELF_REVOKE = "identity.session.self.revoke"
 API_CREDENTIAL_SELF_CREATE = "identity.api-credential.self.create"
@@ -191,6 +196,8 @@ SECURITY_EXPORT_DETECTION_HANDOFF_RECORD = "security-export.detection.handoff-re
 AUDIT_READ = "audit.read"
 AUDIT_EXPORT = "audit.export"
 AUDIT_LEDGER_INTEGRITY_VERIFY = "audit.ledger-integrity.verify"
+RBAC_ROLE_ASSIGNMENT_CREATE = "authorization.role-assignments.create"
+RBAC_ROLE_ASSIGNMENT_READ = "authorization.role-assignments.read"
 OPERATION_RESOURCE_READ = "operations.resources.read"
 OPERATION_RESOURCE_CANCEL = "operations.resources.cancel"
 OPERATION_RESOURCE_CROSS_SUBJECT_ACCESS = "operations.resources-cross-subject.access"
@@ -465,6 +472,31 @@ DEVELOPMENT_ROLE_ID = "role.development.operator"
 SECURITY_ADMINISTRATOR_ROLE_ID = "role.security-administrator"
 SECURITY_AUDITOR_ROLE_ID = "role.security-auditor"
 ITSM_REVIEWER_ROLE_ID = "role.itsm-reviewer"
+# Unlike SECURITY_ADMINISTRATOR_ROLE_ID (deliberately reachable only by enterprise LDAP/OIDC/SAML
+# identities, see IdentityGovernanceService/WorkloadIdentityService's `_require_enterprise_human`),
+# these three tiers are reachable by AuthenticationMethod.LOCAL -- the only roles a durably
+# bootstrapped local administrator (ATLAS-030) can ever meaningfully be granted. Derived from
+# DEVELOPMENT_ROLE_ID's own permission set below rather than hand-curated, so they never drift out
+# of sync as new operational permissions are added.
+LOCAL_ADMINISTRATOR_ROLE_ID = "role.local-administrator"
+LOCAL_OPERATOR_ROLE_ID = "role.local-operator"
+LOCAL_MONITOR_ROLE_ID = "role.local-monitor"
+_LOCAL_TIER_ADMIN_ONLY_PERMISSIONS = frozenset(
+    {
+        IDENTITY_GOVERNANCE_READ,
+        SESSION_ADMIN_REVOKE,
+        API_CREDENTIAL_ADMIN_REVOKE,
+        IDENTITY_SUBJECT_ADMIN_DISABLE,
+        WORKLOAD_IDENTITY_GOVERNANCE_READ,
+        WORKLOAD_IDENTITY_ADMIN_CREATE,
+        WORKLOAD_IDENTITY_ADMIN_ROTATE,
+        WORKLOAD_IDENTITY_ADMIN_REVOKE,
+        AUDIT_READ,
+        AUDIT_EXPORT,
+        RBAC_ROLE_ASSIGNMENT_CREATE,
+        RBAC_ROLE_ASSIGNMENT_READ,
+    }
+)
 
 
 def current_identity_scope(organization_id: str, environment: str) -> ResourceScope:
@@ -475,6 +507,19 @@ def current_identity_scope(organization_id: str, environment: str) -> ResourceSc
         domain_id="domain.identity",
         resource_id="resource.identity.self",
         capability_class=CapabilityClass.C0_INFORMATIONAL,
+    )
+
+
+def local_credential_self_scope(
+    organization_id: str, environment: str, capability_class: CapabilityClass
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.identity",
+        resource_id="resource.identity.local-credential.self",
+        capability_class=capability_class,
     )
 
 
@@ -2679,6 +2724,37 @@ def audit_permission_definitions() -> tuple[PermissionDefinition, ...]:
     )
 
 
+def rbac_role_assignment_scope(
+    organization_id: str,
+    environment: str,
+    capability_class: CapabilityClass,
+) -> ResourceScope:
+    return ResourceScope(
+        organization_id=organization_id,
+        environment_id=f"environment.{environment}",
+        site_id="site.local",
+        domain_id="domain.authorization",
+        resource_id="resource.authorization.role-assignments",
+        capability_class=capability_class,
+    )
+
+
+def rbac_role_assignment_permission_definitions() -> tuple[PermissionDefinition, ...]:
+    return (
+        PermissionDefinition(
+            permission_id=RBAC_ROLE_ASSIGNMENT_CREATE,
+            description=(
+                "Durably grant one of the LOCAL-reachable role tiers "
+                "(administrator/operator/monitor) to a subject."
+            ),
+        ),
+        PermissionDefinition(
+            permission_id=RBAC_ROLE_ASSIGNMENT_READ,
+            description="Read a subject's active durable role-assignment grants.",
+        ),
+    )
+
+
 def operation_resource_scope(
     organization_id: str,
     environment: str,
@@ -2721,6 +2797,18 @@ def security_auditor_role_definition() -> RoleDefinition:
     )
 
 
+def bootstrap_setup_role_definition() -> RoleDefinition:
+    """The exact, deliberately minimal role `AuthenticatedSubject.role_ids` carries while a local
+    credential remains in `MUST_REPLACE` state (`LocalCredentialService.authenticate`) --
+    just enough to view one's own identity and replace the temporary password, nothing else
+    (ATLAS-030 SS11's "restrict scope until the bootstrap credential is replaced")."""
+    return RoleDefinition(
+        role_id=BOOTSTRAP_SETUP_ROLE_ID,
+        version=1,
+        permissions=frozenset({IDENTITY_SELF_READ, LOCAL_CREDENTIAL_SELF_REPLACE}),
+    )
+
+
 def personal_api_grant_scopes(organization_id: str, environment: str) -> dict[str, ResourceScope]:
     return {
         IDENTITY_SELF_READ: current_identity_scope(organization_id, environment),
@@ -2750,7 +2838,10 @@ def personal_api_grant_catalog(
 
 
 def build_development_authorization_service(
-    settings: Settings, audit_sink: AuditSink
+    settings: Settings,
+    audit_sink: AuditSink,
+    *,
+    dynamic_assignments: RoleAssignmentRepository | None = None,
 ) -> AuthorizationService:
     permissions = (
         *identity_governance_permission_definitions(),
@@ -2759,10 +2850,18 @@ def build_development_authorization_service(
         *itsm_integration_permission_definitions(),
         *itsm_attachment_permission_definitions(),
         *audit_permission_definitions(),
+        *rbac_role_assignment_permission_definitions(),
         *operation_resource_permission_definitions(),
         PermissionDefinition(
             permission_id=IDENTITY_SELF_READ,
             description="Read the authenticated subject's own normalized identity context.",
+        ),
+        PermissionDefinition(
+            permission_id=LOCAL_CREDENTIAL_SELF_REPLACE,
+            description=(
+                "Replace the authenticated subject's own local credential password "
+                "(ATLAS-030 SS11)."
+            ),
         ),
         PermissionDefinition(
             permission_id=SESSION_SELF_READ,
@@ -4455,11 +4554,40 @@ def build_development_authorization_service(
                 KNOWLEDGE_DELETION_LEGAL_HOLD_REQUEST,
                 KNOWLEDGE_DELETION_LEGAL_HOLD_COMPLETE,
                 AUDIT_LEDGER_INTEGRITY_VERIFY,
+                RBAC_ROLE_ASSIGNMENT_CREATE,
+                RBAC_ROLE_ASSIGNMENT_READ,
+                LOCAL_CREDENTIAL_SELF_REPLACE,
                 OPERATION_RESOURCE_READ,
                 OPERATION_RESOURCE_CANCEL,
                 OPERATION_RESOURCE_CROSS_SUBJECT_ACCESS,
             }
         ),
+    )
+    # LOCAL_CREDENTIAL_SELF_REPLACE is granted to every tier explicitly, not mechanically derived
+    # from DEVELOPMENT_ROLE_ID's set like the rest -- replacing one's own password is basic
+    # self-service hygiene available regardless of tier, not an operational or read permission.
+    local_administrator_role = RoleDefinition(
+        role_id=LOCAL_ADMINISTRATOR_ROLE_ID,
+        version=1,
+        permissions=role.permissions
+        | _LOCAL_TIER_ADMIN_ONLY_PERMISSIONS
+        | {LOCAL_CREDENTIAL_SELF_REPLACE},
+    )
+    local_operator_role = RoleDefinition(
+        role_id=LOCAL_OPERATOR_ROLE_ID,
+        version=1,
+        permissions=(role.permissions - _LOCAL_TIER_ADMIN_ONLY_PERMISSIONS)
+        | {LOCAL_CREDENTIAL_SELF_REPLACE},
+    )
+    local_monitor_role = RoleDefinition(
+        role_id=LOCAL_MONITOR_ROLE_ID,
+        version=1,
+        permissions=frozenset(
+            permission_id
+            for permission_id in local_operator_role.permissions
+            if permission_id.endswith(".read")
+        )
+        | {LOCAL_CREDENTIAL_SELF_REPLACE},
     )
     assignments: tuple[RoleAssignment, ...] = ()
 
@@ -4487,6 +4615,18 @@ def build_development_authorization_service(
                     settings.development_organization_id,
                     settings.environment,
                     CapabilityClass.C0_INFORMATIONAL,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.local-credential-self-replace",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=local_credential_self_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C3_CONTROLLED_CHANGE,
                 ),
                 valid_from=datetime.min.replace(tzinfo=UTC),
             ),
@@ -7471,6 +7611,30 @@ def build_development_authorization_service(
                 valid_from=datetime.min.replace(tzinfo=UTC),
             ),
             RoleAssignment(
+                assignment_id="assignment.development.rbac-role-assignment-create",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=rbac_role_assignment_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C3_CONTROLLED_CHANGE,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
+                assignment_id="assignment.development.rbac-role-assignment-read",
+                version=1,
+                subject_id=settings.development_subject_id,
+                role_id=DEVELOPMENT_ROLE_ID,
+                scope=rbac_role_assignment_scope(
+                    settings.development_organization_id,
+                    settings.environment,
+                    CapabilityClass.C1_READ_ONLY,
+                ),
+                valid_from=datetime.min.replace(tzinfo=UTC),
+            ),
+            RoleAssignment(
                 assignment_id="assignment.development.operation-resource-read",
                 version=1,
                 subject_id=settings.development_subject_id,
@@ -7515,7 +7679,12 @@ def build_development_authorization_service(
             security_administrator_role_definition(include_workload_identity=True),
             security_auditor_role_definition(),
             itsm_reviewer_role_definition(),
+            local_administrator_role,
+            local_operator_role,
+            local_monitor_role,
+            bootstrap_setup_role_definition(),
         ),
         assignments=assignments,
         audit_sink=audit_sink,
+        dynamic_assignments=dynamic_assignments,
     )
