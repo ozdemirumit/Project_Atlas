@@ -14,6 +14,17 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 STABLE_CONFIG_IDENTIFIER = r"^[a-z][a-z0-9_.:-]{2,127}$"
 OPAQUE_CONFIG_IDENTIFIER = r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
 
+# A relative "env_file" is resolved against the process's current working directory, not this
+# file's location -- but scripts/install.ps1/start.ps1 launch the backend with
+# -WorkingDirectory backend/ (needed for `uv run uvicorn ... --app-dir src`), while README.md and
+# .env.example both document a single .env at the repository root (mirroring
+# scripts/bootstrap_admin.py's own independent .env lookup). A relative path here would silently
+# read a nonexistent backend/.env instead and leave every .env-only setting (anything not one of
+# install.ps1's few explicitly-forwarded process env vars, e.g. ATLAS_DATABASE_URL) at its
+# default -- exactly what happened to a real deployment's
+# ATLAS_PROTECTED_CONTENT_ENCRYPTION_KEY_B64.
+_REPOSITORY_ROOT_ENV_FILE = Path(__file__).resolve().parents[4] / ".env"
+
 
 class DirectoryGroupMappingSetting(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -78,7 +89,7 @@ class WorkflowTransportCredentialAssignmentSetting(BaseModel):
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="ATLAS_",
-        env_file=".env",
+        env_file=_REPOSITORY_ROOT_ENV_FILE,
         env_file_encoding="utf-8",
         extra="ignore",
     )
