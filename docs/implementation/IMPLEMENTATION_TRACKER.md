@@ -436,6 +436,52 @@ Three of the six services `task_87506e3c` was spawned to wire. `GuardrailReviewS
 - Discovered while running this fix that the shared working tree was being edited concurrently by other passes/tasks in this same session's broader loop; moved this fix's work into an isolated `git worktree` (branch `guardrail-mcp-builder-wiring`) after an in-progress edit to `bootstrap.py` was partly lost to a concurrent `git stash`, to avoid clobbering or being clobbered by unrelated concurrent work on `app.py`/`security.py`/`bootstrap.py`.
 - 3 new integration tests (`test_guardrails_mcp_builder_wiring_api.py`), all passing. `ruff format --check`, `ruff check`, `mypy` (full project) clean. Full backend suite re-run to confirm zero regressions.
 
+### ATLAS-IMP-284 Scope and Verification (complete)
+
+Fixed `Settings()` silently never loading the repository-root `.env` on a real deployment,
+discovered debugging why a user's connector-credential vault (ATLAS-IMP-282) kept reporting
+"connection test credentials unavailable" for Brocade SANnav even after correctly setting
+`ATLAS_PROTECTED_CONTENT_ENCRYPTION_KEY_B64` in `.env` and restarting the backend.
+
+- **Root cause**: `Settings.model_config["env_file"]` was the bare relative string `".env"`,
+  which pydantic-settings resolves against the process's *current working directory* at
+  instantiation -- not this module's own location. `scripts/install.ps1`/`start.ps1` launch the
+  backend with `-WorkingDirectory backend/` (required for `uv run uvicorn ... --app-dir src`),
+  while `README.md`/`.env.example` both document a single `.env` at the repository root
+  (mirroring `scripts/bootstrap_admin.py`'s own independent, already-correct repo-root lookup).
+  The relative path silently looked for a nonexistent `backend/.env` instead, leaving every
+  `.env`-only setting -- anything not one of `install.ps1`'s four explicitly-forwarded process
+  env vars (`ATLAS_ENVIRONMENT`, `ATLAS_DATABASE_REQUIRED`, `ATLAS_DATABASE_URL`,
+  `ATLAS_DEVELOPMENT_IDENTITY_ENABLED`) -- silently stuck at its default, with no error or
+  warning anywhere.
+- **How it surfaced**: on the user's server, `ATLAS_PROTECTED_CONTENT_ENCRYPTION_KEY_B64` never
+  reached `Settings()`, so `resolved_protected_content_store` (`api/app.py`) kept resolving to
+  `InMemoryProtectedContentStore` instead of `PostgreSQLProtectedContentStore`. Two separate,
+  compounding effects followed: `ConnectorVaultService.set_secret` (the "Set credentials" action)
+  reported success while only ever writing the encrypted blob to the in-memory store -- confirmed
+  by a `psql` query showing the `connector_vault_secrets` pointer row present but
+  `protected_content_blobs` completely empty -- and, independently, `connector_credential_materializer`
+  (selected via `isinstance(resolved_protected_content_store, PostgreSQLProtectedContentStore)`)
+  fell back to `DevelopmentEnvironmentCredentialMaterializer`, which never reads the vault at all
+  and instead reads a literal OS environment variable (`ATLAS_BROCADE_AUTHORIZATION`) that was
+  never set -- the exact, reproducible source of the persistent
+  `connection_test_credentials_unavailable` result.
+- **Fix**: resolve `env_file` to an absolute path derived from `config.py`'s own file location
+  (`Path(__file__).resolve().parents[4] / ".env"`) instead of a bare relative string, so it is
+  correct regardless of the launching process's working directory. Verified directly in a
+  sandbox reproduction: with `cwd` set to `backend/` (matching `install.ps1` exactly) and a real
+  `.env` at the repository root, `Settings()` previously left the key `None` and now loads it
+  correctly.
+- New `test_settings_env_file_resolution.py`: one test asserting the configured `env_file` is an
+  absolute path sitting beside the repository's own `.env.example` (not a relative string that
+  would silently depend on `cwd`), and one full end-to-end reproduction constructing `Settings`
+  from a working directory other than the repository root with a real temporary `.env`, proving
+  the value loads correctly either way.
+- Full backend suite re-run after the fix: 6777 passed, 74 skipped, 2 failures in
+  `test_workflow_target_context_binding_adapters.py` -- unrelated to this change (a different
+  module entirely) and confirmed to be the session's previously-identified resource-contention
+  flake by re-running that file in isolation four times, all clean.
+
 ### ATLAS-IMP-283 Scope and Verification (complete)
 
 Durable, LOCAL-reachable RBAC role assignments (docs/031_RBAC.md Sec.11/26), plus the ATLAS-030
