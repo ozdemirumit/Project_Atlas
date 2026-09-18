@@ -36,12 +36,13 @@ class SyntheticBrocadeSanNavTransport:
     def __init__(self, routes: Mapping[str, SyntheticBrocadeResponse]) -> None:
         self._routes = MappingProxyType(dict(routes))
         self.requests: list[str] = []
+        self.posted_bodies: list[Mapping[str, object]] = []
 
     async def get(self, path: str) -> Mapping[str, object]:
         return self._resolve(path)
 
     async def post(self, path: str, body: Mapping[str, object]) -> Mapping[str, object]:
-        del body
+        self.posted_bodies.append(body)
         return self._resolve(path)
 
     def _resolve(self, path: str) -> Mapping[str, object]:

@@ -39,11 +39,13 @@ _SAFE_CONNECTOR_ERROR_CODES = frozenset(
 class BrocadeFabricHealthExecutor:
     """Executes the bounded, read-only Brocade SANnav fabric fault-count check.
 
-    The fault/events response schema was not independently confirmed during connector
-    construction (see brocade_sannav/domain.py and mcp/connectors/brocade_sannav/README.md), so
-    this executor only ever reports NORMAL or WARNING, never CRITICAL -- a nonzero event count is
-    a real, honest signal that something happened on the fabric, but claiming a specific severity
-    tier from an unconfirmed per-event schema would not be.
+    The fault/events response envelope is confirmed against Broadcom's authoritative SANnav
+    REST API Reference Manual (see brocade_sannav/domain.py), but per-event severity is not: the
+    manual's own worked example uses a severityGroup value absent from its own declared enum (see
+    mcp/connectors/brocade_sannav/README.md). So this executor only ever reports NORMAL or
+    WARNING, never CRITICAL -- a nonzero event count is a real, honest signal that something
+    happened on the fabric, but claiming a specific severity tier from that inconsistent
+    vocabulary would not be.
     """
 
     def __init__(

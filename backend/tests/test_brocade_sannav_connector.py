@@ -39,6 +39,7 @@ from atlas.modules.connectors.vendors.brocade_sannav.synthetic import (
 
 NOW = datetime(2026, 8, 28, 12, 0, tzinfo=UTC)
 FABRICS_PATH = "/external-api/v1/discovery/fabrics/"
+ABOUT_PATH = "/external-api/v1/about/"
 FABRIC_WWN = "10:00:00:05:1e:35:1a:00"
 OTHER_FABRIC_WWN = "10:00:00:05:1e:35:2b:11"
 FABRIC_MEMBERS_PATH = f"/external-api/v1/discovery/fabric-members/?principalSwitchWWN={FABRIC_WWN}"
@@ -162,19 +163,43 @@ async def test_inventory_reads_fabrics_then_their_member_switches() -> None:
 
 
 @pytest.mark.asyncio
-async def test_fault_summary_counts_events_defensively_across_envelope_shapes() -> None:
-    for envelope_key in ("events", "Events", "data", "Data"):
-        connector = client(
-            {FAULT_EVENTS_PATH: SyntheticBrocadeResponse(payload={envelope_key: [{}, {}, {}]})}
-        )
+async def test_fault_summary_prefers_total_records_over_the_current_page_length() -> None:
+    # Confirmed via FaultEventsResponse in the reference manual: totalRecords is the total match
+    # count across every page, while "events" is only the current (pageSize-bounded) page -- so a
+    # fabric with more events than one page holds must be counted from totalRecords, not
+    # len(events).
+    connector = client(
+        {
+            FAULT_EVENTS_PATH: SyntheticBrocadeResponse(
+                payload={"events": [{}, {}, {}], "totalRecords": 137}
+            )
+        }
+    )
 
-        result = await connector.read_fabric_fault_summary(FABRIC_WWN)
+    result = await connector.read_fabric_fault_summary(FABRIC_WWN)
 
-        assert result.event_count == 3
-        assert result.fabric_principal_switch_wwn == FABRIC_WWN
-        assert result.evidence_references[0].startswith(
-            f"brocade-sannav://fault/events/{FABRIC_WWN}#sha256:"
-        )
+    assert result.event_count == 137
+    assert result.fabric_principal_switch_wwn == FABRIC_WWN
+    assert result.evidence_references[0].startswith(
+        f"brocade-sannav://fault/events/{FABRIC_WWN}#sha256:"
+    )
+
+
+@pytest.mark.asyncio
+async def test_fault_summary_falls_back_to_events_length_when_total_records_is_null() -> None:
+    # The manual's own worked example shows totalRecords can come back null; falling back to the
+    # current page's length is the documented shape, not a defensive guess across unknown keys.
+    connector = client(
+        {
+            FAULT_EVENTS_PATH: SyntheticBrocadeResponse(
+                payload={"events": [{}, {}, {}], "totalRecords": None}
+            )
+        }
+    )
+
+    result = await connector.read_fabric_fault_summary(FABRIC_WWN)
+
+    assert result.event_count == 3
 
 
 @pytest.mark.asyncio
@@ -184,6 +209,29 @@ async def test_fault_summary_falls_back_to_zero_for_an_unrecognized_shape() -> N
     result = await connector.read_fabric_fault_summary(FABRIC_WWN)
 
     assert result.event_count == 0
+
+
+@pytest.mark.asyncio
+async def test_fault_summary_scopes_the_request_by_event_product_details() -> None:
+    # Regression test for a real bug: the request body used to filter by an ORIGIN column with the
+    # switch WWN as its value, but ORIGIN's documented values are event-source labels ("Syslog
+    # Message", "SNMP Trap", ...), never a WWN -- eventProductDetails is the manual-confirmed way
+    # to scope a fault/events read to a specific switch.
+    transport = SyntheticBrocadeSanNavTransport(
+        {FAULT_EVENTS_PATH: SyntheticBrocadeResponse(payload={"events": [], "totalRecords": 0})}
+    )
+    connector = BrocadeSanNavClient(
+        transport=transport,
+        allowed_fabric_wwns=frozenset({FABRIC_WWN}),
+        clock=lambda: NOW,
+    )
+
+    await connector.read_fabric_fault_summary(FABRIC_WWN)
+
+    assert len(transport.posted_bodies) == 1
+    body = transport.posted_bodies[0]
+    assert body["eventProductDetails"] == [FABRIC_WWN]
+    assert "filters" not in body
 
 
 @pytest.mark.asyncio
@@ -263,12 +311,20 @@ async def test_malformed_and_oversized_inventory_are_rejected() -> None:
 
 
 @pytest.mark.asyncio
-async def test_self_test_uses_fabric_discovery_and_detects_incompatible_shape() -> None:
+async def test_self_test_uses_the_about_endpoint_and_detects_incompatible_product() -> None:
     compatible_transport = SyntheticBrocadeSanNavTransport(
-        {FABRICS_PATH: SyntheticBrocadeResponse(payload={"Fabrics": []})}
+        {
+            ABOUT_PATH: SyntheticBrocadeResponse(
+                payload={"productBrandName": "SANnav Management Portal", "version": "3.0.1x"}
+            )
+        }
     )
     incompatible_transport = SyntheticBrocadeSanNavTransport(
-        {FABRICS_PATH: SyntheticBrocadeResponse(payload={"unexpected": True})}
+        {
+            ABOUT_PATH: SyntheticBrocadeResponse(
+                payload={"productBrandName": "SANnav Global View", "version": "3.0.1x"}
+            )
+        }
     )
 
     compatible = await BrocadeSanNavClient(
@@ -283,9 +339,30 @@ async def test_self_test_uses_fabric_discovery_and_detects_incompatible_shape() 
     ).self_test(connector_instance())
 
     assert compatible.health is ConnectorHealth.HEALTHY
+    assert compatible.code == "brocade_sannav_api_compatible"
     assert incompatible.health is ConnectorHealth.INCOMPATIBLE
-    assert compatible_transport.requests == [FABRICS_PATH]
-    assert incompatible_transport.requests == [FABRICS_PATH]
+    assert incompatible.code == "product_mismatch"
+    assert compatible_transport.requests == [ABOUT_PATH]
+    assert incompatible_transport.requests == [ABOUT_PATH]
+
+
+@pytest.mark.asyncio
+async def test_read_about_rejects_a_malformed_version() -> None:
+    transport = SyntheticBrocadeSanNavTransport(
+        {
+            ABOUT_PATH: SyntheticBrocadeResponse(
+                payload={"productBrandName": "SANnav Management Portal", "version": "not-a-version"}
+            )
+        }
+    )
+    connector = BrocadeSanNavClient(
+        transport=transport, allowed_fabric_wwns=frozenset({FABRIC_WWN}), clock=lambda: NOW
+    )
+
+    with pytest.raises(BrocadeConnectorError) as error:
+        await connector.read_about()
+
+    assert error.value.code == "unsupported_vendor_version"
 
 
 def test_synthetic_transport_has_no_external_or_secret_access() -> None:

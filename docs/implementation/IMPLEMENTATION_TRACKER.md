@@ -436,6 +436,50 @@ Three of the six services `task_87506e3c` was spawned to wire. `GuardrailReviewS
 - Discovered while running this fix that the shared working tree was being edited concurrently by other passes/tasks in this same session's broader loop; moved this fix's work into an isolated `git worktree` (branch `guardrail-mcp-builder-wiring`) after an in-progress edit to `bootstrap.py` was partly lost to a concurrent `git stash`, to avoid clobbering or being clobbered by unrelated concurrent work on `app.py`/`security.py`/`bootstrap.py`.
 - 3 new integration tests (`test_guardrails_mcp_builder_wiring_api.py`), all passing. `ruff format --check`, `ruff check`, `mypy` (full project) clean. Full backend suite re-run to confirm zero regressions.
 
+### ATLAS-IMP-285 Scope and Verification (complete)
+
+Reconciled the Brocade SANnav connector candidate (ATLAS-IMP-261) against Broadcom's authoritative
+**SANnav Management Portal REST API Reference Manual, v3.0.1x** (SANnav-301x-REST-API-RM100),
+supplied by the user, superseding the third-party-script-only provenance the candidate previously
+relied on for its two unconfirmed gaps.
+
+- **Real bug fixed**: `BrocadeSanNavClient.read_fabric_fault_summary()`'s request body scoped
+  `POST /external-api/v2/fault/events/` to a fabric with an `ORIGIN`-column filter whose value was
+  the switch WWN -- but `ORIGIN`'s documented values are event-source labels ("Syslog Message",
+  "SNMP Trap", ...), never a WWN, so the filter could never have matched anything on a real
+  instance. Fixed to use the manual-confirmed top-level `eventProductDetails` array of switch WWNs
+  instead (`client.py`).
+- **Second real gap closed**: the response-envelope parsing (`_count_events`) previously guessed
+  defensively across `"events"`/`"Events"`/`"data"`/`"Data"`/`"totalCount"` since the schema was
+  unconfirmed. The manual's `FaultEventsResponse` schema confirms the real shape: a top-level
+  `"events"` array plus a `"totalRecords"` total count (the authoritative total across pages,
+  preferred over `len(events)`, which is only the current page).
+- **New capability unblocked**: SANnav was believed to have no dedicated version/compatibility
+  endpoint (self_test/probe both reused the fabric-discovery read as a proxy). The manual confirms
+  `GET /external-api/v1/about/` (introduced in SANnav v2.3.1, returns `productBrandName`/`version`)
+  is exactly that endpoint. New `BrocadeSanNavClient.read_about()` and `BrocadeAbout` domain type;
+  `self_test()` and `BrocadeConnectionTestProbe` both switched to it, mirroring
+  `HitachiOpsCenterClient.read_api_version()`'s established pattern exactly (product-name check on
+  top of a version-format check, `unsupported_vendor_version`/`product_mismatch` result codes).
+- **Honestly scoped, not further**: per-event severity is still not parsed -- the manual's own
+  worked example returns a `severityGroup` value ("MAJOR") absent from its own declared
+  `SeverityGroup` enum (ALL/ALERT/ERROR/WARNING/INFO/UNKNOWN), an inconsistency inside Broadcom's
+  own authoritative reference. `BrocadeFabricHealthExecutor` therefore still only ever reports
+  NORMAL/WARNING, never CRITICAL -- updated its docstring to say so precisely instead of citing a
+  now-stale "schema not confirmed" reason.
+- Updated `mcp/connectors/brocade_sannav/source-provenance.json` (new `about.read` capability
+  source, `confirmed_via_authoritative_reference_manual` on the two previously-partial entries) and
+  `README.md` (documents the fixed bug and the still-open severity-vocabulary gap plainly).
+- Extended `SyntheticBrocadeSanNavTransport` to record POST bodies (`posted_bodies`), not just
+  paths, so the fault/events request-shape fix has a real regression test
+  (`test_fault_summary_scopes_the_request_by_event_product_details`) instead of only testing the
+  response side. New/updated tests in `test_brocade_sannav_connector.py`: `totalRecords`-preferred
+  counting, `totalRecords: null` fallback to `len(events)`, the about-endpoint self-test
+  (compatible and incompatible-product cases, the latter using the real "SANnav Global View"
+  product the manual documents as not exposing this API), and a malformed-version rejection test.
+  29 tests passing across the three Brocade-touching test files; `ruff format --check`, `ruff
+  check`, and `mypy` (full project, 1642 files) all clean.
+
 ### ATLAS-IMP-284 Scope and Verification (complete)
 
 Fixed `Settings()` silently never loading the repository-root `.env` on a real deployment,

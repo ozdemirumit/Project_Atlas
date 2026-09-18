@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import ssl
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Protocol
 
 from atlas.modules.connectors.application.connection_test_ports import (
@@ -14,7 +15,9 @@ from atlas.modules.connectors.vendors.brocade_sannav.https import BrocadeSanNavH
 from atlas.modules.connectors.vendors.brocade_sannav.manifest import PACKAGE_ID
 from atlas.modules.connectors.vendors.brocade_sannav.ports import BrocadeTransportError
 
-_FABRIC_DISCOVERY_PATH = "/external-api/v1/discovery/fabrics/"
+_ABOUT_PATH = "/external-api/v1/about/"
+_PRODUCT_BRAND_NAME = "SANnav Management Portal"
+_VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+[A-Za-z0-9]*$")
 
 
 class BrocadeTlsTrustSource(Protocol):
@@ -57,11 +60,11 @@ class BrocadeSanNavConnectionTestHttpsFactory:
 
 
 class BrocadeConnectionTestProbe:
-    """This vendor's whole connectivity check. SANnav has no confirmed dedicated
-    version/compatibility endpoint (see source-provenance.json), so this probe reuses the
-    fabric-discovery read itself, exactly as BrocadeSanNavClient.self_test() does, and confirms
-    the response is a well-formed fabric-discovery envelope. Never raises -- always returns a
-    ConnectionProbeOutcome, matching every other connector's probe."""
+    """This vendor's whole connectivity check: GET the version/about endpoint (confirmed via
+    Broadcom's SANnav Management Portal REST API Reference Manual, v3.0.1x) and confirm the
+    response identifies a compatible SANnav Management Portal instance, exactly as
+    BrocadeSanNavClient.self_test() does. Never raises -- always returns a ConnectionProbeOutcome,
+    matching every other connector's probe."""
 
     connector_id = PACKAGE_ID
 
@@ -90,12 +93,8 @@ class BrocadeConnectionTestProbe:
         )
         try:
             async with asyncio.timeout(timeout_seconds + 1):
-                payload = await transport.get(_FABRIC_DISCOVERY_PATH)
-            result_code = (
-                "sannav_api_compatible"
-                if isinstance(payload.get("Fabrics"), list)
-                else ("product_mismatch")
-            )
+                payload = await transport.get(_ABOUT_PATH)
+            result_code = self._version_result(payload)
             return ConnectionProbeOutcome(
                 outcome="passed" if result_code == "sannav_api_compatible" else "failed",
                 result_code=result_code,
@@ -119,3 +118,12 @@ class BrocadeConnectionTestProbe:
                 request_performed=True,
                 target_contacted=True,
             )
+
+    @staticmethod
+    def _version_result(payload: Mapping[str, object]) -> str:
+        if payload.get("productBrandName") != _PRODUCT_BRAND_NAME:
+            return "product_mismatch"
+        version = payload.get("version")
+        if not isinstance(version, str) or _VERSION.fullmatch(version) is None:
+            return "unsupported_vendor_version"
+        return "sannav_api_compatible"

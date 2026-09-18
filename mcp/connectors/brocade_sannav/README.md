@@ -10,10 +10,12 @@ instance until the exact package digest receives domain, security, lab, and envi
 | Capability | Class | Vendor request |
 | --- | --- | --- |
 | `brocade.sannav.fabric.inventory.read` | C1 read-only | `GET /external-api/v1/discovery/fabrics/`, `GET /external-api/v1/discovery/fabric-members/` |
-| `brocade.sannav.fabric.health.read` | C1 read-only | `POST /external-api/v2/fault/events/` (bounded time window, filtered to one fabric) |
+| `brocade.sannav.fabric.health.read` | C1 read-only | `POST /external-api/v2/fault/events/` (bounded time window, scoped to one fabric via `eventProductDetails`) |
 
-The self-test reuses the fabric-discovery read (SANnav has no confirmed dedicated
-version/compatibility endpoint). No login/logout, session mutation, zoning, configuration change,
+The self-test and connection-test probe both call `GET /external-api/v1/about/` (SANnav's
+version/compatibility endpoint, introduced in v2.3.1) and confirm the response identifies a
+compatible SANnav Management Portal instance -- mirroring the Hitachi Ops Center candidate's own
+dedicated version check exactly. No login/logout, session mutation, zoning, configuration change,
 or CLI operation is included -- this connector deliberately uses SANnav's documented session-less
 authentication mode instead of the stateful login/session flow.
 
@@ -36,33 +38,44 @@ authentication mode instead of the stateful login/session flow.
 
 ## Source Provenance
 
-Reviewed against Broadcom's public SANnav Management Portal REST API documentation and a real,
-independently-authored working example script (not vendor prose alone) for the endpoints that
-could be fully confirmed:
+Reviewed against Broadcom's authoritative **SANnav Management Portal REST API Reference Manual,
+v3.0.1x** (publication SANnav-301x-REST-API-RM100, March 26, 2026) and, for the two inventory
+endpoints, also against a real, independently-authored working example script:
 
-- [SANnav REST API overview](https://techdocs.broadcom.com/us/en/fibre-channel-networking/sannav/management-portal-rest-api/3-0-0x/SANnav-Overview.html)
+- SANnav Management Portal REST API Reference Manual, v3.0.1x (SANnav-301x-REST-API-RM100) --
+  the vendor's full, authoritative schema reference. Confirms every endpoint and response
+  envelope this connector uses, including the request/response shape for the fault/events read
+  and the existence of a dedicated version/compatibility endpoint (`GET /external-api/v1/about/`).
 - [Working fabric/switch inventory example](https://github.com/chipcopper/SANnav-fabric-inventory/blob/master/sannav_fabric_inventory.py) --
-  confirms the login header shape, the `/discovery/fabrics/` and `/discovery/fabric-members/`
-  endpoints, and their exact response field names (`Fabrics`, `principalSwitchWwn`, `name`,
-  `Switches`, `ipAddress`).
-- [Retrieving a list of events (fault/events example)](https://techdocs.broadcom.com/us/en/fibre-channel-networking/sannav/management-portal-rest-api/3-0-0x/Python-Examples-REST-API/Retrieving-a-List-of-Events-REST-API.html) --
-  confirms the `POST /external-api/v2/fault/events/` endpoint and full request body shape, but
-  **not** the per-event response field names.
+  independently confirms the login header shape, the `/discovery/fabrics/` and
+  `/discovery/fabric-members/` endpoints, and their exact response field names (`Fabrics`,
+  `principalSwitchWwn`, `name`, `Switches`, `ipAddress`) against a real instance, not vendor prose
+  alone.
 
-**Known gap, stated plainly**: the fault/events response schema (per-event severity, affected
-switch, message field names) was not independently confirmed against a real SANnav instance or
-Broadcom's full REST API Reference Manual PDF during construction -- see `source-provenance.json`.
-`read_fabric_fault_summary()` therefore only counts events safely (checked defensively across
-plausible response envelope shapes) rather than parsing unverified per-event fields. This is
-stated in `client.py` and `domain.py` as code comments, not silently assumed correct.
+**A real bug found and fixed during reconciliation against the authoritative manual**: the
+`POST /external-api/v2/fault/events/` request body previously scoped events to a fabric using an
+`ORIGIN`-column filter with the switch WWN as its value -- but `ORIGIN`'s documented values are
+event-source labels (`"Syslog Message"`, `"SNMP Trap"`, ...), never a WWN, so that filter never
+matched anything real. The manual's own worked example confirms the correct field is the
+top-level `eventProductDetails` array of virtual switch WWNs; `read_fabric_fault_summary()` now
+uses that instead. The response-envelope guess (checking `"events"`/`"Events"`/`"data"`/`"Data"`/
+`"totalCount"` defensively) is also gone: the manual's `FaultEventsResponse` schema confirms the
+real shape is a top-level `"events"` array plus a `"totalRecords"` total count.
+
+**Known gap that remains, stated plainly**: per-event severity is still not parsed. The manual's
+own worked example returns a `severityGroup` value (`"MAJOR"`) that does not appear in its own
+declared `SeverityGroup` enum (`ALL`/`ALERT`/`ERROR`/`WARNING`/`INFO`/`UNKNOWN`) -- that specific
+vocabulary is internally inconsistent even in Broadcom's authoritative reference, so
+`read_fabric_fault_summary()` still only counts events rather than classifying them by severity.
+This is stated in `client.py` and `domain.py` as code comments, not silently assumed correct.
 
 ## Promotion Requirements
 
 1. Review the exact source version and capability mapping with a SAN fabric domain owner.
 2. Validate the package digest, dependency inventory, network destination, and certificate policy.
-3. Confirm the fault/events response schema against a real, non-production SANnav instance (or
-   Broadcom's authoritative schema reference) and extend `read_fabric_fault_summary()` with real
-   per-event field parsing once confirmed.
+3. Resolve the `severityGroup` vocabulary inconsistency with Broadcom (or verify it live against a
+   real SANnav instance) and extend `read_fabric_fault_summary()` with real per-severity
+   classification once resolved.
 4. Run contract tests against an approved non-production SANnav endpoint using a least-privileged
    read-only identity.
 5. Compare sanitized lab responses with the synthetic fixtures and document schema differences.

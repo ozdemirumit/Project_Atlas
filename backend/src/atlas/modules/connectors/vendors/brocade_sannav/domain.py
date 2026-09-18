@@ -12,6 +12,16 @@ _PRINCIPAL_SWITCH_WWN = re.compile(r"^[0-9A-Fa-f:]{8,64}$")
 
 
 @dataclass(frozen=True, slots=True)
+class BrocadeAbout:
+    """`GET /external-api/v1/about/` -- confirmed against Broadcom's SANnav Management Portal
+    REST API Reference Manual, v3.0.1x (SANnav-301x-REST-API-RM100), introduced in SANnav v2.3.1.
+    Not scoped to one fabric; used only to confirm the target is a compatible SANnav instance."""
+
+    product_brand_name: str
+    version: str
+
+
+@dataclass(frozen=True, slots=True)
 class BrocadeFabric:
     principal_switch_wwn: str
     name: str
@@ -54,13 +64,16 @@ class BrocadeInventoryResult:
 
 @dataclass(frozen=True, slots=True)
 class BrocadeFaultSummary:
-    """Deliberately coarse: Broadcom's exact per-event response schema (severity vocabulary,
-    affected-switch field name, message field name) for POST /external-api/v2/fault/events/
-    could not be independently confirmed against a real SANnav instance or the vendor's
-    authoritative schema reference during connector construction. Rather than guess field names
-    and risk silently misreporting severity, this first pass only counts events safely from a
+    """Deliberately coarse. The response *envelope* for POST /external-api/v2/fault/events/ is now
+    confirmed against Broadcom's authoritative SANnav Management Portal REST API Reference Manual,
+    v3.0.1x (SANnav-301x-REST-API-RM100): a top-level `events` array plus a `totalRecords` total
+    count (see FaultEventsResponse). Per-event severity is deliberately still not parsed here --
+    the manual's own worked example returns a `severityGroup` value ("MAJOR") that does not appear
+    in its own declared `SeverityGroup` enum (ALL/ALERT/ERROR/WARNING/INFO/UNKNOWN), so the exact
+    severity vocabulary remains unconfirmed even against the vendor's own authoritative reference.
+    Rather than guess a severity mapping that could misreport, this still only counts events from a
     real, confirmed request/response round-trip. Per-event detail is a documented follow-up once
-    the exact schema is verified live."""
+    that vocabulary discrepancy is resolved with Broadcom or verified live."""
 
     fabric_principal_switch_wwn: str
     event_count: int

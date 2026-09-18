@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from atlas.modules.connectors.application.ports import ConnectorSelfTestResult
 from atlas.modules.connectors.domain.models import ConnectorHealth, ConnectorInstance
 from atlas.modules.connectors.vendors.brocade_sannav.domain import (
+    BrocadeAbout,
     BrocadeFabric,
     BrocadeFaultSummary,
     BrocadeInventoryResult,
@@ -21,6 +22,11 @@ from atlas.modules.connectors.vendors.brocade_sannav.ports import (
 )
 
 _PRINCIPAL_SWITCH_WWN = re.compile(r"^[0-9A-Fa-f:]{8,64}$")
+# SANnav versions render like "2.3.1" or, per the reference manual's own title, "3.0.1x" (a
+# trailing non-numeric suffix) -- loose enough to accept either without guessing a stricter format
+# Broadcom hasn't documented.
+_VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+[A-Za-z0-9]*$")
+_PRODUCT_BRAND_NAME = "SANnav Management Portal"
 _DEFAULT_FAULT_WINDOW = timedelta(hours=2)
 
 
@@ -64,19 +70,41 @@ class BrocadeSanNavClient:
                 code="connector_instance_package_mismatch",
             )
         try:
-            payload = await self._get("/external-api/v1/discovery/fabrics/")
+            about = await self.read_about()
         except BrocadeConnectorError as exc:
             return ConnectorSelfTestResult(
                 health=ConnectorHealth.UNAVAILABLE,
                 checked_at=self._clock(),
                 code=exc.code,
             )
-        compatible = isinstance(payload.get("Fabrics"), list)
-        return ConnectorSelfTestResult(
-            health=ConnectorHealth.HEALTHY if compatible else ConnectorHealth.INCOMPATIBLE,
-            checked_at=self._clock(),
-            code="brocade_sannav_api_compatible" if compatible else "product_mismatch",
+        health = (
+            ConnectorHealth.HEALTHY
+            if about.product_brand_name == _PRODUCT_BRAND_NAME
+            else ConnectorHealth.INCOMPATIBLE
         )
+        return ConnectorSelfTestResult(
+            health=health,
+            checked_at=self._clock(),
+            code=(
+                "brocade_sannav_api_compatible"
+                if health is ConnectorHealth.HEALTHY
+                else "product_mismatch"
+            ),
+        )
+
+    async def read_about(self) -> BrocadeAbout:
+        payload = await self._get("/external-api/v1/about/")
+        product_brand_name = payload.get("productBrandName")
+        version = payload.get("version")
+        if not isinstance(product_brand_name, str) or not isinstance(version, str):
+            raise BrocadeConnectorError(
+                "malformed_vendor_response", "The about response is malformed."
+            )
+        if not _VERSION.fullmatch(version):
+            raise BrocadeConnectorError(
+                "unsupported_vendor_version", "The API version is not a supported version format."
+            )
+        return BrocadeAbout(product_brand_name=product_brand_name, version=version)
 
     async def read_inventory(self) -> BrocadeInventoryResult:
         payload = await self._get("/external-api/v1/discovery/fabrics/")
@@ -137,19 +165,12 @@ class BrocadeSanNavClient:
             "endTime": int(now.timestamp() * 1000),
             "pageSize": 100,
             "startIndex": 0,
-            "filters": {
-                "filter": [
-                    {
-                        "includedEvents": [
-                            {
-                                "category": "SWITCH_EVENT",
-                                "eventColumn": "ORIGIN",
-                                "value": principal_switch_wwn,
-                            }
-                        ]
-                    }
-                ]
-            },
+            # Confirmed via the reference manual's own worked example
+            # ("Retrieving a List of Events Using New Filter Criteria"): eventProductDetails takes
+            # the virtual switch WWNs to scope the read to, which is what this fault summary needs
+            # -- not the ORIGIN filter column this body used before, whose documented values are
+            # event-source labels ("Syslog Message", "SNMP Trap", ...), never a switch WWN.
+            "eventProductDetails": [principal_switch_wwn],
         }
         payload = await self._post("/external-api/v2/fault/events/", body)
         event_count = self._count_events(payload)
@@ -244,18 +265,17 @@ class BrocadeSanNavClient:
 
     @staticmethod
     def _count_events(payload: Mapping[str, object]) -> int:
-        # Broadcom's exact response envelope for this endpoint (e.g. whether events are under
-        # "events", "data", "Events", or returned as a bare list) was not independently confirmed
-        # during connector construction -- counted defensively across the shapes a paginated
-        # list-style SANnav response is documented to plausibly take, never raising on an
-        # unrecognized shape (falls back to zero rather than guessing a wrong nonzero count).
-        for key in ("events", "Events", "data", "Data"):
-            candidate = payload.get(key)
-            if isinstance(candidate, list):
-                return len(candidate)
-        total = payload.get("totalCount")
+        # Confirmed via the reference manual's FaultEventsResponse schema: "totalRecords" is the
+        # total match count across every page, while "events" is only the current page (bounded by
+        # this request's pageSize=100) -- totalRecords is checked first since it is the accurate
+        # total whenever the fabric has more events than one page holds; "events" is the fallback
+        # for the (also-documented) case where totalRecords itself comes back null.
+        total = payload.get("totalRecords")
         if isinstance(total, int) and not isinstance(total, bool) and total >= 0:
             return total
+        events = payload.get("events")
+        if isinstance(events, list):
+            return len(events)
         return 0
 
     @staticmethod

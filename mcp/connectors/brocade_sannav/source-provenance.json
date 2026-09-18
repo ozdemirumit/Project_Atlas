@@ -1,36 +1,46 @@
 {
-  "source_set_id": "source-set.brocade.sannav.management-portal.3-0-x",
-  "reviewed_at": "2026-08-28T00:00:00Z",
+  "source_set_id": "source-set.brocade.sannav.management-portal.3-0-1x",
+  "reviewed_at": "2026-09-18T00:00:00Z",
   "publisher": "Broadcom Inc. (Brocade)",
   "document": {
-    "title": "Brocade SANnav Management Portal REST API Reference and Overview",
-    "version": "3.0.0x",
-    "url": "https://techdocs.broadcom.com/us/en/fibre-channel-networking/sannav/management-portal-rest-api/3-0-0x/SANnav-Overview.html"
+    "title": "Brocade SANnav Management Portal REST API Reference Manual",
+    "version": "3.0.1x",
+    "publication_id": "SANnav-301x-REST-API-RM100",
+    "published": "March 26, 2026",
+    "url": "https://techdocs.broadcom.com/us/en/fibre-channel-networking/sannav/management-portal-rest-api/3-0-1x/SANnav-Overview.html"
   },
   "capability_sources": [
     {
       "capability_id": "brocade.sannav.fabric.inventory.read",
       "method": "GET",
       "path": "/external-api/v1/discovery/fabrics/",
-      "confirmation": "confirmed_via_working_example",
+      "confirmation": "confirmed_via_authoritative_reference_manual",
       "url": "https://github.com/chipcopper/SANnav-fabric-inventory/blob/master/sannav_fabric_inventory.py",
-      "note": "Endpoint, response envelope key (\"Fabrics\"), and field names (name, principalSwitchWwn) confirmed against a real, independently-authored working script, not only vendor prose documentation."
+      "note": "Response envelope key (\"Fabrics\") and field names (name, principalSwitchWwn) confirmed both against a real, independently-authored working script and against the FabricResponse/FabricDetails schema in the authoritative REST API Reference Manual (v3.0.1x)."
     },
     {
       "capability_id": "brocade.sannav.fabric.inventory.read",
       "method": "GET",
       "path": "/external-api/v1/discovery/fabric-members/",
-      "confirmation": "confirmed_via_working_example",
+      "confirmation": "confirmed_via_authoritative_reference_manual",
       "url": "https://github.com/chipcopper/SANnav-fabric-inventory/blob/master/sannav_fabric_inventory.py",
-      "note": "Requires a principalSwitchWWN query parameter. Response envelope key (\"Switches\") and ipAddress field confirmed against the same working script."
+      "note": "Requires a principalSwitchWWN query parameter. Response envelope key (\"Switches\") and ipAddress field confirmed against the same working script and against the FabricMemberResponse/SwitchDetails schema in the reference manual."
     },
     {
       "capability_id": "brocade.sannav.fabric.health.read",
       "method": "POST",
       "path": "/external-api/v2/fault/events/",
-      "confirmation": "endpoint_and_request_confirmed_response_schema_not_confirmed",
-      "url": "https://techdocs.broadcom.com/us/en/fibre-channel-networking/sannav/management-portal-rest-api/3-0-0x/Python-Examples-REST-API/Retrieving-a-List-of-Events-REST-API.html",
-      "note": "Endpoint path and full request body shape (startTime, endTime, pageSize, startIndex, filters.filter[].includedEvents[]) confirmed from Broadcom's own Python example. The per-event response field names (severity, affected switch, message) could not be independently confirmed during connector construction -- the client counts events defensively across plausible envelope shapes rather than parsing unverified per-event fields. Live verification against a real SANnav instance, or the vendor's authoritative schema reference (the full REST API Reference Manual PDF), is a documented follow-up before this capability is promoted."
+      "confirmation": "confirmed_via_authoritative_reference_manual",
+      "url": "https://techdocs.broadcom.com/us/en/fibre-channel-networking/sannav/management-portal-rest-api/3-0-1x/Python-Examples-REST-API/Retrieving-a-List-of-Events-REST-API.html",
+      "note": "Request body and response envelope (FaultEventDetailsCriteria / FaultEventsResponse: top-level \"events\" array plus a \"totalRecords\" total count) confirmed against the authoritative REST API Reference Manual (v3.0.1x). This also corrected a real bug found during reconciliation: the connector's request body previously scoped events with an ORIGIN-column filter whose value was set to the switch WWN, but ORIGIN's documented values are event-source labels (\"Syslog Message\", \"SNMP Trap\", ...), never a WWN -- the manual's own worked example confirms the correct field is the top-level \"eventProductDetails\" array of virtual switch WWNs. Per-event severity is still not parsed: the manual's own worked example returns a severityGroup value (\"MAJOR\") absent from its own declared SeverityGroup enum (ALL/ALERT/ERROR/WARNING/INFO/UNKNOWN), so that specific vocabulary remains unconfirmed even against the authoritative reference."
+    },
+    {
+      "capability_id": "brocade.sannav.about.read",
+      "method": "GET",
+      "path": "/external-api/v1/about/",
+      "confirmation": "confirmed_via_authoritative_reference_manual",
+      "url": "https://techdocs.broadcom.com/us/en/fibre-channel-networking/sannav/management-portal-rest-api/3-0-1x/Resources-REST-API/About-SANnav-REST-API.html",
+      "note": "Version/compatibility endpoint (introduced in SANnav v2.3.1), confirmed via the About schema in the reference manual: {version, build, generatedOn, productBrandName, oemName}. Used only by self_test() and the connection-test probe, not exposed as a package capability -- see \"self_test_source\" below."
     }
   ],
   "authentication_source": {
@@ -42,8 +52,9 @@
   },
   "self_test_source": {
     "method": "GET",
-    "path": "/external-api/v1/discovery/fabrics/",
-    "note": "SANnav has no confirmed dedicated version/compatibility endpoint equivalent to Hitachi's /configuration/version; the self-test reuses the fabric-discovery read itself and checks for a well-formed response shape."
+    "path": "/external-api/v1/about/",
+    "confirmation": "confirmed_via_authoritative_reference_manual",
+    "note": "Corrects an earlier gap: SANnav was believed to have no dedicated version/compatibility endpoint equivalent to Hitachi's /configuration/version, so self_test() reused the fabric-discovery read as a proxy. The reference manual (v3.0.1x) confirms a real one exists (GET /external-api/v1/about/, returning productBrandName/version); self_test() and the connection-test probe both use it now, mirroring the Hitachi read_api_version() pattern exactly."
   },
   "data_policy": "synthetic-only",
   "production_credentials_present": false
