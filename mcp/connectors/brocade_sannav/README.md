@@ -27,9 +27,13 @@ authentication mode instead of the stateful login/session flow.
 - Collection count, response byte size, and target identifiers are bounded.
 - Malformed, timeout, permission, throttle, and unavailable results remain distinct.
 - Tests use synthetic documentation-derived data only. No production data or credentials exist here.
-- The production HTTPS transport is endpoint-bound, blocks redirects, requires certificate and
-  hostname verification, and bounds request duration and response bytes -- the same posture as the
-  Hitachi Ops Center candidate's transport, extended with POST support for the fault/events read.
+- The production HTTPS transport is endpoint-bound, blocks redirects, and bounds request duration
+  and response bytes -- the same posture as the Hitachi Ops Center candidate's transport, extended
+  with POST support for the fault/events read. **TLS certificate and hostname verification are
+  deliberately disabled**, at the operator's explicit request, after self-signed target
+  certificates blocked connections; this trades away protection against on-path interception of
+  the credentials this transport sends, for every connection, with no per-instance opt-in. See
+  `https.py`'s `_verified_context`.
 - The transport accepts only absolute same-origin paths (plus one bounded query parameter for the
   fabric-members read) and strict JSON-object responses.
 - A secret broker may provide a pre-authenticated Authorization header per request. The transport

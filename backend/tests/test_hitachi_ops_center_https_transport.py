@@ -187,13 +187,9 @@ def test_constructor_rejects_non_hostname_destinations(
         build_transport(monkeypatch, FakeResponse(b"{}"), hostname=hostname)
 
 
-def test_constructor_requires_exactly_one_verified_trust_source(
+def test_constructor_requires_exactly_one_trust_source(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    insecure_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    insecure_context.check_hostname = False
-    insecure_context.verify_mode = ssl.CERT_NONE
-
     with pytest.raises(ValueError, match="exactly one"):
         build_transport(monkeypatch, FakeResponse(b"{}"), ssl_context=None)
     with pytest.raises(ValueError, match="exactly one"):
@@ -202,8 +198,20 @@ def test_constructor_requires_exactly_one_verified_trust_source(
             FakeResponse(b"{}"),
             ca_file="synthetic-ca.pem",
         )
-    with pytest.raises(ValueError, match="verification must remain enabled"):
-        build_transport(monkeypatch, FakeResponse(b"{}"), ssl_context=insecure_context)
+
+
+def test_constructor_disables_tls_verification_regardless_of_the_context_passed_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Regression test for a deliberate, operator-requested change: TLS hostname/certificate
+    # verification is always forced off here now, even when a strictly-verified context is passed
+    # in -- there is no per-instance opt-in, every connection through this transport is affected.
+    strict_context = verified_context()
+
+    build_transport(monkeypatch, FakeResponse(b"{}"), ssl_context=strict_context)
+
+    assert strict_context.check_hostname is False
+    assert strict_context.verify_mode is ssl.CERT_NONE
 
 
 def test_constructor_builds_verified_context_from_ca_file(

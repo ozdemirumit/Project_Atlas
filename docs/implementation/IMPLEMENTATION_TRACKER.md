@@ -436,6 +436,39 @@ Three of the six services `task_87506e3c` was spawned to wire. `GuardrailReviewS
 - Discovered while running this fix that the shared working tree was being edited concurrently by other passes/tasks in this same session's broader loop; moved this fix's work into an isolated `git worktree` (branch `guardrail-mcp-builder-wiring`) after an in-progress edit to `bootstrap.py` was partly lost to a concurrent `git stash`, to avoid clobbering or being clobbered by unrelated concurrent work on `app.py`/`security.py`/`bootstrap.py`.
 - 3 new integration tests (`test_guardrails_mcp_builder_wiring_api.py`), all passing. `ruff format --check`, `ruff check`, `mypy` (full project) clean. Full backend suite re-run to confirm zero regressions.
 
+### ATLAS-IMP-286 Scope and Verification (complete)
+
+**Deliberate security downgrade, at the project owner's explicit, twice-confirmed request, not a
+bug fix.** TLS hostname and certificate verification is now disabled in all six vendor connector
+candidates' production HTTPS transports (`brocade_sannav`, `hitachi_ops_center`, `huawei_dorado`,
+`huawei_pacific`, `vcenter`, `commvault`), after the owner reported self-signed target certificates
+blocking real connections and, having been offered and having declined the zero-downside
+alternative (trust the target's actual certificate, e.g. via the Windows local machine trust store
+or this project's already-existing `trust_profile_id`/CA-file mechanism), asked directly for
+verification itself to be turned off.
+
+- Each `https.py`'s `_verified_context()` previously *validated* that the SSL context it was given
+  had `check_hostname=True`/`verify_mode=CERT_REQUIRED` and raised `ValueError` otherwise. It now
+  unconditionally sets `check_hostname = False` and `verify_mode = ssl.CERT_NONE` on whatever
+  context it receives, regardless of what was passed in. This is global, not per-instance --
+  there is no configuration flag that re-enables verification for a specific connector instance
+  that doesn't have this problem.
+- **What this actually trades away**: every one of these transports carries a pre-authenticated
+  `Authorization` header (Basic-auth or a vendor session token) to a storage/SAN/backup/hypervisor
+  management API. With verification disabled, anyone able to intercept the network path between
+  this backend and a configured target (ARP/DNS spoofing, a compromised switch/router, etc.) can
+  present any certificate and receive that credential, or tamper with the response, undetected.
+  This is a real, standing risk for as long as this change stands, not a hypothetical.
+- Updated `test_hitachi_ops_center_https_transport.py` (the only vendor with a dedicated low-level
+  transport test) to match: removed the now-false assertion that an insecure context is rejected,
+  added a regression test confirming any context passed in -- even a strict one -- comes out with
+  verification forced off.
+- Updated all six `mcp/connectors/*/README.md` Safety Boundary sections to state this plainly
+  instead of leaving a stale "requires certificate and hostname verification" claim that would
+  misrepresent the connectors' actual live posture to a future reader or security reviewer.
+- 263 connector-related tests passing, `ruff format --check`, `ruff check`, and `mypy` (full
+  project, 1642 files) all clean.
+
 ### ATLAS-IMP-285 Scope and Verification (complete)
 
 Reconciled the Brocade SANnav connector candidate (ATLAS-IMP-261) against Broadcom's authoritative

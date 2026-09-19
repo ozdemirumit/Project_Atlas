@@ -26,9 +26,12 @@ that fronts many arrays, there is no multi-target allowlist here.
 - Collection count, response byte size, and the target system identifier are bounded.
 - Malformed, timeout, permission, throttle, and unavailable results remain distinct.
 - Tests use synthetic documentation-derived data only. No production data or credentials exist here.
-- The production HTTPS transport is endpoint-bound, blocks redirects, requires certificate and
-  hostname verification, and bounds request duration and response bytes -- the same posture as the
-  Hitachi Ops Center and Brocade SANnav candidates' transports.
+- The production HTTPS transport is endpoint-bound, blocks redirects, and bounds request duration
+  and response bytes -- the same posture as the Hitachi Ops Center and Brocade SANnav candidates'
+  transports. **TLS certificate and hostname verification are deliberately disabled**, at the
+  operator's explicit request, after self-signed target certificates blocked connections; this
+  trades away protection against on-path interception of the credentials this transport sends, for
+  every connection, with no per-instance opt-in. See `https.py`'s `_verified_context`.
 - **Different from every other connector in this codebase**: OceanStor's real REST API is
   session-based, not a static per-request header. A credential broker may provide a
   `username:password` pair; the transport performs a complete, bounded login -> read -> logout

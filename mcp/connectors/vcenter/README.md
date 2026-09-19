@@ -26,9 +26,12 @@ to a per-instance `system_id` to configure here.
 - Collection count and response byte size are bounded.
 - Malformed, timeout, permission, throttle, and unavailable results remain distinct.
 - Tests use synthetic documentation-derived data only. No production data or credentials exist here.
-- The production HTTPS transport is endpoint-bound, blocks redirects, requires certificate and
-  hostname verification, and bounds request duration and response bytes -- the same posture as
-  every other candidate in this project.
+- The production HTTPS transport is endpoint-bound, blocks redirects, and bounds request duration
+  and response bytes -- the same posture as every other candidate in this project. **TLS
+  certificate and hostname verification are deliberately disabled**, at the operator's explicit
+  request, after self-signed target certificates blocked connections; this trades away protection
+  against on-path interception of the credentials this transport sends, for every connection, with
+  no per-instance opt-in. See `https.py`'s `_verified_context`.
 - **Session-based, like both Huawei connectors, not like Hitachi or Brocade**: vCenter's real
   Automation API requires `POST /api/session` (HTTP Basic auth, empty body) to obtain a session
   token, presented as the `vmware-api-session-id` header on every subsequent request, and

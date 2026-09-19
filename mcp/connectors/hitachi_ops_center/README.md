@@ -24,8 +24,11 @@ configuration change, job submission, or CLI operation is included.
 - Collection count, nesting depth, status fields, response shape, and target identifiers are bounded.
 - Unknown, empty, malformed, timeout, permission, throttle, and unavailable results remain distinct.
 - Tests use synthetic documentation-derived data only. No production data or credentials exist here.
-- The production HTTPS transport is endpoint-bound, blocks redirects, requires certificate and
-  hostname verification, and bounds request duration and response bytes.
+- The production HTTPS transport is endpoint-bound, blocks redirects, and bounds request duration
+  and response bytes. **TLS certificate and hostname verification are deliberately disabled**, at
+  the operator's explicit request, after self-signed target certificates blocked connections; this
+  trades away protection against on-path interception of the credentials this transport sends, for
+  every connection, with no per-instance opt-in. See `https.py`'s `_verified_context`.
 - The transport accepts only absolute same-origin paths and strict JSON-object responses.
 - A secret broker may provide a pre-authenticated Authorization header per request. The transport
   does not persist, log, expose, or return that header.

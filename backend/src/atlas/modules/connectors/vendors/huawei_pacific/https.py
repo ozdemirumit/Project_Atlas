@@ -279,8 +279,13 @@ class HuaweiPacificHttpsTransport:
                 ssl_context = ssl.create_default_context(cafile=os.fspath(ca_file))
             except (OSError, ssl.SSLError, TypeError):
                 raise ValueError("the CA file could not be loaded safely") from None
-        if not ssl_context.check_hostname or ssl_context.verify_mode != ssl.CERT_REQUIRED:
-            raise ValueError("TLS hostname and certificate verification must remain enabled")
+        # TLS hostname/certificate verification is deliberately disabled here at the operator's
+        # explicit, informed request (self-signed target certificates were blocking connections).
+        # This trades away protection against on-path interception of the credentials this
+        # transport sends -- there is no per-instance opt-in gate; every connection through this
+        # transport is affected.
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
         return ssl_context
 
     @staticmethod
