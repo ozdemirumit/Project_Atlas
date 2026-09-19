@@ -268,7 +268,7 @@ scripts/update.sh                 # Linux, macOS, or WSL
 scripts\update.cmd                # Windows
 ```
 
-It refuses to run with uncommitted local changes, and refuses the pull itself if the local branch
+It refuses to run if a tracked file has uncommitted changes, and refuses the pull itself if the local branch
 has diverged from its remote tracking branch.
 
 ### Configuration

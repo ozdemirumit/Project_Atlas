@@ -8,8 +8,11 @@
 # Usage:
 #   scripts/update.sh
 #
-# Refuses to run with uncommitted local changes in the repository, so it never discards work by
-# pulling over it. Commit or stash first if this refuses to run.
+# Refuses to run if a tracked file has uncommitted changes, so it never discards work by pulling
+# over it. (Untracked files are not checked: `git pull` never touches them, and git itself already
+# refuses a pull that would overwrite one, so blocking on them here would only get in the way of
+# harmless clutter like a leftover installer download.) Commit or stash first if this refuses to
+# run.
 
 set -euo pipefail
 
@@ -22,8 +25,8 @@ cd "$REPO_ROOT"
 
 [ -d "$REPO_ROOT/.git" ] || fail "$REPO_ROOT is not a git repository; cannot update."
 
-if [ -n "$(git status --porcelain)" ]; then
-    fail "There are uncommitted local changes. Commit or stash them first, then re-run scripts/update.sh -- this script refuses to pull over uncommitted work."
+if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+    fail "There are uncommitted changes to tracked files. Commit or stash them first, then re-run scripts/update.sh -- this script refuses to pull over uncommitted work."
 fi
 
 log "Stopping the backend."

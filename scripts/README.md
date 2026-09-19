@@ -82,7 +82,7 @@ scripts\update.cmd    # Windows Command Prompt
 ./scripts/update.ps1
 ```
 
-`update` refuses to run with uncommitted local changes in the repository -- commit or stash first
+`update` refuses to run if a tracked file has uncommitted changes -- commit or stash first
 -- and refuses the pull itself if the local branch has diverged from its remote tracking branch
 (resolve that manually, e.g. `git pull --rebase`, then re-run).
 
