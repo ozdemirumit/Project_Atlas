@@ -256,6 +256,21 @@ scripts\start.cmd                 # Windows
 scripts\stop.cmd
 ```
 
+To pull the latest code and apply it -- stop, `git pull --ff-only`, then re-run `install` (not
+just `start`, so any new dependency or migration the pull brought in is actually applied) -- use
+`scripts/update` instead of doing those steps by hand:
+
+```bash
+scripts/update.sh                 # Linux, macOS, or WSL
+```
+
+```powershell
+scripts\update.cmd                # Windows
+```
+
+It refuses to run with uncommitted local changes, and refuses the pull itself if the local branch
+has diverged from its remote tracking branch.
+
 ### Configuration
 
 All runtime configuration lives in `.env`, which `scripts/install` creates from `.env.example` on

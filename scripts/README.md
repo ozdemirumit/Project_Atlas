@@ -66,6 +66,26 @@ scripts\stop.cmd
 deletes data. Re-run `install` (not `start`) after pulling a code or dependency update, since
 `start` intentionally skips `uv sync` and `alembic upgrade head`.
 
+## Updating to the latest code
+
+`update` is that stop-pull-reinstall sequence as one script: it stops the backend, `git pull
+--ff-only`s the repository, then re-runs `install` (not `start`) so any new backend dependency or
+database migration the pull brought in is actually applied before the backend starts again.
+
+```bash
+scripts/update.sh    # Linux, macOS, WSL
+```
+
+```powershell
+scripts\update.cmd    # Windows Command Prompt
+# or, directly in PowerShell:
+./scripts/update.ps1
+```
+
+`update` refuses to run with uncommitted local changes in the repository -- commit or stash first
+-- and refuses the pull itself if the local branch has diverged from its remote tracking branch
+(resolve that manually, e.g. `git pull --rebase`, then re-run).
+
 ## Going to production
 
 See README.md's "Going to production" section for the full checklist. Two one-time steps live
